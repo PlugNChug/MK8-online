@@ -1,0 +1,53 @@
+# Builds the packaged launcher and its setup.exe for a version tag, and publishes them as a GitHub Release.
+# Tags with a suffix (v0.2.0-alpha.1) become pre-releases; the in-launcher updater offers both.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      MK8_UPDATE_REPO: ${{ github.repository }}
+      MK8_RELAY_URL: ${{ vars.MK8_RELAY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - name: Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Checks
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+      - name: Build setup
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
+          if ($tag) { python scripts/release.py --tag $tag } else { python scripts/release.py }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup
+          path: target/dist/*
+      - name: Publish
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: target/dist/release-notes.md
+          files: |
+            target/dist/*-setup.exe
+            target/dist/*-setup.exe.sha256

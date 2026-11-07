@@ -1,0 +1,10 @@
+[package]
+name = "mk8-installer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+mk8-manifest = { path = "../manifest" }
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true

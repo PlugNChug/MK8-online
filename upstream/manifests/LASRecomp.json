@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/peiikai/LASRecomp",
+  "commit": "a6b4f03844ecfb4012f18deff96da8b410aeafcd",
+  "scope": [
+    "LICENSE",
+    "README.md"
+  ],
+  "files": {
+    "LICENSE": "a28216fecb7c939ff6fc73b299c602a6f00b34370a6309d434ec12fa2e3567de",
+    "README.md": "20ea8c96530753a2d59835bae6cda8cd3b17b7f86bc68a4aca6042b4c110c60e"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "game": "mk8d",
+  "name": "MK8 Deluxe 4.0.1 AArch64 development candidate",
+  "status": "unqualified",
+  "runtime": "smm2recomp",
+  "upstream_commit": "9dd1858fe8f4688ae5daa390c5e18d027300ada6",
+  "modules": {
+    "main": "0x7000000000",
+    "sdk": "0x7004000000",
+    "subsdk0": "0x7008000000"
+  },
+  "module_window_bytes": 67108864,
+  "simd": "c",
+  "gameplay_verified": false,
+  "notes": "Addresses reserve distinct 64 MiB windows; module size is checked. Build IDs are recorded from private inputs, not advertised as supported releases. Constructor ordering and SDK compatibility require real MK8 validation.",
+  "init_order": [
+    "sdk",
+    "subsdk0",
+    "main"
+  ],
+  "display_version": "4.0.1",
+  "architecture": "aarch64",
+  "input_sha256": {
+    "main": "92edeef4827338f0a481b9e150cdb2b46e258cef5656bc3eae7de67c88defe4a",
+    "sdk": "427404f3218eaa790f611acd9e45fe0336efb9504f02949054b14de3578bd1c2",
+    "subsdk0": "78310913ab1c10486169b13795856f8dfae2a0a3b89068517d3835c1d03b2a41",
+    "main.npdm": "0ce80e156fa01f70f3aa154f447ea43ccce994887e25708a870bb5ee4cfcf201"
+  }
+}

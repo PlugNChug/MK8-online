@@ -1,0 +1,25 @@
+# Checks every push and pull request. Native runtime tests skip without the local compiler (scripts/setup-native.py).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: Upstream sources
+        run: python scripts/fetch-upstream.py
+      - name: Pipeline tests
+        run: python -m unittest discover -s tests -p "test_pipeline.py"

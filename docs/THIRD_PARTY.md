@@ -1,0 +1,19 @@
+# Dependências e atribuições
+
+O código próprio usa GPL-3.0-or-later (`../LICENSE`). Os snapshots e bibliotecas mantêm suas licenças originais. Nomes em caminhos, símbolos e identificadores serializados são contratos de integração, não alegações de equivalência entre projetos.
+
+| Origem efetivamente utilizada | Revisão / uso | Licença preservada |
+| --- | --- | --- |
+| [SMM2Recomp](https://github.com/smm2recomp/smm2recomp) | `9dd1858fe8f4688ae5daa390c5e18d027300ada6`; snapshot do tradutor/runtime, verificado por `upstream/manifests/smm2recomp.json` | `upstream/smm2recomp/LICENSE`, `upstream/smm2recomp/recomp/UPSTREAM.md` |
+| [LASRecomp](https://github.com/peiikai/LASRecomp) | `a6b4f03844ecfb4012f18deff96da8b410aeafcd`; origem da infraestrutura derivada | `upstream/LASRecomp/LICENSE` e avisos dos snapshots |
+| [Power Moon Recomp](https://gitlab.com/zzzarathustra-dev/power-moon-recomp) | `cdbe05c9df0e2ff4bfbecece89ad3f0fd9806193`; adaptação de heap sempre protegido em `toolchain/experimental.py` | [MIT / créditos](licenses/power-moon-recomp.txt) |
+| [SkyRecomp](https://github.com/Apolinario-coder/SkyRecomp) | `ad649b4fd319b7f7c309857b2d14353d2e5dcd79`; TLD4S F32 adaptado em `runtime/mk8/graphics/maxwell_gather.inc` | [MIT, Apolinario-coder, 2026](licenses/SkyRecomp-MIT.txt), [aviso LAS](licenses/SkyRecomp-LASRecomp-MIT.txt) |
+| [LibHac](https://www.nuget.org/packages/LibHac/0.18.0) | 0.18.0, pacote conferido por SHA-256; leitura e aplicação da atualização NCA | [MIT](licenses/LibHac-MIT.txt) |
+
+Os avisos MIT completos nesta pasta acompanham os trechos adaptados. Não retirar licenças dos snapshots ao organizar o código. Dependências Rust estão fixadas por `Cargo.lock`; compilador e dependências nativas pelos scripts/manifestos locais.
+
+As demais avaliações históricas não são dependências de execução nem evidência de FPS ou compatibilidade deste projeto. Não copiar DLLs, endereços ou resultados de jogos diferentes. ROM, chaves, código gerado e modelos do dump permanecem privados.
+
+Referência operacional do multiplayer: [Nintendo — How to Use the LAN Play Feature of Mario Kart 8 Deluxe](https://en-americas-support.nintendo.com/app/answers/detail/a_id/25961/p/897), consultada em 07/11/2026. Documenta o atalho L + R + clique no analógico esquerdo e o limite de 12 jogadores. Esse limite do jogo não constitui qualificação da nossa implementação.
+
+Referência de metodologia solicitada pelo usuário: [Co-op Anything](https://github.com/cranebeaker/coop-anything), consultada em 07/11/2026, especialmente [falhas de rede](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md), [diagnóstico de dessincronização](https://github.com/cranebeaker/coop-anything/blob/main/playbook/desync-hunting.md) e [instâncias isoladas](https://github.com/cranebeaker/coop-anything/blob/main/playbook/multi-instance-testing.md). Útil para ampliar os testes da ponte LAN existente. Nenhum código, MCP ou relay Steam desse projeto foi incorporado; seus resultados em outros jogos não são evidência para MK8.

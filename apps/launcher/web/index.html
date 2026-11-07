@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mk8-token" content="__TOKEN__" />
+    <title>MK8-online</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
+      <span class="tag">experimental</span>
+      <span class="spacer"></span>
+      <button id="update-chip" class="chip accent" data-goto="support" hidden>Atualização disponível</button>
+      <span id="version" class="chip">v—</span>
+    </header>
+
+    <div class="shell">
+      <nav class="nav" aria-label="Seções">
+        <button class="tab active" data-tab="install" aria-selected="true">Instalar</button>
+        <button class="tab" data-tab="play" aria-selected="false">Jogar</button>
+        <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
+        <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
+      </nav>
+
+      <main>
+        <div id="notice" role="status" aria-live="polite"></div>
+
+        <!-- Instalar -->
+        <section id="install" class="panel">
+          <div class="panel-head">
+            <div>
+              <h1>Instalação</h1>
+              <p class="muted">Escolha os arquivos do seu console e prepare. O resto é automático.</p>
+            </div>
+            <span id="build-state" class="pill">Aguardando</span>
+          </div>
+
+          <ol class="stages" aria-label="Etapas">
+            <li id="stage-tools" data-state="pending"><span>Ferramentas</span><em id="tools-state">Pendente</em></li>
+            <li id="stage-files" data-state="pending"><span>Arquivos</span><em id="files-state">Pendente</em></li>
+            <li id="stage-build" data-state="pending"><span>Compilação</span><em id="prepare-state">Pendente</em></li>
+          </ol>
+
+          <div class="card">
+            <div class="segmented" role="radiogroup" aria-label="Origem do jogo">
+              <label><input type="radio" name="source" value="folder" checked />Pasta extraída</label>
+              <label><input type="radio" name="source" value="package" />Arquivos NSZ ou NSP</label>
+            </div>
+
+            <div id="source-folder">
+              <div class="path-field">
+                <label>Pasta do jogo extraído<input id="game-folder" spellcheck="false" placeholder="C:\Jogos\MK8" /></label>
+                <button type="button" class="ghost" data-browse="game-folder" data-kind="folder" aria-label="Procurar pasta do jogo" hidden>Procurar</button>
+              </div>
+              <p class="hint">Pasta com <code>exefs</code>, <code>romfs</code> e <code>control.nacp</code> da versão 4.0.1.</p>
+            </div>
+
+            <div id="source-package" hidden>
+              <div class="path-field">
+                <label>Jogo base<input id="base_package" spellcheck="false" /></label>
+                <button type="button" class="ghost" data-browse="base_package" data-kind="package" aria-label="Procurar Jogo base" hidden>Procurar</button>
+              </div>
+              <div class="path-field">
+                <label>Atualização 4.0.1<input id="update_package" spellcheck="false" /></label>
+                <button type="button" class="ghost" data-browse="update_package" data-kind="package" aria-label="Procurar Atualização 4.0.1" hidden>Procurar</button>
+              </div>
+              <div class="path-field">
+                <label>Arquivo prod.keys<input id="prod_keys" spellcheck="false" placeholder="Detectado ao lado do jogo ou em %USERPROFILE%\.switch" /></label>
+                <button type="button" class="ghost" data-browse="prod_keys" data-kind="keys" aria-label="Procurar Arquivo prod.keys" hidden>Procurar</button>
+              </div>
+            </div>
+
+            <p id="architecture-state" class="hint" role="status">Verificando arquitetura do executável…</p>
+
+            <div class="cta">
+              <button type="button" id="build" class="primary big">Preparar</button>
+              <button type="button" id="cancel" class="ghost" disabled>Cancelar</button>
+            </div>
+            <progress id="build-progress" hidden>Preparando</progress>
+            <p id="build-detail" class="hint" role="status"></p>
+            <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. A primeira preparação leva de 15 a 60 minutos; as seguintes reaproveitam o que já foi compilado.</p>
+          </div>
+
+          <details class="drawer">
+            <summary>Detalhes técnicos</summary>
+            <h3>Arquivos verificados</h3>
+            <div id="checks" class="checks"></div>
+
+            <h3>Ferramentas e dependências</h3>
+            <ol id="setup-steps" class="substeps" hidden></ol>
+            <progress id="setup-progress" max="3" value="0" hidden>Instalando ferramentas</progress>
+            <p id="setup-detail" class="hint" role="status"></p>
+            <div id="tools-checks" class="checks"></div>
+            <div class="row">
+              <button type="button" id="setup-start" class="ghost">Baixar e verificar ferramentas</button>
+              <button type="button" id="setup-check" class="ghost">Verificar novamente</button>
+              <button type="button" id="setup-cancel" class="ghost" disabled>Cancelar</button>
+            </div>
+
+            <form id="config-form">
+              <details class="advanced">
+                <summary>Caminhos manuais</summary>
+                <div class="fields">
+                  <div class="path-field"><label>Pasta ExeFS do MK8<input id="exefs" name="exefs" spellcheck="false" /></label><button type="button" class="ghost" data-browse="exefs" data-kind="folder" aria-label="Procurar: Pasta ExeFS do MK8" hidden>Procurar</button></div>
+                  <div class="path-field"><label>RomFS extraído<input id="romfs" name="romfs" spellcheck="false" /></label><button type="button" class="ghost" data-browse="romfs" data-kind="folder" aria-label="Procurar: RomFS extraído" hidden>Procurar</button></div>
+                  <div class="path-field"><label>Metadados NACP<input id="nacp" name="nacp" spellcheck="false" /></label><button type="button" class="ghost" data-browse="nacp" data-kind="nacp" aria-label="Procurar: Metadados NACP" hidden>Procurar</button></div>
+                  <div class="path-field"><label>Fontes do sistema<input id="fonts" name="fonts" spellcheck="false" /></label><button type="button" class="ghost" data-browse="fonts" data-kind="folder" aria-label="Procurar: Fontes do sistema" hidden>Procurar</button></div>
+                  <div class="path-field"><label>Fontes do runtime<input id="upstream" name="upstream" spellcheck="false" /></label><button type="button" class="ghost" data-browse="upstream" data-kind="folder" aria-label="Procurar: Fontes do runtime" hidden>Procurar</button></div>
+                </div>
+                <div class="row"><button type="submit" class="ghost">Salvar caminhos</button></div>
+              </details>
+            </form>
+
+            <h3>Log da preparação</h3>
+            <pre id="build-log" aria-label="Log da preparação">Nenhuma preparação iniciada.</pre>
+            <h3>Log das ferramentas</h3>
+            <pre id="setup-log" aria-label="Log das ferramentas">Nenhuma instalação de ferramentas iniciada.</pre>
+          </details>
+        </section>
+
+        <!-- Jogar -->
+        <section id="play" class="panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h1>Jogar</h1>
+              <p id="installation-state" class="muted">Nenhuma instalação validada.</p>
+            </div>
+            <span id="play-state" class="pill">Bloqueado</span>
+          </div>
+          <div class="card hero">
+            <span class="big-eight" aria-hidden="true">8</span>
+            <div class="hero-body">
+              <p id="game-state">Prepare o jogo para habilitar a execução.</p>
+              <div class="cta">
+                <button id="play-solo" class="primary big" disabled>Jogar solo</button>
+                <button id="play-online" class="ghost big" disabled>Jogar na sala</button>
+              </div>
+              <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
+            </div>
+          </div>
+          <details class="drawer">
+            <summary>Log do jogo</summary>
+            <pre id="game-log" aria-label="Log do jogo">Nenhum teste iniciado.</pre>
+          </details>
+        </section>
+
+        <!-- Multijogador -->
+        <section id="session" class="panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h1>Multijogador</h1>
+              <p id="network-mode" class="muted">Teste de transporte disponível sem o jogo.</p>
+            </div>
+            <span id="network-state" class="pill">Desconectado</span>
+          </div>
+
+          <form id="name-form" class="card inline">
+            <label>Nome de usuário<input id="username" maxlength="24" required /></label>
+            <button class="ghost">Salvar nome</button>
+          </form>
+
+          <div class="grid2">
+            <div class="card">
+              <h2>Criar sala</h2>
+              <div class="row">
+                <button id="host" class="primary">Criar sala na rede local</button>
+                <button id="host-internet" class="ghost" disabled>Criar sala pela internet</button>
+              </div>
+              <p id="internet-note" class="hint"></p>
+              <div id="room-code-box" hidden>
+                <label>Código da sala<input id="room-code" readonly /></label>
+                <button id="copy-room-code" class="ghost">Copiar código</button>
+              </div>
+              <button id="invite" class="ghost" disabled>Novo convite</button>
+              <div id="invite-output" hidden>
+                <label>Seu convite<textarea id="invite-text" rows="2" readonly></textarea></label>
+                <button id="copy" class="ghost">Copiar de novo</button>
+              </div>
+              <details id="invite-advanced">
+                <summary>Endereço alternativo (VPN ou porta redirecionada)</summary>
+                <label>IP e porta acessíveis pelo convidado<input id="endpoint" placeholder="192.168.1.10:47820" spellcheck="false" /></label>
+              </details>
+            </div>
+
+            <div class="card">
+              <h2>Entrar</h2>
+              <label>Código ou convite do anfitrião<textarea id="invite-input" rows="3" placeholder="MK8-… ou mk8://…" spellcheck="false"></textarea></label>
+              <div class="row">
+                <button id="join" class="primary">Entrar na sala</button>
+                <button id="scan-rooms" class="ghost">Buscar salas</button>
+              </div>
+              <ul id="rooms"></ul>
+            </div>
+          </div>
+
+          <div class="card statusbar">
+            <p id="peers">Sem participantes conectados.</p>
+            <button id="leave" class="ghost" disabled>Encerrar sessão</button>
+          </div>
+
+          <details class="drawer">
+            <summary>Como testar em duas máquinas</summary>
+            <ol class="howto">
+              <li>Cada PC instala o Launcher e prepara o jogo com os próprios arquivos (mesma versão 4.0.1).</li>
+              <li>Na mesma rede: libere <b>UDP 47820</b> no firewall do anfitrião. Pela internet: use o código <code>MK8-…</code> do relay.</li>
+              <li>O anfitrião cria a sala e envia um convite individual a cada amigo (vale por quatro horas).</li>
+              <li>Depois de conectar, todos usam <b>Jogar na sala</b>. No menu do jogo, segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião escolhe Create Room e os convidados entram pelo Lobby.</li>
+              <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
+            </ol>
+          </details>
+        </section>
+
+        <!-- Suporte -->
+        <section id="support" class="panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h1>Suporte</h1>
+              <p class="muted">Atualizações e relatórios para corrigir problemas.</p>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="card">
+              <h2>Atualizações</h2>
+              <p id="update-state" class="muted">Versão instalada: —</p>
+              <div class="row">
+                <button id="update-check" class="ghost">Verificar atualizações</button>
+                <button id="update-install" class="primary" disabled>Atualizar agora</button>
+              </div>
+              <p class="fine">O instalador é baixado dos Releases do projeto, conferido por SHA-256 e executado. Seus arquivos, builds e saves ficam.</p>
+            </div>
+            <div class="card">
+              <h2>Relatório de problemas</h2>
+              <p class="muted">Junta os logs do jogo, da preparação e das ferramentas num .zip. Caminhos pessoais são ocultados; saves e chaves não entram.</p>
+              <div class="row">
+                <button id="report" class="primary">Gerar relatório</button>
+                <button id="open-reports" class="ghost" hidden>Abrir pasta</button>
+              </div>
+              <p id="report-path" class="hint"></p>
+            </div>
+          </div>
+          <div class="card statusbar">
+            <p class="muted">Pasta de dados: <code id="data-dir">—</code></p>
+            <button id="open-data" class="ghost" hidden>Abrir pasta de dados</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer>MK8-online · projeto experimental sem vínculo com a Nintendo · use somente arquivos do seu próprio console</footer>
+  </body>
+</html>

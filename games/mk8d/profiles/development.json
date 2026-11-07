@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "game": "mk8d",
+  "name": "MK8 Deluxe development candidate",
+  "status": "unqualified",
+  "runtime": "smm2recomp",
+  "upstream_commit": "9dd1858fe8f4688ae5daa390c5e18d027300ada6",
+  "modules": {
+    "main": "0x7000000000",
+    "sdk": "0x7004000000",
+    "subsdk0": "0x7008000000",
+    "subsdk1": "0x700c000000",
+    "subsdk2": "0x7010000000",
+    "subsdk3": "0x7014000000",
+    "subsdk4": "0x7018000000"
+  },
+  "module_window_bytes": 67108864,
+  "simd": "c",
+  "gameplay_verified": false,
+  "notes": "Addresses reserve distinct 64 MiB windows; module size is checked. Build IDs are recorded from private inputs, not advertised as supported releases. Constructor ordering and SDK compatibility require real MK8 validation.",
+  "init_order": [
+    "sdk",
+    "subsdk4",
+    "subsdk3",
+    "subsdk2",
+    "subsdk1",
+    "subsdk0",
+    "main"
+  ]
+}

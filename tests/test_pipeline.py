@@ -1,0 +1,171 @@
+"""Authored fixtures only: no Nintendo code or assets."""
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'toolchain'))
+
+
+def module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    loaded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(loaded)
+    return loaded
+
+
+generator = module("mk8gen", ROOT / "toolchain/recompiler/generate.py")
+adapter = module("mk8prepare", ROOT / "runtime/prepare.py")
+pipeline = module("mk8build", ROOT / "toolchain/build.py")
+
+
+class SystemDataTests(unittest.TestCase):
+    def test_optional_fonts_go_to_the_active_save_directory_and_legacy_mii_is_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root/'fonts'
+            source.mkdir()
+            with patch.object(pipeline, 'mirror') as junction:
+                pipeline.prepare_system_data({'mii': str(root/'old-mii')}, root/'local')
+                junction.assert_not_called()
+                pipeline.prepare_system_data({'fonts': str(source)}, root/'local')
+                junction.assert_called_once_with(root/'local/user-no-mii/fonts', str(source), copy_ok=True)
+
+
+
+class MirrorTests(unittest.TestCase):
+    def test_romfs_is_real_folders_of_hard_links_and_follows_a_new_import(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            romfs = root/'imports/romfs'
+            (romfs/'Course/Gu_Menu').mkdir(parents=True)
+            (romfs/'Course/Gu_Menu/course.szs').write_bytes(b'v1')
+            (romfs/'Old.bin').write_bytes(b'old')
+            path = root/'game-data/id/extracted/romfs'
+            path.parent.mkdir(parents=True)
+            # Older builds left a junction, which the launcher's RedirectionTrust refuses.
+            subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(path), str(romfs)], check=True, capture_output=True)
+            pipeline.mirror(path, romfs)
+            self.assertFalse(path.is_junction())
+            self.assertTrue((romfs/'Old.bin').is_file(), 'removing the junction must keep its target')
+            self.assertTrue(os.path.samefile(path/'Course/Gu_Menu/course.szs', romfs/'Course/Gu_Menu/course.szs'))
+            # A new import replaces files: links follow it and stale entries go away.
+            (romfs/'Course/Gu_Menu/course.szs').unlink()
+            (romfs/'Course/Gu_Menu/course.szs').write_bytes(b'v2')
+            (romfs/'Old.bin').unlink()
+            pipeline.mirror(path, romfs)
+            self.assertEqual((path/'Course/Gu_Menu/course.szs').read_bytes(), b'v2')
+            self.assertFalse((path/'Old.bin').exists())
+
+def synthetic_nso(path):
+    # A hand-authored function returns 42. NSO metadata describes a single export.
+    text = bytearray(0x30)
+    struct.pack_into("<II", text, 0, 0x14000008, 0x100)
+    struct.pack_into("<II", text, 0x20, 0xd2800540, 0xd65f03c0)
+    ro = bytearray(0x200)
+    ro[:4] = b"MOD0"
+    struct.pack_into("<6i", ro, 4, 0x20, 0x300, 0x300, 0x1f0, 0x1f0, 0)
+    for offset, tag, value in [(0x20,4,0x180),(0x30,5,0x1a0),(0x40,6,0x1c0),(0x50,0,0)]:
+        struct.pack_into("<QQ",ro,offset,tag,value)
+    struct.pack_into("<II",ro,0x80,1,2)
+    ro[0xa0:0xa9]=b"\x00fixture\x00"
+    struct.pack_into("<IBBHQQ",ro,0xc0+24,1,0x12,0,1,0x20,8)
+    ro[0x1f0:0x1f4] = bytes([1, 0x1b, 0x03, 0x3b])
+    data = bytes(16)
+    header = bytearray(256); header[:4]=b"NSO0"
+    struct.pack_into("<I",header,12,0x38)
+    file_off=256
+    for i,(mem_off,segment) in enumerate([(0,text),(0x100,ro),(0x400,data)]):
+        struct.pack_into("<III",header,0x10+i*16,file_off,mem_off,len(segment))
+        struct.pack_into("<I",header,0x60+i*4,len(segment))
+        header[0xa0+32*i:0xc0+32*i]=hashlib.sha256(segment).digest()
+        file_off+=len(segment)
+    path.write_bytes(header+text+ro+data)
+
+
+class PipelineTests(unittest.TestCase):
+    def test_game_identity_rejects_other_titles_and_bad_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.npdm"
+            raw = bytearray(0xc0)
+            raw[:4] = b"META"
+            raw[0x0c] = 1
+            struct.pack_into("<II", raw, 0x70, 0x80, 0x40)
+            raw[0x80:0x84] = b"ACI0"
+            struct.pack_into("<Q", raw, 0x90, 0x0100152000022000)
+            path.write_bytes(raw)
+            self.assertEqual(pipeline.validate_game_identity(path), "0100152000022000")
+            raw[0x0c] = 4
+            path.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError, "AArch32"):
+                pipeline.validate_game_identity(path)
+            raw[0x0c] = 1
+            path.write_bytes(raw)
+            (path.parent / "subsdk9").write_bytes(b"fixture")
+            self.assertTrue(any("subsdk9" in e for e in pipeline.preflight({"exefs": directory})))
+            struct.pack_into("<Q", raw, 0x90, 0x0100000000010000)
+            path.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError, "Jogo incorreto"):
+                pipeline.validate_game_identity(path)
+            struct.pack_into("<I", raw, 0x70, 0xffffff00)
+            path.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError, "ACI0"):
+                pipeline.validate_game_identity(path)
+
+    def test_missing_inputs_fail_with_actionable_errors(self):
+        errors=pipeline.preflight({})
+        self.assertTrue(any("main.npdm" in e for e in errors))
+
+    def test_nso_rejects_hash_corruption_and_large_segment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            p=Path(directory)/"fixture";synthetic_nso(p)
+            self.assertEqual(len(generator.validate_nso(p,64*1024*1024)),64)
+            raw=bytearray(p.read_bytes());raw[-1]^=1;p.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError,"hash"):
+                generator.validate_nso(p,64*1024*1024)
+            synthetic_nso(p);raw=bytearray(p.read_bytes());struct.pack_into("<I",raw,0x18,0xffffffff);p.write_bytes(raw)
+            with self.assertRaisesRegex(ValueError,"bounds"):
+                generator.validate_nso(p,64*1024*1024)
+
+    def test_runtime_adapter_tracks_third_module_and_stops_unknown_hle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)/"source"
+            result=adapter.prepare(ROOT/"upstream/smm2recomp",out)
+            self.assertEqual(result["abi"],3)
+            self.assertFalse(result["gameplay_verified"])
+            dispatch=(out/"runtime/dispatch.c").read_text()
+            self.assertIn("RECOMP_MODULE_COUNT",dispatch)
+            self.assertNotIn("t < 2",dispatch)
+            self.assertIn("required host service is not implemented",dispatch)
+            self.assertIn("RECOMP_MODULES(TABLE)",(out/"tools/gamelib_entry.c").read_text())
+            self.assertIn("X(subsdk4,", (out/"runtime/module_config.h").read_text())
+            with self.assertRaisesRegex(ValueError,"fresh"):
+                adapter.prepare(ROOT/"upstream/smm2recomp",out)
+
+    def test_real_generator_and_resume_with_authored_nso(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);exefs=root/"exefs";exefs.mkdir();synthetic_nso(exefs/"main")
+            profile={"modules":{"main":"0x7000000000"},"module_window_bytes":64*1024*1024,"simd":"c"}
+            source=ROOT/"upstream/smm2recomp/recomp";output=root/"generated"
+            generator.generate(source,exefs,output,profile)
+            chunk=output/"main/main_000.c"
+            self.assertTrue(chunk.is_file())
+            text=chunk.read_text();self.assertIn("f_7000000020",text)
+            stamp=chunk.stat().st_mtime_ns
+            generator.generate(source,exefs,output,profile)
+            self.assertEqual(stamp,chunk.stat().st_mtime_ns)
+            chunk.write_text("corrupted")
+            generator.generate(source,exefs,output,profile)
+            self.assertEqual(text,chunk.read_text())
+
+
+if __name__=="__main__":
+    unittest.main()

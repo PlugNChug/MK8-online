@@ -1,0 +1,12 @@
+[package]
+name = "mk8-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+mk8-transport = { path = "../transport" }
+mk8-manifest = { path = "../manifest" }
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+tiny_http = "0.12"

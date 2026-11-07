@@ -1,0 +1,24 @@
+[package]
+name = "mk8-online"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "Launcher"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+mk8-manifest = { path = "../../crates/manifest" }
+mk8-installer = { path = "../../crates/installer" }
+mk8-build-manager = { path = "../../crates/build-manager" }
+mk8-session = { path = "../../crates/session" }
+mk8-transport = { path = "../../crates/transport" }
+serde.workspace = true
+serde_json.workspace = true
+tiny_http = "0.12"
+tauri = { version = "2", features = [] }
+rfd = "0.17"

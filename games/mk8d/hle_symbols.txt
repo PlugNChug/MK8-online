@@ -1,0 +1,1 @@
+# No guessed game function replacements. Native NVN binding uses the shared runtime.

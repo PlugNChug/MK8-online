@@ -1,0 +1,7 @@
+* text=auto
+*.py text eol=lf
+*.rs text eol=lf
+*.patch -text
+LICENSE.upstream -text
+upstream/smm2recomp/** -text
+upstream/LASRecomp/** -text

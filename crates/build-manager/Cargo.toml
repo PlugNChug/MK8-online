@@ -1,0 +1,8 @@
+[package]
+name = "mk8-build-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+mk8-manifest = { path = "../manifest" }
+serde.workspace = true
