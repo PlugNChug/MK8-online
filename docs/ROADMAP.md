@@ -20,8 +20,10 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 3. Desempenho
 
-- **[visível]** Engasgos no primeiro uso de shaders e pipelines; o cache em disco reduz isso nas corridas seguintes.
-- **[visível]** O FPS oscila no Grande Prêmio. O modo de compute adiado ajuda, mas os picos de frametime continuam.
+- **[visível]** Engasgos no primeiro uso de shaders e pipelines (100–400 ms ao ver um efeito pela primeira vez); o cache em disco evita nas corridas seguintes. `MK8_SHADER_WAIT_MS=4` limita a espera e pula o efeito por alguns quadros: opcional, em teste.
+- **[visível]** Picos menores de 25–45 ms ao entrar em áreas novas (prefetch de shaders) e na tradução de comandos.
+- Melhorado: com o anel de 32 envios, o GP passou de p95 21,2 ms para 17,4 ms (quadros acima de 20 ms: 300 → 41 no trecho medido), e o Water Park ficou em 59,9 FPS com p99 17,6 ms.
+- Corrigido: travamento (`c0000005`) no início da corrida ao comparar samplers copiados pelo jogo.
 - **[validação]** 60 FPS estáveis e velocidade correta do jogo: o MK8 avança um passo por quadro, então abaixo de 60 FPS o jogo fica em câmera lenta.
 
 ## 4. Qualificação da corrida

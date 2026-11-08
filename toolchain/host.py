@@ -206,6 +206,12 @@ def prepare_host_sources(source, output):
     prepare_texture_init(runtime)
     from texture_pool import prepare as prepare_texture_pool
     prepare_texture_pool(runtime)
+    from sampler_inline import prepare as prepare_sampler_inline
+    prepare_sampler_inline(runtime)
+    from submit_ring import prepare as prepare_submit_ring
+    prepare_submit_ring(runtime)
+    from shader_budget import prepare as prepare_shader_budget
+    prepare_shader_budget(runtime)
     menu = runtime/'ui/menu.mm'
     text = menu.read_text(encoding='utf-8')
     boundary = '        tabs_body(scale, true, NULL);'
