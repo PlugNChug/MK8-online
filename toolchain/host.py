@@ -222,6 +222,10 @@ def prepare_host_sources(source, output):
     prepare_shader_budget(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
+    from pipeline_cache_save import prepare as prepare_pipeline_cache_save
+    prepare_pipeline_cache_save(runtime)
+    from ipc_core_release import prepare as prepare_ipc_core_release
+    prepare_ipc_core_release(runtime)
     menu = runtime/'ui/menu.mm'
     text = menu.read_text(encoding='utf-8')
     boundary = '        tabs_body(scale, true, NULL);'
