@@ -30,12 +30,16 @@ def race_input(mode, last_frame, course='stadium', cup=0, track=None):
         start += ',880:DOWN:6'
         for frame in range(940, 2401, 160):
             if frame == 1740:  # the cup screen: column, then row (the cursor starts on Mushroom Cup)
+                # (the screen takes input from ~1680 on, a few frames later in some runs: a press there was lost and the
+                # Egg Cup run raced Cloudtop Cruise; the moves start later and the confirm waits for them)
                 moves = ['RIGHT'] * (cup % 6) + ['DOWN'] * (cup // 6)
                 for step, button in enumerate(moves):
-                    start += f',{1676 + step * 11}:{button}:5'
-            if frame == 1900:
+                    start += f',{1700 + step * 16}:{button}:6'
+                frame = 1820
+            elif frame == 1900:
                 for step in range(track):
-                    start += f',{1820 + step * 25}:RIGHT:6'
+                    start += f',{1890 + step * 28}:RIGHT:6'
+                frame = 2000
             start += f',{frame}:A:6'
     else:
         start += ''.join(f',{frame}:A:6' for frame in range(920, 2401, 160))

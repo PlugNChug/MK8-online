@@ -1,6 +1,5 @@
 # MK8-online
-![tag-ratOne](docs/tag-ratone-darkmode.png#gh-dark-mode-only)
-![tag-ratOne](docs/tag-ratone-lightmode.png#gh-ligth-mode-only)
+![tag-ratOne](docs/tag-ratone-tend.png)
 
 Recompilação AArch64 antecipada para Windows x64, com launcher local, runtime C/C++ e gráficos Vulkan. Objetivo: preparar uma vez, jogar e hospedar uma sala entre amigos no próprio PC.
 

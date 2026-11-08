@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -107,6 +108,10 @@ def run_track(cup, index, args):
         for shot in sorted(session.glob('frame-*.png')):
             mean, black, white, magenta = map(float, powershell(STATS, str(shot)).replace(',', '.').split())
             result['shots'].append({'file': str(shot), 'mean': mean, 'black': black, 'white': white, 'magenta': magenta})
+        # The session's save / shader cache copy (~650 MB) is temporary: kept are the log, the captures and run.json.
+        data = session / 'data'
+        if data.is_dir() and not any(p.is_symlink() or getattr(p, 'is_junction', lambda: False)() for p in data.rglob('*')):
+            shutil.rmtree(data, ignore_errors=True)
     return result
 
 

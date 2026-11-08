@@ -214,6 +214,8 @@ def prepare_host_sources(source, output):
     prepare_online_notice(runtime)
     from movie_output import prepare as prepare_movie_output
     prepare_movie_output(runtime)
+    from thread_name_exception import prepare as prepare_thread_name_exception
+    prepare_thread_name_exception(runtime)
     from sampler_inline import prepare as prepare_sampler_inline
     prepare_sampler_inline(runtime)
     from submit_ring import prepare as prepare_submit_ring
