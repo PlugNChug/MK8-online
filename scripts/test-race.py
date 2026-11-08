@@ -17,13 +17,24 @@ LOCAL = ROOT / 'local'
 PERF = re.compile(r'\[vk\] t=([\d.]+) frame (\d+) ([\d.]+) fps max (\d+)ms')
 
 
-def race_input(mode, last_frame, course='stadium'):
+# The 4.0.1 cup screen in Time Trial: two rows of six cups, then the cup's four tracks in a row.
+CUPS = ('mushroom', 'flower', 'star', 'special', 'egg', 'crossing',
+        'shell', 'banana', 'leaf', 'lightning', 'triforce', 'bell')
+COURSES = ('stadium', 'water-park', 'sweet-sweet-canyon')
+
+
+def race_input(mode, last_frame, course='stadium', cup=0, track=None):
     start = '400:A:6,520:DOWN:6,580:A:6,760:A:6'
     if mode == 'time-trial':
+        track = COURSES.index(course) if track is None else track
         start += ',880:DOWN:6'
         for frame in range(940, 2401, 160):
+            if frame == 1740:  # the cup screen: column, then row (the cursor starts on Mushroom Cup)
+                moves = ['RIGHT'] * (cup % 6) + ['DOWN'] * (cup // 6)
+                for step, button in enumerate(moves):
+                    start += f',{1676 + step * 11}:{button}:5'
             if frame == 1900:
-                for step in range(('stadium', 'water-park', 'sweet-sweet-canyon').index(course)):
+                for step in range(track):
                     start += f',{1820 + step * 25}:RIGHT:6'
             start += f',{frame}:A:6'
     else:
@@ -75,7 +86,7 @@ def run(args):
     profile = session / 'mii-profile.json'
     shutil.copyfile(LOCAL / 'mii-profile.json', profile)
 
-    script = race_input(args.mode, args.last_frame, args.course)
+    script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track)
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(('MK8_', 'LARECOMP_', 'RECOMP_', 'NX_LAN_'))}
     env.update(dict(args.env))
@@ -92,7 +103,7 @@ def run(args):
     )
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
-        'course': args.course,
+        'course': args.course, 'cup': args.cup, 'track': args.track,
         'input': env['LARECOMP_INPUT'], 'last_frame': args.last_frame,
         'cache_from': str(args.cache_from.resolve()) if args.cache_from else None,
     }, indent=2), encoding='utf-8')
@@ -124,10 +135,12 @@ if __name__ == '__main__':
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
                         help='Time Trial course in Mushroom Cup')
+    parser.add_argument('--cup', choices=CUPS, default='mushroom', help='Time Trial cup (with --track)')
+    parser.add_argument('--track', type=int, choices=range(4), help='Track 0-3 of --cup (overrides --course)')
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     args = parser.parse_args()
-    if args.mode != 'time-trial' and args.course != 'stadium':
-        parser.error('--course requires time-trial')
+    if args.mode != 'time-trial' and (args.course != 'stadium' or args.cup != 'mushroom' or args.track is not None):
+        parser.error('--course, --cup and --track require time-trial')
     if (args.shots < 1 or args.shot_step < 1 or args.last_frame <= args.shot_step * (args.shots - 1)
             or any(len(pair) != 2 for pair in args.env)):
         parser.error('Require positive capture frames, capture count and step, and --env NAME=VALUE')

@@ -207,6 +207,18 @@ Restos de oscilação: picos de 25–45 ms no prefetch de shaders (10–27 ms ao
 - `multiplayer-bh1f9ewb`, assíncrona: os dois na corrida (59,1 e 59,0 FPS, p99 17,6/17,7 ms em 7300–9190).
 - O erro apareceu uma vez em duas execuções com o modo assíncrono. Nas três há pausas de 400–500 ms fora do backend no começo da corrida, com dois jogos dividindo CPU e GPU. A causa não foi isolada. Validar em duas máquinas e, se o erro voltar, comparar com `MK8_ASYNC_SUBMIT=0`.
 
+### Pistas e personagens pretos; bateria de pistas (08/11/2026)
+
+**Relato do teste manual (0.1.2).** Personagens às vezes todos pretos, pistas que "não carregam" e ficam pretas, fragmentos sem textura nos karts da primeira pista; 50–60 FPS.
+
+**Causa das pistas pretas.** Sweet Sweet Canyon e Thwomp Ruins ficavam pretas a corrida inteira, com só o HUD visível (luma média ~5). Com `MK8_SHADER_WAIT_MS=-1` a imagem ficava normal (luma 106), e não dependiam do envio assíncrono nem de `bc_render.py`. O orçamento de espera de shaders pulava draws durante o carregamento (17.500 pulos até o quadro 2364, com cache frio). Entre eles estavam os draws feitos **uma única vez** no início da corrida: as sondas de iluminação e os cubos de reflexo. Sem eles, a iluminação ficava zerada: pista e karts pretos. A mesma causa explica personagens pretos.
+
+**Correção.** `toolchain/shader_budget.py` só pula draws cujos alvos são todos do tamanho da tela (`scalable`), redesenhados a cada quadro. Draws em cubos, sondas, mapas fora da tela ou alvos ainda sem imagem esperam o shader, como no upstream. `tests/test_shader_budget.py` exercita alvo de tela (pulado dentro do orçamento), sonda e alvo sem imagem (esperam até ficar pronto). Depois da correção: Sweet Sweet Canyon com luma 136/106/108 e Thwomp Ruins com 163/80/82, ambos com média de 59,1 FPS.
+
+**Bateria de pistas.** `scripts/test-tracks.py` roda o Contra o Relógio em cada uma das 48 pistas do 4.0.1, com capturas nos quadros 3400/3900/4400. Registra FPS mínimo/médio, pico, luminância, % preto/branco/magenta e problemas do log em `<saída>/results.json`, `results.md` e numa folha de miniaturas por copa. A execução é retomável: pistas já testadas são puladas. `scripts/test-race.py` ganhou `--cup` e `--track`; a navegação foi conferida até Bell Cup → Big Blue. Até agora 6 de 48 pistas foram testadas, todas com imagem correta e 54–59 FPS: Mushroom (4), Mario Circuit e Toad Harbor. A rodada foi interrompida pelo sistema por falta de memória em Twisted Mansion.
+
+**Fragmentos sem textura nos karts (em investigação).** No Estádio e no Water Park, durante a corrida, um sampler de cubemap lê um ID que contém uma textura 2D 1024×1024 BC3 (`[tex] type mismatch: want 3 have 1`) e recebe uma view vazia. O histórico de cubemaps (`texture_pool.py`) não cobre esse caso, porque nunca houve cubemap naquele ID. Novo log `[mk8:texpool] cube sampler at ID …, no cube map ever there` registra ID, textura e quadro para rastrear de onde vem esse ID.
+
 ### Exposição estourada: causa e correção (07–08/11/2026)
 
 **Sintoma.** Não era exposição global. Céu, grama e arquibancada ficavam normais; asfalto, paredes, metais e karts (reflexo especular) ficavam brancos/amarelados. O estado se fixava no início da corrida, não se recuperava e aparecia em cerca de metade dos GPs (9 das 11 execuções anteriores à correção).

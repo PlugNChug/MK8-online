@@ -8,6 +8,12 @@ and its draws are skipped until it is ready, as in skip mode (LARECOMP_ASYNC_SHA
 Compute dispatches still wait in full, because the game may read their results. A negative value keeps the
 upstream behaviour. Full Grand Prix with async translation (07/11/2026): one draw skipped in 11,400 frames, no
 stall over 60 ms, against 158-368 ms stalls without the budget in the run before.
+
+Only draws whose targets are all screen-sized (textures.c `scalable`: redrawn every frame) may be skipped. The
+game draws some targets once: at race start, while the track's shaders still compile, it renders the lighting and
+reflection probes (cubes, the BC3 cube array) a single time. Skipping those left them empty for the whole race,
+and the track and the karts were drawn black (Sweet Sweet Canyon and Thwomp Ruins on a cold shader cache,
+08/11/2026: mean luma 5 against 106 with the full wait). Draws into any other target wait in full, as upstream.
 """
 
 WAIT_FOR = '''
@@ -45,9 +51,27 @@ static double mk8_shader_budget_ms(void) {
     if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : 4; }
     return v;
 }
+// Every target of the draw is screen-sized (redrawn each frame): skipping it costs a frame of one object. Targets
+// drawn once (probes, cube maps, baked maps) or not created yet are never skipped.
+static bool mk8_targets_redrawn(void) {
+    int n = 0;
+    for (int i = 0; i < st.rt.ncolor; i++) {
+        const NvnTexture *t = st.rt.color[i];
+        if (!t) continue;
+        const TexBackend *b = t->backend;
+        if (!b || !b->scalable) return false;
+        n++;
+    }
+    if (st.rt.depth) {
+        const TexBackend *b = st.rt.depth->backend;
+        if (!b || !b->scalable) return false;
+        n++;
+    }
+    return n > 0;
+}
 static bool mk8_job_ready(JobQueue *q, BuildJob *j) {
     double budget = mk8_shader_budget_ms();
-    if (budget < 0) { job_run_or_wait(q, j); return true; }
+    if (budget < 0 || !mk8_targets_redrawn()) { job_run_or_wait(q, j); return true; }
     static uint64_t frame = ~0ull;
     static double spent;
     uint64_t f = vk_frame_counter();

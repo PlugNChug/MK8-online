@@ -35,6 +35,14 @@ class ShaderBudgetTests(unittest.TestCase):
 #include <time.h>
 #include <windows.h>
 #include "buildsync.h"
+#include "nvn/nvn.h"
+#include "nvn/vulkan/vk.h"
+void rt_log(const char *fmt, ...) { (void)fmt; }
+/* the draw's targets: a screen-sized one (redrawn each frame) or a 32x32 probe cube (drawn once) */
+static TexBackend screen_b = {.scalable = true}, probe_b = {.scalable = false};
+static NvnTexture screen_t, probe_t;
+static struct { struct { int ncolor; NvnTexture *color[8]; NvnTexture *depth; } rt; } st;
+static void target(NvnTexture *t) { st.rt.ncolor = 1; st.rt.color[0] = t; }
 static uint64_t SDL_GetTicksNS(void) {
     LARGE_INTEGER f, t; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&t);
     return (uint64_t)((double)t.QuadPart * 1e9 / (double)f.QuadPart);
@@ -45,6 +53,8 @@ static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
 ''' + budget + r'''
 int main(int argc, char **argv) {
     (void)argv;
+    screen_t.backend = &screen_b; probe_t.backend = &probe_b;
+    target(&screen_t);
     if (argc > 1 && !strcmp(argv[1], "default")) return mk8_shader_budget_ms() == 4 ? 0 : 11;  /* unset: 4 ms */
     if (argc > 1) {  /* negative budget: the upstream wait runs a queued job inline and returns ready */
         JobQueue *q = jobq_create(1);
@@ -70,7 +80,20 @@ int main(int argc, char **argv) {
     frame_no++;                                         /* the next frame has its own budget */
     Sleep(150);                                         /* both finish on the worker meanwhile */
     if (!mk8_job_ready(q, &a) || !mk8_job_ready(q, &b)) return 6;
-    return mk8_sb_skips == 2 ? 0 : 7;
+    if (mk8_sb_skips != 2) return 7;
+    /* a draw into a probe (drawn once) is never skipped: it waits for its build in full */
+    BuildJob c = {0};
+    jobq_submit(q, &c, slow, (void *)(uintptr_t)60);
+    target(&probe_t);
+    frame_no++;
+    if (!mk8_job_ready(q, &c) || atomic_load(&c.state) != JOB_DONE) return 8;
+    /* nor one whose target has no image yet */
+    BuildJob d = {0};
+    jobq_submit(q, &d, slow, (void *)(uintptr_t)60);
+    screen_t.backend = NULL; target(&screen_t);
+    frame_no++;
+    if (!mk8_job_ready(q, &d) || atomic_load(&d.state) != JOB_DONE) return 9;
+    return mk8_sb_skips == 2 ? 0 : 10;
 }
 ''', encoding='utf-8')
             exe = out/'budget.exe'

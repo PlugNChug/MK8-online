@@ -139,11 +139,19 @@ LOOKUP = '''
 // MK8 (toolchain/texture_pool.py): the entry a sampler reads at a pool ID. A cube sampler whose ID now holds a texture
 // that is not a cube map reads the last cube map registered there (vk_view could only give it an empty view).
 const NvnTexEntry *mk8_texpool_cube(NvnDescPool *d, uint32_t id);
+uint64_t vk_frame_counter(void);
 static const NvnTexEntry *mk8_tex_entry(NvnDescPool *p, uint32_t tic, int type) {
     const NvnTexEntry *e = &((NvnTexEntry *)p->entries)[tic];
     if ((type != TEXTYPE_CUBE && type != TEXTYPE_CUBE_ARRAY) || !e->tex || e->tex->target == 8 || e->tex->target == 9) return e;
     const NvnTexEntry *cube = mk8_texpool_cube(p, tic);
-    if (!cube) return e;
+    if (!cube) {
+        static int nolog;  // (no cube map was ever registered at this ID: what does the sampler get?)
+        if (nolog++ < 16)
+            LOG("[mk8:texpool] cube sampler at ID %u: %ux%u target %u fmt %#x addr %llx, no cube map ever there (frame %llu)\\n",
+                tic, e->tex->width, e->tex->height, e->tex->target, e->tex->format, (unsigned long long)e->tex->addr,
+                (unsigned long long)vk_frame_counter());
+        return e;
+    }
     static uint64_t n;
     if (n++ < 8 || n % 100000 == 0)
         LOG("[mk8:texpool] cube sampler at ID %u: %ux%u target %u registered there now, its last cube map %p used (%llu)\\n", tic,
