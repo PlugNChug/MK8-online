@@ -394,11 +394,16 @@ pub fn tool_checks(root: &Path) -> Vec<Value> {
                 .is_ok_and(|marker| marker.trim() == hash)
         })
         .count();
+    // Written by `runtime-dlls.py --prefetch` at the end of the step: the DLLs the build
+    // copies are already downloaded and checked (older tool folders run the step once more).
+    let prefetched = folder.join("dlls/index.json").is_file();
     checks.push(check(
         "Bibliotecas gráficas e FFmpeg".into(),
-        !pins.is_empty() && extracted == pins.len(),
+        !pins.is_empty() && extracted == pins.len() && prefetched,
         if pins.is_empty() {
             "Lista de pacotes fixados não encontrada.".into()
+        } else if extracted == pins.len() && !prefetched {
+            "Pacotes extraídos; falta baixar as DLLs usadas pelo jogo.".into()
         } else {
             format!(
                 "{extracted} de {} pacotes extraídos com o hash esperado.",
@@ -504,5 +509,39 @@ mod tests {
             script_constant("VERSION = '0.17.0'\nSHA256 = 'x'", "VERSION").as_deref(),
             Some("0.17.0")
         );
+    }
+
+    #[test]
+    fn libraries_are_ready_only_after_the_dlls_were_prefetched() {
+        if std::env::var_os("MK8_NATIVE_TOOLS").is_some() {
+            return; // (checks the folder a source checkout uses)
+        }
+        let root = temp("checks").with_file_name("root");
+        let _ = fs::remove_dir_all(&root);
+        let deps = root.join("local/native-tools/deps");
+        fs::create_dir_all(root.join("upstream/smm2recomp/recomp/tools")).unwrap();
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::create_dir_all(&deps).unwrap();
+        let pin = "c".repeat(64);
+        fs::write(
+            root.join("upstream/smm2recomp/recomp/tools/fetch_deps.sh"),
+            format!("{pin} sdl3-3.4\n"),
+        )
+        .unwrap();
+        fs::write(root.join("scripts/setup-runtime-deps.py"), "").unwrap();
+        fs::write(deps.join("sdl3-3.4.done"), &pin).unwrap();
+        let libraries = |root: &Path| {
+            tool_checks(root)
+                .into_iter()
+                .find(|c| c["name"] == "Bibliotecas gráficas e FFmpeg")
+                .unwrap()
+        };
+        let before = libraries(&root);
+        assert_eq!(before["ok"], false);
+        assert!(before["detail"].as_str().unwrap().contains("DLLs"));
+        fs::create_dir_all(deps.join("dlls")).unwrap();
+        fs::write(deps.join("dlls/index.json"), "{}").unwrap();
+        assert_eq!(libraries(&root)["ok"], true);
+        let _ = fs::remove_dir_all(&root);
     }
 }

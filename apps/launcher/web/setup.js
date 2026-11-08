@@ -42,10 +42,13 @@ async function space() {
     }
     const free = result.free_gib.toFixed(1).replace(".", ",");
     const ok = result.free_gib >= state.needed_gib;
-    text.textContent = ok
-      ? `${free} GB livres neste disco.`
-      : `Só ${free} GB livres neste disco: a preparação do jogo precisa de cerca de ${state.needed_gib} GB.`;
-    text.classList.add(ok ? "ok" : "warn");
+    const hdd = result.hard_disk === true;
+    text.textContent =
+      (ok
+        ? `${free} GB livres neste disco.`
+        : `Só ${free} GB livres neste disco: a preparação do jogo precisa de cerca de ${state.needed_gib} GB.`) +
+      (hdd ? " Este disco é um HD: a preparação do jogo pode levar até 1 hora. Num SSD ela fica bem mais rápida." : "");
+    text.classList.add(ok && !hdd ? "ok" : "warn");
   } catch {
     text.textContent = "";
   }

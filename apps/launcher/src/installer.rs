@@ -246,6 +246,102 @@ pub fn free_gib(path: &Path) -> Option<f64> {
     (ok != 0).then(|| avail as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
+/// Whether the disk that holds `path` is a hard disk (the storage driver reports a seek
+/// penalty), `None` when Windows does not say (network drives, some RAID or USB adapters).
+/// The game import and the build write ~12 GB of small files: on a hard disk they take
+/// several times longer.
+pub fn hard_disk(path: &Path) -> Option<bool> {
+    use std::os::windows::ffi::OsStrExt;
+    #[repr(C)]
+    struct Query {
+        property: u32,
+        kind: u32,
+        extra: [u8; 4],
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct SeekPenalty {
+        version: u32,
+        size: u32,
+        incurs_seek_penalty: u8,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetVolumePathNameW(file: *const u16, volume: *mut u16, length: u32) -> i32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *mut std::ffi::c_void,
+            disposition: u32,
+            flags: u32,
+            template: *mut std::ffi::c_void,
+        ) -> isize;
+        fn DeviceIoControl(
+            device: isize,
+            code: u32,
+            input: *const std::ffi::c_void,
+            input_size: u32,
+            output: *mut std::ffi::c_void,
+            output_size: u32,
+            returned: *mut u32,
+            overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+        fn CloseHandle(handle: isize) -> i32;
+    }
+    const STORAGE_DEVICE_SEEK_PENALTY_PROPERTY: u32 = 7;
+    const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D_1400;
+    let existing = path.ancestors().find(|p| p.is_dir())?;
+    let wide: Vec<u16> = existing.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut volume = [0u16; 261];
+    if unsafe { GetVolumePathNameW(wide.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) } == 0 {
+        return None;
+    }
+    let root = String::from_utf16_lossy(&volume[..volume.iter().position(|&c| c == 0)?]);
+    let letter = root.strip_suffix(":\\").filter(|l| l.len() == 1)?;
+    let device: Vec<u16> = format!("\\\\.\\{letter}:")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    // No access rights are needed to query storage properties, so this works without elevation.
+    let handle = unsafe {
+        CreateFileW(
+            device.as_ptr(),
+            0,
+            3,
+            std::ptr::null_mut(),
+            3,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == -1 {
+        return None;
+    }
+    let query = Query {
+        property: STORAGE_DEVICE_SEEK_PENALTY_PROPERTY,
+        kind: 0,
+        extra: [0; 4],
+    };
+    let mut answer = SeekPenalty::default();
+    let mut returned = 0u32;
+    let ok = unsafe {
+        DeviceIoControl(
+            handle,
+            IOCTL_STORAGE_QUERY_PROPERTY,
+            &query as *const Query as *const std::ffi::c_void,
+            std::mem::size_of::<Query>() as u32,
+            &mut answer as *mut SeekPenalty as *mut std::ffi::c_void,
+            std::mem::size_of::<SeekPenalty>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { CloseHandle(handle) };
+    (ok != 0 && returned as usize >= std::mem::size_of::<SeekPenalty>() - 3)
+        .then_some(answer.incurs_seek_penalty != 0)
+}
+
 fn powershell(script: &str, env: &[(&str, &Path)]) -> Result<(), Error> {
     use std::os::windows::process::CommandExt;
     let mut command = Command::new("powershell.exe");
@@ -616,6 +712,7 @@ fn state(setup: &Setup) -> Value {
         "desktop": previous.desktop,
         "update": previous.found,
         "free_gib": free_gib(&previous.data),
+        "hard_disk": hard_disk(&previous.data),
         "needed_gib": NEEDED_GIB,
     })
 }
@@ -626,7 +723,11 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
         ("GET", "/api/state") => Ok(state(setup)),
         ("POST", "/api/space") => {
             let path = PathBuf::from(body["path"].as_str().unwrap_or(""));
-            Ok(json!({"free_gib": path.is_absolute().then(|| free_gib(&path)).flatten()}))
+            let absolute = path.is_absolute();
+            Ok(json!({
+                "free_gib": absolute.then(|| free_gib(&path)).flatten(),
+                "hard_disk": absolute.then(|| hard_disk(&path)).flatten(),
+            }))
         }
         ("POST", "/api/install") => {
             if setup.started && setup.progress.lock().unwrap().state == "running" {
@@ -842,6 +943,14 @@ mod tests {
     fn free_space_of_a_folder_still_to_be_created() {
         let missing = std::env::temp_dir().join("mk8-online-nao-existe/ainda/nao");
         assert!(free_gib(&missing).is_some_and(|gib| gib > 0.0));
+    }
+
+    #[test]
+    fn disk_kind_of_the_system_drive_is_reported() {
+        // Every local fixed disk answers the seek-penalty query (true on a hard disk, false on an
+        // SSD); a folder still to be created is looked up through its existing parent.
+        let missing = std::env::temp_dir().join("mk8-online-nao-existe/ainda/nao");
+        assert!(hard_disk(&missing).is_some());
     }
 
     #[test]
