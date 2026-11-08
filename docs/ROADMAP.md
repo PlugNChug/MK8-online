@@ -10,7 +10,9 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 - **[validação]** Corrida entre **duas máquinas** pela LAN direta (UDP 47820 no firewall do anfitrião). O transporte e o roteiro já existem; falta repetir com dois PCs reais.
 - **[validação]** Sala pela internet com **relay público** HTTPS/UDP (`mk8-relay`). Até agora só foi testado em loopback; NAT, latência e MTU não foram medidos.
-- **[visível]** Tela dividida: dois controles são reconhecidos, mas a seleção de personagens não avança.
+- Verificado em 08/11/2026 com a build atual: relay em loopback e LAN direta com dois jogos na mesma corrida, 60 FPS, sem erro de comunicação. Corrida VS e Batalha funcionam. Vídeos dos menus corrigidos.
+- **[visível]** No lobby LAN, o nome do segundo jogador aparece espelhado.
+- **[visível]** Tela dividida: depois do applet de controles, a seleção de personagens para 2 jogadores ignora os botões dos dois jogadores, embora o jogo leia e receba os dois controles (diagnósticos em `toolchain/split_screen.py`).
 - **[validação]** Mais de quatro jogos reais (até 12), com perda/atraso de rede e reconexão.
 
 ## 2. Imagem

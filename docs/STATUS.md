@@ -207,6 +207,24 @@ Restos de oscilação: picos de 25–45 ms no prefetch de shaders (10–27 ms ao
 - `multiplayer-bh1f9ewb`, assíncrona: os dois na corrida (59,1 e 59,0 FPS, p99 17,6/17,7 ms em 7300–9190).
 - O erro apareceu uma vez em duas execuções com o modo assíncrono. Nas três há pausas de 400–500 ms fora do backend no começo da corrida, com dois jogos dividindo CPU e GPU. A causa não foi isolada. Validar em duas máquinas e, se o erro voltar, comparar com `MK8_ASYNC_SUBMIT=0`.
 
+### Modos de jogo e multijogador (08/11/2026)
+
+Testes com a build atual (todas as correções acima), roteiros automáticos e capturas.
+
+| Modo | Resultado |
+|---|---|
+| **Grande Prêmio, Contra o Relógio** | Funcionam (seções anteriores). |
+| **Corrida VS** (`race-time-trial-e7a0vls6`) | Ajustes (100cc, itens, CPUs, 4 corridas), seleção de pista e corrida com 12 karts e posições atualizando. Funciona. |
+| **Batalha** (`race-time-trial-hrjkv8yu`) | Ajustes, Balloon Battle no Battle Stadium, cronômetro, balões e itens. Funciona. |
+| **Multijogador por relay/código** (`multiplayer-fw34pdw8`) | Dois jogos reais na mesma corrida (anfitrião Mario, convidado Luigi com a marca "Host"), 60 FPS nos dois, imagem correta, sem erro de comunicação. |
+| **Multijogador pela LAN direta** (`multiplayer-b99dbh6f`) | Sala com "Host" e "Guest", corrida iniciada nos dois, 60 FPS, sem erro de comunicação. No lobby do convidado, o nome "Guest" aparece **espelhado** (defeito de texto a investigar). |
+| **Online Play (menu do jogo)** | Usa os servidores da Nintendo, que esta build não acessa. A mensagem do runtime pedia login no Nextendo Network (serviço do SMM2). `toolchain/online_notice.py` passa a explicar o caminho certo: sala no launcher (Multijogador) + Wireless Play com L + R + analógico esquerdo (LAN). |
+| **Tela dividida (Multiplayer local)** | Ainda falha (detalhes abaixo). |
+
+**Vídeos dos menus (verde sólido) — corrigido.** As prévias de modo nos menus (MovieMenu.mp4, 512×608 H.264) apareciam verdes. O decodificador produzia quadros corretos (média Y 123, UV 127), mas o jogo entrega a cada quadro um buffer **próprio** a `GetOutputBuffer` e lê o quadro dali. O upstream apontava o Buffer para o buffer interno, então o do jogo ficava zerado, e NV12 zerado é verde. `toolchain/movie_output.py` copia o quadro para o buffer do jogo quando ele tem capacidade. O modo textura (SMM2) e a ausência de buffer continuam como antes; `MK8_MOVIE_OWN_BUFFER=1` restaura o upstream. `tests/test_movie_output.py` exercita a função real com os quatro casos. Capturas: prévias do Grande Prêmio e do Contra o Relógio visíveis.
+
+**Tela dividida — investigação.** Main menu → Multiplayer → applet de controles ("2 player(s)") → seleção de personagens para 2 jogadores. Nessa tela, nenhum botão de nenhum dos dois jogadores tem efeito (cursor, confirmar, voltar), embora na tela anterior (cilindradas) o jogador 1 funcione. Com os diagnósticos novos de `toolchain/split_screen.py` (`MK8_TRACE_PADS`, `MK8_TRACE_IMPORTS`), o jogo continua lendo o estado FullKey dos ids 0 e 1 uma vez por quadro e recebe os botões dos dois jogadores, inclusive do jogador 2 por `LARECOMP_INPUT2`. Os dois imports `nn::hid` que leem botões são do host; vibração, sensor de movimento, atribuição de Joy-Con e `SetSupportedNpad*` ficam com o SDK guest e o serviço `hid` responde ok. Não resolveram, e foram retirados: sinalizar os eventos de estilo ao fechar o applet e gravar a contagem de jogadores como `int` de 32 bits. A causa está no estado do jogo depois do applet. Próximo passo: observar o objeto de controle do jogo (`LARECOMP_WATCH_PAD`) antes e depois do applet. Não houve teste com dois controles físicos.
+
 ### Pistas e personagens pretos; bateria de pistas (08/11/2026)
 
 **Relato do teste manual (0.1.2).** Personagens às vezes todos pretos, pistas que "não carregam" e ficam pretas, fragmentos sem textura nos karts da primeira pista; 50–60 FPS.

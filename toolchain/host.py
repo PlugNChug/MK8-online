@@ -208,6 +208,12 @@ def prepare_host_sources(source, output):
     prepare_texture_pool(runtime)
     from bc_render import prepare as prepare_bc_render
     prepare_bc_render(runtime)
+    from split_screen import prepare as prepare_split_screen
+    prepare_split_screen(runtime)
+    from online_notice import prepare as prepare_online_notice
+    prepare_online_notice(runtime)
+    from movie_output import prepare as prepare_movie_output
+    prepare_movie_output(runtime)
     from sampler_inline import prepare as prepare_sampler_inline
     prepare_sampler_inline(runtime)
     from submit_ring import prepare as prepare_submit_ring
