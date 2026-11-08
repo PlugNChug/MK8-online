@@ -19,8 +19,20 @@ class RaceScriptTests(unittest.TestCase):
             self.assertEqual([int(s[0]) for s in steps], sorted(int(s[0]) for s in steps))
             rights = [s for s in steps if s[1] == 'RIGHT']
             self.assertEqual(len(rights), turns)
-            self.assertTrue(all(1740 < int(s[0]) < 1900 for s in rights))
+            # (between the cup's confirm at 1820 and the track's at 2000)
+            self.assertTrue(all(1820 < int(s[0]) < 2000 for s in rights))
+            self.assertIn(['1820', 'A', '6'], steps)
+            self.assertIn(['2000', 'A', '6'], steps)
             self.assertEqual(steps[-1], ['2700', 'A', '3810'])
+
+    def test_cup_moves_come_before_the_cup_is_confirmed(self):
+        # Bell Cup: five columns right and one row down, then the fourth track.
+        steps = [entry.split(':') for entry in race_input('time-trial', 4400, cup=11, track=3).split(',')]
+        self.assertEqual([int(s[0]) for s in steps], sorted(int(s[0]) for s in steps))
+        cup = [s[1] for s in steps if 1600 < int(s[0]) < 1820 and s[1] != 'A']
+        self.assertEqual(cup, ['RIGHT'] * 5 + ['DOWN'])
+        track = [s[1] for s in steps if 1820 < int(s[0]) < 2000]
+        self.assertEqual(track, ['RIGHT'] * 3)
 
     def test_grand_prix_keeps_existing_navigation(self):
         script = race_input('grand-prix', 5200)

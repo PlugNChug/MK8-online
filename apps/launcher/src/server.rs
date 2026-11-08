@@ -212,6 +212,24 @@ impl App {
                 self.build.record_start(started);
             }
         }
+        // A build records the launcher version that made it: the runtime fixes come with each version, so a game built
+        // by an earlier one (an update kept the data folder) is offered for a rebuild, which reuses the finished stages.
+        let build = self.build.poll();
+        let built_with = self.local.join("built-with.json");
+        if build.state == "candidate"
+            && load::<Value>(&built_with)
+                .ok()
+                .and_then(|v| v["version"].as_str().map(str::to_owned))
+                != Some(update::CURRENT.to_owned())
+        {
+            let _ = save(&built_with, &json!({ "version": update::CURRENT }));
+        }
+        let candidate_exists = self.local.join("candidate.json").is_file();
+        let candidate_version = load::<Value>(&built_with)
+            .ok()
+            .and_then(|v| v["version"].as_str().map(str::to_owned));
+        let candidate_stale =
+            candidate_exists && candidate_version.as_deref() != Some(update::CURRENT);
         let install = self.installation();
         let package_import =
             !self.config.base_package.is_empty() || !self.config.update_package.is_empty();
@@ -225,7 +243,7 @@ impl App {
                 .to_string_lossy()
                 .into_owned();
         }
-        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":self.build.poll(),"candidate":self.local.join("candidate.json").is_file(),"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {

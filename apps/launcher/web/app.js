@@ -267,11 +267,19 @@ function renderInstall(status) {
   $("architecture-state").textContent = files.folder ? architecture?.detail || "" : "";
 
   // 3. Build
-  const done = build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state));
+  // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
+  const stale = !!status.candidate_stale && build.state !== "running";
+  const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
+  $("build-stale").hidden = !stale;
+  if (stale)
+    $("build-stale").textContent =
+      "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+      " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
+      ": o que já foi feito é reaproveitado e leva poucos minutos.";
   $("build-idle").hidden = buildRunning || done;
   $("build-live").hidden = !buildRunning && !(build.state === "failed" && build.started_ms);
   $("build-done").hidden = !done || buildRunning;
-  $("build").textContent = build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : "Iniciar build";
+  $("build").textContent = build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build";
   $("build").disabled = busyNow;
   $("cancel").disabled = !buildRunning;
   $("cancel").hidden = !buildRunning;
@@ -308,6 +316,7 @@ function renderInstall(status) {
     setStep("stage-build", "prepare-state", "failed", "Requer atenção");
     buildStep = "failed";
   } else if (build.state === "cancelled") setStep("stage-build", "prepare-state", "pending", "Cancelada");
+  else if (stale) setStep("stage-build", "prepare-state", "pending", "Atualizar");
   else if (done) {
     setStep("stage-build", "prepare-state", "done", "Pronta");
     buildStep = "done";
@@ -320,7 +329,7 @@ function renderInstall(status) {
       : "Traduz e compila o jogo para o seu PC.";
 
   // The step to act on is open; finished ones close unless the user opened them.
-  const current = buildRunning || build.state === "failed" || done ? "step-build"
+  const current = buildRunning || build.state === "failed" || done || stale ? "step-build"
     : toolsState !== "done" && !filesReady ? "step-tools"
       : !filesReady ? "step-files" : "step-build";
   const open = new Set([current, ...userOpened]);
@@ -532,7 +541,7 @@ async function refresh() {
       $("game-folder").value = savedConfig.exefs.replace(/[\\/]exefs[\\/]?$/i, "");
     }
     const status = await refresh();
-    if (status.candidate || status.installed) showTab("play");
+    if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
     $("update-state").textContent = "Versão instalada: " + status.version;
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else $("update-state").textContent += ". Atualizações automáticas não configuradas nesta edição.";

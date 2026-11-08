@@ -335,6 +335,25 @@ class LauncherTests(unittest.TestCase):
         expect(page.get_by_role('heading',name='Jogar',exact=True)).to_be_visible()
         self.assertFalse(errors);page.close()
 
+    def test_14_build_from_an_earlier_version_is_offered_for_update(self):
+        """A game built by another launcher version (an update kept the data folder) is not shown as ready."""
+        page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+        self.assertFalse(real['candidate_stale'])  # (no game in this data folder)
+        def status(route):
+            data=dict(real);data['candidate']=True;data['candidate_stale']=True;data['candidate_version']='0.1.2'
+            data['build']={'state':'idle','detail':'','pid':None,'percent':0,'phase':'','started_ms':None,'duration_s':None}
+            route.fulfill(json={'ok':True,'data':data})
+        page.route('**/api/status',status)
+        page.reload()
+        expect(page.locator('#build-stale')).to_be_visible()
+        expect(page.locator('#build-stale')).to_contain_text('versão 0.1.2')
+        expect(page.get_by_role('button',name='Atualizar a build',exact=True)).to_be_visible()
+        expect(page.locator('#prepare-state')).to_have_text('Atualizar')
+        expect(page.locator('#build-done')).to_be_hidden()
+        self.assertFalse(errors);page.close()
+
     def test_12_support_report_and_updates(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
         folder=Path(self.temporary.name)/'0'
