@@ -11,6 +11,8 @@ from host import prepare_host_sources
 from native import DEFAULT_COMPILER, compiler_env
 import ipc_core_release
 import pipeline_cache_save
+import save_file_close
+import vram_trace
 
 HARNESS = r'''
 #include <stdatomic.h>
@@ -60,6 +62,12 @@ class RuntimeStallTests(unittest.TestCase):
             self.assertLess(dispatch.index('kernel_host_wait_begin();'), dispatch.index('ipc_handle_request'))
             self.assertLess(dispatch.index('ipc_handle_request'), dispatch.index('kernel_host_wait_end();'))
             self.assertIn('"inside" : "after"', kernel)
+            fs = (runtime/'services/fs.c').read_text(encoding='utf-8')
+            self.assertIn('opened->on_close = host_file_close;', fs)
+            self.assertIn('opened->on_close = host_dir_close;', fs)
+            self.assertIn('close(f->fd);', fs[fs.index('static void host_file_close'):])
+            self.assertIn('IFileSystem cmd %u %s -> result', fs)
+            self.assertIn('void mk8_vram_report(void)', exec_c + (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8'))
 
     def test_boundaries_are_checked(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -71,6 +79,12 @@ class RuntimeStallTests(unittest.TestCase):
                 pipeline_cache_save.prepare(runtime)
             with self.assertRaises(ValueError):
                 ipc_core_release.prepare(runtime)
+            (runtime/'services').mkdir()
+            (runtime/'services/fs.c').write_text('int y;' + chr(10))
+            with self.assertRaises(ValueError):
+                save_file_close.prepare(runtime)
+            with self.assertRaises(ValueError):
+                vram_trace.prepare(runtime)
 
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
     def test_cache_is_saved_after_new_pipelines_once_compiling_stops(self):

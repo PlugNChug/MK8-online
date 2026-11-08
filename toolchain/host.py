@@ -226,6 +226,10 @@ def prepare_host_sources(source, output):
     prepare_pipeline_cache_save(runtime)
     from ipc_core_release import prepare as prepare_ipc_core_release
     prepare_ipc_core_release(runtime)
+    from save_file_close import prepare as prepare_save_file_close
+    prepare_save_file_close(runtime)
+    from vram_trace import prepare as prepare_vram_trace
+    prepare_vram_trace(runtime)
     menu = runtime/'ui/menu.mm'
     text = menu.read_text(encoding='utf-8')
     boundary = '        tabs_body(scale, true, NULL);'
