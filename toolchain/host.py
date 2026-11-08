@@ -206,6 +206,8 @@ def prepare_host_sources(source, output):
     prepare_texture_init(runtime)
     from texture_pool import prepare as prepare_texture_pool
     prepare_texture_pool(runtime)
+    from bc_render import prepare as prepare_bc_render
+    prepare_bc_render(runtime)
     from sampler_inline import prepare as prepare_sampler_inline
     prepare_sampler_inline(runtime)
     from submit_ring import prepare as prepare_submit_ring

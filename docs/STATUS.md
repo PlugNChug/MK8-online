@@ -7,7 +7,7 @@
 | Launcher | `Launcher.exe` nativo (Tauri 2/WebView2), tema escuro, seções Instalar/Jogar/Multijogador/Suporte; `setup.exe` por usuário com escolha da pasta de dados; atualização pelos Releases com SHA-256; relatório de logs (manual e após falha do jogo) | Atualização ponta a ponta contra um Release publicado; importação XCI/XCZ; instância única |
 | Build | Três módulos reais gerados e ligados. Preparação com caches vazios em 14 min 16 s no Xeon de teste, após instalar as ferramentas | Repetição dessa medição em outras máquinas e com cargas diferentes |
 | Runtime/jogo | Boot, menu e três voltas em Mario Kart Stadium no Grand Prix 50cc automatizado, com Mario em segundo no placar | Corrida completa com imagem correta, retorno e salvamento após reiniciar |
-| Gráficos | Texturas recuperadas em testes controlados; adaptação de TLD4S F32; alternância de brilho entre quadros (cubemap de ambiente em ID reaproveitado) corrigida nas capturas | Halo do letreiro intermitente, exposição estourada intermitente, pontos coloridos, sombras e fidelidade da imagem |
+| Gráficos | Texturas recuperadas em testes controlados; adaptação de TLD4S F32; alternância de brilho entre quadros (cubemap de ambiente em ID reaproveitado) e exposição estourada (reflexos BC3 gerados por shader, `bc_render.py`) corrigidas nas capturas | Halo do letreiro intermitente, pontos coloridos, sombras e fidelidade da imagem |
 | Desempenho | Com compute adiado, ~59 FPS em trecho do Contra o Relógio e ~53 FPS no trecho medido do Grand Prix | 60 FPS estáveis e velocidade correta em todas as condições |
 | Mii | Nome/aparência persistentes, múltiplos IDs, prévia 3D e GLB por perfil | Cabeça dentro do MK8, retratos, corpo e animações |
 | Multiplayer | 12 clientes de transporte; duas instâncias reais pelo código do relay local, três voltas e retorno à seleção de pista | Corrida entre duas máquinas, 12 jogos reais, NAT/relay externo, MTU e congestionamento |
@@ -207,6 +207,25 @@ Restos de oscilação: picos de 25–45 ms no prefetch de shaders (10–27 ms ao
 - `multiplayer-bh1f9ewb`, assíncrona: os dois na corrida (59,1 e 59,0 FPS, p99 17,6/17,7 ms em 7300–9190).
 - O erro apareceu uma vez em duas execuções com o modo assíncrono. Nas três há pausas de 400–500 ms fora do backend no começo da corrida, com dois jogos dividindo CPU e GPU. A causa não foi isolada. Validar em duas máquinas e, se o erro voltar, comparar com `MK8_ASYNC_SUBMIT=0`.
 
+### Exposição estourada: causa e correção (07–08/11/2026)
+
+**Sintoma.** Não era exposição global. Céu, grama e arquibancada ficavam normais; asfalto, paredes, metais e karts (reflexo especular) ficavam brancos/amarelados. O estado se fixava no início da corrida, não se recuperava e aparecia em cerca de metade dos GPs (9 das 11 execuções anteriores à correção).
+
+**Causa.** No início da corrida (quadros ~2137–2150), o jogo monta o array de cubos de reflexo especular `729c248000` (128×128, 8 mips, 5 cubos, **BC3**) uma única vez. Para isso, codifica blocos BC3 num fragment shader e desenha cada nível/camada por uma view NVN de formato `R32G32B32A32_UINT`, um texel por bloco 4×4 (viewport 32×32 no nível 0). O upstream criava essa view diretamente sobre a imagem Vulkan BC3, que não tem uso de color attachment nem `BLOCK_TEXEL_VIEW_COMPATIBLE`. O resultado é indefinido; o driver AMD aceita a view sem erro. O array ficava com o que estivesse na memória da imagem, e esse array ilumina todas as superfícies com reflexo pelo resto da corrida.
+
+**Correção.** `toolchain/bc_render.py`: um alvo de cor que é view não comprimida de uma imagem BC é desenhado numa imagem-sombra do formato da view, com o tamanho da grade de blocos do nível. Ao fim do passe, o resultado é copiado para aquele nível/camada da imagem comprimida (`vkCmdCopyImage` entre formatos de tamanho compatível; extensão em texels da origem, um por bloco). Formatos de tamanho incompatível ficam como antes e são registrados. `MK8_BC_RENDER_DIRECT=1` restaura o upstream. `tests/test_bc_render.py` exercita os níveis 0, 3 e 7, o reaproveitamento da sombra, a cópia e os casos deixados como antes.
+
+**Resultado.** 7 GPs seguidos com a correção (`race-grand-prix-fk6jg3u8`, `66yzm6v_`, `yth9gou3`, `g3qjijv6`, `kx663joh`, `daobv8d0`, `oqp67k1r`), todos limpos: 0,07–0,21% de pixels brancos no quadro 3400 e 0,29–0,33% no 3900. No 4400 ficaram 1,4–3,8%, que são a caixa de item e os refletores do estádio. As estouradas tinham 17–52%. FPS a 60 nos intervalos de 2 s, com as mesmas duas quedas breves para ~54 de antes (efeitos vistos pela primeira vez). Contra o Relógio no Water Park (`race-time-trial-k15g1tjf`): imagem correta, 60 FPS com uma queda breve para 54,7; o mesmo caminho BC3 é usado ali.
+
+**Como foi achado (diagnósticos que ficaram, opt-in, sem custo desligados; `toolchain/texture_pool.py`).**
+- `MK8_TRACE_RT=<endereço>[,...]` com `MK8_TRACE_RT_FROM=<quadro>` registra os passes que desenham nessas texturas, os draws e as entradas. Para entradas enviadas pela CPU, também o hash da memória contra o upload.
+- `MK8_TEX_STATS=<endereço>[,...]` lê da GPU as texturas amostradas por esses draws ou pelo quadro de depuração e registra média, pico e texels inválidos por mip (B10G11R11 e RGBA16F).
+- `LARECOMP_DEBUG_DATA=1` passa a mostrar até 640 floats por uniform buffer.
+
+**Descartado no caminho.** Buffer de luz, passes de sombra, uniforms de cena e de luz, o cubo 32×32 `729bc51000`/`729bc5d000` e suas tabelas de CPU. Também não era a reconferência de uploads a cada 8 quadros: a tentativa foi revertida (não resolveu e custou FPS).
+
+Imagem, áudio, controle físico, reinício/save e relógio ainda precisam de qualificação; `gameplay_verified` continua falso.
+
 ### Integração multiplayer (07/11/2026)
 
 O usuário autorizou testes multiplayer com o candidato experimental e informou não ter segunda máquina/relay público disponíveis. Os testes usam launchers e jogos separados, saves isolados e IPs virtuais distintos; nenhuma instalação foi marcada como qualificada.
@@ -261,7 +280,7 @@ Retomar nesta ordem:
 2. Garantir espaço suficiente e repetir uma corrida inteira de duas instâncias pela LAN direta. Preservar logs, saves e o bloqueio de limpeza registrado acima.
 3. Repetir o caminho por código em dois computadores e configurar um relay público HTTPS/UDP para testar acesso externo. O teste em loopback não qualifica NAT, firewall, latência de internet ou sincronização precisa.
 4. Ampliar para mais de quatro jogos reais, até o limite de 12, com atraso/perda de rede e entrada/saída/reconexão. Doze clientes de transporte não equivalem a doze jogos.
-5. Qualificar áudio, controle manual, reinício/save, imagem, relógio e frametimes. Persistem exposição estourada no anfitrião e picos durante a corrida; não prometer 60 FPS constantes ou ausência de lag.
+5. Qualificar áudio, controle manual, reinício/save, imagem, relógio e frametimes. A exposição estourada foi corrigida em 7 GPs locais (falta confirmar no multiplayer); persistem picos durante a corrida; não prometer 60 FPS constantes ou ausência de lag.
 
 ## Launcher nativo
 

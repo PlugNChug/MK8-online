@@ -15,10 +15,10 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 2. Imagem
 
-- **[visível]** Exposição estourada intermitente em parte das corridas (mais frequente no Grande Prêmio). A causa ainda não foi isolada.
 - **[visível]** O halo de bloom do letreiro do estádio some em cerca de 1 a cada 4 quadros (parâmetros da cadeia secundária de bloom).
 - **[visível]** Pontos coloridos, sombras e fidelidade geral da imagem.
 - Corrigido: alternância de brilho da cena a 30 Hz (cubemap de ambiente lido num ID de textura reaproveitado).
+- Corrigido: exposição estourada (reflexo especular BC3 gerado por shader no início da corrida escrito numa view inválida; `toolchain/bc_render.py`). 7 de 7 GPs limpos.
 
 ## 3. Desempenho
 
