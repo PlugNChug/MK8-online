@@ -42,6 +42,9 @@ static volatile LONG gate = 1;  /* the translator stalls in a present while 0 */
 static uint64_t seq;
 void backend_prefetch(const uint64_t *h, int n) { (void)h; (void)n; }
 void backend_execute(uint64_t h) { order[norder++] = (char)('a' + ((CmdRec *)(uintptr_t)h)->x[6]); seq++; }
+static int drains, translator_marked;  // (toolchain/texture_release_thread.py)
+void mk8_texture_translator_thread(void) { translator_marked++; }
+void mk8_textures_drain(void) { drains++; }
 void renderer_prefetch_verify(void) {}
 uint64_t renderer_fence_seq(void) { return seq; }
 void renderer_submit(void) {}
