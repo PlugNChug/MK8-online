@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import runpy
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ import unittest
 import zstandard
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))  # (downloads.py, imported by the setup scripts)
 
 
 def junction(link, target):

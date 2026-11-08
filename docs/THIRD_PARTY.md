@@ -10,6 +10,8 @@ O código próprio usa GPL-3.0-or-later (`../LICENSE`). Os snapshots e bibliotec
 | [SkyRecomp](https://github.com/Apolinario-coder/SkyRecomp) | `ad649b4fd319b7f7c309857b2d14353d2e5dcd79`; TLD4S F32 adaptado em `runtime/mk8/graphics/maxwell_gather.inc` | [MIT, Apolinario-coder, 2026](licenses/SkyRecomp-MIT.txt), [aviso LAS](licenses/SkyRecomp-LASRecomp-MIT.txt) |
 | [LibHac](https://www.nuget.org/packages/LibHac/0.18.0) | 0.18.0, pacote conferido por SHA-256; leitura e aplicação da atualização NCA | [MIT](licenses/LibHac-MIT.txt) |
 
+O setup leva o executável do runtime já compilado (`prebuilt/host`, gerado por `scripts/prebuild-host.py` a partir das mesmas fontes que vão no pacote, sem nenhum arquivo do jogo). Nele entram estaticamente mbedTLS, Dear ImGui e SMAA (licenças nos snapshots do upstream), além da libc++/libunwind do LLVM (Apache-2.0 com LLVM Exception) e da CRT do mingw-w64 fornecidas pelo Zig 0.17.0. O código-fonte correspondente acompanha o pacote.
+
 Os avisos MIT completos nesta pasta acompanham os trechos adaptados. Não retirar licenças dos snapshots ao organizar o código. Dependências Rust estão fixadas por `Cargo.lock`; compilador e dependências nativas pelos scripts/manifestos locais.
 
 As demais avaliações históricas não são dependências de execução nem evidência de FPS ou compatibilidade deste projeto. Não copiar DLLs, endereços ou resultados de jogos diferentes. ROM, chaves, código gerado e modelos do dump permanecem privados.

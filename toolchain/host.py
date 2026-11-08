@@ -306,7 +306,11 @@ def build_host(source, output, workers=None):
               '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX', '-DGAME_ID="mk8d"',
               '-DGAME_TITLE="Mario Kart 8 Deluxe - experimental"', '-DGAME_TITLE_ID=0x0100152000022000ull',
               '-DGAME_DISPLAY_VERSION="4.0.1"', '-DGAME_BUNDLE_ID="org.mk8online.mk8d"',
-              '-DMBEDTLS_USER_CONFIG_FILE="mbedtls_user_config.h"']
+              '-DMBEDTLS_USER_CONFIG_FILE="mbedtls_user_config.h"',
+              # Only __FILE__ text (assertion messages) changes: the code is the same, and a prebuilt runtime carries
+              # no folder of the machine that built it.
+              *('-ffile-prefix-map='+str(path)+'='+name for path, name in
+                ((ROOT, 'mk8-online'), (DEPS, 'deps'), (source, 'runtime'), (output, 'host')))]
     for p in [runtime, runtime/'nvn', runtime/'net', DEPS/'include',
               source/'third_party/mbedtls/include', source/'third_party/imgui', source/'third_party/imgui/backends',
               source/'third_party/smaa/Textures', inc]:
@@ -327,8 +331,18 @@ def build_host(source, output, workers=None):
     dep_headers = {str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
     environment = hashlib.sha256(json.dumps({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'), 'compiler': digest(DEFAULT_COMPILER), 'flags': common}, sort_keys=True).encode()).hexdigest()
 
+    def relative_of(src):
+        return Path('runtime')/src.relative_to(runtime) if src.is_relative_to(runtime) else src.relative_to(source) if src.is_relative_to(source) else Path(src.name)
+
+    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc')}, common, sources, source, output)
+    prebuilt = use_prebuilt(key, output)
+    if prebuilt:
+        copy_runtime_dlls(output)
+        print('Runtime Windows pré-compilado do pacote: chave e hashes conferidos, sem recompilar.', flush=True)
+        return prebuilt
+
     def compile_one(src):
-        relative = Path('runtime')/src.relative_to(runtime) if src.is_relative_to(runtime) else src.relative_to(source) if src.is_relative_to(source) else Path(src.name)
+        relative = relative_of(src)
         obj = output/'obj'/relative.with_suffix('.o'); obj.parent.mkdir(parents=True, exist_ok=True)
         stamp = obj.with_suffix('.json')
         key = {'environment': environment, 'source': digest(src)}
@@ -358,13 +372,62 @@ def build_host(source, output, workers=None):
          *(DEPS/'lib'/('lib'+lib+'.dll.a') for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']),
          *('-l'+lib for lib in ['winmm', 'ole32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt'])], output/'host-link.log', env)
     run([DEFAULT_COMPILER, 'dlltool', '-m', 'i386:x86-64', '-d', exports, '-l', output/'mk8drecomp.dll.a'], output/'exports.log', env)
+    copy_runtime_dlls(output)
+    (output/'host-key.json').write_text(json.dumps({'key': key, 'files': {name: digest(output/name) for name in HOST_FILES}}, indent=2), encoding='utf-8')
+    print('Executável do runtime ligado; gameplay ainda não verificado.', flush=True)
+    return exe
+
+
+HOST_FILES = ('mk8drecomp.exe', 'mk8drecomp.dll.a')
+PREBUILT = ROOT/'prebuilt/host'
+
+
+def copy_runtime_dlls(output):
     for pattern in ['SDL3.dll', 'libshaderc_shared.dll', 'avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll', 'swscale-*.dll']:
         for dll in (DEPS/'bin').glob(pattern):
             target = output/dll.name
             if not target.is_file() or digest(target) != digest(dll):
                 shutil.copy2(dll, target)
-    print('Executável do runtime ligado; gameplay ainda não verificado.', flush=True)
-    return exe
+
+
+def host_key(inputs, flags, sources, source, output):
+    """What the runtime executable is made from, without the folders it was built in: the header, dependency and
+    compiler hashes, the flags with their folders as names, every source by relative path and hash,
+    and the link inputs."""
+    def portable(text):
+        for path, name in ((output, '<host>'), (source, '<runtime>'), (DEPS, '<deps>'), (ROOT, '<mk8-online>')):
+            text = text.replace(str(path), name)
+        return text
+    libraries = {lib: digest(DEPS/'lib'/('lib'+lib+'.dll.a')) for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']}
+    return hashlib.sha256(json.dumps({'inputs': inputs, 'flags': [portable(f) for f in flags],
+                                      'sources': {portable(str(src)): digest(src) for src in sources},
+                                      'libraries': libraries, 'compiler': digest(DEFAULT_COMPILER)},
+                                     sort_keys=True).encode()).hexdigest()
+
+
+def use_prebuilt(key, output):
+    """Copies the packaged runtime executable when it was built from exactly these inputs; otherwise None (compiled
+    here, as before). MK8_HOST_FROM_SOURCE=1 always compiles (used to make the prebuilt one)."""
+    manifest = PREBUILT/'manifest.json'
+    if os.environ.get('MK8_HOST_FROM_SOURCE') == '1' or not manifest.is_file():
+        return None
+    try:
+        recorded = json.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if recorded.get('key') != key or sorted(recorded.get('files', {})) != sorted(HOST_FILES):
+        return None
+    for name, expected in recorded['files'].items():
+        if not (PREBUILT/name).is_file() or digest(PREBUILT/name) != expected:
+            return None
+    for name in HOST_FILES:
+        pending = output/(name+'.pending')
+        shutil.copyfile(PREBUILT/name, pending)
+        if digest(pending) != recorded['files'][name]:
+            raise ValueError('Runtime pré-compilado alterado durante a cópia: '+name)
+        os.replace(pending, output/name)
+    (output/'host-key.json').write_text(json.dumps(recorded, indent=2), encoding='utf-8')
+    return output/'mk8drecomp.exe'
 
 
 def prepare_dll_link(output):

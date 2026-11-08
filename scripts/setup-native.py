@@ -8,8 +8,9 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
-import urllib.request
 import zipfile
+
+from downloads import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = '0.17.0'
@@ -52,10 +53,8 @@ def setup():
         if compiler.parent.exists() and not archive.exists():
             shutil.rmtree(compiler.parent)  # (changed or unverifiable: installed again from the pinned archive)
         if not archive.exists():
-            pending = archive.with_suffix('.pending')
             print('Downloading pinned Zig compiler...', flush=True)
-            urllib.request.urlretrieve(f'https://ziglang.org/download/{VERSION}/{name}.zip', pending)
-            pending.replace(archive)
+            fetch(f'https://ziglang.org/download/{VERSION}/{name}.zip', archive, parts=8)
         if sha256(archive) != SHA256:
             raise ValueError('Zig archive hash mismatch')
         with zipfile.ZipFile(archive) as bundle:

@@ -1,4 +1,5 @@
 """Import the pinned MK8 base and 4.0.1 update from PFS0 (NSZ or NSP)."""
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import hashlib
 from importlib.metadata import PackageNotFoundError, version
@@ -248,9 +249,17 @@ def prepare(config, local, validate_game_identity):
         title_keys = [*tickets(a, base_index), *tickets(b, patch_index)]
         print("Importação: reconstruindo os arquivos NCA dos pacotes.", flush=True)
         files = [scratch / name for name in ("base.nca", "patch.nca", "control.nca")]
-        for stream, index, digest, file in zip((a, b, b), (base_index, patch_index, patch_index),
-                                               (BASE, PATCH, CONTROL), files):
-            write_nca(stream, index, digest, file)
+        # The three NCAs at once, each through its own file handle (Zstandard, AES and SHA-256 release the GIL):
+        # the base no longer waits for the update.
+        jobs = list(zip((base, patch, patch), (base_index, patch_index, patch_index), (BASE, PATCH, CONTROL), files))
+
+        def rebuild(job):
+            package, index, digest, file = job
+            with package.open("rb") as stream:
+                write_nca(stream, index, digest, file)
+
+        with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+            list(pool.map(rebuild, jobs))
         extract(*files, keys, title_keys, scratch, output, tool)
         validate(output, validate_game_identity)
         output.rename(target)

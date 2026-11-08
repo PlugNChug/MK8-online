@@ -30,6 +30,9 @@ def payload_files():
         for path in sorted((ROOT / folder).rglob("*")):
             if path.is_file() and path.suffix in SOURCE_EXTENSIONS:
                 yield path
+    # The runtime executable built from these same sources (scripts/prebuild-host.py); a build checks its key.
+    for name in ("mk8drecomp.exe", "mk8drecomp.dll.a", "manifest.json"):
+        yield ROOT / "prebuilt/host" / name
     for name, digest in sorted(json.loads(MANIFEST.read_text(encoding="utf-8"))["files"].items()):
         path = ROOT / "upstream/smm2recomp" / name
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
@@ -42,6 +45,7 @@ def main():
     # The repository publishes only the upstream manifests; the pinned sources are fetched and verified here.
     subprocess.run([sys.executable, ROOT / "scripts/fetch-upstream.py"], check=True)
     subprocess.run([sys.executable, ROOT / "scripts/setup-import-tool.py"], check=True)
+    subprocess.run([sys.executable, ROOT / "scripts/prebuild-host.py"], check=True)
     payload = OUTPUT / "launcher-source.zip"
     with ZipFile(payload, "w", ZIP_DEFLATED) as archive:
         for path in payload_files():
