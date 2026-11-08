@@ -2,6 +2,7 @@
 //! MK8-online Launcher: a native Tauri window over the local API server.
 //! `--headless` (or the older `--no-browser`) keeps only the server, for tests.
 mod console;
+mod installer;
 mod relay;
 mod report;
 mod server;
@@ -18,7 +19,7 @@ use std::{
 use tauri::{webview::NewWindowResponse, WebviewUrl, WebviewWindowBuilder};
 use tiny_http::Server;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
+pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 
 fn argument(args: &[String], name: &str) -> Option<String> {
     args.iter()
@@ -50,7 +51,7 @@ pub(crate) fn canonical(path: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-fn fatal(message: &str) {
+pub(crate) fn fatal(message: &str) {
     eprintln!("MK8-online: {message}");
     rfd::MessageDialog::new()
         .set_title("MK8-online")
@@ -61,6 +62,13 @@ fn fatal(message: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(mode) = installer::mode(&args) {
+        if let Err(error) = installer::run(mode, &args) {
+            fatal(&format!("O instalador não pôde continuar: {error}"));
+            std::process::exit(1);
+        }
+        return;
+    }
     let headless = args
         .iter()
         .any(|v| v == "--headless" || v == "--no-browser");
@@ -93,19 +101,26 @@ fn project_root() -> Result<PathBuf, Error> {
 
 #[cfg(mk8_portable)]
 fn project_root() -> Result<PathBuf, Error> {
-    use std::{os::windows::process::CommandExt, process::Command};
-    const PAYLOAD: &[u8] = include_bytes!(env!("MK8_LAUNCHER_PAYLOAD"));
     let base = match home_from_setup()? {
         Some(home) => home,
         None => PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA ausente")?)
             .join("MK8-online"),
     };
+    unpack_payload(&base)
+}
+
+/// This version's sources under `<base>/<payload id>` (unpacked once; the installer does it ahead of the first
+/// start), with the shared tool folder set up.
+#[cfg(mk8_portable)]
+pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
+    use std::{os::windows::process::CommandExt, process::Command};
+    const PAYLOAD: &[u8] = include_bytes!(env!("MK8_LAUNCHER_PAYLOAD"));
     let root = base.join(&env!("MK8_LAUNCHER_PAYLOAD_ID")[..16]);
     if root.is_dir() {
-        std::env::set_var("MK8_NATIVE_TOOLS", share_tools(&base, &root)?);
+        std::env::set_var("MK8_NATIVE_TOOLS", share_tools(base, &root)?);
         return Ok(root);
     }
-    fs::create_dir_all(&base)?;
+    fs::create_dir_all(base)?;
     let stage = base.join(format!("preparando-{}", std::process::id()));
     fs::create_dir(&stage)?;
     let archive = stage.join("payload.zip");
@@ -127,7 +142,7 @@ fn project_root() -> Result<PathBuf, Error> {
         .into());
     }
     fs::rename(stage, &root)?;
-    std::env::set_var("MK8_NATIVE_TOOLS", share_tools(&base, &root)?);
+    std::env::set_var("MK8_NATIVE_TOOLS", share_tools(base, &root)?);
     Ok(root)
 }
 

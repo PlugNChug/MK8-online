@@ -34,92 +34,119 @@
           <div class="panel-head">
             <div>
               <h1>Instalação</h1>
-              <p class="muted">Escolha os arquivos do seu console e prepare. O resto é automático.</p>
+              <p class="muted">Três passos e o jogo fica pronto neste computador.</p>
             </div>
             <span id="build-state" class="pill">Aguardando</span>
           </div>
 
-          <ol class="stages" aria-label="Etapas">
-            <li id="stage-tools" data-state="pending"><span>Ferramentas</span><em id="tools-state">Pendente</em></li>
-            <li id="stage-files" data-state="pending"><span>Arquivos</span><em id="files-state">Pendente</em></li>
-            <li id="stage-build" data-state="pending"><span>Compilação</span><em id="prepare-state">Pendente</em></li>
+          <ol class="stepper" aria-label="Etapas">
+            <li id="stage-tools" data-state="pending" data-step="step-tools"><b>1</b><span>Ferramentas<em id="tools-state">Pendente</em></span></li>
+            <li id="stage-files" data-state="pending" data-step="step-files"><b>2</b><span>Arquivos do jogo<em id="files-state">Pendente</em></span></li>
+            <li id="stage-build" data-state="pending" data-step="step-build"><b>3</b><span>Build do jogo<em id="prepare-state">Pendente</em></span></li>
           </ol>
 
-          <div class="card">
-            <div class="segmented" role="radiogroup" aria-label="Origem do jogo">
-              <label><input type="radio" name="source" value="folder" checked />Pasta extraída</label>
-              <label><input type="radio" name="source" value="package" />Arquivos NSZ ou NSP</label>
-            </div>
-
-            <div id="source-folder">
-              <div class="path-field">
-                <label>Pasta do jogo extraído<input id="game-folder" spellcheck="false" placeholder="C:\Jogos\MK8" /></label>
-                <button type="button" class="ghost" data-browse="game-folder" data-kind="folder" aria-label="Procurar pasta do jogo" hidden>Procurar</button>
+          <!-- 1. Ferramentas -->
+          <article id="step-tools" class="step card" data-state="pending">
+            <button type="button" class="step-head" aria-expanded="false">
+              <span class="step-num">1</span>
+              <span class="step-title"><strong>Ferramentas</strong><small id="tools-summary">Compilador e bibliotecas, baixados uma única vez.</small></span>
+              <span class="step-check" aria-hidden="true">✓</span>
+            </button>
+            <div class="step-body">
+              <p class="muted">O launcher baixa o compilador e as bibliotecas gráficas (cerca de 1 GB) e confere cada arquivo por SHA-256. Isso só acontece na primeira vez.</p>
+              <div id="tools-meter" class="meter" hidden>
+                <div class="meter-row"><span id="tools-now">Preparando…</span><b id="tools-pct">0%</b></div>
+                <div class="bar"><i id="tools-bar"></i></div>
               </div>
-              <p class="hint">Pasta com <code>exefs</code>, <code>romfs</code> e <code>control.nacp</code> da versão 4.0.1.</p>
-            </div>
-
-            <div id="source-package" hidden>
-              <div class="path-field">
-                <label>Jogo base<input id="base_package" spellcheck="false" /></label>
-                <button type="button" class="ghost" data-browse="base_package" data-kind="package" aria-label="Procurar Jogo base" hidden>Procurar</button>
+              <p id="setup-detail" class="hint" role="status"></p>
+              <div class="row">
+                <button type="button" id="setup-start" class="primary">Baixar ferramentas</button>
+                <button type="button" id="setup-cancel" class="ghost" hidden>Cancelar</button>
+                <button type="button" class="link" data-log="setup-log">Ver log</button>
               </div>
-              <div class="path-field">
-                <label>Atualização 4.0.1<input id="update_package" spellcheck="false" /></label>
-                <button type="button" class="ghost" data-browse="update_package" data-kind="package" aria-label="Procurar Atualização 4.0.1" hidden>Procurar</button>
-              </div>
-              <div class="path-field">
-                <label>Arquivo prod.keys<input id="prod_keys" spellcheck="false" placeholder="Detectado ao lado do jogo ou em %USERPROFILE%\.switch" /></label>
-                <button type="button" class="ghost" data-browse="prod_keys" data-kind="keys" aria-label="Procurar Arquivo prod.keys" hidden>Procurar</button>
-              </div>
+              <pre id="setup-log" class="log" aria-label="Log das ferramentas" hidden>Nenhuma instalação de ferramentas iniciada.</pre>
             </div>
+          </article>
 
-            <p id="architecture-state" class="hint" role="status">Verificando arquitetura do executável…</p>
-
-            <div class="cta">
-              <button type="button" id="build" class="primary big">Preparar</button>
-              <button type="button" id="cancel" class="ghost" disabled>Cancelar</button>
-            </div>
-            <progress id="build-progress" hidden>Preparando</progress>
-            <p id="build-detail" class="hint" role="status"></p>
-            <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. A primeira preparação leva de 15 a 60 minutos; as seguintes reaproveitam o que já foi compilado.</p>
-          </div>
-
-          <details class="drawer">
-            <summary>Detalhes técnicos</summary>
-            <h3>Arquivos verificados</h3>
-            <div id="checks" class="checks"></div>
-
-            <h3>Ferramentas e dependências</h3>
-            <ol id="setup-steps" class="substeps" hidden></ol>
-            <progress id="setup-progress" max="3" value="0" hidden>Instalando ferramentas</progress>
-            <p id="setup-detail" class="hint" role="status"></p>
-            <div id="tools-checks" class="checks"></div>
-            <div class="row">
-              <button type="button" id="setup-start" class="ghost">Baixar e verificar ferramentas</button>
-              <button type="button" id="setup-check" class="ghost">Verificar novamente</button>
-              <button type="button" id="setup-cancel" class="ghost" disabled>Cancelar</button>
-            </div>
-
-            <form id="config-form">
-              <details class="advanced">
-                <summary>Caminhos manuais</summary>
-                <div class="fields">
-                  <div class="path-field"><label>Pasta ExeFS do MK8<input id="exefs" name="exefs" spellcheck="false" /></label><button type="button" class="ghost" data-browse="exefs" data-kind="folder" aria-label="Procurar: Pasta ExeFS do MK8" hidden>Procurar</button></div>
-                  <div class="path-field"><label>RomFS extraído<input id="romfs" name="romfs" spellcheck="false" /></label><button type="button" class="ghost" data-browse="romfs" data-kind="folder" aria-label="Procurar: RomFS extraído" hidden>Procurar</button></div>
-                  <div class="path-field"><label>Metadados NACP<input id="nacp" name="nacp" spellcheck="false" /></label><button type="button" class="ghost" data-browse="nacp" data-kind="nacp" aria-label="Procurar: Metadados NACP" hidden>Procurar</button></div>
-                  <div class="path-field"><label>Fontes do sistema<input id="fonts" name="fonts" spellcheck="false" /></label><button type="button" class="ghost" data-browse="fonts" data-kind="folder" aria-label="Procurar: Fontes do sistema" hidden>Procurar</button></div>
-                  <div class="path-field"><label>Fontes do runtime<input id="upstream" name="upstream" spellcheck="false" /></label><button type="button" class="ghost" data-browse="upstream" data-kind="folder" aria-label="Procurar: Fontes do runtime" hidden>Procurar</button></div>
+          <!-- 2. Arquivos do jogo -->
+          <article id="step-files" class="step card" data-state="pending">
+            <button type="button" class="step-head" aria-expanded="false">
+              <span class="step-num">2</span>
+              <span class="step-title"><strong>Arquivos do jogo</strong><small id="files-summary">Jogo base, atualização 4.0.1 e chaves do seu console.</small></span>
+              <span class="step-check" aria-hidden="true">✓</span>
+            </button>
+            <div class="step-body">
+              <p class="muted">Use os arquivos do seu próprio Switch. O launcher extrai e verifica tudo sozinho.</p>
+              <div class="files">
+                <div class="file-tile" id="tile-base">
+                  <span class="ft-icon" aria-hidden="true">B</span>
+                  <span class="ft-text"><strong>Jogo base</strong><small>Arquivo .nsz ou .nsp da versão original</small></span>
+                  <input id="base_package" aria-label="Jogo base" spellcheck="false" placeholder="Caminho do arquivo" />
+                  <button type="button" class="ghost" data-browse="base_package" data-kind="package" aria-label="Escolher Jogo base" hidden>Escolher</button>
                 </div>
-                <div class="row"><button type="submit" class="ghost">Salvar caminhos</button></div>
+                <div class="file-tile" id="tile-update">
+                  <span class="ft-icon" aria-hidden="true">U</span>
+                  <span class="ft-text"><strong>Atualização 4.0.1</strong><small>Arquivo .nsz ou .nsp da atualização</small></span>
+                  <input id="update_package" aria-label="Atualização 4.0.1" spellcheck="false" placeholder="Caminho do arquivo" />
+                  <button type="button" class="ghost" data-browse="update_package" data-kind="package" aria-label="Escolher Atualização 4.0.1" hidden>Escolher</button>
+                </div>
+                <div class="file-tile" id="tile-keys">
+                  <span class="ft-icon" aria-hidden="true">K</span>
+                  <span class="ft-text"><strong>prod.keys</strong><small id="keys-hint">Encontrado sozinho ao lado do jogo ou em %USERPROFILE%\.switch</small></span>
+                  <input id="prod_keys" aria-label="Arquivo prod.keys" spellcheck="false" placeholder="Automático" />
+                  <button type="button" class="ghost" data-browse="prod_keys" data-kind="keys" aria-label="Escolher prod.keys" hidden>Escolher</button>
+                </div>
+              </div>
+              <details id="folder-mode" class="alt">
+                <summary>Já tenho o jogo extraído numa pasta</summary>
+                <div class="path-field">
+                  <label>Pasta do jogo extraído<input id="game-folder" spellcheck="false" placeholder="C:\Jogos\MK8" /></label>
+                  <button type="button" class="ghost" data-browse="game-folder" data-kind="folder" aria-label="Escolher a pasta do jogo" hidden>Escolher</button>
+                </div>
+                <p class="hint">A pasta precisa ter <code>exefs</code>, <code>romfs</code> e <code>control.nacp</code> da versão 4.0.1.</p>
+                <p id="architecture-state" class="hint" role="status"></p>
               </details>
-            </form>
+            </div>
+          </article>
 
-            <h3>Log da preparação</h3>
-            <pre id="build-log" aria-label="Log da preparação">Nenhuma preparação iniciada.</pre>
-            <h3>Log das ferramentas</h3>
-            <pre id="setup-log" aria-label="Log das ferramentas">Nenhuma instalação de ferramentas iniciada.</pre>
-          </details>
+          <!-- 3. Build -->
+          <article id="step-build" class="step card" data-state="pending">
+            <button type="button" class="step-head" aria-expanded="false">
+              <span class="step-num">3</span>
+              <span class="step-title"><strong>Build do jogo</strong><small id="build-summary">Traduz e compila o jogo para o seu PC.</small></span>
+              <span class="step-check" aria-hidden="true">✓</span>
+            </button>
+            <div class="step-body">
+              <div id="build-idle">
+                <p class="muted">A primeira build leva de 15 a 40 minutos, conforme o computador; as seguintes reaproveitam o que já foi feito. Dá para usar o PC normalmente enquanto isso.</p>
+                <div class="cta"><button type="button" id="build" class="primary big">Iniciar build</button></div>
+              </div>
+              <div id="build-live" class="live" hidden>
+                <div class="live-top">
+                  <span class="live-phase"><span id="build-phase">Iniciando</span><small id="build-sub">Preparando…</small></span>
+                  <b id="build-pct">0%</b>
+                </div>
+                <div class="bar big"><i id="build-bar"></i></div>
+                <div class="stats">
+                  <div><small>Tempo decorrido</small><b id="build-elapsed">00:00</b></div>
+                  <div><small>Tempo restante</small><b id="build-eta">calculando…</b></div>
+                  <div><small>Término previsto</small><b id="build-finish">—</b></div>
+                </div>
+                <div class="row">
+                  <button type="button" id="cancel" class="ghost" disabled>Cancelar build</button>
+                  <button type="button" class="link" data-log="build-log">Ver log</button>
+                </div>
+              </div>
+              <div id="build-done" class="done" hidden>
+                <span class="done-mark" aria-hidden="true">✓</span>
+                <div><strong>Jogo pronto para jogar</strong><small id="build-took"></small></div>
+                <button type="button" id="go-play" class="primary">Jogar agora</button>
+              </div>
+              <p id="build-detail" class="hint" role="status"></p>
+              <pre id="build-log" class="log" aria-label="Log da preparação" hidden>Nenhuma preparação iniciada.</pre>
+            </div>
+          </article>
+          <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. Tudo é feito com os arquivos do seu console, neste computador.</p>
         </section>
 
         <!-- Jogar -->

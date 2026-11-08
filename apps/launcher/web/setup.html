@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mk8-token" content="__TOKEN__" />
+    <title>Instalar MK8-online</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/setup.css" />
+    <script src="/setup.js" defer></script>
+  </head>
+  <body class="setup">
+    <aside class="side">
+      <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
+      <ol class="side-steps" aria-label="Etapas da instalação">
+        <li data-screen="welcome" class="active">Boas-vindas</li>
+        <li data-screen="paths">Onde instalar</li>
+        <li data-screen="progress">Instalação</li>
+        <li data-screen="done">Pronto</li>
+      </ol>
+      <span id="version" class="chip">v—</span>
+    </aside>
+
+    <main class="screens">
+      <!-- 1. Boas-vindas -->
+      <section id="welcome" class="screen">
+        <span class="hero-eight" aria-hidden="true">8</span>
+        <h1>Bem-vindo ao MK8-online</h1>
+        <p class="lead">Prepare e jogue Mario Kart 8 Deluxe no seu PC usando os arquivos do seu próprio console, e corra com amigos pela rede.</p>
+        <ul class="perks">
+          <li><b>Preparado no seu PC</b><span>O launcher baixa as ferramentas e monta o jogo para você, em poucos cliques.</span></li>
+          <li><b>60 FPS</b><span>Corridas fluidas, com as correções de imagem mais recentes.</span></li>
+          <li><b>Multijogador</b><span>Crie uma sala e chame os amigos.</span></li>
+        </ul>
+        <p id="update-note" class="note" hidden>Uma instalação anterior foi encontrada. Ela será atualizada; seus arquivos, builds e saves continuam onde estão.</p>
+        <p class="fine">Projeto experimental, sem vínculo com a Nintendo. O jogo e as chaves nunca são baixados nem distribuídos.</p>
+        <div class="actions"><span></span><button type="button" id="go-paths" class="primary big">Começar</button></div>
+      </section>
+
+      <!-- 2. Pastas -->
+      <section id="paths" class="screen" hidden>
+        <h1>Onde instalar</h1>
+        <p class="lead">Os caminhos sugeridos funcionam bem. Altere se preferir outro disco.</p>
+        <div class="field">
+          <label for="app">Programa<small>O MK8-online (cerca de 50 MB)</small></label>
+          <div class="pick"><input id="app" spellcheck="false" /><button type="button" class="ghost" data-pick="app">Alterar</button></div>
+        </div>
+        <div class="field">
+          <label for="data">Jogo e dados<small>Jogo preparado, ferramentas e saves (cerca de 30 GB)</small></label>
+          <div class="pick"><input id="data" spellcheck="false" /><button type="button" class="ghost" data-pick="data">Alterar</button></div>
+          <p id="space" class="space" role="status"></p>
+        </div>
+        <label class="check"><input type="checkbox" id="desktop" checked /><span>Criar atalho na área de trabalho</span></label>
+        <label class="check"><input type="checkbox" id="launch" checked /><span>Abrir o MK8-online ao concluir</span></label>
+        <p id="paths-error" class="error" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="ghost" data-back="welcome">Voltar</button>
+          <button type="button" id="install" class="primary big">Instalar</button>
+        </div>
+      </section>
+
+      <!-- 3. Progresso -->
+      <section id="progress" class="screen" hidden>
+        <h1 id="progress-title">Instalando…</h1>
+        <p id="progress-step" class="lead">Preparando</p>
+        <div class="big-pct"><b id="pct">0%</b></div>
+        <div class="bar big"><i id="bar"></i></div>
+        <ol class="checklist" id="checklist">
+          <li data-at="5">Preparar as pastas</li>
+          <li data-at="40">Copiar o MK8-online</li>
+          <li data-at="87">Preparar os arquivos do launcher</li>
+          <li data-at="94">Criar os atalhos</li>
+          <li data-at="100">Registrar no Windows</li>
+        </ol>
+        <p id="progress-error" class="error" role="alert"></p>
+        <div class="actions" id="retry-actions" hidden>
+          <button type="button" class="ghost" data-back="paths">Voltar</button>
+          <button type="button" id="retry" class="primary">Tentar de novo</button>
+        </div>
+      </section>
+
+      <!-- 4. Pronto -->
+      <section id="done" class="screen" hidden>
+        <span class="done-mark big" aria-hidden="true">✓</span>
+        <h1>Tudo pronto!</h1>
+        <p class="lead">O MK8-online está instalado. No launcher, siga os três passos: ferramentas, arquivos do jogo e build.</p>
+        <p class="fine" id="done-where"></p>
+        <div class="actions">
+          <button type="button" id="close" class="ghost">Fechar</button>
+          <button type="button" id="open" class="primary big">Abrir MK8-online</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -4,8 +4,9 @@
     python scripts/release.py                         # build target/dist/MK8-online-<version>-setup.exe
 
 Set MK8_UPDATE_REPO=owner/name (the GitHub repository whose Releases the launcher reads) and, if there is one,
-MK8_RELAY_URL before building: both are compiled into the launcher. Inno Setup 6 (ISCC.exe) builds the setup;
-pass --iscc or install it (winget install JRSoftware.InnoSetup). Publishing is a separate step: upload the
+MK8_RELAY_URL before building: both are compiled into the launcher. The setup is the packaged launcher itself
+under the name MK8-online-<version>-setup.exe, which opens its own install window (apps/launcher/src/installer.rs).
+Publishing is a separate step: upload the
 setup and its .sha256 to a GitHub Release tagged v<version> (docs/RELEASING.md; CI does it on a tag push).
 """
 import argparse
@@ -48,18 +49,6 @@ def bump(version):
     print(f"Versão {version}. Faça commit e crie a tag v{version}.")
 
 
-def iscc(explicit):
-    candidates = [explicit, os.environ.get("ISCC"), shutil.which("ISCC"), shutil.which("iscc")]
-    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"),
-                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
-        if base:
-            candidates.append(os.path.join(base, "Inno Setup 6", "ISCC.exe"))
-    for path in candidates:
-        if path and Path(path).is_file():
-            return Path(path)
-    raise SystemExit("ISCC.exe (Inno Setup 6) não encontrado. Use --iscc ou: winget install JRSoftware.InnoSetup")
-
-
 def sha256(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -79,11 +68,9 @@ def build(args):
     if not launcher.is_file():
         raise SystemExit(f"Launcher empacotado ausente: {launcher}")
     DIST.mkdir(parents=True, exist_ok=True)
-    numeric = re.match(r"\d+\.\d+\.\d+", version).group(0) + ".0"
-    subprocess.run([str(iscc(args.iscc)), f"/DAppVersion={version}", f"/DNumericVersion={numeric}",
-                    f"/DSourceExe={launcher}", f"/DOutputDir={DIST}", str(ROOT / "installer/MK8-online.iss")],
-                   cwd=ROOT / "installer", check=True)
+    # (the name is what makes the launcher open as the installer)
     setup = DIST / f"MK8-online-{version}-setup.exe"
+    shutil.copyfile(launcher, setup)
     digest = sha256(setup)
     (DIST / f"{setup.name}.sha256").write_text(f"{digest}  {setup.name}\n", encoding="ascii")
     notes = DIST / "release-notes.md"
@@ -102,7 +89,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bump", metavar="VERSION")
     parser.add_argument("--tag", help="tag a conferir contra a versão (CI)")
-    parser.add_argument("--iscc", help="caminho do ISCC.exe")
     parser.add_argument("--skip-package", action="store_true", help="reaproveita target/portable/Launcher.exe")
     args = parser.parse_args()
     bump(args.bump) if args.bump else build(args)

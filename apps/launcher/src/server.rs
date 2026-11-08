@@ -41,6 +41,45 @@ pub struct App {
     exit_requested: bool,
     last_report: Option<String>,
 }
+/// The console keys beside the base package (or in its `keys` folder) or in `%USERPROFILE%\.switch`.
+fn detect_keys(config: &Config) -> Option<PathBuf> {
+    let base = Path::new(&config.base_package);
+    [
+        base.parent().map(|p| p.join("prod.keys")),
+        base.parent().map(|p| p.join("keys/prod.keys")),
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .map(|p| p.join(".switch/prod.keys")),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|p| p.is_file())
+}
+
+/// The three files of step 2 of the install screen, as the page shows them.
+fn game_files(config: &Config, imported: bool) -> Value {
+    let file = |path: &str| !path.is_empty() && Path::new(path).is_file();
+    let keys = if config.prod_keys.is_empty() {
+        detect_keys(config).map(|p| p.to_string_lossy().into_owned())
+    } else {
+        Some(config.prod_keys.clone())
+    };
+    let keys_ok = keys.as_deref().is_some_and(file);
+    let packages = file(&config.base_package)
+        && file(&config.update_package)
+        && config.base_package != config.update_package;
+    json!({
+        "base_ok": file(&config.base_package),
+        "update_ok": file(&config.update_package),
+        "keys": keys,
+        "keys_ok": keys_ok,
+        "keys_detected": config.prod_keys.is_empty() && keys_ok,
+        "folder": config.base_package.is_empty() && config.update_package.is_empty() && !config.exefs.is_empty(),
+        "imported": imported,
+        "ready": imported || (packages && keys_ok),
+    })
+}
+
 fn valid_username(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 32
@@ -186,7 +225,7 @@ impl App {
                 .to_string_lossy()
                 .into_owned();
         }
-        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":self.build.poll(),"candidate":self.local.join("candidate.json").is_file(),"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":self.build.poll(),"candidate":self.local.join("candidate.json").is_file(),"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
@@ -257,14 +296,7 @@ impl App {
                         );
                     }
                     if self.config.prod_keys.is_empty() {
-                        let candidates = [
-                            base.parent().map(|p| p.join("prod.keys")),
-                            base.parent().map(|p| p.join("keys/prod.keys")),
-                            std::env::var_os("USERPROFILE")
-                                .map(PathBuf::from)
-                                .map(|p| p.join(".switch/prod.keys")),
-                        ];
-                        if let Some(keys) = candidates.into_iter().flatten().find(|p| p.is_file()) {
+                        if let Some(keys) = detect_keys(&self.config) {
                             self.config.prod_keys = keys.to_string_lossy().into_owned();
                         }
                     }
@@ -528,7 +560,7 @@ impl App {
     }
 }
 
-fn response(req: Request, code: u16, text: String, mime: &str) {
+pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
     let mut res = Response::from_string(text).with_status_code(code);
     for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
     let _ = req.respond(res);

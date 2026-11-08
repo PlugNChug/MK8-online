@@ -81,7 +81,7 @@ class LauncherTests(unittest.TestCase):
     def test_01_preparation_missing_files_and_disabled_play(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
         expect(page.get_by_role("heading",name="Instalação",exact=True)).to_be_visible()
-        page.get_by_role("button",name="Preparar",exact=True).click()
+        page.locator('#stage-build').click();page.get_by_role("button",name="Iniciar build",exact=True).click()
         expect(page.locator("#notice")).to_contain_text("NPDM indisponível")
         page.get_by_role("button",name="Jogar",exact=True).click()
         expect(page.get_by_role("button",name="Jogar solo",exact=True)).to_be_disabled()
@@ -111,14 +111,17 @@ class LauncherTests(unittest.TestCase):
         config.update(legacy)
         self.assertTrue(page.request.post(endpoint, headers=headers, data=json.dumps(config)).json()['ok'])
         page.reload()
-        page.get_by_text('Detalhes técnicos', exact=True).click()
-        page.get_by_text('Caminhos manuais', exact=True).click()
-        page.get_by_label('RomFS extraído', exact=True).fill('updated-romfs')
-        page.get_by_role('button', name='Salvar caminhos', exact=True).click()
-        expect(page.locator('#notice')).to_contain_text('Caminhos salvos')
+        # No ExeFS / RomFS / NACP fields any more: the launcher finds those itself.
+        for gone in ('RomFS extraído', 'Pasta ExeFS do MK8', 'Metadados NACP'):
+            expect(page.get_by_label(gone, exact=True)).to_have_count(0)
+        page.get_by_label('Jogo base', exact=True).fill('updated-base.nsz')
+        page.get_by_label('Jogo base', exact=True).press('Tab')
+        expect(page.locator('#notice')).to_contain_text('Arquivos salvos')
         stored = page.request.get(endpoint, headers=headers).json()['data']
-        self.assertEqual(stored['romfs'], 'updated-romfs')
+        self.assertEqual(stored['base_package'], 'updated-base.nsz')
         self.assertEqual({key: stored[key] for key in legacy}, legacy)
+        stored['base_package'] = ''
+        page.request.post(endpoint, headers=headers, data=json.dumps(stored))
         page.close()
 
     def test_06_test_launch_requires_candidate(self):
@@ -219,57 +222,70 @@ class LauncherTests(unittest.TestCase):
         (folder/'control/control.nacp').touch()
         (folder/'exefs/main.npdm').write_bytes(raw)
         page=self.page()
+        page.get_by_text('Já tenho o jogo extraído numa pasta', exact=True).click()
         page.get_by_label('Pasta do jogo extraído', exact=True).fill(str(folder))
-        page.get_by_role('button',name='Preparar',exact=True).click()
+        page.locator('#stage-build').click();page.get_by_role('button',name='Iniciar build',exact=True).click()
         expect(page.locator('#notice')).to_contain_text('AArch32')
         page.reload()
+        # Reopened in folder mode, with the reason next to the folder.
         expect(page.locator('#architecture-state')).to_contain_text('AArch32')
+        expect(page.locator('#files-state')).to_have_text('Pasta incompleta')
         page.close()
 
 
     def test_nsz_requires_both_packages_and_missing_keys_are_reported(self):
         page = self.page(1)
-        page.get_by_text("Arquivos NSZ ou NSP", exact=True).click()
         source = Path(self.temporary.name) / "package-fixtures"
         source.mkdir()
         base, patch = source / "base.nsz", source / "update.nsz"
         base.touch()
         patch.touch()
         page.get_by_label("Jogo base", exact=True).fill(str(base))
-        page.get_by_role("button", name="Preparar", exact=True).click()
+        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
         expect(page.locator("#notice")).to_contain_text("Selecione dois arquivos")
         page.get_by_label("Atualização 4.0.1", exact=True).fill(str(patch))
         page.get_by_label("Arquivo prod.keys", exact=True).fill(str(source / "missing.keys"))
-        page.get_by_role("button", name="Preparar", exact=True).click()
+        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
         expect(page.locator("#notice")).to_contain_text("prod.keys não encontrado")
+        # Two of the three files exist: the step counts them and is not ready.
+        expect(page.locator("#files-state")).to_have_text("2 de 3")
+        expect(page.locator("#tile-base")).to_have_attribute("data-ok", "true")
+        expect(page.locator("#tile-keys")).to_have_attribute("data-ok", "false")
         page.close()
 
     def test_10_guided_install_steps_without_false_success(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
-        expect(page.locator('.stages > li')).to_have_count(3)
-        # Tool rows come from real filesystem checks; whatever they say, the stage
-        # may only claim success when every row is a check mark.
-        expect(page.locator('#tools-checks .check-item')).to_have_count(4)
-        rows=page.locator('#tools-checks .check-item strong').all_text_contents()
-        if all(r.startswith('✓') for r in rows):
-            expect(page.locator('#tools-state')).to_have_text('Encontradas')
-        else:
-            expect(page.locator('#tools-state')).to_contain_text('pendente')
-        # Empty data dir: no paths, no candidate -> nothing can be reported as ready.
-        expect(page.locator('#files-state')).not_to_have_text('Caminhos encontrados')
-        expect(page.locator('#prepare-state')).to_have_text('Pendente')
-        expect(page.locator('#play-state')).to_have_text('Bloqueado')
-        expect(page.get_by_label('Pasta do jogo extraído', exact=True)).to_be_visible()
-        expect(page.get_by_label('Jogo base', exact=True)).to_be_hidden()
-        page.get_by_text('Arquivos NSZ ou NSP', exact=True).click()
-        expect(page.get_by_label('Jogo base', exact=True)).to_be_visible()
-        expect(page.get_by_label('Pasta do jogo extraído', exact=True)).to_be_hidden()
-        page.get_by_text('Pasta extraída', exact=True).click()
-        # Headless server has no native window: browse buttons stay hidden and the
-        # API refuses instead of pretending a path was chosen.
-        expect(page.locator('[data-browse="game-folder"]')).to_be_hidden()
+        expect(page.locator('.stepper > li')).to_have_count(3)
+        expect(page.locator('article.step')).to_have_count(3)
         token=page.locator('meta[name="mk8-token"]').get_attribute('content')
         headers={'X-MK8-Token':token}
+        status=page.request.get(self.urls[0]+'/api/status',headers=headers).json()['data']
+        # The tools step may only claim success when every tool check passed.
+        if status['tools_ready']:
+            expect(page.locator('#tools-state')).to_have_text('Prontas')
+            expect(page.locator('#setup-start')).to_be_hidden()
+        else:
+            expect(page.locator('#tools-state')).to_have_text('Pendente')
+            expect(page.get_by_role('button',name='Baixar ferramentas',exact=True)).to_be_visible()
+        # Empty data dir: no files, no build -> nothing is reported as ready.
+        expect(page.locator('#files-state')).not_to_have_text(re.compile('Prontos|Extraídos'))
+        expect(page.locator('#stage-files')).to_have_attribute('data-state','pending')
+        expect(page.locator('#prepare-state')).to_have_text('Pendente')
+        expect(page.locator('#play-state')).to_have_text('Bloqueado')
+        self.assertEqual(status['files']['ready'],False)
+        # Step 2 shows the three files; the extracted-folder option stays folded away.
+        for label in ('Jogo base','Atualização 4.0.1','Arquivo prod.keys'):
+            expect(page.get_by_label(label, exact=True)).to_be_visible()
+        # (open only when this data folder already uses an extracted folder: test_05 leaves one)
+        folder=page.get_by_label('Pasta do jogo extraído', exact=True)
+        expect(folder).to_be_visible() if status['files']['folder'] else expect(folder).to_be_hidden()
+        # The build screen: idle, with its live panel hidden until a build runs.
+        page.locator('#stage-build').click()
+        expect(page.get_by_role('button',name='Iniciar build',exact=True)).to_be_visible()
+        expect(page.locator('#build-live')).to_be_hidden()
+        # Headless server has no native window: pickers stay hidden and the API refuses
+        # instead of pretending a path was chosen.
+        expect(page.locator('[data-browse="base_package"]')).to_be_hidden()
         browse=page.request.post(self.urls[0]+'/api/browse',headers=headers,data='{"kind":"folder"}').json()
         self.assertFalse(browse['ok'])
         self.assertTrue(page.request.post(self.urls[0]+'/api/setup/cancel',headers=headers,data='{}').json()['ok'])
@@ -277,6 +293,46 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(status['setup']['state'],'idle')
         self.assertFalse(status['native_dialogs'])
         page.screenshot(path=str(ROOT/"local/screenshots/launcher-install.png"),full_page=True)
+        self.assertFalse(errors);page.close()
+
+    def test_13_build_progress_screen(self):
+        """The live build panel: percent, phase, ticking timer, estimate and log toggle (status mocked)."""
+        page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+        started=int(time.time()*1000)-125000
+        def status(route):
+            data=dict(real)
+            data['build']={'state':'running','detail':'Preparando o jogo.','pid':1,'percent':37.5,
+                           'phase':'Compilando para o seu PC','started_ms':started,'duration_s':None}
+            route.fulfill(json={'ok':True,'data':data})
+        page.route('**/api/status',status)
+        page.reload()
+        expect(page.locator('#build-live')).to_be_visible()
+        expect(page.locator('#build-pct')).to_have_text('37%')
+        expect(page.locator('#build-phase')).to_have_text('Compilando para o seu PC')
+        expect(page.locator('#prepare-state')).to_have_text('37%')
+        expect(page.locator('#stage-build')).to_have_attribute('data-state','running')
+        expect(page.locator('#build-elapsed')).to_have_text(re.compile(r'^02:0\d$'))
+        first=page.locator('#build-elapsed').inner_text()
+        time.sleep(1.3)
+        self.assertNotEqual(page.locator('#build-elapsed').inner_text(),first)
+        expect(page.locator('#build-eta')).to_have_text(re.compile(r'min'))
+        expect(page.get_by_role('button',name='Cancelar build',exact=True)).to_be_enabled()
+        expect(page.get_by_role('button',name='Iniciar build',exact=True)).to_be_hidden()
+        page.locator('#step-build [data-log="build-log"]').click()
+        expect(page.locator('#build-log')).to_be_visible()
+        page.screenshot(path=str(ROOT/"local/screenshots/launcher-build.png"),full_page=True)
+        def done(route):
+            data=dict(real);data['candidate']=True
+            data['build']={'state':'candidate','detail':'ok','pid':None,'percent':100,'phase':'Concluído',
+                           'started_ms':started,'duration_s':1218.5}
+            route.fulfill(json={'ok':True,'data':data})
+        page.unroute('**/api/status');page.route('**/api/status',done)
+        expect(page.locator('#build-done')).to_be_visible(timeout=5000)
+        expect(page.locator('#build-took')).to_contain_text('20:19')
+        page.get_by_role('button',name='Jogar agora',exact=True).click()
+        expect(page.get_by_role('heading',name='Jogar',exact=True)).to_be_visible()
         self.assertFalse(errors);page.close()
 
     def test_12_support_report_and_updates(self):
@@ -338,7 +394,7 @@ class LauncherTests(unittest.TestCase):
             url=json.loads((folder/'launcher.json').read_text())['url']
             self.assertEqual(page.url.rstrip('/'),url)
             # Inside the native window the folder pickers are offered.
-            expect(page.locator('[data-browse="game-folder"]')).to_be_visible()
+            expect(page.locator('[data-browse="base_package"]')).to_be_visible()
             page.get_by_role('button',name='Jogar',exact=True).click()
             expect(page.get_by_role('heading',name='Jogar',exact=True)).to_be_visible()
             # The window refuses to navigate away from the local launcher.

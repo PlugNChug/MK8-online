@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 
+from repair import cleanup_stale, remove_owned
 from storage import GIB, require_space
 from native import compiler_path
 
@@ -202,12 +203,23 @@ def validate(output, validate_game_identity):
 def prepare(config, local, validate_game_identity):
     local = compiler_path(local)
     target = local / "imports/mk8-4.0.1"
-    if target.is_dir():
-        print("Importação: reaproveitando arquivos extraídos.", flush=True)
-        return {**config, **validate(target, validate_game_identity)}
+    cleanup_stale(local / "imports", "mk8-stage-*")  # (an import cut off before it finished)
     base, patch, keys = (Path(config.get(name) or ".").resolve()
                          for name in ("base_package", "update_package", "prod_keys"))
-    if not all(p.is_file() for p in (base, patch, keys)) or base == patch:
+    packages = all(p.is_file() for p in (base, patch, keys)) and base != patch
+    if target.is_dir():
+        try:
+            paths = validate(target, validate_game_identity)
+            print("Importação: reaproveitando arquivos extraídos.", flush=True)
+            return {**config, **paths}
+        except (ValueError, OSError) as error:
+            # Our own extraction, incomplete or changed: extracted again from the packages instead of stopping.
+            if not packages:
+                raise ValueError(f"A importação anterior está incompleta ({error}). Selecione o jogo base, "
+                                 "a atualização e o prod.keys para extrair de novo.") from error
+            print(f"Importação anterior incompleta ({error}); extraindo de novo.", flush=True)
+            remove_owned(target, local / "imports")
+    if not packages:
         raise ValueError("Selecione os pacotes base e atualização 4.0.1 e o prod.keys.")
     reserve = 4 * GIB + sum(SIZES.values()) + ROMFS_BUDGET + 128 * 1024**2
     try:

@@ -8,7 +8,13 @@ Recompilação AArch64 antecipada para Windows x64, com launcher local, runtime 
 
 ## Instalar (testadores)
 
-Baixe `MK8-online-<versão>-setup.exe` na página de **Releases** do repositório e execute. A instalação é por usuário, sem administrador. O launcher abre em **Instalar**. Escolha a pasta extraída do jogo ou os arquivos NSZ/NSP do seu console e clique em **Preparar**: as ferramentas são baixadas e conferidas por SHA-256, e o jogo é compilado na própria máquina. Nada do jogo é distribuído. O instalador pergunta onde guardar os dados (importação de ~28 GiB, ferramentas, builds e saves). O padrão é `%LOCALAPPDATA%\MK8-online`, mas qualquer disco serve. Essa pasta sobrevive a atualizações e à desinstalação. As ferramentas baixadas (`native-tools`, ~0,9 GiB) ficam nela uma única vez e são compartilhadas por todas as versões do launcher.
+Baixe `MK8-online-<versão>-setup.exe` na página de **Releases** do repositório e execute. O instalador tem janela própria: boas-vindas, onde instalar o programa e os dados (com o espaço livre do disco), atalho na área de trabalho e barra de progresso. A instalação é por usuário, sem administrador, e aparece em **Configurações → Apps** para desinstalar. Os dados (importação de ~28 GiB, ferramentas, builds e saves) ficam por padrão em `%LOCALAPPDATA%\MK8-online`, mas qualquer disco serve. Essa pasta sobrevive a atualizações e à desinstalação.
+
+O launcher abre em **Instalar**, em três passos: 
+**1. Ferramentas** (baixadas e conferidas por SHA-256), 
+**2. Arquivos do jogo** (jogo base, atualização 4.0.1 e `prod.keys` do seu console; as chaves são encontradas sozinhas quando estão ao lado do jogo) 
+**3. Build do jogo**, com porcentagem, etapa atual, tempo decorrido, estimativa de término e o log a um clique. 
+O jogo é compilado na própria máquina; nada dele é distribuído. Se uma extração ou preparação anterior ficou incompleta, a build refaz essa parte sozinha. As ferramentas baixadas (`native-tools`, ~0,9 GiB) ficam nela uma única vez e são compartilhadas por todas as versões do launcher.
 
 - **Atualizar:** em **Suporte → Verificar atualizações**, o launcher consulta os Releases (pré-releases incluídos) e oferece **Atualizar agora**. O botão baixa o novo setup, confere o SHA-256 publicado, instala em silêncio e reabre o launcher.
 - **Relatar um problema:** em **Suporte → Gerar relatório**, o launcher junta os logs do jogo (atual e três anteriores), da preparação e das ferramentas, além do manifesto da build, num `.zip` em `<pasta de dados>\data\reports` (**Suporte** mostra a pasta e abre o local). Caminhos pessoais e o nome da conta são ocultados; saves e chaves não entram. Quando o jogo fecha com erro, um relatório é criado automaticamente. Anexe o `.zip` à issue.
@@ -18,14 +24,7 @@ Pendências e roteiro: [docs/ROADMAP.md](docs/ROADMAP.md). Publicar uma versão:
 
 ## Usar a partir do código
 
-Na raiz do projeto, em PowerShell:
-
-```powershell
-python scripts/fetch-upstream.py   # dependências fixadas (smm2recomp, LASRecomp), conferidas pelos manifestos
-./scripts/start-launcher.ps1
-```
-
-O repositório publica só os manifestos de `upstream/`; o script baixa os commits fixados e confere cada arquivo por SHA-256. O script do launcher abre a janela nativa do Windows. Em **Arquivos NSZ ou NSP**, selecione o jogo base e a atualização 4.0.1 e clique em **Preparar**. O launcher procura `prod.keys` ao lado do jogo, na subpasta `keys` ou em `%USERPROFILE%/.switch`. Se precisar, selecione o arquivo do seu console uma vez. O launcher guarda apenas o caminho. A extração exige cerca de 28 GiB livres no disco do launcher, incluindo 4 GiB de reserva. Também é possível selecionar uma pasta com `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`) já extraídos.
+O repositório publica só os manifestos de `upstream/`; o script baixa os commits fixados e confere cada arquivo por SHA-256. O script do launcher abre a janela nativa do Windows. No passo **Arquivos do jogo**, selecione o jogo base e a atualização 4.0.1 e clique em **Iniciar build**. O launcher procura `prod.keys` ao lado do jogo, na subpasta `keys` ou em `%USERPROFILE%/.switch`. Se precisar, selecione o arquivo do seu console uma vez. O launcher guarda apenas o caminho. A extração exige cerca de 28 GiB livres no disco do launcher, incluindo 4 GiB de reserva. Também é possível usar uma pasta com `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`) já extraídos, em **Já tenho o jogo extraído numa pasta**.
 
 Se o disco do sistema estiver cheio, abra o launcher no PowerShell com uma pasta de dados em outro volume. Por exemplo, `& .\Launcher.exe --data-dir E:\MK8-Local`. Use a mesma pasta nas próximas aberturas para reaproveitar a importação e a build.
 
@@ -57,9 +56,9 @@ Uma sala nova recebe um código novo. Na LAN, o PC do anfitrião encaminha os pa
 
 | Pasta | Responsabilidade |
 | --- | --- |
-| `apps/launcher/src` | Janela Tauri (`main.rs`), API local e supervisão de jogo, build e sala (`server.rs`), etapa de ferramentas (`setup.rs`), relatórios de logs (`report.rs`) e atualizações (`update.rs`) |
+| `apps/launcher/src` | Janela Tauri (`main.rs`), API local e supervisão de jogo, build e sala (`server.rs`), etapa de ferramentas (`setup.rs`), relatórios de logs (`report.rs`), atualizações (`update.rs`) e o instalador (`installer.rs`, a mesma executável com nome `*-setup.exe`) |
 | `apps/launcher/web` | Interface (HTML, CSS e JS, tema escuro) |
-| `installer`, `scripts/release.py`, `.github/workflows` | Setup Inno Setup, build de release e CI |
+| `scripts/release.py`, `.github/workflows` | Build de release (setup = launcher empacotado) e CI |
 | `apps/launcher/tauri.conf.json`, `icons` | Identidade da janela; sem permissões de IPC (`capabilities` ausente) |
 | `crates/installer` | Validação de instalação, processo do jogo, perfis e geometria |
 | `crates/manifest`, `crates/build-manager` | Configuração, hashes e processo de build |
@@ -76,43 +75,5 @@ Uma sala nova recebe um código novo. Na LAN, o PC do anfitrião encaminha os pa
 | `local`, `target` | Dados privados e artefatos; fora do Git |
 
 Fluxo atual: launcher → `toolchain/build.py` → preparar runtime → gerar C → compilar objetos → ligar runtime/DLLs → publicar `local/candidate.json` → teste solo. Um candidato não é uma instalação qualificada. O launcher verifica seus hashes antes de executar.
-
-## Alterar sem recompilar o jogo inteiro
-
-```powershell
-# Só launcher/interface (gera target/release/Launcher.exe)
-cargo build --release --locked -p mk8-online
-
-# Runtime: reutiliza a biblioteca do jogo da preparação existente
-./local/python/Scripts/python.exe -u toolchain/build.py --config local/config.json --local local --runtime-only
-
-# Retomar ligação após compilar os objetos
-./local/python/Scripts/python.exe -u toolchain/build.py --config local/config.json --local local --finish
-```
-
-Mudanças no tradutor, nos módulos ou nos patches de código guest exigem regenerar ou recompilar as unidades afetadas. `--runtime-only` reutiliza a biblioteca do jogo. O pipeline gera os módulos em paralelo e adianta a compilação do runtime e a preparação do linker enquanto compila o jogo. No Xeon E5-2666 v3 com 16 GB, uma preparação com caches vazios levou **14 min 16 s** com 16 compiladores, após instalar as ferramentas. Reserve **20–25 min** para a primeira execução se houver outras cargas no PC. O padrão usa até 16 compiladores conforme CPU e RAM disponíveis. `MK8_NATIVE_JOBS=<n>` permite ajustar o limite de 1 a 16. Nas preparações seguintes, o cache de objetos verificados em `local/native-tools/objects` reaproveita unidades cujas fontes, headers e flags continuam iguais.
-
-Diagnóstico de desempenho: `MK8_SAMPLE=<frame>:<segundos>` amostra as threads do processo (~400 Hz) e registra no log, por thread, CPU usada e onde as amostras caíram (função do jogo `f_<endereço>`, função do runtime com arquivo:linha, ou módulo). O nome atribuído a uma espera do sistema é aproximado. `MK8_TRACE_TEXPOOL=<primeiro>:<último>` registra, nesse intervalo de quadros, os registros no pool de texturas e os binds de IDs que já foram cubemaps, com os chamadores guest.
-
-Com `LARECOMP_VK_PROF=1`, `MK8_FRAME_TIMES=1` registra cada quadro como `[frame] número total_ms execução_ms prefetch_ms apresentação_ms restante_ms`. O relatório de engasgos também separa o prefetch de shaders; anteriormente esse trabalho aparecia em `other`. Use percentis dos tempos por quadro, excluindo menus/carregamento e capturas, para avaliar estabilidade além do FPS médio: `python scripts/frame-stats.py local/race-grand-prix-xxxx --from 3600 --to 7990` faz isso. A tradução de comandos roda numa thread própria (`MK8_ASYNC_SUBMIT=0` volta à tradução síncrona) e os draws esperam no máximo 4 ms por quadro por shaders ainda compilando (`MK8_SHADER_WAIT_MS`, negativo desliga o limite; o draw é pulado até o build ficar pronto).
-
-A apresentação agora usa o timer de alta resolução do runtime, mantendo os prazos de 60 Hz. Isso reduziu a oscilação entre quadros no teste de Canyon; pausas de carregamento e de primeiro uso de shaders ainda podem ocorrer. O tradutor também evita consultas repetidas de configuração e formatação duplicada de texto.
-
-Compute sem espera está ativado nesta build experimental: resultados permanecem pendentes até uma leitura pela CPU exigir espera, e cada dispatch que escreve memória guest é enviado antes dos uploads seguintes. `MK8_DEFER_COMPUTE_FLUSH=0` restaura as esperas antigas; `MK8_COMPUTE_SUBMIT=0` testa o adiamento sem separar os envios. O ganho médio não elimina todos os picos de frametime. Comparações e limitações em `docs/STATUS.md`.
-
-`scripts/test-race.py time-trial --course water-park` e `--course sweet-sweet-canyon` testam outras pistas com aceleração contínua e saves isolados. `--cache-from <pasta/cache>` copia apenas o cache de uma execução anterior para comparar com cache aquecido; sem a opção, o teste começa com cache vazio. O encerramento por captura agora salva também o cache Vulkan, como o encerramento normal. `--env LARECOMP_LOG_WAITS=10` registra esperas de shaders acima de 10 ms. Capturas acrescentam custo e devem ficar fora dos intervalos comparados.
-
-## Verificar
-
-```powershell
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-./local/python/Scripts/python.exe -m unittest discover -s tests -p test_pipeline.py
-./local/python/Scripts/python.exe -m unittest discover -s tests -p test_texture_memo.py
-python -m unittest discover -s tests -p test_launcher_e2e.py
-```
-
-O último comando requer Playwright/Chromium no Python escolhido e o `Launcher.exe` release atualizado (`MK8_LAUNCHER_EXE` aponta outro executável; `MK8_TEST_RELAY_EXE` ativa o teste do relay); ele usa `--headless` para a interface e abre também a janela nativa (WebView2 com depuração numa porta local e pasta de perfil temporária) para conferir a tela de instalação e o bloqueio de navegação. Testes nativos usam o compilador local; a validação privada do SDK exige o código gerado do próprio jogo. Testes automatizados não comprovam uma corrida correta.
 
 Estado e próximos passos: [docs/STATUS.md](docs/STATUS.md). Orientação para agentes: [AGENTS.md](AGENTS.md). Origens, atribuições e licenças: [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). Código próprio sob [GPL-3.0-or-later](LICENSE); conteúdo do jogo e chaves não são distribuídos.

@@ -1,0 +1,70 @@
+Importação: reconstruindo os arquivos NCA dos pacotes.
+Importação: aplicando atualização e extraindo arquivos com verificação de integridade.
+Importação 4.0.1 verificada.
+MK8: verificando entradas e runtime.
+Etapa: validar e adaptar runtime
+Etapa: traduzir AArch64 para C e preparar runtime Windows em paralelo.
+subsdk0: 9808 boundaries, 13329 functions, 2 rounds, {'jumptables': 400, 'br_dispatch': 8343, 'br_all_labels': 46}, 10s
+subsdk0: progress 1090/13329 files 12
+subsdk0: progress 1405/13329 files 37
+subsdk0: progress 2081/13329 files 62
+subsdk0: progress 4218/13329 files 87
+subsdk0: progress 8031/13329 files 109
+subsdk0: wrote 115 chunks, 11s total
+sdk: 21773 boundaries, 28228 functions, 2 rounds, {'br_dispatch': 12337, 'jumptables': 377, 'br_all_labels': 56}, 12s
+sdk: progress 5094/28228 files 18
+sdk: progress 10892/28228 files 43
+sdk: progress 14834/28228 files 68
+sdk: progress 20280/28228 files 93
+sdk: progress 23404/28228 files 118
+sdk: wrote 122 chunks, 14s total
+main: 56240 boundaries, 57034 functions, 4 rounds, {'jumptables': 875, 'br_dispatch': 3586, 'br_all_labels': 89}, 26s
+main: progress 2897/57034 files 21
+main: progress 5630/57034 files 46
+main: progress 19938/57034 files 71
+main: progress 24279/57034 files 96
+main: progress 25955/57034 files 121
+main: progress 32525/57034 files 146
+main: progress 38394/57034 files 171
+main: progress 45322/57034 files 196
+main: progress 52784/57034 files 221
+main: wrote 242 chunks, 31s total
+Geração C concluída em 261.3 s. Compilando código nativo Windows.
+Runtime Windows: 21/210 unidades
+Runtime Windows: 46/210 unidades
+Compilação nativa: 16 compiladores, 484 unidades.
+Runtime Windows: 70/210 unidades
+Runtime Windows: 91/210 unidades
+Runtime Windows: 113/210 unidades
+Runtime Windows: 133/210 unidades
+Runtime Windows: 154/210 unidades
+Runtime Windows: 174/210 unidades
+Runtime Windows: 197/210 unidades
+Compilação nativa: 36/484 unidades
+Compilação nativa: 61/484 unidades
+Compilação nativa: 86/484 unidades
+Compilação nativa: 111/484 unidades
+Ligação de DLL do Zig pronta.
+Compilação nativa: 136/484 unidades
+Compilação nativa: 161/484 unidades
+Compilação nativa: 186/484 unidades
+Compilação nativa: 211/484 unidades
+Compilação nativa: 236/484 unidades
+Compilação nativa: 261/484 unidades
+Compilação nativa: 286/484 unidades
+Compilação nativa: 311/484 unidades
+Executável do runtime ligado; gameplay ainda não verificado.
+Compilação nativa: 336/484 unidades
+Compilação nativa: 361/484 unidades
+Compilação nativa: 386/484 unidades
+Compilação nativa: 411/484 unidades
+Compilação nativa: 436/484 unidades
+Compilação nativa: 461/484 unidades
+Compilação nativa concluída em 660.1 s.
+Ligando módulo sdk...
+Ligando módulo subsdk0...
+Ligando módulo main...
+Dependência: mingw-w64-ucrt-x86_64-libgcc-16.2.0-6-any.pkg.tar.zst
+Dependências verificadas: 107 executáveis/DLLs.
+Build experimental integrada. Use Testar solo experimental; nenhuma corrida está qualificada.
+Runtime e ligação: 297.0 s. Preparação total: 1218.5 s.

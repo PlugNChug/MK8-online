@@ -244,7 +244,7 @@ pub fn download_and_start(local: &Path) -> Result<PathBuf> {
         );
     }
     std::fs::rename(&partial, &target).map_err(|e| e.to_string())?;
-    // Inno Setup: silent install over the running copy; its [Run] entry starts the new launcher afterwards.
+    // The setup (installer.rs) installs silently over this copy, with its folders, and starts the new launcher.
     Command::new(&target)
         .args([
             "/SILENT",

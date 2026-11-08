@@ -11,6 +11,8 @@ import subprocess
 import sys
 import time
 
+from repair import cleanup_stale, remove_owned, unlink_links_on_the_way
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -123,16 +125,22 @@ def build(config, local):
     validate_game_identity(imported / "main.npdm")
     prepared = job / "runtime"
     print("Etapa: validar e adaptar runtime", flush=True)
+    cleanup_stale(job, "runtime-pending-*")  # (a preparation cut off before it finished)
+    if (prepared / "MK8-ADOPTION.json").is_file() and (job / "runtime-hashes.json").is_file():
+        changed = [rel for rel, digest in json.loads((job / "runtime-hashes.json").read_text()).items()
+                   if not (prepared / rel).is_file() or sha(prepared / rel) != digest]
+        if changed:
+            # Prepared from the pinned sources again instead of asking the user to delete it.
+            print(f"Runtime preparado alterado ({changed[0]}); preparando de novo.", flush=True)
+            remove_owned(prepared, job)
+    elif prepared.exists() and not (prepared / "MK8-ADOPTION.json").is_file():
+        remove_owned(prepared, job)
     if not (prepared / "MK8-ADOPTION.json").is_file():
         stage = job / f"runtime-pending-{time.time_ns()}"
         subprocess.run([sys.executable, ROOT / "runtime/prepare.py", "--upstream", upstream, "--output", stage, "--profile", profile_path], check=True)
         stage.rename(prepared)
     else:
-        print("Runtime preparado anteriormente; verificando integridade.", flush=True)
-        if (job / "runtime-hashes.json").is_file():
-            for rel, digest in json.loads((job / "runtime-hashes.json").read_text()).items():
-                if not (prepared / rel).is_file() or sha(prepared / rel) != digest:
-                    raise ValueError(f"Runtime local alterado: {rel}; use nova preparação")
+        print("Runtime preparado anteriormente; verificado.", flush=True)
     runtime_hashes = {str(p.relative_to(prepared)): sha(p) for p in prepared.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
     atomic_json(job / "runtime-hashes.json", runtime_hashes)
     from host import build_host, prepare_dll_link
@@ -239,6 +247,9 @@ def finish(config, local, executable=None):
     data = local/'game-data'/generated['identity'][:16]
     if os.name == 'nt' and any(len(str(data/'extracted/romfs'/p.relative_to(romfs))) >= 260 for p in romfs.rglob('*') if p.is_file()):
         raise ValueError('Caminho do RomFS excede MAX_PATH; use uma pasta local mais curta para os testes')
+    print('Etapa: preparar os dados do jogo.', flush=True)
+    for removed in [*unlink_links_on_the_way(data/'extracted/exefs', local), *unlink_links_on_the_way(data/'extracted/romfs', local)]:
+        print(f'Link antigo removido (só o link): {removed}', flush=True)
     mirror(data/'extracted/exefs', job/'inputs/exefs')
     mirror(data/'extracted/romfs', romfs)
     prepare_system_data(config, local)
