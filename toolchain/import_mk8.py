@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 from repair import cleanup_stale, remove_owned
-from storage import GIB, require_space
+from storage import GIB, io_workers, require_space
 from native import compiler_path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -162,11 +162,12 @@ def tickets(stream, index):
             yield raw[0x2a0:0x2b0].hex() + " = " + raw[0x180:0x190].hex()
 
 
-def extract(base, patch, control, keys, title_keys, scratch, output, tool):
+def extract(base, patch, control, keys, title_keys, scratch, output, tool, workers=1):
     data = ("\n".join(title_keys) + "\n").encode("ascii")
     print("Importação: aplicando atualização e extraindo arquivos com verificação de integridade.", flush=True)
     # Tickets travel by pipe. Suppress extractor diagnostics that may contain private material.
-    result = subprocess.run([tool / "dotnet/dotnet.exe", tool / "mk8-import.dll", base, patch, control, keys, output], cwd=scratch, input=data,
+    result = subprocess.run([tool / "dotnet/dotnet.exe", tool / "mk8-import.dll", base, patch, control, keys, output,
+                             str(workers)], cwd=scratch, input=data,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode:
         if result.returncode == 8:
@@ -260,7 +261,8 @@ def prepare(config, local, validate_game_identity):
 
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             list(pool.map(rebuild, jobs))
-        extract(*files, keys, title_keys, scratch, output, tool)
+        # The RomFS is written by several threads (each with its own reader and the same integrity check).
+        extract(*files, keys, title_keys, scratch, output, tool, io_workers(local))
         validate(output, validate_game_identity)
         output.rename(target)
     print("Importação 4.0.1 verificada.", flush=True)

@@ -69,7 +69,7 @@ def wait_capture(child, timeout, log):
 def run(args):
     if shutil.disk_usage(LOCAL).free < 4 * 1024**3:
         raise SystemExit('Race capture requires at least 4 GiB free on the local drive')
-    candidate = json.loads((LOCAL / 'candidate.json').read_text(encoding='utf-8'))
+    candidate = json.loads((args.candidate or LOCAL / 'candidate.json').read_text(encoding='utf-8'))
     for entry in [candidate['executable'], *candidate['files'].values()]:
         path = Path(entry['path'])
         with path.open('rb') as stream:
@@ -142,6 +142,7 @@ if __name__ == '__main__':
     parser.add_argument('--cup', choices=CUPS, default='mushroom', help='Time Trial cup (with --track)')
     parser.add_argument('--track', type=int, choices=range(4), help='Track 0-3 of --cup (overrides --course)')
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
+    parser.add_argument('--candidate', type=Path, help='candidate.json of another data folder (e.g. a fresh build)')
     args = parser.parse_args()
     if args.mode != 'time-trial' and (args.course != 'stadium' or args.cup != 'mushroom' or args.track is not None):
         parser.error('--course, --cup and --track require time-trial')

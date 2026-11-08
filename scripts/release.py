@@ -73,11 +73,19 @@ def build(args):
     shutil.copyfile(launcher, setup)
     digest = sha256(setup)
     (DIST / f"{setup.name}.sha256").write_text(f"{digest}  {setup.name}\n", encoding="ascii")
+    # LGPL: the setup carries FFmpeg DLLs built by scripts/build-ffmpeg.sh, so its source goes with the release.
+    ffmpeg = ROOT / "target/prebuilt-ffmpeg"
+    for name in ("ffmpeg-9.0.2.tar.xz", "build-ffmpeg.sh"):
+        if not (ffmpeg / name).is_file():
+            raise SystemExit(f"Fonte do FFmpeg ausente: {ffmpeg / name} (execute scripts/build-ffmpeg.py)")
+        shutil.copyfile(ffmpeg / name, DIST / name)
     notes = DIST / "release-notes.md"
     notes.write_text(
         f"## MK8-online {version} (experimental)\n\n"
         "Instale com o setup abaixo; quem já tem o Launcher pode usar **Suporte → Atualizar agora**.\n"
         "Cada máquina prepara o jogo com os próprios arquivos do console: nada do jogo é distribuído.\n\n"
+        "O setup inclui DLLs do FFmpeg 9.0.2 (LGPL 2.1) compiladas com `build-ffmpeg.sh`; o código-fonte "
+        "correspondente (`ffmpeg-9.0.2.tar.xz`) está anexado a esta release.\n\n"
         "Pendências conhecidas: veja [docs/STATUS.md](../blob/main/docs/STATUS.md). "
         "Ao relatar um problema, anexe o .zip de **Suporte → Gerar relatório**.\n\n"
         f"SHA-256 de `{setup.name}`: `{digest}`\n",

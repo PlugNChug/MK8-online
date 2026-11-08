@@ -82,5 +82,57 @@ class PrebuiltHostTests(unittest.TestCase):
         self.assertNotEqual(first, host.host_key({'headers': {'x.h': '2'}}, ['-O2'], [], self.root, self.root))
 
 
+class PrebuiltFFmpegTests(unittest.TestCase):
+    NAMES = ('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll', 'swscale-10.dll')
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory(prefix='mk8-ffmpeg-')
+        root = Path(self.folder.name)
+        self.prebuilt, self.deps = root / 'prebuilt', root / 'deps'
+        for folder in (self.prebuilt, self.deps / 'bin'):
+            folder.mkdir(parents=True)
+            for name in self.NAMES:
+                (folder / name).write_bytes(folder.name.encode() + name.encode())
+        (self.prebuilt / 'manifest.json').write_text(json.dumps(
+            {'files': {name: digest(self.prebuilt / name) for name in self.NAMES}}), encoding='utf-8')
+        self.saved = host.PREBUILT_FFMPEG, host.DEPS
+        host.PREBUILT_FFMPEG, host.DEPS = self.prebuilt, self.deps
+
+    def tearDown(self):
+        host.PREBUILT_FFMPEG, host.DEPS = self.saved
+        self.folder.cleanup()
+
+    def test_checked_minimal_build_is_preferred(self):
+        self.assertEqual(host.ffmpeg_dlls(), [self.prebuilt / name for name in self.NAMES])
+
+    def test_changed_or_missing_file_falls_back_to_the_pinned_build(self):
+        (self.prebuilt / 'avcodec-63.dll').write_bytes(b'changed')
+        self.assertEqual(host.ffmpeg_dlls(), [self.deps / 'bin' / name for name in self.NAMES])
+        (self.prebuilt / 'manifest.json').unlink()
+        self.assertEqual(host.ffmpeg_dlls(), [self.deps / 'bin' / name for name in self.NAMES])
+
+    def test_no_ffmpeg_at_all_stops_the_build(self):
+        (self.prebuilt / 'manifest.json').unlink()
+        for name in self.NAMES:
+            (self.deps / 'bin' / name).unlink()
+        with self.assertRaisesRegex(ValueError, 'FFmpeg ausente'):
+            host.copy_runtime_dlls(Path(self.folder.name))
+
+    def test_minimal_ffmpeg_lets_the_tools_step_drop_the_full_one(self):
+        import runpy
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        prune = runpy.run_path(str(ROOT / 'scripts/setup-runtime-deps.py'))['prune']
+        ucrt64 = Path(self.folder.name) / 'ucrt64'
+        (ucrt64 / 'bin').mkdir(parents=True)
+        keep = ['SDL3.dll', 'libshaderc_shared.dll', 'libiconv-2.dll', 'vulkan-1.dll']
+        drop = [*self.NAMES, 'avfilter-12.dll', 'avdevice-63.dll', 'swresample-7.dll', 'ffmpeg.exe', 'ffprobe.exe']
+        for name in keep + drop:
+            (ucrt64 / 'bin' / name).write_bytes(b'x')
+        prune(ucrt64)
+        self.assertEqual(len(list((ucrt64 / 'bin').iterdir())), len(keep + drop))  # (only with the minimal build)
+        prune(ucrt64, minimal_ffmpeg=True)
+        self.assertEqual(sorted(p.name for p in (ucrt64 / 'bin').iterdir()), sorted(keep))
+
+
 if __name__ == '__main__':
     unittest.main()

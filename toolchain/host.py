@@ -382,12 +382,34 @@ HOST_FILES = ('mk8drecomp.exe', 'mk8drecomp.dll.a')
 PREBUILT = ROOT/'prebuilt/host'
 
 
+PREBUILT_FFMPEG = ROOT/'prebuilt/ffmpeg'
+FFMPEG_PATTERNS = ['avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll', 'swscale-*.dll']
+
+
+def ffmpeg_dlls():
+    """The minimal FFmpeg from the setup (scripts/build-ffmpeg.py) when its manifest and every hash match, else the
+    pinned MSYS2 build. Same version and file names either way; the runtime links the same import libraries."""
+    manifest = PREBUILT_FFMPEG/'manifest.json'
+    try:
+        files = json.loads(manifest.read_text(encoding='utf-8'))['files'] if manifest.is_file() else {}
+    except (OSError, ValueError, KeyError):
+        files = {}
+    names = {pattern: [name for name in files if Path(name).match(pattern)] for pattern in FFMPEG_PATTERNS}
+    if files and all(len(found) == 1 for found in names.values()) and all(
+            (PREBUILT_FFMPEG/name).is_file() and digest(PREBUILT_FFMPEG/name) == sha for name, sha in files.items()):
+        return [PREBUILT_FFMPEG/found[0] for found in names.values()]
+    return [dll for pattern in FFMPEG_PATTERNS for dll in sorted((DEPS/'bin').glob(pattern))]
+
+
 def copy_runtime_dlls(output):
-    for pattern in ['SDL3.dll', 'libshaderc_shared.dll', 'avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll', 'swscale-*.dll']:
-        for dll in (DEPS/'bin').glob(pattern):
-            target = output/dll.name
-            if not target.is_file() or digest(target) != digest(dll):
-                shutil.copy2(dll, target)
+    ffmpeg = ffmpeg_dlls()
+    if len(ffmpeg) != len(FFMPEG_PATTERNS):
+        raise ValueError('FFmpeg ausente: execute de novo o passo Ferramentas (scripts/setup-runtime-deps.py)')
+    for dll in [*(dll for pattern in ['SDL3.dll', 'libshaderc_shared.dll'] for dll in (DEPS/'bin').glob(pattern)),
+                *ffmpeg]:
+        target = output/dll.name
+        if not target.is_file() or digest(target) != digest(dll):
+            shutil.copy2(dll, target)
 
 
 def host_key(inputs, flags, sources, source, output):

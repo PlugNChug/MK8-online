@@ -12,6 +12,8 @@ O código próprio usa GPL-3.0-or-later (`../LICENSE`). Os snapshots e bibliotec
 
 O setup leva o executável do runtime já compilado (`prebuilt/host`, gerado por `scripts/prebuild-host.py` a partir das mesmas fontes que vão no pacote, sem nenhum arquivo do jogo). Nele entram estaticamente mbedTLS, Dear ImGui e SMAA (licenças nos snapshots do upstream), além da libc++/libunwind do LLVM (Apache-2.0 com LLVM Exception) e da CRT do mingw-w64 fornecidas pelo Zig 0.17.0. O código-fonte correspondente acompanha o pacote.
 
+O setup leva também um FFmpeg 9.0.2 mínimo (`prebuilt/ffmpeg`: avcodec, avformat, avutil e swscale, só com mov/matroska, h264/vp8/aac e o protocolo de arquivo), compilado por `scripts/build-ffmpeg.sh` a partir do pacote oficial ([ffmpeg.org](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz), SHA-256 conferido) com o assembly do nasm 2.16.03. Licença LGPL 2.1 ou posterior (nenhum componente GPL ou não livre habilitado); `LICENSE.md` e `COPYING.LGPLv2.1` vão junto das DLLs, e cada release anexa o código-fonte e o script de build. Os headers e bibliotecas de importação continuam os do pacote MSYS2 fixado da mesma versão.
+
 Os avisos MIT completos nesta pasta acompanham os trechos adaptados. Não retirar licenças dos snapshots ao organizar o código. Dependências Rust estão fixadas por `Cargo.lock`; compilador e dependências nativas pelos scripts/manifestos locais.
 
 As demais avaliações históricas não são dependências de execução nem evidência de FPS ou compatibilidade deste projeto. Não copiar DLLs, endereços ou resultados de jogos diferentes. ROM, chaves, código gerado e modelos do dump permanecem privados.

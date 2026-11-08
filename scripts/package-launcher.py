@@ -33,6 +33,10 @@ def payload_files():
     # The runtime executable built from these same sources (scripts/prebuild-host.py); a build checks its key.
     for name in ("mk8drecomp.exe", "mk8drecomp.dll.a", "manifest.json"):
         yield ROOT / "prebuilt/host" / name
+    # The minimal FFmpeg (scripts/build-ffmpeg.py) with its LGPL notices; the build checks every hash.
+    manifest = json.loads((ROOT / "prebuilt/ffmpeg/manifest.json").read_text(encoding="utf-8"))
+    for name in (*manifest["files"], "manifest.json", "LICENSE.md", "COPYING.LGPLv2.1", "configuration.txt"):
+        yield ROOT / "prebuilt/ffmpeg" / name
     for name, digest in sorted(json.loads(MANIFEST.read_text(encoding="utf-8"))["files"].items()):
         path = ROOT / "upstream/smm2recomp" / name
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
@@ -45,6 +49,7 @@ def main():
     # The repository publishes only the upstream manifests; the pinned sources are fetched and verified here.
     subprocess.run([sys.executable, ROOT / "scripts/fetch-upstream.py"], check=True)
     subprocess.run([sys.executable, ROOT / "scripts/setup-import-tool.py"], check=True)
+    subprocess.run([sys.executable, ROOT / "scripts/build-ffmpeg.py"], check=True)
     subprocess.run([sys.executable, ROOT / "scripts/prebuild-host.py"], check=True)
     payload = OUTPUT / "launcher-source.zip"
     with ZipFile(payload, "w", ZIP_DEFLATED) as archive:

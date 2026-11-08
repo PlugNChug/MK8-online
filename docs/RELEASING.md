@@ -26,7 +26,7 @@ Revise as notas geradas e acrescente o que mudou. Ao pedir para uma IA preparar 
 
 ## Localmente
 
-Requisitos: Rust, Python 3.12, PowerShell 7 e .NET 10 x64 (extrator de pacotes). Também é preciso ter as ferramentas nativas instaladas (`scripts/setup-native.py` e `scripts/setup-runtime-deps.py`): o empacotamento compila o runtime do jogo (`scripts/prebuild-host.py`, ~1 min) e o leva pronto em `prebuilt/host`, com a chave das entradas; a build do jogador o usa só se a chave dele for idêntica. O setup é o próprio `Launcher.exe` empacotado com o nome `MK8-online-<versão>-setup.exe`: esse nome abre a janela de instalação (`apps/launcher/src/installer.rs`).
+Requisitos: Rust, Python 3.12, PowerShell 7 e .NET 10 x64 (extrator de pacotes). Também é preciso ter as ferramentas nativas instaladas (`scripts/setup-native.py` e `scripts/setup-runtime-deps.py`): o empacotamento compila o runtime do jogo (`scripts/prebuild-host.py`, ~1 min) e o leva pronto em `prebuilt/host`, com a chave das entradas; a build do jogador o usa só se a chave dele for idêntica. O FFmpeg mínimo (`scripts/build-ffmpeg.py`) é compilado no WSL (Ubuntu com `make`, `gcc` e `curl`; ~6 min na primeira vez, depois reaproveitado enquanto o script não mudar) e a release anexa `ffmpeg-9.0.2.tar.xz` e `build-ffmpeg.sh` (LGPL). Para recompilar o extrator, defina `MK8_IMPORT_PWSH` com o caminho do `pwsh.exe` do PowerShell 7 quando ele não estiver no PATH. O setup é o próprio `Launcher.exe` empacotado com o nome `MK8-online-<versão>-setup.exe`: esse nome abre a janela de instalação (`apps/launcher/src/installer.rs`).
 
 ```powershell
 $env:MK8_UPDATE_REPO = "owner/nome-do-repositorio"

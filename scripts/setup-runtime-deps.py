@@ -22,6 +22,8 @@ import zstandard
 
 from downloads import fetch_all, msys2
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'toolchain'))
+
 ROOT = Path(__file__).resolve().parents[1]
 ZIG_VERSION = '0.17.0'  # (scripts/setup-native.py)
 PROBES = {'probe.c': 'int mk8_link_probe(void) { return 0; }\n',
@@ -55,10 +57,16 @@ def finish_warmup(started):
         print('Compilador preparado.', flush=True)
 
 
-def prune(ucrt64):
-    """Removes from the extracted packages what the runtime build never reads (idempotent). Returns bytes freed."""
+def prune(ucrt64, minimal_ffmpeg=False):
+    """Removes from the extracted packages what the runtime build never reads (idempotent). Returns bytes freed.
+
+    With the setup's minimal FFmpeg (checked by toolchain/host.py ffmpeg_dlls), the full MSYS2 FFmpeg programs and
+    DLLs are not used either; its headers and import libraries (same version) still are."""
     victims = [*(ucrt64 / 'include/vulkan').glob('*.hpp'), ucrt64 / 'share/vulkan/registry', ucrt64 / 'bin/glslc.exe',
                *(p for p in (ucrt64 / 'lib').glob('lib*.a') if not p.name.endswith('.dll.a'))]
+    if minimal_ffmpeg:
+        victims += [p for pattern in ('av*-*.dll', 'sw*-*.dll', 'postproc-*.dll', 'ffmpeg.exe', 'ffprobe.exe',
+                                      'ffplay.exe') for p in (ucrt64 / 'bin').glob(pattern)]
     freed = 0
     for path in victims:
         if path.is_symlink() or os.path.isjunction(path) or not path.exists():
@@ -105,7 +113,10 @@ def setup():
         # The DLLs the runtime and FFmpeg import, fetched now rather than in the middle of the build. It runs before the
         # pinned archives are deleted: some imported DLLs (FFmpeg's swresample) come from them.
         subprocess.run([sys.executable, str(ROOT / 'scripts/runtime-dlls.py'), '--prefetch'], check=True)
-        freed = prune(root / 'packages/ucrt64')
+        from host import PREBUILT_FFMPEG, ffmpeg_dlls
+        found = ffmpeg_dlls()
+        minimal = bool(found) and all(p.is_relative_to(PREBUILT_FFMPEG) for p in found)
+        freed = prune(root / 'packages/ucrt64', minimal_ffmpeg=minimal)
         for expected, package in pins:
             archive = archive_of(package)
             if archive.exists():

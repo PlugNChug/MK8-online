@@ -22,11 +22,11 @@ import zstandard
 
 from downloads import fetch, fetch_all, msys2
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'toolchain'))
+
 ROOT = Path(__file__).resolve().parents[1]
 DEPS = Path(os.environ.get('MK8_NATIVE_TOOLS') or ROOT/'local/native-tools')/'deps'
 CACHE = DEPS/'dlls'
-# The libraries toolchain/host.py copies next to the runtime executable.
-LINKED = ['SDL3.dll', 'libshaderc_shared.dll', 'avcodec-*.dll', 'avformat-*.dll', 'avutil-*.dll', 'swscale-*.dll']
 
 
 def digest(path):
@@ -61,7 +61,10 @@ def unpack(filename, expected, name, cache):
     (CACHE/'index.json').write_text(json.dumps(cache, indent=2, sort_keys=True), encoding='utf-8')
 
 
-def resolve(folder):
+def resolve(folder, roots=None):
+    """Copies into `folder` every DLL its programs import, from the cache or checked MSYS2 archives. Without `roots`, the
+    programs are the executables and the DLLs no MSYS2 package provides (runtime and game modules); an MSYS2 DLL
+    that none of them reaches any more (left by an earlier build) is removed."""
     index = DEPS/'ucrt64.files'
     if not index.exists():
         fetch(msys2('ucrt64.files'), index)
@@ -85,7 +88,12 @@ def resolve(folder):
     lock = {}
     seen = set()
     opened = set()
-    queue = [*folder.glob('*.exe'), *folder.glob('*.dll')]
+    if roots is None:
+        roots = [*folder.glob('*.exe'), *(p for p in folder.glob('*.dll') if p.name.lower() not in owners)]
+        prune_unreached = True
+    else:
+        prune_unreached = False
+    queue = list(roots)
     # One dependency level at a time: the archives a level needs are downloaded together.
     while queue:
         level, queue, missing = queue, [], {}
@@ -103,6 +111,9 @@ def resolve(folder):
             for name in imports:
                 dll = folder/name
                 if dll.exists():
+                    entry = cache.get(name.lower())
+                    if entry and digest(dll) == entry['sha256']:
+                        lock[entry['package']] = entry['package_sha256']  # (placed earlier from this archive)
                     queue.append(dll); continue
                 system = (Path(os.environ['SystemRoot'])/'System32'/name).is_file()
                 if name.lower() in missing or name.lower().startswith(('api-ms-', 'ext-ms-')) or system:
@@ -133,25 +144,38 @@ def resolve(folder):
             queue.append(folder/name)
     for filename in opened:
         (DEPS/filename).unlink(missing_ok=True)  # (its DLLs are in the cache now)
-    lockfile = folder/'dll-packages.json'
-    previous = json.loads(lockfile.read_text(encoding='utf-8')) if lockfile.exists() else {}
-    previous.update(lock)
-    lockfile.write_text(json.dumps(previous, indent=2), encoding='utf-8')
+    for stale in folder.glob('*.dll'):
+        if prune_unreached and stale.name.lower() in owners and stale.name.lower() not in seen:
+            stale.unlink()  # (left by an earlier build, e.g. the full FFmpeg's dependencies; nothing imports it now)
+            print('DLL não usada removida: '+stale.name, flush=True)
+    (folder/'dll-packages.json').write_text(json.dumps(lock, indent=2, sort_keys=True), encoding='utf-8')
     print(f'Dependências verificadas: {len(seen)} executáveis/DLLs.', flush=True)
     return lock
 
 
 def prefetch():
     """Fills the DLL cache for the libraries the runtime links, then removes archives no build will read again."""
+    from host import ffmpeg_dlls  # (the same libraries the build copies next to the runtime)
     bin = DEPS/'packages/ucrt64/bin'
-    linked = [p for pattern in LINKED for p in sorted(bin.glob(pattern))]
-    if len(linked) < len(LINKED):
+    linked = [*(bin/name for name in ('SDL3.dll', 'libshaderc_shared.dll')), *ffmpeg_dlls()]
+    if len(linked) != 6 or not all(p.is_file() for p in linked):
         raise ValueError('Bibliotecas do runtime ausentes em '+str(bin))
     # (an antivirus may still be scanning the copies when the folder is removed: the check itself is already done)
     with tempfile.TemporaryDirectory(prefix='mk8-dlls-', ignore_cleanup_errors=True) as temp:
         for dll in linked:
             shutil.copyfile(dll, Path(temp)/dll.name)
-        resolve(Path(temp))
+        resolve(Path(temp), roots=list(Path(temp).glob('*.dll')))
+        # The cache keeps what the runtime imports now (e.g. no longer the full FFmpeg's ~95 dependencies).
+        used = {p.name.lower() for p in Path(temp).glob('*.dll')}
+        index = CACHE/'index.json'
+        cache = json.loads(index.read_text(encoding='utf-8')) if index.is_file() else {}
+        unused = sorted(set(cache) - used)
+        for name in unused:
+            (CACHE/name).unlink(missing_ok=True)
+            del cache[name]
+        if unused:
+            index.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding='utf-8')
+            print(f'Cache de DLLs: {len(unused)} não usadas removidas.', flush=True)
     for leftover in DEPS.glob('mingw-w64-ucrt-x86_64-*.pkg.tar.zst'):
         leftover.unlink()  # (already in the DLL cache or not needed by the runtime; downloaded again if ever needed)
 
