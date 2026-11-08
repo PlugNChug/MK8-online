@@ -2,11 +2,12 @@
 
 Prefetch mode (the default) makes a draw wait for its program and pipeline, running a still-queued build inline.
 The first sight of a new effect then stops the whole frame while the driver compiles: 244-375 ms frames in the
-Grand Prix and Water Park runs of 06-07/11/2026 (docs/STATUS.md). With MK8_SHADER_WAIT_MS=<ms> the draws of one
-presented frame share that much waiting. A build that is not done within it keeps going on the worker threads,
+Grand Prix and Water Park runs of 06-07/11/2026 (docs/STATUS.md). The draws of one presented frame now share
+MK8_SHADER_WAIT_MS of waiting (default 4 ms). A build that is not done within it keeps going on the worker threads,
 and its draws are skipped until it is ready, as in skip mode (LARECOMP_ASYNC_SHADERS), normally for a few frames.
-Compute dispatches still wait in full, because the game may read their results. Unset or negative keeps the
-upstream behaviour.
+Compute dispatches still wait in full, because the game may read their results. A negative value keeps the
+upstream behaviour. Full Grand Prix with async translation (07/11/2026): one draw skipped in 11,400 frames, no
+stall over 60 ms, against 158-368 ms stalls without the budget in the run before.
 """
 
 WAIT_FOR = '''
@@ -17,14 +18,15 @@ int mk8_job_wait_for(BuildJob *j, double max_ms) {
     if (atomic_load(&j->state) == JOB_DONE) return 1;
     if (max_ms <= 0) return 0;
     double t0 = now_ms();
-    struct timespec until;
-    clock_gettime(CLOCK_REALTIME, &until);
-    long long ns = until.tv_nsec + (long long)(max_ms * 1e6);
-    until.tv_sec += (time_t)(ns / 1000000000);
-    until.tv_nsec = (long)(ns % 1000000000);
     pthread_mutex_lock(&lock);
-    while (atomic_load(&j->state) != JOB_DONE)
-        if (pthread_cond_timedwait(&done, &lock, &until) == ETIMEDOUT) break;
+    // (short slices against the monotonic clock: a timed wait here can overshoot a whole timer tick)
+    while (atomic_load(&j->state) != JOB_DONE && now_ms() - t0 < max_ms) {
+        struct timespec until;
+        clock_gettime(CLOCK_REALTIME, &until);
+        until.tv_nsec += 500000;
+        if (until.tv_nsec >= 1000000000) until.tv_sec++, until.tv_nsec -= 1000000000;
+        pthread_cond_timedwait(&done, &lock, &until);
+    }
     int ok = atomic_load(&j->state) == JOB_DONE;
     count_wait(now_ms() - t0, j, "job (bounded)");
     pthread_mutex_unlock(&lock);
@@ -33,14 +35,14 @@ int mk8_job_wait_for(BuildJob *j, double max_ms) {
 '''
 
 BUDGET = '''
-// MK8 (toolchain/shader_budget.py): MK8_SHADER_WAIT_MS, the waiting the draws of one presented frame may do for
+// MK8 (toolchain/shader_budget.py): MK8_SHADER_WAIT_MS (default 4, negative: no limit), the waiting the draws of one presented frame may do for
 // their shaders and pipelines; past it a build goes on in the background and its draws are skipped meanwhile.
 int mk8_job_wait_for(BuildJob *j, double max_ms);
 uint64_t vk_frame_counter(void);
 static uint64_t mk8_sb_skips;
 static double mk8_shader_budget_ms(void) {
     static double v = -2;
-    if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : -1; }
+    if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : 4; }
     return v;
 }
 static bool mk8_job_ready(JobQueue *q, BuildJob *j) {

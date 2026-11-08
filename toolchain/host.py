@@ -212,6 +212,8 @@ def prepare_host_sources(source, output):
     prepare_submit_ring(runtime)
     from shader_budget import prepare as prepare_shader_budget
     prepare_shader_budget(runtime)
+    from async_submit import prepare as prepare_async_submit
+    prepare_async_submit(runtime)
     menu = runtime/'ui/menu.mm'
     text = menu.read_text(encoding='utf-8')
     boundary = '        tabs_body(scale, true, NULL);'

@@ -174,6 +174,39 @@ As capturas da terceira volta e do placar foram conferidas. Persistem artefatos 
 
 Restos de oscilação: picos de 25–45 ms no prefetch de shaders (10–27 ms ao entrar numa área nova) e na tradução, além da variação do trabalho do próprio jogo. Próximos passos: tirar a tradução do caminho crítico da thread do jogo (tradução assíncrona com proteção das memórias lidas), reduzir o custo do prefetch e medir de novo em duas máquinas. `gameplay_verified` continua falso.
 
+### Tradução assíncrona e 60 FPS estáveis (07/11/2026, noite)
+
+**`toolchain/async_submit.py` (padrão; `MK8_ASYNC_SUBMIT=0` desliga).** `nvnQueueSubmitCommands` traduzia as listas para Vulkan antes de retornar, na própria thread do jogo, e o tempo dessa tradução somava-se ao do quadro. Agora envios, apresentações e fences de fila entram numa fila ordenada, atendida por uma única thread de tradução:
+- **Adiantamento:** o jogo segue na hora e só espera quando há mais de `MK8_ASYNC_AHEAD` (padrão 1) apresentações por traduzir.
+- **Fences por ticket:** uma fence de fila recebe o ticket do próprio item; uma fence gravada numa lista recebe o ticket do envio que a contém. As listas são varridas no envio, seguindo `CALL` e `JUMP`.
+- **Esperas:** `SyncWait` espera a tradução passar do ticket e depois a GPU; `QueueFinish` espera a fila inteira.
+- **Correção de concorrência:** a fence de fila envia o trabalho aberto na própria thread de tradução. Uma versão anterior deixava `renderer_wait_seq` fazer flush na thread do jogo, e duas threads gravavam no mesmo `VkCommandPool` (`vkBeginCommandBuffer` -13 no logo de abertura).
+- **Por que é seguro:** a tradução não chama código guest nem o kernel emulado. As listas só são liberadas depois de mais 20.000 listas, e as texturas dos comandos ficam retidas.
+- **Teste:** `tests/test_async_submit.py` usa a fila preparada de verdade. Confere ordem, marcação das fences (inclusive em `CALL`/`JUMP`), nada executado fora de ordem com a tradução parada numa apresentação, número de envio da fence e esvaziamento.
+
+**Espera limitada de shaders agora padrão (4 ms por quadro; `MK8_SHADER_WAIT_MS=-1` volta ao comportamento antigo).** A espera usa fatias de 0,5 ms medidas no relógio monotônico; antes, o tempo limite do pthread passava do prazo (esperas de 10–19 ms registradas).
+
+**Medições** (cache do jogador copiado para a sessão de teste; tempos por quadro com `scripts/frame-stats.py`):
+
+| Execução | Trecho | FPS | p95 | p99 | Pior | >20 ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| Linha de base do dia (`race-grand-prix-hr2zt7x8`) | GP 3600–7990 | 57,89 | 21,18 | 26,07 | 161 | 300 |
+| Anel 32 (`krsgwwng`) | GP 3600–7990 | 59,28 | 17,41 | 19,70 | 280 | 41 |
+| + assíncrona (`v63c4dx2`) | GP 3600–7990 | 59,99 | 17,35 | 17,64 | 30 | 11 |
+| + assíncrona, GP completo (`znzl3ac2`) | 3600–15000 | 59,74 | 17,43 | 18,26 | 368 | 51 |
+| + assíncrona + limite 4 ms (`o1_uoc4i`) | 3600–15000 | 59,98 | 17,29 | 17,59 | 59 | 17 |
+| Padrões novos, sem variáveis (`pju0x3eu`) | 3600–15000 | **59,99** | **17,31** | **17,62** | **38** | 26 |
+
+- **Velocidade:** no Water Park (`race-time-trial-hckmznis`), o cronômetro do jogo andou 50,003 s (0:12.113 → 1:02.116) em 50,164 s reais, ou 99,7%. Imagem limpa nas duas capturas.
+- **GP completo:** com os padrões novos terminou normalmente (três voltas e placar).
+- **Picos restantes:** são efeitos vistos pela primeira vez e o prefetch ao entrar em áreas novas (25–38 ms). A exposição estourada continua intermitente.
+
+**Multijogador (duas instâncias nesta máquina, relay local, mesmos roteiros da corrida anterior).**
+- `multiplayer-hetntll_`, assíncrona: os dois jogos entraram na corrida, mas o convidado mostrou **"A communication error has occurred."** na captura 9200, enquanto o anfitrião seguia com o kart dele.
+- `multiplayer-83oht8qc`, `MK8_ASYNC_SUBMIT=0`: os dois na corrida.
+- `multiplayer-bh1f9ewb`, assíncrona: os dois na corrida (59,1 e 59,0 FPS, p99 17,6/17,7 ms em 7300–9190).
+- O erro apareceu uma vez em duas execuções com o modo assíncrono. Nas três há pausas de 400–500 ms fora do backend no começo da corrida, com dois jogos dividindo CPU e GPU. A causa não foi isolada. Validar em duas máquinas e, se o erro voltar, comparar com `MK8_ASYNC_SUBMIT=0`.
+
 ### Integração multiplayer (07/11/2026)
 
 O usuário autorizou testes multiplayer com o candidato experimental e informou não ter segunda máquina/relay público disponíveis. Os testes usam launchers e jogos separados, saves isolados e IPs virtuais distintos; nenhuma instalação foi marcada como qualificada.

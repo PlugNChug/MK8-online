@@ -45,7 +45,8 @@ static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
 ''' + budget + r'''
 int main(int argc, char **argv) {
     (void)argv;
-    if (argc > 1) {  /* unset budget: the upstream wait runs a queued job inline and returns ready */
+    if (argc > 1 && !strcmp(argv[1], "default")) return mk8_shader_budget_ms() == 4 ? 0 : 11;  /* unset: 4 ms */
+    if (argc > 1) {  /* negative budget: the upstream wait runs a queued job inline and returns ready */
         JobQueue *q = jobq_create(1);
         BuildJob a = {0}, b = {0};
         jobq_submit(q, &a, slow, (void *)(uintptr_t)60);
@@ -81,8 +82,9 @@ int main(int argc, char **argv) {
             self.assertEqual(build.returncode, 0, build.stderr[-3000:])
             subprocess.run([str(exe)], check=True, timeout=30,
                            env=dict(os.environ, MK8_SHADER_WAIT_MS='8'))
+            subprocess.run([str(exe), 'off'], check=True, timeout=30, env=dict(os.environ, MK8_SHADER_WAIT_MS='-1'))
             unset = {k: v for k, v in os.environ.items() if k != 'MK8_SHADER_WAIT_MS'}
-            subprocess.run([str(exe), 'unset'], check=True, timeout=30, env=unset)
+            subprocess.run([str(exe), 'default'], check=True, timeout=30, env=unset)
 
     def test_boundaries_are_checked(self):
         with tempfile.TemporaryDirectory() as folder:

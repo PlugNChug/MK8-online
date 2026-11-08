@@ -6,6 +6,8 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 1. Multijogador (prioridade atual)
 
+- **[validação]** Um erro de comunicação apareceu uma vez com duas instâncias na mesma máquina (não reproduzido na repetição). Se aparecer entre duas máquinas, testar com `MK8_ASYNC_SUBMIT=0` e enviar os relatórios dos dois PCs.
+
 - **[validação]** Corrida entre **duas máquinas** pela LAN direta (UDP 47820 no firewall do anfitrião). O transporte e o roteiro já existem; falta repetir com dois PCs reais.
 - **[validação]** Sala pela internet com **relay público** HTTPS/UDP (`mk8-relay`). Até agora só foi testado em loopback; NAT, latência e MTU não foram medidos.
 - **[visível]** Tela dividida: dois controles são reconhecidos, mas a seleção de personagens não avança.
@@ -20,9 +22,9 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 3. Desempenho
 
-- **[visível]** Engasgos no primeiro uso de shaders e pipelines (100–400 ms ao ver um efeito pela primeira vez); o cache em disco evita nas corridas seguintes. `MK8_SHADER_WAIT_MS=4` limita a espera e pula o efeito por alguns quadros: opcional, em teste.
+- **[visível]** Primeiro uso de efeitos: com a espera limitada (padrão, 4 ms por quadro), o efeito pode faltar por alguns quadros em vez de travar a tela; o cache em disco resolve nas corridas seguintes.
 - **[visível]** Picos menores de 25–45 ms ao entrar em áreas novas (prefetch de shaders) e na tradução de comandos.
-- Melhorado: com o anel de 32 envios, o GP passou de p95 21,2 ms para 17,4 ms (quadros acima de 20 ms: 300 → 41 no trecho medido), e o Water Park ficou em 59,9 FPS com p99 17,6 ms.
+- Melhorado: anel de 32 envios, tradução de comandos numa thread própria e espera limitada de shaders. No GP completo: 59,99 FPS, p95 17,3 ms, p99 17,6 ms, pior quadro 38 ms (no início do dia: 57,9 FPS, p95 21,2 ms, picos de 160–370 ms). O jogo roda a 99,7% da velocidade real.
 - Corrigido: travamento (`c0000005`) no início da corrida ao comparar samplers copiados pelo jogo.
 - **[validação]** 60 FPS estáveis e velocidade correta do jogo: o MK8 avança um passo por quadro, então abaixo de 60 FPS o jogo fica em câmera lenta.
 
