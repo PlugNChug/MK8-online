@@ -13,7 +13,7 @@
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.7-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.8-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Experimental-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador 0.1.7 inclui as mudanças mais recentes de VRAM e idiomas.
+> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador de testes 0.1.8 inclui recuperação da preparação, coordenação de processos e o carregador Vulkan.
 
 ## No grid de largada
 
@@ -61,17 +61,17 @@ RatOne desenvolve e mantém a adaptação MK8, o launcher e a integração. A ba
 
 Ferramentas baixa CPython fixado, verifica SHA-256 e cria o ambiente local sem alterar o Python do sistema ou o PATH. Ambientes incompatíveis ou incompletos são preservados em `local/python-backup-*` e recriados automaticamente. Disponível na 0.1.7; usuários da 0.1.6 podem atualizar pelo Suporte antes de repetir Ferramentas.
 
-Correções nas fontes aguardando a próxima versão: a verificação de prontidão usa o Python privado; a instalação ignora configurações externas do pip e exige wheels binários com hashes verificados. Arquivos de download danificados são baixados novamente, e metadados inválidos do cache de compilação acionam recuperação em vez de interromper a preparação. Essas correções adicionais não estão no instalador 0.1.7 publicado. Veja o [estado técnico](docs/STATUS.md).
+Incluído na versão de testes 0.1.8: a verificação de prontidão usa o Python privado; a instalação ignora configurações externas do pip e exige wheels binários com hashes verificados. Arquivos de download danificados são baixados novamente, e metadados inválidos do cache de compilação acionam recuperação em vez de interromper a preparação. Essas correções exigem atualizar da 0.1.7 para a 0.1.8. Veja o [estado técnico](docs/STATUS.md).
 
 As verificações de retomada também cobrem recibos de geração interrompidos e hashes ausentes/inválidos do runtime preparado: arquivos derivados são regenerados das fontes verificadas. A preparação verifica a reserva de 4 GiB antes da importação/substituição do runtime e informa quando a unidade de destino está indisponível. Processos de ferramentas iniciados pelo launcher ignoram variáveis externas de inicialização do Python, preservando os imports locais dos scripts.
 
-As correções locais de desenvolvimento também distinguem arquivos inacessíveis de caches corrompidos: erro de compartilhamento ou permissão interrompe a preparação sem considerar a importação/runtime afetado descartável. A substituição de cada arquivo preserva o destino anterior até conseguir publicar o novo. Origem ausente ou ilegível interrompe a limpeza do espelho; falha ao publicar um download preserva o arquivo baixado e informa o problema local. Resolva o bloqueio/acesso ou reconecte a mesma unidade antes de tentar novamente. Nenhuma permissão ou configuração de antivírus é alterada automaticamente.
+As correções da 0.1.8 também distinguem arquivos inacessíveis de caches corrompidos: erro de compartilhamento ou permissão interrompe a preparação sem considerar a importação/runtime afetado descartável. A substituição de cada arquivo preserva o destino anterior até conseguir publicar o novo. Origem ausente ou ilegível interrompe a limpeza do espelho; falha ao publicar um download preserva o arquivo baixado e informa o problema local. Resolva o bloqueio/acesso ou reconecte a mesma unidade antes de tentar novamente. Nenhuma permissão ou configuração de antivírus é alterada automaticamente.
 
 A preparação nas fontes agora inclui o carregador `vulkan-1.dll` fixado ao lado do jogo e o preserva na limpeza de dependências. O SDL carrega essa DLL dinamicamente; verificar apenas imports estáticos a deixava de fora na 0.1.7. Continua sendo necessário um driver gráfico compatível com Vulkan 1.3: incluir o carregador não instala o driver da GPU.
 
-A estabilização local também bloqueia operações concorrentes entre launchers que compartilham dados/ferramentas e entre execuções do pipeline na mesma pasta de dados. Falhas no cancelamento mantêm o processo sob controle para permitir nova tentativa. A limpeza rejeita diretórios pais com links e para diante de erros de permissão, sem forçar exclusões. Essas proteções continuam em validação; os limites restantes estão no estado técnico.
+A versão 0.1.8 também bloqueia operações concorrentes entre launchers que compartilham dados/ferramentas e entre execuções do pipeline na mesma pasta de dados. Falhas no cancelamento mantêm o processo sob controle para permitir nova tentativa. A limpeza rejeita diretórios pais com links e para diante de erros de permissão, sem forçar exclusões. Essas proteções continuam em validação; os limites restantes estão no estado técnico.
 
-O launcher de desenvolvimento agora supervisiona os processos separadamente: fechar ou perder o launcher interrompe suas ferramentas/builds, enquanto o jogo ativo mantém os bloqueios e pode concluir o salvamento normalmente. Outras instâncias não podem abrir outro jogo com os mesmos saves, recompilar, alterar caminhos ou iniciar atualização desses recursos. Jogos com pastas de dados diferentes podem compartilhar ferramentas somente para leitura. Fechar o launcher ainda desconecta seu gateway multijogador; isso não implementa reconexão de sessão.
+O launcher 0.1.8 supervisiona os processos separadamente: fechar ou perder o launcher interrompe suas ferramentas/builds, enquanto o jogo ativo mantém os bloqueios e pode concluir o salvamento normalmente. Outras instâncias não podem abrir outro jogo com os mesmos saves, recompilar, alterar caminhos ou iniciar atualização desses recursos. Jogos com pastas de dados diferentes podem compartilhar ferramentas somente para leitura. Fechar o launcher ainda desconecta seu gateway multijogador; isso não implementa reconexão de sessão.
 
 ### Instalar e jogar
 

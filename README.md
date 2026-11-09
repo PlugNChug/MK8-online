@@ -13,7 +13,7 @@
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.7-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.8-ef795d)
 ![Status](https://img.shields.io/badge/Status-Experimental-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.7 installer includes the latest VRAM and language changes.
+> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.8 test installer adds preparation recovery, process coordination and the bundled Vulkan loader.
 
 ## On the starting grid
 
@@ -61,17 +61,17 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 Tools downloads a pinned CPython package, verifies SHA-256 and creates its local environment without changing system Python or PATH. Incompatible or incomplete environments are preserved in `local/python-backup-*` and recreated automatically. Available in 0.1.7; users of 0.1.6 can update through Support before retrying Tools.
 
-Source fixes awaiting the next release: readiness checks now use the private Python environment; package installation ignores external pip settings and requires verified binary wheels. Damaged download archives are fetched again, and invalid compilation-cache metadata triggers recovery instead of aborting preparation. These additional fixes are not included in the published 0.1.7 installer. See [technical status](docs/STATUS.md).
+Included in the 0.1.8 test release: readiness checks now use the private Python environment; package installation ignores external pip settings and requires verified binary wheels. Damaged download archives are fetched again, and invalid compilation-cache metadata triggers recovery instead of aborting preparation. These fixes require updating from 0.1.7 to 0.1.8. See [technical status](docs/STATUS.md).
 
 Additional recovery checks cover interrupted generation receipts and missing/invalid prepared-runtime hashes: derived files are regenerated from verified sources rather than trusted without evidence. Preparation checks the 4 GiB reserve before import/runtime replacement and reports unavailable destination volumes. Launcher tool processes ignore external Python startup variables while preserving their local script imports.
 
-Local development fixes also distinguish inaccessible files from corrupt caches: a sharing or permission error stops preparation without treating the affected import/runtime as disposable. File replacement preserves the previous destination until the new file can be published. Missing or unreadable mirror sources stop pruning; failed download publication preserves the downloaded file and reports the local problem. Resolve the lock/access issue or reconnect the same drive before retrying. No permissions or antivirus settings are changed automatically.
+Version 0.1.8 fixes also distinguish inaccessible files from corrupt caches: a sharing or permission error stops preparation without treating the affected import/runtime as disposable. File replacement preserves the previous destination until the new file can be published. Missing or unreadable mirror sources stop pruning; failed download publication preserves the downloaded file and reports the local problem. Resolve the lock/access issue or reconnect the same drive before retrying. No permissions or antivirus settings are changed automatically.
 
 The source preparation now includes the pinned `vulkan-1.dll` loader next to the game and retains it during dependency cleanup. SDL loads this DLL dynamically, so scanning static imports alone missed it in 0.1.7. A compatible Vulkan 1.3 graphics driver is still required; bundling the loader does not install a GPU driver.
 
-Local stabilization also adds operation locks between launchers sharing data/tools and between pipeline runs sharing a data folder. Failed cancellation keeps the process tracked so cancellation can be retried. Cleanup rejects linked parent directories and stops on permission errors instead of forcing deletion. These protections are still under validation; see the remaining limitations in the technical status.
+Version 0.1.8 also adds operation locks between launchers sharing data/tools and between pipeline runs sharing a data folder. Failed cancellation keeps the process tracked so cancellation can be retried. Cleanup rejects linked parent directories and stops on permission errors instead of forcing deletion. These protections are still under validation; see the remaining limitations in the technical status.
 
-The development launcher now supervises processes separately: closing or losing the launcher stops its tool/build processes, while a running game keeps its locks and can finish saving normally. Other instances cannot start another game with the same saves, rebuild, change paths or start an update against those resources. Games using separate data folders can share read-only tools. Closing the launcher still disconnects its multiplayer gateway; this does not provide session reconnection.
+The 0.1.8 launcher supervises processes separately: closing or losing the launcher stops its tool/build processes, while a running game keeps its locks and can finish saving normally. Other instances cannot start another game with the same saves, rebuild, change paths or start an update against those resources. Games using separate data folders can share read-only tools. Closing the launcher still disconnects its multiplayer gateway; this does not provide session reconnection.
 
 ### Install and play
 

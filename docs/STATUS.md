@@ -1,5 +1,15 @@
 # Estado técnico — 09/11/2026
 
+## Release 0.1.8 — versão de testes
+
+Versões Cargo/Tauri/lock sincronizadas em 0.1.8. Esta release reúne as correções de preparação, Python/pip, integridade de caches, coordenação entre instâncias, supervisão de processos, tratamento de arquivos bloqueados e carregador Vulkan descritas abaixo. As referências a “correção local” nas seções seguintes registram o estado de cada investigação antes desta publicação.
+
+A validação inicial do instalador reproduziu acesso negado em 77%: a extração estava completa, mas a renomeação da pasta temporária falhou. A publicação agora aguarda até 15 segundos para erros transitórios Windows 5/32/33, preserva os arquivos e informa os caminhos se falhar. Nova tentativa usa outra pasta temporária, sem excluir a anterior. Um teste Rust mantém um handle real no diretório, confirma preservação após falha e sucesso após desbloqueio. Isso não identifica o processo/antivírus responsável nem contorna permissões persistentes.
+
+Validação: formatação, Clippy e 38 testes Rust aprovados; 49 testes Python de acesso, downloads, armazenamento, pipeline, cache nativo, reparo, Vulkan, host pré-compilado e ferramentas aprovados. Passaram 16 testes de navegador com relay real, 2 de idiomas e 3 de supervisão com processos reais no pacote final. O teste de supervisão aguarda o JSON de prontidão terminar de ser escrito antes de lê-lo. Instalação real, abertura e desinstalação em pasta isolada passaram; atualização silenciosa 0.1.7 → 0.1.8 preservou pastas, idioma, configuração e save sintético. Registro e atalhos pessoais restaurados. READMEs EN/PT renderizados e conferidos. Executável e 912 arquivos do payload revisados, sem identificadores pessoais conhecidos; 13 arquivos privados monitorados permaneceram intactos.
+
+Instalador final: `MK8-online-0.1.8-setup.exe`, SHA-256 `bd2574ec3d430b16c07e7841b107036632213febc1112c9c4a352379324099fb`. Publicação como pré-release v0.1.8, com setup, SHA-256 e fontes/script FFmpeg. A consulta pública pelo atualizador será verificada após publicar. Gameplay e multiplayer entre máquinas continuam não qualificados.
+
 ## Permissões, arquivos em uso e unidades removíveis — correções locais
 
 - Erros de leitura por acesso negado, compartilhamento ou dispositivo indisponível deixam de ser tratados como corrupção nos recibos do runtime, geração, cache nativo e validação da importação. Interrompem a operação; não acionam exclusão/recriação do intermediário afetado.

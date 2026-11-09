@@ -99,8 +99,12 @@ class LifetimeTests(unittest.TestCase):
         process = subprocess.Popen([str(EXE), '--headless', '--data-dir', str(data)], stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: (process.terminate(), process.wait(timeout=10)) if process.poll() is None else None)
-        wait_for(marker.exists)
-        url = json.loads(marker.read_text())['url']
+        def ready_url():
+            try:
+                return json.loads(marker.read_text())['url']
+            except (FileNotFoundError, PermissionError, json.JSONDecodeError):
+                return None  # The marker can exist while the launcher is still writing it.
+        url = wait_for(ready_url)
         html = urllib.request.urlopen(url).read().decode()
         token = re.search(r'name="mk8-token" content="([^"]+)"', html)[1]
         def post(route, value=None):

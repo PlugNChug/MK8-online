@@ -141,7 +141,10 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
         return Ok(root);
     }
     fs::create_dir_all(base)?;
-    let stage = base.join(format!("preparando-{}", std::process::id()));
+    let attempt = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let stage = base.join(format!("preparando-{}-{attempt}", std::process::id()));
     fs::create_dir(&stage)?;
     let archive = stage.join("payload.zip");
     fs::write(&archive, PAYLOAD)?;
@@ -161,9 +164,30 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
         )
         .into());
     }
-    fs::rename(stage, &root)?;
+    publish_payload(&stage, &root, std::time::Duration::from_secs(15))?;
     std::env::set_var("MK8_NATIVE_TOOLS", share_tools(base, &root)?);
     Ok(root)
+}
+
+#[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
+fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> Result<(), Error> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match fs::rename(stage, root) {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if matches!(error.raw_os_error(), Some(5 | 32 | 33))
+                    && std::time::Instant::now() < deadline =>
+            {
+                // Scanners may still hold the freshly extracted directory. Never delete to retry.
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(error) => return Err(format!(
+                "Não foi possível concluir a preparação de {} para {}: {error}. Os arquivos preparados foram preservados. Confira permissões e arquivos em uso e tente novamente.",
+                stage.display(), root.display()
+            ).into()),
+        }
+    }
 }
 
 /// Each launcher version unpacks into its own `<base>/<id>`, and the pinned Zig, graphics
@@ -346,5 +370,34 @@ mod tests {
         fs::remove_dir_all(&base).unwrap();
         assert!(!verbatim, "{}", path.display());
         assert!(found, "{}", path.display());
+    }
+
+    #[test]
+    fn payload_publication_waits_for_a_real_directory_lock_and_preserves_on_failure() {
+        use std::{os::windows::fs::OpenOptionsExt, time::Duration};
+        let base = std::env::temp_dir().join(format!("mk8-payload-lock-{}", std::process::id()));
+        let stage = base.join("stage");
+        let root = base.join("ready");
+        fs::create_dir_all(&stage).unwrap();
+        fs::write(stage.join("keep.txt"), b"prepared").unwrap();
+        let handle = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .custom_flags(0x02000000)
+            .open(&stage)
+            .unwrap();
+        let error = crate::publish_payload(&stage, &root, Duration::ZERO).unwrap_err();
+        assert!(error.to_string().contains("preservados"));
+        assert_eq!(fs::read(stage.join("keep.txt")).unwrap(), b"prepared");
+        assert!(!root.exists());
+        let unlock = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(250));
+            drop(handle);
+        });
+        crate::publish_payload(&stage, &root, Duration::from_secs(5)).unwrap();
+        unlock.join().unwrap();
+        assert_eq!(fs::read(root.join("keep.txt")).unwrap(), b"prepared");
+        assert!(!stage.exists());
+        fs::remove_dir_all(base).unwrap();
     }
 }
