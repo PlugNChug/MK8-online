@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from windows_file_lock import locked_file
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -49,6 +50,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 @unittest.skipUnless(os.name == 'nt', 'curl.exe do Windows')
 class DownloadTests(unittest.TestCase):
+    def test_locked_destination_preserves_previous_and_downloaded_bytes(self):
+        self.target.write_bytes(b'previous download')
+        with locked_file(self.target):
+            with self.assertRaisesRegex(OSError, 'publicar o download'):
+                downloads.fetch([self.base+'/file.bin', self.base+'/file.bin'], self.target,
+                                sha256=hashlib.sha256(DATA).hexdigest())
+            self.assertEqual(self.target.read_bytes(), b'previous download')
+            self.assertEqual(self.target.with_name('file.bin.pending').read_bytes(), DATA)
+            self.assertEqual(len(Handler.requests), 1, 'A local lock must not retry a mirror')
+        downloads.fetch(self.base+'/file.bin', self.target, sha256=hashlib.sha256(DATA).hexdigest())
+        self.assertEqual(self.target.read_bytes(), DATA)
+
     def setUp(self):
         Handler.ranges, Handler.requests = True, []
         self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)

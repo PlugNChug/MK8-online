@@ -214,7 +214,7 @@ def prepare(config, local, validate_game_identity):
             paths = validate(target, validate_game_identity)
             print("Importação: reaproveitando arquivos extraídos.", flush=True)
             return {**config, **paths}
-        except (ValueError, OSError) as error:
+        except (ValueError, FileNotFoundError) as error:
             # Our own extraction, incomplete or changed: extracted again from the packages instead of stopping.
             if not packages:
                 raise ValueError(f"A importação anterior está incompleta ({error}). Selecione o jogo base, "

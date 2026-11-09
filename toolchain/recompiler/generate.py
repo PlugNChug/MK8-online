@@ -60,11 +60,14 @@ def generate(source, exefs, output, profile):
         target = output / name
         receipt = output / (name + "-receipt.json")
         if receipt.is_file():
-            previous = json.loads(receipt.read_text())
-            files = previous.get("files", {})
-            if previous.get("input") == identity and files and set(files) == {p.name for p in target.glob("*.c")} and all((target / p).is_file() and sha(target / p) == h for p,h in files.items()):
-                print(f"{name}: cache verificado", flush=True)
-                return name, identity
+            try:
+                previous = json.loads(receipt.read_text(encoding='utf-8'))
+                files = previous.get("files") if isinstance(previous, dict) else None
+                if isinstance(files, dict) and files and previous.get("input") == identity and set(files) == {p.name for p in target.glob("*.c")} and all((target / p).is_file() and sha(target / p) == h for p,h in files.items()):
+                    print(f"{name}: cache verificado", flush=True)
+                    return name, identity
+            except (FileNotFoundError, ValueError):
+                pass  # Interrupted metadata cannot prove that generated code is reusable.
         stage = output / f"{name}-pending-{time.time_ns()}"
         subprocess.run([sys.executable, tools / "gen.py", name, path, base, stage, "--simd", profile["simd"]], cwd=tools, check=True)
         if sha(path) != identity["sha256"]:

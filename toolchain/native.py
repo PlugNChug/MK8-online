@@ -64,7 +64,7 @@ def cache_lookup(cache, address):
     try:
         record = json.loads(receipt.read_text(encoding='utf-8'))
         return obj if isinstance(record, dict) and record.get('sha256') == digest(obj) else None
-    except (OSError, ValueError):
+    except (FileNotFoundError, ValueError):
         return None
 
 
@@ -200,7 +200,7 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
                 receipt = json.loads(stamp.read_text(encoding='utf-8'))
                 if isinstance(receipt, dict) and receipt.get('input') == key and receipt.get('sha256') == digest(obj):
                     return obj
-            except (OSError, ValueError):
+            except (FileNotFoundError, ValueError):
                 pass  # Interrupted metadata is not proof that an object can be reused.
         address = cache_key(key)
         cached = cache_lookup(cache, address)

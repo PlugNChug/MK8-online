@@ -60,6 +60,26 @@ def alive(pid):
 
 @unittest.skipUnless(os.name == 'nt', 'Windows process lifetime')
 class LifetimeTests(unittest.TestCase):
+    def test_python_tools_ignore_external_home_path_and_user_site(self):
+        folder = self.base/'python-environment'
+        folder.mkdir()
+        (folder/'sibling.py').write_text('answer = 42')
+        (folder/'probe.py').write_text('import os, sibling; assert sibling.answer == 42; '
+            'assert not os.environ.get("PYTHONHOME"); assert not os.environ.get("PYTHONPATH"); '
+            'import site; assert not site.ENABLE_USER_SITE; print("local imports work")')
+        def wide(value):
+            raw = str(value).encode('utf-16-le')
+            return {'Windows': [int.from_bytes(raw[i:i+2], 'little') for i in range(0,len(raw),2)]}
+        task = {'root': str(folder/'root'), 'local': str(folder/'data'), 'log': str(folder/'task.log'),
+                'parent': os.getpid(), 'program': wide(sys.executable), 'args': [wide(folder/'probe.py')],
+                'cwd': str(folder), 'env': [[wide('PYTHONHOME'), wide(folder/'absent')]]}
+        env = dict(os.environ, PYTHONHOME=str(folder/'absent'), PYTHONPATH=str(folder/'foreign'),
+                   PYTHONNOUSERSITE='0', PYTHONSAFEPATH='1', PYTHONPLATLIBDIR='missing-library')
+        result = subprocess.run([str(EXE), '--task-supervisor'], input=json.dumps(task)+'\n',
+                                capture_output=True, text=True, env=env, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr+(folder/'task.log').read_text())
+        self.assertIn('local imports work', (folder/'task.log').read_text())
+
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='mk8-lifetime-')

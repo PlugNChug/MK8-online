@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -165,6 +166,44 @@ class PipelineTests(unittest.TestCase):
             chunk.write_text("corrupted")
             generator.generate(source,exefs,output,profile)
             self.assertEqual(text,chunk.read_text())
+            receipt = output/'main-receipt.json'
+            for damaged in ('{interrupted', '[]', '{"files": []}'):
+                with self.subTest(receipt=damaged):
+                    receipt.write_text(damaged)
+                    chunk.write_text('incomplete generated C')
+                    generator.generate(source,exefs,output,profile)
+                    self.assertEqual(text, chunk.read_text())
+                    self.assertEqual(json.loads(receipt.read_text())['files'][chunk.name], pipeline.sha(chunk))
+
+    def test_missing_runtime_receipt_never_rebaselines_changed_sources(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-runtime-repair-') as temporary:
+            job = Path(temporary)/'build'
+            job.mkdir()
+            saved = Path(temporary)/'user-save.bin'
+            saved.write_bytes(b'preserve')
+            profile = ROOT/'games/mk8d/profiles/development.json'
+            prepared = pipeline.prepare_runtime(job, ROOT/'upstream/smm2recomp', profile)
+            source = prepared/'runtime/dispatch.c'
+            original = source.read_bytes()
+            receipt = job/'runtime-hashes.json'
+            self.assertTrue(pipeline.runtime_matches(prepared, receipt))
+            stamp = source.stat().st_mtime_ns
+            pipeline.prepare_runtime(job, ROOT/'upstream/smm2recomp', profile)
+            self.assertEqual(stamp, source.stat().st_mtime_ns)
+            receipt.unlink()
+            source.write_bytes(b'damaged runtime source')
+            with patch('storage.shutil.disk_usage', return_value=SimpleNamespace(free=3*1024**3)):
+                with self.assertRaisesRegex(ValueError, 'preservar espaço'):
+                    pipeline.prepare_runtime(job, ROOT/'upstream/smm2recomp', profile)
+            self.assertEqual(source.read_bytes(), b'damaged runtime source')
+            pipeline.prepare_runtime(job, ROOT/'upstream/smm2recomp', profile)
+            self.assertEqual(source.read_bytes(), original)
+            for invalid in ('{interrupted', '[]', '{}'):
+                receipt.write_text(invalid)
+                self.assertFalse(pipeline.runtime_matches(prepared, receipt))
+            pipeline.prepare_runtime(job, ROOT/'upstream/smm2recomp', profile)
+            self.assertTrue(pipeline.runtime_matches(prepared, receipt))
+            self.assertEqual(saved.read_bytes(), b'preserve')
 
 
 class RuntimeDependencyManifestTests(unittest.TestCase):

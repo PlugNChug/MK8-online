@@ -111,6 +111,23 @@ pub fn run_task() -> Result<i32> {
             cmd.env_remove(key);
         }
     }
+    // Tool children must not inherit another Python installation or user site packages.
+    // Keep script-directory imports available (unlike Python -I).
+    let python_vars: Vec<_> = std::env::vars_os()
+        .map(|(name, _)| name)
+        .chain(cmd.get_envs().map(|(name, _)| name.to_os_string()))
+        .filter(|name| {
+            name.to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("PYTHON")
+        })
+        .collect();
+    for name in python_vars {
+        cmd.env_remove(name);
+    }
+    cmd.env("PYTHONNOUSERSITE", "1")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

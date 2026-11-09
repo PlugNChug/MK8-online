@@ -11,8 +11,9 @@ import subprocess
 import sys
 import time
 
-from repair import cleanup_stale, remove_owned, unlink_links_on_the_way
+from repair import cleanup_stale, remove_owned, unlink_links_on_the_way, is_link
 from build_lock import exclusive_build
+from storage import require_space, describe_io_error
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -93,7 +94,50 @@ def validate_game_identity(path):
     return f"{title_id:016X}"
 
 
+def walk_error(error):
+    raise error
+
+
+def runtime_matches(prepared, receipt):
+    try:
+        expected = json.loads(receipt.read_text(encoding='utf-8'))
+        if is_link(prepared) or not isinstance(expected, dict) or not expected or not (prepared/'MK8-ADOPTION.json').is_file():
+            return False
+        actual = {}
+        for folder, dirs, files in os.walk(prepared, onerror=walk_error, followlinks=False):
+            for name in [*dirs, *files]:
+                if is_link(Path(folder)/name):
+                    return False
+            for name in files:
+                path = Path(folder)/name
+                if '__pycache__' not in path.parts:
+                    actual[str(path.relative_to(prepared))] = sha(path)
+        return actual == expected
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def prepare_runtime(job, upstream, profile_path):
+    require_space(job)
+    prepared = job / "runtime"
+    print("Etapa: validar e adaptar runtime", flush=True)
+    cleanup_stale(job, "runtime-pending-*")  # (a preparation cut off before it finished)
+    if prepared.exists() and not runtime_matches(prepared, job / "runtime-hashes.json"):
+        print("Runtime sem recibo válido ou alterado; preparando novamente a partir das fontes verificadas.", flush=True)
+        remove_owned(prepared, job)
+    if not (prepared / "MK8-ADOPTION.json").is_file():
+        stage = job / f"runtime-pending-{time.time_ns()}"
+        subprocess.run([sys.executable, ROOT / "runtime/prepare.py", "--upstream", upstream, "--output", stage, "--profile", profile_path], check=True)
+        stage.rename(prepared)
+    else:
+        print("Runtime preparado anteriormente; verificado.", flush=True)
+    runtime_hashes = {str(p.relative_to(prepared)): sha(p) for p in prepared.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+    atomic_json(job / "runtime-hashes.json", runtime_hashes)
+    return prepared
+
+
 def build(config, local):
+    require_space(local)
     started = time.perf_counter()
     if config.get("base_package") or config.get("update_package"):
         from import_mk8 import prepare
@@ -128,26 +172,7 @@ def build(config, local):
                 raise ValueError(f"Arquivo de origem alterado durante importação: {name}")
             os.replace(pending, dest)
     validate_game_identity(imported / "main.npdm")
-    prepared = job / "runtime"
-    print("Etapa: validar e adaptar runtime", flush=True)
-    cleanup_stale(job, "runtime-pending-*")  # (a preparation cut off before it finished)
-    if (prepared / "MK8-ADOPTION.json").is_file() and (job / "runtime-hashes.json").is_file():
-        changed = [rel for rel, digest in json.loads((job / "runtime-hashes.json").read_text()).items()
-                   if not (prepared / rel).is_file() or sha(prepared / rel) != digest]
-        if changed:
-            # Prepared from the pinned sources again instead of asking the user to delete it.
-            print(f"Runtime preparado alterado ({changed[0]}); preparando de novo.", flush=True)
-            remove_owned(prepared, job)
-    elif prepared.exists() and not (prepared / "MK8-ADOPTION.json").is_file():
-        remove_owned(prepared, job)
-    if not (prepared / "MK8-ADOPTION.json").is_file():
-        stage = job / f"runtime-pending-{time.time_ns()}"
-        subprocess.run([sys.executable, ROOT / "runtime/prepare.py", "--upstream", upstream, "--output", stage, "--profile", profile_path], check=True)
-        stage.rename(prepared)
-    else:
-        print("Runtime preparado anteriormente; verificado.", flush=True)
-    runtime_hashes = {str(p.relative_to(prepared)): sha(p) for p in prepared.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
-    atomic_json(job / "runtime-hashes.json", runtime_hashes)
+    prepared = prepare_runtime(job, upstream, profile_path)
     from host import build_host, prepare_dll_link
     from native import compile_modules, default_workers
 
@@ -188,13 +213,24 @@ def mirror(path, target, copy_ok=False):
     reparse points and take no extra space, but need the same volume: a small tree (`copy_ok`) is
     copied instead; a large one fails with the reason rather than copying gigabytes.
     """
-    path, target = Path(path), Path(target).resolve()
+    path, target = Path(path), Path(target).resolve(strict=True)
+    # Enumerate successfully before replacing or pruning anything. pathlib.rglob can
+    # silently skip inaccessible directories, which must not be interpreted as deletion.
+    sources = []
+    for folder, dirs, files in os.walk(target, onerror=walk_error, followlinks=False):
+        for name in dirs:
+            if is_link(Path(folder)/name):
+                raise ValueError(f'Pasta de origem contém link: {Path(folder)/name}')
+        for name in files:
+            src = Path(folder)/name
+            src.stat()
+            sources.append(src)
+    if not target.is_dir():
+        raise ValueError(f'Pasta de origem indisponível: {target}')
     if path.is_junction() or path.is_symlink():
         os.rmdir(path)  # only the link left by older builds; its target is untouched
     wanted = set()
-    for src in target.rglob('*'):
-        if not src.is_file():
-            continue
+    for src in sources:
         rel = src.relative_to(target)
         dst = path/rel
         wanted.add(rel)
@@ -204,14 +240,20 @@ def mirror(path, target, copy_ok=False):
             a, b = src.stat(), dst.stat()
             if copy_ok and (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns):
                 continue
-            dst.unlink()
         dst.parent.mkdir(parents=True, exist_ok=True)
+        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{time.time_ns()}')
         try:
-            os.link(src, dst)
+            os.link(src, pending)
         except OSError as error:
+            import errno
+            unsupported = error.errno in (errno.EXDEV, errno.ENOTSUP) or getattr(error, 'winerror', None) in (1, 17, 50)
+            if not unsupported:
+                raise
             if not copy_ok:
                 raise ValueError(f'{target} precisa estar no mesmo disco da pasta de dados ({path.anchor}): {error}') from error
-            shutil.copy2(src, dst)
+            shutil.copy2(src, pending)
+        os.replace(pending, dst)
+    target.stat()  # A disconnected source is not evidence that old destination files are stale.
     # Files from an older import are links/copies owned by this folder only.
     for dst in path.rglob('*') if path.is_dir() else ():
         if dst.is_file() and dst.relative_to(path) not in wanted:
@@ -320,6 +362,9 @@ if __name__ == "__main__":
                 finish(config, args.local.resolve())
             else:
                 build(config, args.local.resolve())
+    except OSError as error:
+        print(describe_io_error(error), file=sys.stderr, flush=True)
+        sys.exit(1)
     except Exception as error:
         print(str(error), file=sys.stderr, flush=True)
         sys.exit(1)

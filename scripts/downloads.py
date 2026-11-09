@@ -75,11 +75,18 @@ def fetch(urls, target, parts=1, sha256=None):
                 subprocess.run([*CURL, url, '--output', str(pending)], check=True)
             if sha256 is not None and not matches(pending):
                 raise ValueError('SHA-256 mismatch: ' + target.name)
-            os.replace(pending, target)
-            return target
         except (OSError, subprocess.CalledProcessError, ValueError) as error:
             errors.append(f'{url}: {error}')
             pending.unlink(missing_ok=True)
+            continue
+        # Local publication failures are not mirror failures. Keep the verified
+        # download and previous destination; never delete the destination to retry.
+        try:
+            os.replace(pending, target)
+        except OSError as error:
+            raise OSError(error.errno, f'Não foi possível publicar o download em {target}: {error}. '
+                          f'Confira permissões, arquivos em uso e a conexão da unidade. Arquivo baixado preservado em {pending}.', str(target)) from error
+        return target
     raise ValueError('Falha no download:\n' + '\n'.join(errors))
 
 

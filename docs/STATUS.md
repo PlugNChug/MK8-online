@@ -1,5 +1,26 @@
 # Estado técnico — 09/11/2026
 
+## Permissões, arquivos em uso e unidades removíveis — correções locais
+
+- Erros de leitura por acesso negado, compartilhamento ou dispositivo indisponível deixam de ser tratados como corrupção nos recibos do runtime, geração, cache nativo e validação da importação. Interrompem a operação; não acionam exclusão/recriação do intermediário afetado.
+- O espelhamento enumera a origem com propagação de erros antes de modificar o destino. Publica cada arquivo por substituição de um temporário vizinho, preservando o arquivo anterior se falhar. Cópia alternativa só ocorre para hard links não suportados ou volumes diferentes, não para contornar acesso negado. Confere a origem novamente antes de remover arquivos obsoletos.
+- Falha local ao publicar download não é tratada como falha do servidor: mantém o destino anterior e o download verificado, sem tentar outro mirror ou forçar exclusão. O log informa caminho e causa. Erros de preparação distinguem arquivo em uso, acesso negado e dispositivo indisponível.
+
+Validação: 35 testes aprovados (5 de acesso a arquivos, 6 de downloads HTTP locais, 3 de armazenamento, 9 do pipeline, 6 de cache com compilação nativa e 6 de reparo). Bloqueios reais com handles Windows impedem leitura/substituição em fixtures; confirmada preservação dos arquivos anteriores e sucesso após liberar o bloqueio. Desconexão durante o espelhamento foi simulada por erro de dispositivo. Sem mudança Rust ou de interface nesta rodada; validações Rust da rodada anterior permanecem descritas abaixo.
+
+Limites: não houve remoção física de unidade nem teste com produtos antivírus específicos. A publicação é por arquivo, não uma transação de toda a árvore; arquivos já publicados antes de uma falha podem ter sido atualizados. Temporários de uma substituição bloqueada podem permanecer até a retomada. Nenhuma permissão foi forçada, proteção desativada ou dado/save pessoal modificado. Nenhuma nova versão ou instalador publicado; gameplay não qualificado.
+
+## Novos bloqueios de recompilação — correções locais
+
+- **Recibo de geração interrompido:** JSON truncado, lista em vez de objeto ou `files` com tipo incorreto derrubava a retomada antes da regeneração. O gerador agora considera esse cache não verificado, regenera o módulo e publica um recibo novo; não aceita C incompleto como válido. Testado com NSO sintético e o gerador real, sem código comercial.
+- **Runtime sem prova de integridade:** a presença de `MK8-ADOPTION.json` sem `runtime-hashes.json` permitia reutilizar fontes alteradas e gravar novos hashes sobre elas; recibos JSON inválidos abortavam a build. A retomada agora exige mapa não vazio, conjunto exato de arquivos e hashes correspondentes, rejeitando links na cópia. Ausência/corrupção aciona nova preparação a partir do upstream verificado. O teste prepara o runtime real em pasta temporária, modifica uma fonte, remove/corrompe os hashes e confirma a restauração; a cópia intacta continua sendo reaproveitada.
+- **Destino indisponível:** `require_space` podia subir até uma raiz inexistente e repetir indefinidamente. Agora informa que a unidade/pasta está indisponível. A reserva de 4 GiB é verificada já no início da build e antes de remover/substituir o runtime preparado, não apenas na compilação nativa. O teste de falta de espaço confirma que o intermediário existente permanece intocado.
+- **Python externo interferindo na build:** o diagnóstico usava `-I`, mas os subprocessos de preparação herdavam `PYTHONHOME`, `PYTHONPATH`, `PYTHONSAFEPATH` e outras opções do ambiente global. O supervisor remove variáveis `PYTHON*` herdadas/recebidas do comando e define somente UTF-8 e desativação do user-site. Imports entre scripts locais continuam funcionando; nenhuma variável do usuário é alterada no sistema. Teste executa Python real com ambiente incompatível e um módulo irmão do script.
+
+Validação: build release de desenvolvimento concluída; formatação e Clippy sem avisos; 37 testes Rust aprovados. Passaram 9 testes do pipeline, 2 de armazenamento, 6 de reparo e 3 de supervisão com processos reais, incluindo isolamento do Python com imports locais. A interface não foi alterada nesta rodada.
+
+Sem alterações em upstream, fontes geradas comerciais, saves ou perfis pessoais; apenas fixtures em pastas temporárias. Nenhuma nova versão ou instalador publicado. Esta rodada não qualifica gameplay nem reproduz todas as combinações de antivírus, permissões, drivers e dispositivos removíveis dos usuários.
+
 ## Issue #5 — SDL não carrega vulkan-1.dll (correção local)
 
 O relatório `mk8-report-1794246526.zip`, launcher 0.1.7, contém quatro logs terminando em `FATAL: SDL_CreateWindow: Failed loading vulkan-1.dll`, antes da inicialização gráfica. O código `0xc0000409` acompanha esse fatal; não prova falha no tradutor ou corrupção de save. O manifesto do relatório não inclui `vulkan-1.dll`. O log não identifica a GPU nem permite concluir se o carregador está ausente do Windows ou se uma dependência/driver está incompleto.

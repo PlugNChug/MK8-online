@@ -34,6 +34,8 @@ O pacote MSYS2 `vulkan-loader-1~1.4.363.0-1` já é fixado no manifesto de depen
 
 ## Supervisão de processos Windows
 
+Diagnóstico de acesso a arquivos (09/11/2026): [Microsoft — System Error Codes 0–499](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-) e [1000–1299](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-). Referências para diferenciar violações de compartilhamento/bloqueio, acesso negado e dispositivo indisponível. O código retornado não identifica qual produto ou processo causou o bloqueio.
+
 Supervisão de processos Windows (09/11/2026): [Microsoft — Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) e [AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject). Fundamentam a herança do job pelos descendentes e o encerramento com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Chamadas por `windows-sys 0.61.2`, já presente no lockfile; não se aplica terminação automática ao jogo quando apenas a janela do launcher fecha.
 
 ## Python privado para ferramentas

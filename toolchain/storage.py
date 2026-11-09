@@ -1,13 +1,29 @@
 """Keep a disk reserve on the volume that receives generated build artifacts."""
 import shutil
+import errno
 from pathlib import Path
 
 GIB = 1024 ** 3
 
 
+def describe_io_error(error):
+    code = getattr(error, 'winerror', None)
+    if code in (32, 33):
+        advice = 'Arquivo em uso por outro processo. Feche o processo que o utiliza ou aguarde a verificação de segurança terminar e tente novamente.'
+    elif code in (21, 55, 1117, 1167) or error.errno in (errno.ENODEV, errno.EIO):
+        advice = 'Unidade indisponível ou erro de leitura/gravação. Reconecte a mesma unidade e confira o caminho antes de retomar.'
+    elif isinstance(error, PermissionError):
+        advice = 'Acesso negado. Confira a permissão de gravação/leitura e se o arquivo está em uso ou bloqueado pela proteção do sistema; tente novamente após resolver o bloqueio.'
+    else:
+        advice = 'Confira os caminhos e a conexão da unidade antes de tentar novamente.'
+    return f'Preparação interrompida por erro de arquivo: {error}\n{advice} Nenhuma permissão foi forçada.'
+
+
 def require_space(path, reserve=4 * GIB):
     path = Path(path).resolve()
     while not path.exists():
+        if path.parent == path:
+            raise ValueError(f'Unidade ou pasta de destino indisponível: {path}. Reconecte a unidade e tente novamente.')
         path = path.parent
     free = shutil.disk_usage(path).free
     if free < reserve:
