@@ -3,6 +3,42 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+COMMAND_RETIRE = '''// MK8: retain the existing graveyard delay; finalization retires metadata, never GPU images directly.
+static void mk8_retire_command_buffer(NvnCmdBuf *cb) {
+    pthread_mutex_lock(&list_lock);
+    for (unsigned i = 0; i < 64; i++) {
+        if (cb->calls_only[i]) bury(cb->calls_only[i]);
+        cb->calls_only[i] = NULL;
+    }
+    pthread_mutex_unlock(&list_lock);
+}
+
+void mk8_commands_pool_finalized(uintptr_t pool, uint64_t storage, uint64_t size) {
+    if (!storage || !size) return;
+    if (storage < GUEST_LO || storage >= GUEST_HI || size > GUEST_HI - storage)
+        FATAL("Command memory pool range outside guest memory\\n");
+    pthread_mutex_lock(&list_lock);
+    uint64_t before = grave_head;
+    // Another pool may alias this storage. Only retire lists recorded from this pool object.
+    uint64_t first = storage >> PAGE_SHIFT_L, last = (storage + size - 1) >> PAGE_SHIFT_L;
+    for (uint64_t page = first; page <= last; page++)
+        for (ListInfo **pp = &list_buckets[bucket(page)]; *pp;) {
+            ListInfo *l = *pp;
+            if ((l->start >> PAGE_SHIFT_L) == page && l->pool == pool) {
+                *pp = l->next;
+                bury(l->mem);
+                free(l);
+            } else pp = &l->next;
+        }
+    uint64_t n = grave_head - before;
+    pthread_mutex_unlock(&list_lock);
+    if (n && getenv("MK8_TRACE_VRAM"))
+        LOG("[mk8:vram] command pool finalized %llx+%llx: %llu lists retired\\n",
+            (unsigned long long)storage, (unsigned long long)size, (unsigned long long)n);
+}
+
+'''
+
 
 def replace(text, old, new, count=1):
     if text.count(old) != count:
@@ -15,6 +51,7 @@ def prepare(runtime):
     text = header.read_text(encoding='utf-8')
     text = replace(text, '    char label[64];\n} NvnTexture;', '    char label[64];\n    unsigned mk8_refs;\n} NvnTexture;\nNvnTexture *mk8_texture_retain(NvnTexture *t);\nvoid mk8_texture_release(NvnTexture *t);')
     text = replace(text, '    uint8_t extra[];', '    struct Mk8TextureRefs *mk8_textures;\n    uint8_t extra[];')
+    text = replace(text, '    uint8_t *calls_only[64];', '    uintptr_t mk8_cmd_pool;  // owner identity of command memory\n    uint8_t *calls_only[64];')
     header.write_text(text, encoding='utf-8')
 
     objects = runtime/'nvn/objects.c'
@@ -22,14 +59,35 @@ def prepare(runtime):
     text = replace(text, '    NvnTexture *t = calloc(1, sizeof *t);', '    NvnTexture *t = calloc(1, sizeof *t);\n    if (!t) FATAL("Texture allocation failed\\n");\n    t->mk8_refs = 1;')
     text = replace(text, 'backend_texture_destroyed(t); free(t);', 'mk8_texture_release(t);')
     text = replace(text, '    e->tex = HOST(NvnTexture, A(2));', '    NvnTexture *next = mk8_texture_retain(HOST(NvnTexture, A(2)));\n    mk8_texture_release(e->tex);\n    e->tex = next;')
+    text = replace(text, '''NVN(nvnMemoryPoolFinalize) {
+    NvnPool *p = HOST(NvnPool, A(0));
+''', '''NVN(nvnMemoryPoolFinalize) {
+    NvnPool *p = HOST(NvnPool, A(0));
+    extern void mk8_commands_pool_finalized(uintptr_t pool, uint64_t storage, uint64_t size);
+    if (p) mk8_commands_pool_finalized((uintptr_t)p, p->storage, p->size);
+''')
     text += '\n'+(ROOT/'runtime/mk8/graphics/texture_refs.inc').read_text(encoding='utf-8')
     objects.write_text(text, encoding='utf-8')
 
     commands = runtime/'nvn/cmdbuf.c'
     text = commands.read_text(encoding='utf-8')
     text = replace(text, '#include "nvn.h"', '#include "nvn.h"\n'+(ROOT/'runtime/mk8/graphics/command_texture_refs.inc').read_text(encoding='utf-8'))
-    text = replace(text, '    if (cb) free(cb->buf);', '    if (cb) { mk8_release_records(cb->buf, cb->buf_used); free(cb->buf); }')
+    text = replace(text, 'static NvnCmdBuf *cb_of(',
+                   'static void mk8_retire_command_buffer(NvnCmdBuf *cb);\nstatic NvnCmdBuf *cb_of(')
+    text = replace(text, '    if (cb) free(cb->buf);',
+                   '    if (cb) { mk8_retire_command_buffer(cb); mk8_release_records(cb->buf, cb->buf_used); free(cb->buf); }')
+    text = replace(text, "    free(cb);  // (its calls-only lists are left to the graveyard's limit: they may still be called)",
+                   '    free(cb);  // its remaining lists were transferred to the graveyard')
     text = replace(text, 'free(graveyard[grave_tail++ % NGRAVE].mem)', 'mk8_free_list(graveyard[grave_tail++ % NGRAVE].mem)', 2)
+    text = replace(text, 'static uint64_t est_used(', COMMAND_RETIRE + 'static uint64_t est_used(')
+    text = replace(text, '    uint64_t start, end;  // guest command memory it used (estimate)',
+                   '    uintptr_t pool;  // original NvnPool identity, not storage shared with another pool\n'
+                   '    uint64_t start, end;  // guest command memory it used (estimate)')
+    text = replace(text, '    cb->cmd_mem = HOST(NvnPool, A(1))->storage + A(2);',
+                   '    cb->mk8_cmd_pool = (uintptr_t)HOST(NvnPool, A(1));\n'
+                   '    cb->cmd_mem = HOST(NvnPool, A(1))->storage + A(2);')
+    text = replace(text, '        l->start = start, l->end = end, l->mem = list;',
+                   '        l->pool = cb->mk8_cmd_pool;\n        l->start = start, l->end = end, l->mem = list;')
     text = replace(text, '    cb->recording = true;\n    cb->buf_used = 0;', '    mk8_release_records(cb->buf, cb->buf_used);\n    cb->recording = true;\n    cb->buf_used = 0;')
     text = replace(text, '    uint8_t *list = malloc(cb->buf_used);', '    uint8_t *list = malloc(cb->buf_used);\n    if (!list) FATAL("nvn: out of host memory copying %llu command bytes\\n", (unsigned long long)cb->buf_used);')
     text = replace(text, '        ListInfo *l = malloc(sizeof *l);', '        ListInfo *l = malloc(sizeof *l);\n        if (!l) FATAL("nvn: out of host memory tracking a command list\\n");')

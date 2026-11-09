@@ -24,7 +24,8 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 3. Desempenho (prioridade atual: VRAM)
 
-- **[visível]** A memória de vídeo cresce ao trocar de pista. A tentativa de liberar imagens de pools finalizados respeita agora a fila e os aliases, mas permanece opt-in (`MK8_RELEASE_POOL_TEXTURES=1`): o comparativo mostrou menos memória em alguns trechos, pico reservado maior e possível regressão de FPS em Thwomp Ruins. Rastrear os alvos de renderização antigos e as referências que os mantêm vivos; comparar também a retenção de blocos pela VMA. Ainda falta demonstrar estabilização em sessões prolongadas.
+- **[visível]** A memória de vídeo cresce ao trocar de pista. Foram corrigidas listas de comandos que sobreviviam à finalização de seus buffers/pools; algumas imagens antigas grandes continuam pertencendo a texturas não finalizadas pelo jogo. O candidato com blocos VMA de 128 MiB percorreu quatro pistas e voltou à seleção de copas, com ~60 FPS nos trechos medidos e pico reservado de 1.648 MiB no heap 0. Falta isolar o efeito dos blocos menores e verificar estabilização repetindo copas/pistas; a memória ativa caiu no menu, mas a reserva permaneceu.
+- **[validação]** A liberação direta de imagens de pools permanece opt-in (`MK8_RELEASE_POOL_TEXTURES=1`). A possível regressão de FPS no GP de Thwomp Ruins não se repetiu no Contra o Relógio parcial, que não teve despachos de compute no trecho medido; a dependência específica ainda não foi identificada.
 
 - **[visível]** Primeiro uso de efeitos: com a espera limitada (padrão, 4 ms por quadro), o efeito pode faltar por alguns quadros em vez de travar a tela; o cache em disco resolve nas corridas seguintes.
 - **[visível]** Picos menores de 25–45 ms ao entrar em áreas novas (prefetch de shaders) e na tradução de comandos.

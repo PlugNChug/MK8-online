@@ -83,8 +83,12 @@ void mk8_texture_age_report(void) {
         {
             if (listed < 16 && info.size >= (4u << 20)) {
                 listed++;
-                LOG("[mk8:vram]   older texture storage %llx %ux%u, %llu bytes\\n", (unsigned long long)g_live[i]->addr,
-                    b->width, b->height, (unsigned long long)info.size);
+                NvnTexture *t = g_live[i];
+                LOG("[mk8:vram]   older texture storage %llx %ux%u, %llu bytes; refs %u commands %u finalized %u aliases %d\\n",
+                    (unsigned long long)t->addr, b->width, b->height, (unsigned long long)info.size,
+                    __atomic_load_n(&t->mk8_refs, __ATOMIC_RELAXED),
+                    __atomic_load_n(&t->mk8_command_refs, __ATOMIC_RELAXED),
+                    __atomic_load_n(&t->mk8_finalized, __ATOMIC_RELAXED), b->refs);
             }
         }
         int s = 0;
@@ -100,6 +104,8 @@ void mk8_texture_age_report(void) {
     uint64_t unlisted_bytes = 0;
     int unlisted = mk8_unlisted_images(&unlisted_bytes);
     LOG("[mk8:vram] shared images without original owner: %d (%.0f MB)\\n", unlisted, unlisted_bytes / 1048576.0);
+    extern void mk8_command_lifetime_report(void);
+    mk8_command_lifetime_report();
     for (int s = 0; s < nshapes; s++)
         if (shapes[s].bytes >= (4u << 20))
             LOG("[mk8:vram]   older: %ux%u vk format %u x%u layers: %llu textures, %.0f MB\\n", shapes[s].w, shapes[s].h,
@@ -141,6 +147,30 @@ POOL_TRACED = POOL + '''    if (p && getenv("MK8_TRACE_VRAM"))  // MK8 (toolchai
         LOG("[mk8:vram] pool finalized: storage %llx size %llx\\n", (unsigned long long)p->storage, (unsigned long long)p->size);
 '''
 
+COMMAND_REF = '''// MK8 (toolchain/vram_trace.py): distinguish recorded references from descriptors/game ownership.
+static void mk8_trace_command_ref(NvnTexture *t, int delta) {
+    static __thread int on = -1;
+    if (on < 0) on = getenv("MK8_TRACE_VRAM") != NULL;
+    if (!on || !t) return;
+    if (delta > 0) __atomic_fetch_add(&t->mk8_command_refs, 1, __ATOMIC_RELAXED);
+    else if (!__atomic_fetch_sub(&t->mk8_command_refs, 1, __ATOMIC_RELAXED))
+        FATAL("Command reference diagnostic underflow\\n");
+}
+'''
+COMMAND_REPORT = '''
+void mk8_command_lifetime_report(void) {
+    uint64_t active = 0, retired, clock;
+    pthread_mutex_lock(&list_lock);
+    for (unsigned i = 0; i < LIST_BUCKETS; i++)
+        for (ListInfo *l = list_buckets[i]; l; l = l->next) active++;
+    retired = grave_head - grave_tail;
+    clock = list_clock;
+    pthread_mutex_unlock(&list_lock);
+    LOG("[mk8:vram] command lists: %llu active, %llu retired, clock %llu\\n",
+        (unsigned long long)active, (unsigned long long)retired, (unsigned long long)clock);
+}
+'''
+
 FS_END = '''    default: LOG("[fs] IFileSystem cmd %u (ok)\\n", req->cmd);
     }
 }
@@ -158,6 +188,7 @@ static Service *open_host_fs('''
 
 
 def prepare(runtime):
+    from texture_lifetime import replace
     exec_c = runtime/'nvn/vulkan/exec.c'
     text = exec_c.read_text(encoding='utf-8')
     if text.count(STATS) != 1 or text.count('static uint64_t vc_bytes;') != 1:
@@ -177,7 +208,27 @@ def prepare(runtime):
     text = objects.read_text(encoding='utf-8')
     if text.count(POOL) != 1:
         raise ValueError('Memory pool boundary changed upstream')
-    objects.write_text(text.replace(POOL, POOL_TRACED), encoding='utf-8')
+    text = text.replace(POOL, POOL_TRACED)
+    text = replace(text, 'game_texture_final(t->addr); mk8_texture_release(t);',
+                   'game_texture_final(t->addr); __atomic_store_n(&t->mk8_finalized, 1, __ATOMIC_RELAXED); mk8_texture_release(t);')
+    for kind in ('Texture', 'Sampler'):
+        text = replace(text, f'NVN(nvn{kind}PoolFinalize) {{ (void)c; }}',
+                       f'NVN(nvn{kind}PoolFinalize) {{ if (getenv("MK8_TRACE_VRAM")) LOG("[mk8:vram] {kind}PoolFinalize %llx\\n", (unsigned long long)A(0)); }}')
+    objects.write_text(text, encoding='utf-8')
+    nvn = runtime/'nvn/nvn.h'
+    nvn.write_text(replace(nvn.read_text(encoding='utf-8'), '    unsigned mk8_refs;',
+                          '    unsigned mk8_refs;\n    unsigned mk8_command_refs, mk8_finalized;  // MK8 VRAM diagnostics'), encoding='utf-8')
+    commands = runtime/'nvn/cmdbuf.c'
+    text = commands.read_text(encoding='utf-8')
+    text = replace(text, 'static void mk8_command_texture(', COMMAND_REF + '\nstatic void mk8_command_texture(')
+    text = replace(text, '    refs->textures[refs->count++] = mk8_texture_retain(t);',
+                   '    refs->textures[refs->count++] = mk8_texture_retain(t);\n    mk8_trace_command_ref(t, 1);')
+    text = replace(text, '''            for (unsigned i = 0; i < r->mk8_textures->count; i++)
+                mk8_texture_release(r->mk8_textures->textures[i]);''', '''            for (unsigned i = 0; i < r->mk8_textures->count; i++) {
+                mk8_trace_command_ref(r->mk8_textures->textures[i], -1);
+                mk8_texture_release(r->mk8_textures->textures[i]);
+            }''')
+    commands.write_text(text + COMMAND_REPORT, encoding='utf-8')
     fs = runtime/'services/fs.c'
     text = fs.read_text(encoding='utf-8')
     if text.count(FS_END) != 1:

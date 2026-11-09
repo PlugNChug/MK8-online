@@ -234,6 +234,13 @@ def prepare_host_sources(source, output):
     prepare_save_file_close(runtime)
     from vram_trace import prepare as prepare_vram_trace
     prepare_vram_trace(runtime)
+    device = runtime/'nvn/vulkan/device.c'
+    text = device.read_text(encoding='utf-8')
+    boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
+    if text.count(boundary) != 1:
+        raise ValueError('VMA allocator initialization boundary changed')
+    # Smaller reservation steps for track transitions, without evicting GPU-owned contents.
+    device.write_text(text.replace(boundary, '    ai.preferredLargeHeapBlockSize = 128ull << 20;\n' + boundary), encoding='utf-8')
     menu = runtime/'ui/menu.mm'
     text = menu.read_text(encoding='utf-8')
     boundary = '        tabs_body(scale, true, NULL);'
