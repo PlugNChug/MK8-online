@@ -91,13 +91,18 @@ fn previous_game_logs(local: &Path, count: usize) -> Vec<PathBuf> {
 }
 
 /// Writes `reports/mk8-report-<time>.zip` and returns its path.
-pub fn create(local: &Path, reason: &str, summary: Value) -> Result<PathBuf> {
+pub fn create(
+    local: &Path,
+    runtime: Option<&Path>,
+    reason: &str,
+    summary: Value,
+) -> Result<PathBuf> {
     let reports = folder(local);
     fs::create_dir_all(&reports).map_err(|e| e.to_string())?;
     let name = format!("mk8-report-{}", stamp());
     let stage = reports.join(format!("{name}.partial"));
     fs::create_dir(&stage).map_err(|e| format!("{}: {e}", stage.display()))?;
-    let result = fill(local, &stage, reason, summary).and_then(|files| {
+    let result = fill(local, runtime, &stage, reason, summary).and_then(|files| {
         let zip = reports.join(format!("{name}.zip"));
         let tar = std::env::var_os("SystemRoot")
             .map(|root| Path::new(&root).join("System32/tar.exe"))
@@ -131,7 +136,13 @@ pub fn create(local: &Path, reason: &str, summary: Value) -> Result<PathBuf> {
     result
 }
 
-fn fill(local: &Path, stage: &Path, reason: &str, summary: Value) -> Result<Vec<String>> {
+fn fill(
+    local: &Path,
+    runtime: Option<&Path>,
+    stage: &Path,
+    reason: &str,
+    summary: Value,
+) -> Result<Vec<String>> {
     let mut files = Vec::new();
     let mut sources: Vec<(String, PathBuf)> = vec![
         ("game.log".into(), local.join("game.log")),
@@ -144,6 +155,17 @@ fn fill(local: &Path, stage: &Path, reason: &str, summary: Value) -> Result<Vec<
     ];
     for (i, path) in previous_game_logs(local, 3).into_iter().enumerate() {
         sources.push((format!("previous-game-{}.log", i + 1), path));
+    }
+    // Windows runtime redirects output beside its executable; launcher stdout can be empty.
+    if let Some(runtime) = runtime {
+        for name in [
+            "mk8drecomp.log",
+            "mk8drecomp.previous.log",
+            "mk8drecomp.previous2.log",
+            "mk8drecomp.previous3.log",
+        ] {
+            sources.push((name.into(), runtime.join(name)));
+        }
     }
     let mut included = Vec::new();
     for (name, path) in sources {
@@ -220,7 +242,17 @@ mod tests {
         fs::write(local.join("game.log"), "FATAL: test crash\n").unwrap();
         fs::write(local.join("vulkan-check.log"), "DLL dependency failed\n").unwrap();
         fs::write(local.join("user-no-mii/save/save_0"), "private save").unwrap();
-        let zip = create(&local, "test", json!({"build":"idle"})).unwrap();
+        let runtime = local.join("builds/test/host-optimized");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(local.join("game.log"), "").unwrap();
+        fs::write(runtime.join("mk8drecomp.log"), "FATAL: runtime crash\n").unwrap();
+        fs::write(
+            runtime.join("mk8drecomp.previous.log"),
+            "previous session\n",
+        )
+        .unwrap();
+        fs::write(runtime.join("private-save.bin"), "never include").unwrap();
+        let zip = create(&local, Some(&runtime), "test", json!({"build":"idle"})).unwrap();
         assert!(zip.is_file());
         let listing =
             Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
@@ -231,7 +263,22 @@ mod tests {
         let names = String::from_utf8_lossy(&listing.stdout);
         assert!(names.contains("report.json") && names.contains("game.log"));
         assert!(names.contains("vulkan-check.log"));
+        assert!(names.contains("mk8drecomp.log"));
+        assert!(names.contains("mk8drecomp.previous.log"));
+        assert!(!names.contains("private-save.bin"));
         assert!(!names.contains("save_0"));
+        let content =
+            Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
+                .args(["-xOf"])
+                .arg(&zip)
+                .arg("mk8drecomp.log")
+                .output()
+                .unwrap();
+        assert!(content.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&content.stdout),
+            "FATAL: runtime crash\n"
+        );
         assert!(!folder(&local)
             .join(format!(
                 "{}.partial",

@@ -95,9 +95,15 @@ Use a mesma pasta nas próximas aberturas. Pastas antigas de dados por versão n
 
 **Atualizações:** **Suporte → Verificar atualizações** consulta as Releases do GitHub, incluindo pré-releases. **Atualizar agora** baixa o setup, verifica o SHA-256 publicado e reabre o launcher após instalar.
 
+O teste local **0.1.9-test.1** corrige a solicitação e o uso de retratos Mii ausentes e inclui logs do runtime nos relatórios. Os dois jogadores devem instalar o setup de teste e preparar novamente a build, mantendo as pastas de dados existentes. Saves são preservados; renderização integrada dos Miis e corrida entre dois PCs continuam sem qualificação. Esta versão não foi publicada no GitHub.
+
 ## Corra com amigos
 
 ### Salas LAN
+
+Para **Radmin VPN**, os dois PCs precisam estar na mesma rede VPN. No **PC anfitrião**, informe seu IP Radmin seguido de `:47820` em **Endereço alternativo** e gere um **novo convite** para cada convidado. O convidado apenas cola o convite em **Entrar**; seu campo de endereço alternativo não altera convites recebidos. Permita UDP 47820 no firewall do anfitrião. Alterar o endereço invalida o convite exibido; recolher o painel mantém o endereço escolhido.
+
+A correção local distingue transporte de lobby, exclui o anfitrião da contagem de convidados e mostra orientação após 20 segundos sem confirmação. **Wireless Play não está implementado**; use **LAN Play** para as salas do launcher. Estas mudanças de teste ainda não foram publicadas. A coleta de diagnóstico no código local também inclui o log ao lado do executável do runtime quando stdout está vazio; esta correção ainda não está no instalador VPN enviado anteriormente.
 
 Cada PC precisa preparar sua própria cópia da mesma versão do jogo. Em **Multijogador**, salve seu nome, crie ou busque uma sala e gere **Novo convite** para cada amigo. Os convidados colam seus convites individuais no launcher. O convite contém o endereço do anfitrião: compartilhe em privado.
 

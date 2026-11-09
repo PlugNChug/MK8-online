@@ -386,9 +386,15 @@ $("scan-rooms").onclick = () =>
     };
   });
 let roomMenu = 0;
+let pendingConnectionSince = null;
+let previousSession = null;
+$("endpoint").oninput = () => {
+  $("invite-text").value = "";
+  $("invite-output").hidden = true;
+};
 $("invite").onclick = () =>
   action(async () => {
-    const endpoint = $("invite-advanced").open ? $("endpoint").value.trim() : "";
+    const endpoint = $("endpoint").value.trim();
     const result = await api("session/invite", endpoint ? { endpoint } : {});
     $("invite-text").value = result.invite;
     $("invite-output").hidden = false;
@@ -508,11 +514,26 @@ async function refresh() {
   i18n.text($("network-mode"), session.diagnostic_only
     ? "Modo de teste: transporte sem jogo. Não representa uma corrida."
     : "Use Jogar na sala e entre no modo LAN do jogo. Multiplayer em validação.");
+  $("endpoint").disabled = active && !session.hosting;
+  const guests = Math.max(0, session.participants - (session.connected ? 1 : 0));
+  if (active && !session.connected) pendingConnectionSince ??= Date.now();
+  else pendingConnectionSince = null;
+  const waitingTooLong = pendingConnectionSince !== null && Date.now() - pendingConnectionSince >= 20000;
   i18n.text($("peers"), session.hosting
-    ? `${session.participants} conexão(ões) de transporte`
+    ? guests > 0
+      ? `${guests} convidado(s) com transporte conectado. A entrada no lobby é feita dentro do jogo.`
+      : "Aguardando convidados. A conexão do próprio anfitrião não conta como convidado."
     : session.connected
       ? "Conectado ao anfitrião. Abra o jogo para entrar na sala LAN."
-      : "Sem conexão confirmada.");
+      : waitingTooLong
+        ? "Sem resposta do anfitrião. Confira a VPN e UDP 47820; peça um novo convite com o IP VPN do anfitrião. Encerre esta sessão antes de tentar novamente."
+        : active ? "Aguardando confirmação do anfitrião." : "Sem conexão confirmada.");
+  if (previousSession && !session.hosting && session.connected && !previousSession.connected) {
+    notice("Convite aceito pelo transporte. Use Jogar na sala e entre no lobby pelo modo LAN Play.");
+  } else if (previousSession && session.hosting && guests > previousSession.guests) {
+    notice("Um convidado conectou ao transporte. Todos devem usar Jogar na sala e entrar no modo LAN Play.");
+  }
+  previousSession = { connected: session.connected, guests };
   const gameLog = await api("game/log");
   $("game-log").textContent = gameLog.text || i18n.t("Nenhum teste iniciado.");
   const log = await api("log");

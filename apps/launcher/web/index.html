@@ -213,6 +213,7 @@
               </div>
               <details id="invite-advanced">
                 <summary>Endereço alternativo (VPN ou porta redirecionada)</summary>
+                <p class="hint">Somente o anfitrião: informe seu IP no Radmin VPN seguido de :47820 antes de gerar um novo convite. O convidado apenas cola o convite em Entrar.</p>
                 <label>IP e porta acessíveis pelo convidado<input id="endpoint" placeholder="192.168.1.10:47820" spellcheck="false" /></label>
               </details>
             </div>
@@ -237,8 +238,9 @@
             <summary>Como testar em duas máquinas</summary>
             <ol class="howto">
               <li>Cada PC instala o Launcher e prepara o jogo com os próprios arquivos (mesma versão 4.0.1).</li>
-              <li>Na mesma rede: libere <b>UDP 47820</b> no firewall do anfitrião. Pela internet: use o código <code>MK8-…</code> do relay.</li>
+              <li>Na mesma rede ou VPN: permita <b>UDP 47820</b> no firewall do anfitrião. No Radmin, os dois PCs devem estar na mesma rede VPN; o anfitrião gera o convite com seu IP VPN no endereço alternativo.</li>
               <li>O anfitrião cria a sala e envia um convite individual a cada amigo (vale por quatro horas).</li>
+              <li>Wireless Play não é o modo LAN e não está implementado nesta recomp. A conexão do launcher não confirma entrada no lobby.</li>
               <li>Depois de conectar, todos usam <b>Jogar na sala</b>. No menu do jogo, segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião escolhe Create Room e os convidados entram pelo Lobby.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
             </ol>

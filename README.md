@@ -97,6 +97,8 @@ Reuse the same data folder on subsequent launches. Older per-version data folder
 
 **Updates:** **Support → Check for updates** checks GitHub Releases, including prereleases. **Update now** downloads the setup, verifies its published SHA-256 and restarts the launcher after installation.
 
+Local **0.1.9-test.1** includes a bounded fix for an absent Mii portrait request and its UI consumers, plus runtime logs in diagnostic reports. Both players must install the test setup and prepare the game build again with their existing data folders. Saves are retained; integrated Mii rendering and two-PC race qualification remain incomplete. This test version is not published on GitHub.
+
 ## Race with friends
 
 ### LAN rooms
@@ -104,6 +106,10 @@ Reuse the same data folder on subsequent launches. Older per-version data folder
 Each PC needs its own prepared copy of the same game version. In **Multiplayer**, set your display name, create or discover a room and generate **New invitation** for each friend. Guests paste their individual invitations into the launcher. Invitations contain the host address: share them privately.
 
 LAN discovery and traffic use UDP **47820** and depend on the network/firewall. The launcher selects the local address automatically; **Alternative address** supports a configured VPN or forwarded address. **Esc → Salas com amigos** opens the launcher's room tab from compatible runtime builds.
+
+For **Radmin VPN**, both PCs must join the same VPN network. On the **host PC**, enter its Radmin IP followed by `:47820` under **Alternative address**, then generate a **new invitation** for each guest. Guests paste that invitation under **Join**; their alternative-address field does not override received invitations. Allow the host's UDP port through the firewall. Editing the address invalidates the displayed invitation; collapsing the address panel keeps the chosen address.
+
+The launcher reports transport connections separately from the in-game lobby, excludes the host from the guest count, and shows troubleshooting after 20 seconds without confirmation. **Wireless Play is not implemented**; use **LAN Play** with launcher rooms. These local test changes are not a published release. Diagnostic collection in the working tree now also includes the runtime log beside the executable when launcher stdout is empty; this is not yet included in the previously shared VPN test installer.
 
 After joining in the launcher:
 

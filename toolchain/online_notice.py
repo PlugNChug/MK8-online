@@ -20,3 +20,14 @@ def prepare(runtime):
     if text.count(OLD) != 1:
         raise ValueError('Online notice boundary changed upstream')
     source.write_text(text.replace(OLD, NEW), encoding='utf-8')
+
+    source = runtime/'services/am.c'
+    text = source.read_text(encoding='utf-8')
+    old = '''    else snprintf(full, sizeof full, "%s If it's an online error: check that you're online (Course World's courses come "
+                  "from TGRCode or your own server; TGRCode sometimes asks to wait a few seconds).", t);'''
+    new = '''    else snprintf(full, sizeof full, "%s For launcher rooms, use LAN Play, not Wireless Play. "
+                  "Join the launcher room, select Play in room, then hold L + R and click the left stick "
+                  "at the game's main menu. For VPN invitations, use the host's VPN IP and allow UDP 47820.", t);'''
+    if text.count(old) != 1:
+        raise ValueError('Game error notice boundary changed upstream')
+    source.write_text(text.replace(old, new), encoding='utf-8')

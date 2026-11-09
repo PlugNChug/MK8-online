@@ -96,3 +96,59 @@ int main(void) {
                             '-O2', '-UNDEBUG', str(prepared), '-o', str(exe)],
                 env=dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache')), check=True)
             subprocess.run([str(exe)], check=True, timeout=20)
+
+    def test_portrait_screen_omits_allocation_and_consumers_only_for_absent_resources(self):
+        raw = br'''
+#include <stdint.h>
+#include <string.h>
+#include <assert.h>
+typedef struct { uint64_t x[32]; } Cpu;
+static int mode, requests, consumers, continued;
+static unsigned char manager[0x600], screen[0x1600];
+int mk8_no_mii_renderer(void) { return mode; }
+static uint32_t LD32(uint64_t p) { uint32_t v; memcpy(&v,(void *)(uintptr_t)p,4); return v; }
+static uint64_t LD64(uint64_t p) { uint64_t v; memcpy(&v,(void *)(uintptr_t)p,8); return v; }
+static void ST64(uint64_t p, uint64_t v) { memcpy((void *)(uintptr_t)p,&v,8); }
+void screen_step(Cpu *c) {
+    if(c->x[8]!=0x1d && c->x[8]!=0x34) goto L_70000d5200;
+L_70000d50e4:;
+    requests++;
+    ST64(c->x[19]+0x1538, 123);
+L_70000d5200:;
+    continued++;
+L_70000d53cc:;
+    if(c->x[8]==0x1d || c->x[8]==0x34) {
+        assert(LD64(c->x[19]+0x1538)==123);
+        consumers++;
+    }
+L_70000d5634:;
+    continued++;
+}
+int main(void) {
+ for(mode=0;mode<2;mode++) for(int present=0;present<4;present++)
+ for(int type=0;type<3;type++) for(int missing=0;missing<2;missing++) {
+    memset(manager,0,sizeof manager); memset(screen,0,sizeof screen);
+    uint32_t count=present&1; memcpy(manager+0x540,&count,4);
+    ST64((uintptr_t)manager+0x548, present&2?456:0);
+    Cpu c={0}; c.x[19]=(uintptr_t)screen; c.x[23]=missing?0:(uintptr_t)manager;
+    c.x[8]=type==0?0x1d:type==1?0x34:7;
+    requests=consumers=continued=0;
+    screen_step(&c);
+    int omitted=mode&&(missing||!present);
+    assert(requests==(type!=2&&!omitted));
+    assert(consumers==requests); assert(continued==2);
+    assert(LD64((uintptr_t)screen+0x1538)==(requests?123:0));
+ }
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); src=root/'main/main_026.c'; src.parent.mkdir(); src.write_bytes(raw)
+            with self.assertRaises(ValueError):
+                experimental.patch_no_mii_unit(src, root/'out')
+            with patch.object(experimental, 'PORTRAIT_SCREEN_SHA256', hashlib.sha256(raw).hexdigest()):
+                prepared=experimental.patch_no_mii_unit(src, root/'out')
+            exe=root/'portrait.exe'
+            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O2','-UNDEBUG',str(prepared),'-o',str(exe)],
+                env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache')),check=True)
+            subprocess.run([str(exe)],check=True,timeout=20)

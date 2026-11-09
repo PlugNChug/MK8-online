@@ -357,5 +357,15 @@
   "Etapa {0}/{1} ({2}) falhou ({3}). Consulte o log, corrija e tente de novo.": "Step {0}/{1} ({2}) failed ({3}). Check the log, fix the problem and try again.",
   "Python {0} bits e dependências encontrados no ambiente local.": "Python {0}-bit and dependencies found in the local environment.",
   "Ambiente Python incompatível. Execute Ferramentas para reparar automaticamente.": "Incompatible Python environment. Run Tools to repair it automatically.",
-  "Ambiente Python ausente ou incompleto. Execute Ferramentas para instalar ou reparar automaticamente.": "Python environment missing or incomplete. Run Tools to install or repair it automatically."
+  "Ambiente Python ausente ou incompleto. Execute Ferramentas para instalar ou reparar automaticamente.": "Python environment missing or incomplete. Run Tools to install or repair it automatically.",
+  "Somente o anfitrião: informe seu IP no Radmin VPN seguido de :47820 antes de gerar um novo convite. O convidado apenas cola o convite em Entrar.": "Host only: enter your Radmin VPN IP followed by :47820 before generating a new invitation. Guests only paste the invitation under Join.",
+  "Na mesma rede ou VPN: permita": "On the same network or VPN: allow",
+  "no firewall do anfitrião. No Radmin, os dois PCs devem estar na mesma rede VPN; o anfitrião gera o convite com seu IP VPN no endereço alternativo.": "through the host firewall. In Radmin, both PCs must be on the same VPN network; the host generates the invitation with their VPN IP in the alternative address.",
+  "Wireless Play não é o modo LAN e não está implementado nesta recomp. A conexão do launcher não confirma entrada no lobby.": "Wireless Play is different from LAN mode and is not implemented in this recomp. A launcher connection does not confirm joining the lobby.",
+  "{0} convidado(s) com transporte conectado. A entrada no lobby é feita dentro do jogo.": "{0} guest(s) connected to the transport. Join the lobby inside the game.",
+  "Aguardando convidados. A conexão do próprio anfitrião não conta como convidado.": "Waiting for guests. The host connection does not count as a guest.",
+  "Sem resposta do anfitrião. Confira a VPN e UDP 47820; peça um novo convite com o IP VPN do anfitrião. Encerre esta sessão antes de tentar novamente.": "No response from the host. Check the VPN and UDP 47820; request a new invitation with the host VPN IP. End this session before trying again.",
+  "Aguardando confirmação do anfitrião.": "Waiting for confirmation from the host.",
+  "Convite aceito pelo transporte. Use Jogar na sala e entre no lobby pelo modo LAN Play.": "Invitation accepted by the transport. Use Play in room and join the lobby through LAN Play.",
+  "Um convidado conectou ao transporte. Todos devem usar Jogar na sala e entrar no modo LAN Play.": "A guest connected to the transport. Everyone should use Play in room and enter LAN Play."
 }

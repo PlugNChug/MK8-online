@@ -102,6 +102,19 @@ def patch_no_mii_unit(src, output):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
         return target
+    if src.name == 'main_026.c' and src.parent.name == 'main':
+        raw = src.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != PORTRAIT_SCREEN_SHA256:
+            raise ValueError('Portrait screen requires the verified MK8 4.0.1 generated unit')
+        text = raw.decode('utf-8').replace('\r\n', '\n')
+        for old, new in PORTRAIT_SCREEN_PATCHES:
+            if text.count(old) != 1:
+                raise ValueError('Portrait screen boundary changed')
+            text = text.replace(old, new)
+        target = output/'experimental'/src.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        return target
     if src.name == MII_CONFIRM_UNIT and src.parent.name == 'main':
         raw = src.read_bytes()
         if hashlib.sha256(raw).hexdigest() != MII_CONFIRM_SHA256:
@@ -277,3 +290,19 @@ def patch_no_mii_unit(src, output):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding='utf-8')
     return target
+
+# Skip the absent portrait allocation and its two consumers together. The screen's
+# existing no-portrait path keeps its UI construction and subsequent game state.
+PORTRAIT_SCREEN_SHA256 = 'e1ee56c506ab65eebb94d570765236e4557a6e1988e770b900d6b82fcdc41985'
+PORTRAIT_SCREEN_PATCHES = (
+    ('L_70000d50e4:;', '''L_70000d50e4:;
+    if (mk8_no_mii_renderer() && (!c->x[23] ||
+        (LD32(c->x[23] + 0x540) == 0 && LD64(c->x[23] + 0x548) == 0))) {
+        ST64(c->x[19] + 0x1538, 0);
+        goto L_70000d5200;
+    }'''),
+    ('L_70000d53cc:;', '''L_70000d53cc:;
+    if (mk8_no_mii_renderer() && LD64(c->x[19] + 0x1538) == 0 &&
+        ((uint32_t)c->x[8] == 0x1d || (uint32_t)c->x[8] == 0x34))
+        goto L_70000d5634;'''),
+)

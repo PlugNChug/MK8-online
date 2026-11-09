@@ -193,7 +193,9 @@ impl App {
                 // A crash leaves its report ready to send, before the next launch rotates the log.
                 let summary =
                     json!({"game_exit": exit.to_string(), "build": self.build.poll().state});
-                self.last_report = report::create(&self.local, "game-exit", summary)
+                let install = self.installation().or_else(|| self.candidate());
+                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+                self.last_report = report::create(&self.local, runtime, "game-exit", summary)
                     .ok()
                     .map(|p| p.display().to_string());
             }
@@ -538,7 +540,9 @@ impl App {
             }
             ("POST", "/api/report") => {
                 let summary = self.status();
-                let path = report::create(&self.local, "manual", summary)?;
+                let install = self.installation().or_else(|| self.candidate());
+                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+                let path = report::create(&self.local, runtime, "manual", summary)?;
                 self.last_report = Some(path.display().to_string());
                 Ok(
                     json!({"path":path,"message":"Relatório de logs criado. Envie o arquivo .zip junto com a descrição do problema."}),
