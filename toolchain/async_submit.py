@@ -105,9 +105,10 @@ static uint64_t mk8_q_put(Mk8QItem *it, NvnSync **syncs, int nsyncs) {
     it->next = NULL;
     if (mk8_q_tail) mk8_q_tail->next = it; else mk8_q_head = it;
     mk8_q_tail = it;
+    uint64_t ticket = it->ticket;  // the worker can free it as soon as the lock is released
     pthread_cond_broadcast(&mk8_q_cond);
     pthread_mutex_unlock(&mk8_q_lock);
-    return it->ticket;
+    return ticket;
 }
 static void mk8_q_wait(uint64_t ticket) {
     pthread_mutex_lock(&mk8_q_lock);

@@ -4,7 +4,7 @@ O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rod
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
 
-## 1. Multijogador (prioridade atual)
+## 1. Multijogador
 
 - **[validação]** Um erro de comunicação apareceu uma vez com duas instâncias na mesma máquina (não reproduzido na repetição). Se aparecer entre duas máquinas, testar com `MK8_ASYNC_SUBMIT=0` e enviar os relatórios dos dois PCs.
 
@@ -22,7 +22,9 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 - Corrigido: alternância de brilho da cena a 30 Hz (cubemap de ambiente lido num ID de textura reaproveitado).
 - Corrigido: exposição estourada (reflexo especular BC3 gerado por shader no início da corrida escrito numa view inválida; `toolchain/bc_render.py`). 7 de 7 GPs limpos.
 
-## 3. Desempenho
+## 3. Desempenho (prioridade atual: VRAM)
+
+- **[visível]** A memória de vídeo cresce ao trocar de pista. A tentativa de liberar imagens de pools finalizados respeita agora a fila e os aliases, mas permanece opt-in (`MK8_RELEASE_POOL_TEXTURES=1`): o comparativo mostrou menos memória em alguns trechos, pico reservado maior e possível regressão de FPS em Thwomp Ruins. Rastrear os alvos de renderização antigos e as referências que os mantêm vivos; comparar também a retenção de blocos pela VMA. Ainda falta demonstrar estabilização em sessões prolongadas.
 
 - **[visível]** Primeiro uso de efeitos: com a espera limitada (padrão, 4 ms por quadro), o efeito pode faltar por alguns quadros em vez de travar a tela; o cache em disco resolve nas corridas seguintes.
 - **[visível]** Picos menores de 25–45 ms ao entrar em áreas novas (prefetch de shaders) e na tradução de comandos.

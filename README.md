@@ -5,7 +5,7 @@ Recompilação AArch64 antecipada para Windows x64, com launcher local, runtime 
 
 **Experimental:** o MK8 4.0.1 concluiu corridas solo de três voltas com Mario. Duas instâncias multiplayer, conectadas pelo código de um relay local, percorreram três voltas e retornaram à seleção de pista. Persistem defeitos visuais e engasgos no primeiro uso de shaders. Multiplayer entre dois computadores e pela internet ainda precisa de validação. A versão atual do launcher simplifica a preparação e não oferece editor de perfis.
 
-**Ponto de retomada:** o teste de tela dividida reconhece dois controles, mas permanece na seleção de personagens. O transporte passou com 12 participantes simulados; a corrida observada usou dois jogos. A repetição pela LAN direta foi interrompida por espaço em disco. Evidências, limitações e próximos passos estão em [docs/STATUS.md](docs/STATUS.md#ponto-de-retomada-do-multiplayer).
+**Estado da 0.1.5:** inclui correções do serviço de amiibo e da destruição de texturas na thread de tradução. A investigação de VRAM encontrou imagens retidas entre pistas; a tentativa de liberá-las ao finalizar pools permanece desligada por padrão, pois a comparação mostrou resultados mistos de memória e possível regressão de FPS. LAN direta e relay já iniciaram corridas com dois jogos nesta máquina; tela dividida e multiplayer entre computadores continuam pendentes. Evidências e limitações em [docs/STATUS.md](docs/STATUS.md).
 
 ## Instalar (testadores)
 

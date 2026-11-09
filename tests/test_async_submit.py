@@ -40,6 +40,11 @@ static char order[64];
 static int norder;
 static volatile LONG gate = 1;  /* the translator stalls in a present while 0 */
 static uint64_t seq;
+static unsigned releases;
+int mk8_textures_release_range(uint64_t lo, uint64_t hi, uint64_t *bytes) {
+    if (lo != 0x1000 || hi != 0x2000) abort();
+    *bytes = 4096; releases++; order[norder++] = 'R'; return 1;
+}
 void backend_prefetch(const uint64_t *h, int n) { (void)h; (void)n; }
 void backend_execute(uint64_t h) { order[norder++] = (char)('a' + ((CmdRec *)(uintptr_t)h)->x[6]); seq++; }
 static int drains, translator_marked;  // (toolchain/texture_release_thread.py)
@@ -57,7 +62,15 @@ static uint8_t *put(uint8_t *p, uint32_t op, uint64_t x0, uint64_t x1, uint64_t 
     r->op = op; r->size = sizeof(CmdRec); r->x[0] = x0; r->x[1] = x1; r->x[6] = tag;
     return p + r->size;
 }
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc > 1) {
+        if (!strcmp(argv[1], "overflow")) { mk8_pool_released(UINT64_MAX, 2); return 99; }
+        mk8_pool_released(0x1000, 0);  // zero-sized pool does nothing
+        mk8_pool_released(0x1000, 0x1000);
+        const char *enabled = getenv("MK8_RELEASE_POOL_TEXTURES");
+        unsigned expected = enabled && atoi(enabled) != 0 && !getenv("MK8_KEEP_POOL_TEXTURES");
+        return releases == expected ? 0 : 98;
+    }
     /* list a: a fence for sync 1, then a call into list c, which jumps to b's fence for sync 2 */
     uint8_t *p = put(list_a, CMD_FENCE_SYNC, 0, 1, 0);
     CmdRec *call = (CmdRec *)p;
@@ -77,27 +90,40 @@ int main(void) {
     uint64_t h[2] = {(uint64_t)(uintptr_t)list_a, (uint64_t)(uintptr_t)list_b};
     if (!mk8_async_submit(2, h)) return 2;
     if (syncs[0].mk8_ticket != 2 || syncs[1].mk8_ticket != 2) return 3;  /* both fences tagged with the submission */
+    mk8_pool_released(0x1000, 0x1000);
+    if (!mk8_async_submit(1, h + 1)) return 8;  /* storage reused after retirement */
     Mk8QItem *fe = calloc(1, sizeof *fe); fe->kind = MK8_Q_FENCE; fe->sync = &syncs[2];
     NvnSync *s3 = &syncs[2];
     mk8_q_put(fe, &s3, 1);
-    if (syncs[2].mk8_ticket != 3 || mk8_q_presents != 1) return 4;
+    if (syncs[2].mk8_ticket != 5 || mk8_q_presents != 1) return 4;
     Sleep(30);
-    if (norder != 0 || mk8_q_done != 0) return 5;  /* still behind the stalled present: nothing ran out of order */
+    if (norder != 0 || mk8_q_done != 0 || releases) return 5;  /* retirement cannot pass older commands */
     gate = 1;
     mk8_q_wait(syncs[2].mk8_ticket);
-    if (syncs[2].seq != 2) return 6;               /* the fence after both lists names their last submission */
+    if (syncs[2].seq != 3) return 6;
     mk8_q_drain();
-    return norder == 3 && !memcmp(order, "Pab", 3) && mk8_q_presents == 0 ? 0 : 7;
+    return norder == 5 && !memcmp(order, "PabRb", 5) && releases == 1 && mk8_q_presents == 0 ? 0 : 7;
 }
 ''', encoding='utf-8')
             exe = out/'queue.exe'
             env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
             env.pop('MK8_ASYNC_SUBMIT', None)
+            env.pop('MK8_KEEP_POOL_TEXTURES', None)
+            env.pop('MK8_RELEASE_POOL_TEXTURES', None)
             build = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-DFATAL(...)=abort()',
                                     '-I'+str(runtime), '-I'+str(runtime/'nvn'), '-I'+str(DEPS/'include'), str(source), '-o', str(exe)],
                                    env=env, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr[-3000:])
+            subprocess.run([str(exe), 'default'], check=True, timeout=30, env=env)
+            subprocess.run([str(exe), 'disabled'], check=True, timeout=30,
+                           env=dict(env, MK8_RELEASE_POOL_TEXTURES='0'))
+            env['MK8_RELEASE_POOL_TEXTURES'] = '1'
             subprocess.run([str(exe)], check=True, timeout=30, env=env)
+            subprocess.run([str(exe), 'sync'], check=True, timeout=30, env=dict(env, MK8_ASYNC_SUBMIT='0'))
+            subprocess.run([str(exe), 'keep'], check=True, timeout=30,
+                           env=dict(env, MK8_ASYNC_SUBMIT='0', MK8_KEEP_POOL_TEXTURES='1'))
+            result = subprocess.run([str(exe), 'overflow'], timeout=30, env=env, capture_output=True)
+            self.assertNotIn(result.returncode, (0, 99))
 
     def test_boundaries_are_checked(self):
         with tempfile.TemporaryDirectory() as folder:

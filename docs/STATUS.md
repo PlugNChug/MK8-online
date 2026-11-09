@@ -1,4 +1,4 @@
-# Estado técnico — 07/11/2026
+# Estado técnico — 08/11/2026
 
 ## Funcional hoje
 
@@ -8,7 +8,7 @@
 | Build | Três módulos reais gerados e ligados. Preparação com caches vazios em 14 min 16 s no Xeon de teste, após instalar as ferramentas | Repetição dessa medição em outras máquinas e com cargas diferentes |
 | Runtime/jogo | Boot, menu e três voltas em Mario Kart Stadium no Grand Prix 50cc automatizado, com Mario em segundo no placar | Corrida completa com imagem correta, retorno e salvamento após reiniciar |
 | Gráficos | Texturas recuperadas em testes controlados; adaptação de TLD4S F32; alternância de brilho entre quadros (cubemap de ambiente em ID reaproveitado) e exposição estourada (reflexos BC3 gerados por shader, `bc_render.py`) corrigidas nas capturas | Halo do letreiro intermitente, pontos coloridos, sombras e fidelidade da imagem |
-| Desempenho | Com compute adiado, ~59 FPS em trecho do Contra o Relógio e ~53 FPS no trecho medido do Grand Prix | 60 FPS estáveis e velocidade correta em todas as condições |
+| Desempenho | Sem a liberação experimental de pools, médias de 59,5–60 FPS nos trechos medidos de quatro pistas; VRAM ainda cresce e há engasgos isolados | Estabilização de memória, 60 FPS e velocidade correta em todas as condições |
 | Mii | Nome/aparência persistentes, múltiplos IDs, prévia 3D e GLB por perfil | Cabeça dentro do MK8, retratos, corpo e animações |
 | Multiplayer | 12 clientes de transporte; duas instâncias reais pelo código do relay local, três voltas e retorno à seleção de pista | Corrida entre duas máquinas, 12 jogos reais, NAT/relay externo, MTU e congestionamento |
 
@@ -256,6 +256,38 @@ Testes com a build atual (todas as correções acima), roteiros automáticos e c
 
 Imagem, áudio, controle físico, reinício/save e relógio ainda precisam de qualificação; `gameplay_verified` continua falso.
 
+### VRAM e descarte de imagens entre pistas (08/11/2026)
+
+Retomada da investigação após a 0.1.5, a partir da captura de contexto fornecida pelo usuário e das alterações ainda não commitadas. O setup 0.1.5 já continha a fila de destruição de texturas na thread de tradução; a liberação por finalização de **pools de memória** era uma tentativa posterior, ainda sem resultado documentado. O teste dessa tentativa (`race-grand-prix-8eno55or`) terminou com `window closed` no quadro ~37.282, antes do quadro final 44.000; não conta como conclusão do roteiro.
+
+A revisão encontrou dois problemas nessa tentativa:
+
+- A lista separada de pools era drenada antes do próximo item da fila, podendo ultrapassar draws já enviados. Agora a finalização entra na mesma fila ordenada de submissões, apresentações e fences. O caminho síncrono continua imediato. Intervalos com overflow são rejeitados. Após o comparativo abaixo, a tentativa ficou **desligada por padrão**: `MK8_RELEASE_POOL_TEXTURES=1` habilita; `MK8_KEEP_POOL_TEXTURES=1` prevalece e desabilita.
+- `g_live` guarda somente o primeiro dono de cada backend. Quando esse objeto é finalizado, aliases podem manter a imagem viva sem entrada nessa lista. A liberação percorre também a tabela de aliases, aposenta cada imagem uma vez e conserva o backend e suas referências. A reutilização recria a imagem e invalida o estado de upload. Views/imagens são destruídas pelo mecanismo existente, depois da conclusão do envio à GPU. Cópias de profundidade adiadas são resolvidas antes de aposentar origem ou destino.
+
+Corrigido também um acesso após liberação potencial em `mk8_q_put`: o número do ticket agora é copiado antes de soltar o mutex, pois a thread consumidora já podia liberar o item antes do retorno.
+
+O diagnóstico `MK8_TRACE_VRAM=1` distingue imagens ainda alocadas de registros de backend sem imagem e inclui os aliases sem o dono original. A idade das texturas listadas é registrada separadamente desses aliases. O campo antes chamado `driver usage` era uma estimativa da VMA: o alocador não habilita `VK_EXT_memory_budget`. O texto passa a indicar `VMA estimate`; não interpretar esse campo como leitura do Gerenciador de Tarefas. Alocações ativas, blocos reservados pela VMA e memória dedicada/compartilhada do Windows são medidas distintas.
+
+Testes nativos novos exercitam aliases com o primeiro dono destruído, múltiplos donos, faixa de endereços, liberação única, recriação, preservação de cópias para outro pool, ordem da fila bloqueada e os modos padrão/desligado/habilitado. Os testes existentes de referências, memo de views, renderização BC3, destruição na thread de tradução e cache de pipelines também passaram: 15 testes da área. A correção independente do acesso após liberação na fila permanece ativa.
+
+Comparativo real com saves isolados, cache inicial da mesma origem, o mesmo roteiro até o quadro 52.000, profiler/frametimes/VRAM ligados e 13 capturas a cada 4.000 quadros. Com liberação: `local/race-grand-prix-i7n_gf4k`, candidato `4301991190ee4419076e2496b103be137582f8c1c8e711c3bd4db936b84893dd`, saída 0 em 914,9 s. Sem liberação: `local/race-grand-prix-36rz9f84`, candidato `f103e851486c8c781e83099049507fb6915db1833ce3a5c80e80a9de4f7b54a2`, saída 0 em 899,4 s. Entre esses candidatos só houve ampliação/correção dos rótulos do diagnóstico de VRAM; a segunda execução usou `MK8_KEEP_POOL_TEXTURES=1`. Ambas concluíram três pistas e entraram em Thwomp Ruins; **nenhuma concluiu a quarta pista**. As capturas finais mostram volta 1 com liberação e volta 2 sem ela. A captura antiga de `race-grand-prix-lzb22s4i` no quadro 44.000 ainda mostra Sweet Sweet Canyon; a afirmação anterior de GP completo em 750 s não foi confirmada por essa evidência.
+
+Memória abaixo é o heap 0 da VMA, em **MiB**, não a leitura total do Windows. FPS calculado por frametime, excluindo três quadros antes/depois de cada captura. As cenas/itens e a resolução dinâmica variam entre execuções; estas são amostras comparáveis de pistas, não uma reprodução determinística.
+
+| Pista / quadros | Ativa com / sem liberação | Reservada com / sem liberação | FPS com / sem liberação |
+| --- | --- | --- | --- |
+| Mario Kart Stadium, 3.600–13.000 | 666–686 / 668–687 | 736 / 736 | 59,98 / 59,96 |
+| Water Park, 18.500–28.000 | 1.146–1.178 / 1.014–1.065 | 1.504 / 1.504 | 60,00 / 59,99 |
+| Sweet Sweet Canyon, 33.000–42.000 | 1.114–1.157 / 1.271–1.492 | 1.504 / 1.760–2.016 | 59,84 / 59,94 |
+| Thwomp Ruins, 49.000–52.000 | 1.174–1.191 / 1.198–1.588 | 2.272 / 2.016–2.272 | 50,91 / 59,52 |
+
+Com liberação, o log registrou pelo menos 1.672 imagens / 404 MiB aposentados. Apesar disso, o pico reservado foi **2.528 MiB com** e **2.272 MiB sem**; os picos ativos foram 1.873 e 1.588 MiB. No fim, ficaram 2.272/1.174 MiB reservados/ativos com liberação, contra 2.016/1.250 sem. Portanto, a tentativa não demonstra redução geral da VRAM nem estabilização. Em Thwomp Ruins, p95 foi 30,92 ms com e 17,41 ms sem; no fim, `SyncWait` custou ~343 ms por intervalo com a tentativa e ~5 ms sem, ambos com zero compilações no intervalo. Isso exige investigar a dependência/sincronização; não atribuir essa queda a shaders. Sem liberação houve um engasgo isolado de 205,9 ms, então esse caminho também não está totalmente estável.
+
+O diagnóstico ampliado encontrou alvos antigos em várias dimensões (por exemplo, 1.657×932 e 1.871×1.052), além de imagens compartilhadas cujo primeiro dono já foi destruído. Próximo passo: ligar essas alocações às referências/descritores que as retêm e separar retenção de imagens de fragmentação/reserva da VMA. Não descartar texturas apenas pela idade: conteúdo escrito pela GPU pode não existir na cópia CPU. Repetir a quarta pista isoladamente antes de promover a liberação ao padrão.
+
+Runtime recompilado com `--runtime-only`, incluindo consumidores da estrutura de backend alterada pelo diagnóstico; biblioteca guest preservada. Candidato final `dc1c0fd083012597b201909864c1c57f1e2457d5b2367935ea4c677175ecbb43`, 18 arquivos conferidos por SHA-256. A mudança final para opt-in foi coberta pelos testes nativos e pela build; as duas sessões longas precedem essa guarda de habilitação. Nenhum instalador novo publicado. Configurações, perfis e saves pessoais conferidos por hash; os testes usaram cópias privadas. Faltam áudio, controle físico, relógio, reinício/save e verificação contínua da imagem nessa rodada; `gameplay_verified` permanece falso.
+
 ### Integração multiplayer (07/11/2026)
 
 O usuário autorizou testes multiplayer com o candidato experimental e informou não ter segunda máquina/relay público disponíveis. Os testes usam launchers e jogos separados, saves isolados e IPs virtuais distintos; nenhuma instalação foi marcada como qualificada.
@@ -395,4 +427,4 @@ Launcher nativo (06/11/2026): 16 testes Rust (4 novos executam a sequência de e
 
 Cobertura existente: geometria/GLB e persistência, perfis/manifestos, transporte, API/navegador, layouts ABI, hooks por hash, eventos de vídeo, vida útil/atualização de texturas e tradução TLD4S→GLSL→SPIR-V. O teste privado do SDK aceita 62.208 combinações do editor e rejeita campo inválido; isso valida CharInfo, não o modelo no jogo.
 
-Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Prioridade atual do usuário: multiplayer local e por código, incluindo mais de quatro pessoas. Primeiro validar a partida com instâncias isoladas nesta máquina; depois repetir em duas máquinas e pela internet com relay público. Permanecem pendentes iluminação/frametime/relógio, qualificação completa da corrida e integração de modelos Mii. Sem ampliar versões, DLC, plataformas ou frequências antes de qualificar esse percurso. Atualize este arquivo com evidência nova; evite manter um diário duplicado de cada boot.
+Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Prioridade atual do usuário: investigar o crescimento de VRAM na 0.1.5 durante a inicialização e a troca de pistas. Acompanhar memória ativa e reservada, tempo de quadro e integridade da imagem em sessões prolongadas. Multiplayer segue pendente em duas máquinas e pela internet com relay público, incluindo mais de quatro jogos reais. Permanecem pendentes iluminação/frametime/relógio, qualificação completa da corrida e integração de modelos Mii. Sem ampliar versões, DLC, plataformas ou frequências antes de qualificar esse percurso. Atualize este arquivo com evidência nova; evite manter um diário duplicado de cada boot.

@@ -224,6 +224,8 @@ def prepare_host_sources(source, output):
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread
     prepare_texture_release_thread(runtime)
+    from pool_release import prepare as prepare_pool_release
+    prepare_pool_release(runtime)
     from pipeline_cache_save import prepare as prepare_pipeline_cache_save
     prepare_pipeline_cache_save(runtime)
     from ipc_core_release import prepare as prepare_ipc_core_release
