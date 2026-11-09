@@ -39,7 +39,7 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 | Desempenho | Cerca de 60 FPS nos trechos medidos no PC de teste | Repetir copas, estabilizar VRAM e testar mais hardware |
 | LAN / códigos de sala | Dois jogos correram no mesmo PC; transporte testado com 12 clientes | Dois PCs reais, relay na internet e mais de quatro jogadores reais |
 | Tela dividida | Em investigação | Corrigir entrada na seleção de personagens para dois jogadores |
-| Nextendo | Investigação prevista | Avaliar integração com este runtime nativo |
+| Nextendo | Protótipo opcional; OAuth e obtenção real de token NEX validados | Qualificar TLS do jogo, login MK8, lobby e corrida em dois PCs |
 
 São marcos observados, sem estimativa artificial de porcentagem concluída. `gameplay_verified` permanece `false` até passar pela qualificação completa. Evidências e limitações: [estado técnico](docs/STATUS.md) e [roteiro](docs/ROADMAP.md).
 
@@ -68,6 +68,8 @@ As verificações de retomada também cobrem recibos de geração interrompidos 
 As correções da 0.1.8 também distinguem arquivos inacessíveis de caches corrompidos: erro de compartilhamento ou permissão interrompe a preparação sem considerar a importação/runtime afetado descartável. A substituição de cada arquivo preserva o destino anterior até conseguir publicar o novo. Origem ausente ou ilegível interrompe a limpeza do espelho; falha ao publicar um download preserva o arquivo baixado e informa o problema local. Resolva o bloqueio/acesso ou reconecte a mesma unidade antes de tentar novamente. Nenhuma permissão ou configuração de antivírus é alterada automaticamente.
 
 A preparação nas fontes agora inclui o carregador `vulkan-1.dll` fixado ao lado do jogo e o preserva na limpeza de dependências. O SDL carrega essa DLL dinamicamente; verificar apenas imports estáticos a deixava de fora na 0.1.7. Continua sendo necessário um driver gráfico compatível com Vulkan 1.3: incluir o carregador não instala o driver da GPU.
+
+Correções locais adicionais (ainda não publicadas) verificam a prontidão das ferramentas por recibo de conclusão e hashes, mesmo sem downloads extras de DLLs. Antes de iniciar o jogo, um processo separado verifica as bibliotecas Vulkan/SDL locais e suas dependências resolvidas pelo Windows. Falhas impedem o início e entram no relatório de suporte como `vulkan-check.log`. O jogo usa o caminho explícito do Vulkan local. Essa checagem valida carregamento de bibliotecas, não compatibilidade da GPU ou gameplay, e não apaga dados do jogo nem saves.
 
 A versão 0.1.8 também bloqueia operações concorrentes entre launchers que compartilham dados/ferramentas e entre execuções do pipeline na mesma pasta de dados. Falhas no cancelamento mantêm o processo sob controle para permitir nova tentativa. A limpeza rejeita diretórios pais com links e para diante de erros de permissão, sem forçar exclusões. Essas proteções continuam em validação; os limites restantes estão no estado técnico.
 
@@ -134,9 +136,11 @@ O daemon admite até 16 salas, cada uma com anfitrião e até 11 convidados. Ela
 
 </details>
 
-### Nextendo: uma direção futura
+### Nextendo: protótipo de desenvolvimento
 
-Investigar a **[Nextendo Network](https://nextendo.network/)** está no roteiro para oferecer uma alternativa de serviço online. **Esta build ainda não integra Nextendo.** Contas, amigos e matchmaking exigiriam trabalho de compatibilidade e validação neste runtime nativo. É uma intenção de desenvolvimento, sem data anunciada ou vínculo presumido; não substitui o caminho LAN/relay atual.
+Execute `powershell -File scripts/test-nextendo.ps1` no checkout com launcher/runtime recompilados. Abra solo e **F1 → Online → Nextendo account**. Depois do login no navegador, escolha Nextendo e reinicie pelo overlay após salvar. Tokens e chave de assinatura de teste ficam apenas em memória; fechar o jogo exige novo login. Sair da conta não apaga os dados do jogo. Esse fluxo é separado das salas LAN do launcher.
+
+OAuth e obtenção de token NEX reais passaram com o aplicativo próprio MK8-Online. **Login do jogo, amigos, lobby e corrida Nextendo ainda não estão qualificados.** As releases oficiais confirmam exatamente MK8 4.0.1. O teste real de Online Play reproduziu 2306-0502: o certificado TLS do MK8 diverge do pin herdado. A CA pública do Prelude também não autentica esse certificado autoassinado do MK8. Com confiança temporária autorizada somente para teste local, o TLS passou e o jogo chegou a “You're spectating. Get ready!”. Um acesso nulo no caminho de recursos/Mii ainda interrompe a transição; corrida online não está qualificada. O pin padrão permanece intacto, a verificação continua ativa e a distribuição depende da confirmação oficial do certificado/SPKI MK8. Sem saves em nuvem ou publicação nesta etapa; o instalador 0.1.8 publicado não contém o protótipo. Veja o [estado técnico](docs/STATUS.md).
 
 ## Desempenho, com contexto
 

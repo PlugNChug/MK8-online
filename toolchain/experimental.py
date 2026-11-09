@@ -74,10 +74,21 @@ def patch_no_mii_unit(src, output):
         c->x[30] = 0x70004e43dcull;
         if (!mk8_skip_vote_mii) f_7000427e6c(c);
     }'''),
+            ('c->x[30] = 0x70004e43e8ull; f_7000427888(c);', '''{
+        uint64_t models = LD64(c->x[0] + 0x68);
+        mk8_skip_vote_mii = mk8_no_mii_renderer() && models &&
+            LD32(models + 0x18) == 0 && LD32(models + 0x28) == 0;
+        c->x[30] = 0x70004e43e8ull;
+        if (!mk8_skip_vote_mii) f_7000427888(c);
+    }'''),
             ('    c->x[8] = (uint32_t)((uint32_t)c->x[0] ^ 0x1ull);\n    if (((c->x[8] >> 0) & 1) != 0) { goto L_70004e44b0; }',
              '    c->x[8] = (uint32_t)((uint32_t)c->x[0] ^ 0x1ull);\n    if (!mk8_skip_vote_mii && ((c->x[8] >> 0) & 1) != 0) { goto L_70004e44b0; }'),
             ('c->x[30] = 0x70004e4490ull; f_7000427e74(c);',
              'c->x[30] = 0x70004e4490ull; if (!mk8_skip_vote_mii) f_7000427e74(c);'),
+            ('c->x[30] = 0x70004e44a4ull; f_7000427960(c);',
+             'c->x[30] = 0x70004e44a4ull; if (!mk8_skip_vote_mii) f_7000427960(c);'),
+            ('c->x[30] = 0x70004e4500ull; f_70004e472c(c);',
+             'c->x[30] = 0x70004e4500ull; if (!mk8_skip_vote_mii) f_70004e472c(c);'),
             ('L_70004e44b0:;',
              'L_70004e44b0:;\n    if (mk8_skip_vote_mii && LD32(c->x[19] + 0x20) == 1) goto L_70004e44e4;'),
         ]

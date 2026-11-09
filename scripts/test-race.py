@@ -115,7 +115,8 @@ def run(args):
     log = session / 'game.log'
     with log.open('wb') as stream:
         child = subprocess.Popen(
-            [candidate['executable']['path'], str(Path(candidate['data_root']) / 'extracted')],
+            [candidate['executable']['path'], *(['--nextendo-login-play'] if args.nextendo else []),
+             str(Path(candidate['data_root']) / 'extracted')],
             cwd=data, env=env, stdin=subprocess.DEVNULL, stdout=stream,
             stderr=subprocess.STDOUT,
         )
@@ -143,6 +144,7 @@ if __name__ == '__main__':
     parser.add_argument('--track', type=int, choices=range(4), help='Track 0-3 of --cup (overrides --course)')
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     parser.add_argument('--candidate', type=Path, help='candidate.json of another data folder (e.g. a fresh build)')
+    parser.add_argument('--nextendo', action='store_true', help='Authenticate in this process before boot; requires MK8_NEXTENDO_TEST=1')
     args = parser.parse_args()
     if args.mode != 'time-trial' and (args.course != 'stadium' or args.cup != 'mushroom' or args.track is not None):
         parser.error('--course, --cup and --track require time-trial')

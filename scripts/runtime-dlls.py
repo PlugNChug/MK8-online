@@ -181,8 +181,16 @@ def prefetch():
         if unused:
             index.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding='utf-8')
             print(f'Cache de DLLs: {len(unused)} não usadas removidas.', flush=True)
+        # A successful prefetch may download nothing, so index.json is not a completion marker.
+        files = []
+        for path in [*linked, *(CACHE/name for name in used if (CACHE/name).is_file())]:
+            scope, base = ('tools', DEPS.parent) if path.is_relative_to(DEPS.parent) else ('root', ROOT)
+            files.append({'scope': scope, 'path': path.relative_to(base).as_posix(), 'sha256': digest(path)})
+        pending = DEPS/'runtime-ready.pending.json'
+        pending.write_text(json.dumps({'schema': 1, 'files': files}), encoding='utf-8')
     for leftover in DEPS.glob('mingw-w64-ucrt-x86_64-*.pkg.tar.zst'):
         leftover.unlink()  # (already in the DLL cache or not needed by the runtime; downloaded again if ever needed)
+    os.replace(pending, DEPS/'runtime-ready.json')
 
 
 if __name__ == '__main__':

@@ -39,7 +39,7 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 | Performance | Around 60 FPS in the measured race sections on the test PC | Repeated cups, VRAM stability and more hardware |
 | LAN / room codes | Two game instances raced on one PC; 12 transport clients tested | Two real PCs, internet relay and more than four actual players |
 | Split-screen | Under investigation | Fix the two-player character-selection input issue |
-| Nextendo | Planned investigation | Assess integration with this native runtime |
+| Nextendo | Opt-in prototype; real OAuth and NEX token retrieval validated | Qualify game TLS, MK8 login, lobby and a race on two PCs |
 
 These are observed milestones, not a percentage-complete estimate. `gameplay_verified` remains `false` until the complete qualification passes. Detailed evidence and limitations: [technical status](docs/STATUS.md) and [roadmap](docs/ROADMAP.md) (Portuguese).
 
@@ -50,6 +50,8 @@ The pipeline translates the supported game's AArch64 executable to C and compile
 RatOne develops and maintains the MK8 adaptation, launcher and integration. The translation/runtime foundation comes from **SMM2Recomp and LASRecomp**, with additional credited work from other projects. See [third-party sources and licenses](docs/THIRD_PARTY.md).
 
 ## Get on track
+
+**Nextendo developer test (unreleased):** run `powershell -File scripts/test-nextendo.ps1` with the rebuilt development launcher/runtime. Start solo, then open **F1 → Online → Nextendo account**. After browser login, select Nextendo and restart from the overlay after saving. Tokens and the test signing key stay in memory; closing the game requires signing in again. This is separate from launcher LAN rooms. Real OAuth/NEX-token retrieval passed; game login and racing remain unqualified. Official releases confirm exactly MK8 4.0.1. A real Online Play attempt reproduced 2306-0502: the MK8 TLS certificate does not match the inherited pin. The public Prelude CA also fails to authenticate that self-signed MK8 certificate. With explicit temporary trust for local testing, TLS passed and the game reached “You're spectating. Get ready!”. A resource/Mii-path null access still stops the transition; online racing is not qualified. The default pin is unchanged, certificate verification remains enabled, and official MK8 certificate/SPKI confirmation is still needed for distribution. No cloud saves or friends integration is included.
 
 ### Requirements
 
@@ -68,6 +70,8 @@ Additional recovery checks cover interrupted generation receipts and missing/inv
 Version 0.1.8 fixes also distinguish inaccessible files from corrupt caches: a sharing or permission error stops preparation without treating the affected import/runtime as disposable. File replacement preserves the previous destination until the new file can be published. Missing or unreadable mirror sources stop pruning; failed download publication preserves the downloaded file and reports the local problem. Resolve the lock/access issue or reconnect the same drive before retrying. No permissions or antivirus settings are changed automatically.
 
 The source preparation now includes the pinned `vulkan-1.dll` loader next to the game and retains it during dependency cleanup. SDL loads this DLL dynamically, so scanning static imports alone missed it in 0.1.7. A compatible Vulkan 1.3 graphics driver is still required; bundling the loader does not install a GPU driver.
+
+Additional local fixes (not yet released) verify tool readiness with a completion receipt and file hashes, even when no extra DLL downloads are needed. Before launching a game, a separate process checks the local Vulkan/SDL libraries and their Windows-resolved dependencies. Failures stop launch and are included as `vulkan-check.log` in support reports. The game uses the explicit local Vulkan path. This checks library loading, not GPU or gameplay compatibility, and does not delete game data or saves.
 
 Version 0.1.8 also adds operation locks between launchers sharing data/tools and between pipeline runs sharing a data folder. Failed cancellation keeps the process tracked so cancellation can be retried. Cleanup rejects linked parent directories and stops on permission errors instead of forcing deletion. These protections are still under validation; see the remaining limitations in the technical status.
 
@@ -134,9 +138,11 @@ The daemon supports up to 16 rooms, with one host and up to 11 guests each. Room
 
 </details>
 
-### Nextendo: a future direction
+### Nextendo: developer prototype
 
-Investigating **[Nextendo Network](https://nextendo.network/)** is on the roadmap for an alternative online service. **There is no Nextendo integration in this build.** Its account, friends and matchmaking services would require compatibility work and validation in this native runtime. This is a development intention, with no release date or affiliation implied; it does not replace the current LAN/relay path.
+The local opt-in prototype uses a dedicated public PKCE client. Real OAuth and NEX-token retrieval passed; tokens remain in memory for this test stage. See [technical status](docs/STATUS.md) for evidence and test instructions.
+
+**[Nextendo Network](https://nextendo.network/) game login, friends, matchmaking and racing remain unqualified.** The published 0.1.8 installer does not include this prototype. No release date or affiliation is implied; it does not replace the current LAN/relay path.
 
 ## Performance, with context
 

@@ -10,6 +10,7 @@ mod report;
 mod server;
 mod setup;
 mod update;
+mod vulkan;
 
 use mk8_manifest::{load, save, Config};
 use serde_json::json;
@@ -64,6 +65,22 @@ pub(crate) fn fatal(message: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--check-vulkan") {
+        let result = args
+            .get(2)
+            .ok_or_else(|| "Pasta do runtime ausente".to_string())
+            .and_then(|folder| vulkan::probe(Path::new(folder)));
+        match result {
+            Ok(()) => {
+                println!("Vulkan e SDL carregados; dependências resolvidas pelo Windows. Gameplay não qualificado.");
+                std::process::exit(0);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if let Some(mode) = args
         .get(1)
         .filter(|m| *m == "--task-supervisor" || *m == "--game-supervisor")

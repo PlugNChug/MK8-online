@@ -139,6 +139,7 @@ fn fill(local: &Path, stage: &Path, reason: &str, summary: Value) -> Result<Vec<
         ("setup.log".into(), local.join("setup.log")),
         ("candidate.json".into(), local.join("candidate.json")),
         ("config.json".into(), local.join("config.json")),
+        ("vulkan-check.log".into(), local.join("vulkan-check.log")),
         ("mk8d.ini".into(), local.join("user-no-mii/mk8d.ini")),
     ];
     for (i, path) in previous_game_logs(local, 3).into_iter().enumerate() {
@@ -217,6 +218,7 @@ mod tests {
         let local = std::env::temp_dir().join(format!("mk8-report-{}", std::process::id()));
         fs::create_dir_all(local.join("user-no-mii/save")).unwrap();
         fs::write(local.join("game.log"), "FATAL: test crash\n").unwrap();
+        fs::write(local.join("vulkan-check.log"), "DLL dependency failed\n").unwrap();
         fs::write(local.join("user-no-mii/save/save_0"), "private save").unwrap();
         let zip = create(&local, "test", json!({"build":"idle"})).unwrap();
         assert!(zip.is_file());
@@ -228,6 +230,7 @@ mod tests {
                 .unwrap();
         let names = String::from_utf8_lossy(&listing.stdout);
         assert!(names.contains("report.json") && names.contains("game.log"));
+        assert!(names.contains("vulkan-check.log"));
         assert!(!names.contains("save_0"));
         assert!(!folder(&local)
             .join(format!(

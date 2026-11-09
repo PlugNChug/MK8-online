@@ -22,7 +22,7 @@ class LanVoteTests(unittest.TestCase):
 #include <string.h>
 #include <assert.h>
 typedef struct { uint64_t x[32]; } Cpu;
-static int mode, received, busy, slot, ready, done, queries, requests, completed;
+static int mode, online, received, busy, slot, ready, done, queries, requests, completed, visuals;
 static uint64_t manager[16], models[8];
 static uint32_t state[16];
 int mk8_no_mii_renderer(void) { return mode; }
@@ -30,26 +30,39 @@ static uint32_t LD32(uint64_t p) { uint32_t n; memcpy(&n,(void *)(uintptr_t)p,4)
 static uint64_t LD64(uint64_t p) { uint64_t n; memcpy(&n,(void *)(uintptr_t)p,8); return n; }
 static void f_7000427e6c(Cpu *c) { queries++; c->x[0]=ready; }
 static void f_7000427e74(Cpu *c) { (void)c; requests++; }
+static void f_7000427888(Cpu *c) { queries++; c->x[0]=ready; }
+static void f_7000427960(Cpu *c) { (void)c; requests++; }
+static void f_70004e472c(Cpu *c) { (void)c; visuals++; }
 void f_70004e4370(Cpu *c) {
     c->x[19]=(uintptr_t)state;
     if (!received) return;
     c->x[0]=(uintptr_t)manager;
-    c->x[30] = 0x70004e43dcull; f_7000427e6c(c);
+    if (online) {
+        c->x[30] = 0x70004e43e8ull; f_7000427888(c);
+    } else {
+        c->x[30] = 0x70004e43dcull; f_7000427e6c(c);
+    }
     if (busy) goto L_70004e44b0;
     c->x[8] = (uint32_t)((uint32_t)c->x[0] ^ 0x1ull);
     if (((c->x[8] >> 0) & 1) != 0) { goto L_70004e44b0; }
     if (slot > 11) goto L_70004e44b0;
     state[0x20/4]=1;
-    c->x[30] = 0x70004e4490ull; f_7000427e74(c);
+    if (online) {
+        c->x[30] = 0x70004e44a4ull; f_7000427960(c);
+    } else {
+        c->x[30] = 0x70004e4490ull; f_7000427e74(c);
+    }
 L_70004e44b0:;
     if (state[0x20/4]!=1 || !done) return;
 L_70004e44e4:;
     state[0x20/4]=2;
+    c->x[30] = 0x70004e4500ull; f_70004e472c(c);
     completed++;
 }
 int main(void) {
     manager[0x68/8]=(uintptr_t)models;
     for(mode=0;mode<2;mode++)
+    for(online=0;online<2;online++)
     for(unsigned a=0;a<2;a++) for(unsigned b=0;b<2;b++)
     for(received=0;received<2;received++) for(busy=0;busy<2;busy++)
     for(slot=11;slot<=12;slot++)
@@ -57,11 +70,12 @@ int main(void) {
         memset(state,0,sizeof state);
         ((uint32_t*)models)[0x18/4]=a;
         ((uint32_t*)models)[0x28/4]=b;
-        queries=requests=completed=0;
+        queries=requests=completed=visuals=0;
         Cpu c={0}; f_70004e4370(&c);
         int skip=mode&&!a&&!b, valid=received&&!busy&&slot<=11;
         assert(completed==(valid&&(skip||(ready&&done))));
         assert(queries==(received&&!skip));
+        assert(visuals==(completed&&!skip));
         assert(requests==(valid&&!skip&&ready));
         assert(state[0x20/4]==(completed?2:requests?1:0));
     }
