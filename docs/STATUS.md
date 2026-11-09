@@ -1,5 +1,15 @@
 # Estado técnico — 09/11/2026
 
+## Issue #5 — SDL não carrega vulkan-1.dll (correção local)
+
+O relatório `mk8-report-1794246526.zip`, launcher 0.1.7, contém quatro logs terminando em `FATAL: SDL_CreateWindow: Failed loading vulkan-1.dll`, antes da inicialização gráfica. O código `0xc0000409` acompanha esse fatal; não prova falha no tradutor ou corrupção de save. O manifesto do relatório não inclui `vulkan-1.dll`. O log não identifica a GPU nem permite concluir se o carregador está ausente do Windows ou se uma dependência/driver está incompleto.
+
+Confirmada uma omissão na distribuição: Ferramentas já extrai o pacote fixado de Vulkan Loader, mas `copy_runtime_dlls` só copiava SDL/shaderc/FFmpeg; o resolvedor PE não enxergava a dependência dinâmica do SDL e podia remover o loader como não utilizado. Agora ele é copiado do pacote verificado, incluído no prefetch e na travessia explícita SDL → Vulkan, inclusive se o PC de build tem uma cópia em System32. Sua cadeia de imports continua validada. A preparação completa já registra todas as DLLs; `--runtime-only` agora também resolve dependências e atualiza seus registros SHA-256, preservando a biblioteca do jogo. Nenhum upstream ou código guest alterado.
+
+Validação: 1 teste com SDL e loader reais em pasta temporária, usando o executável host pré-compilado somente para resolver imports, sem executar o jogo; duas passagens offline de resolução/limpeza preservaram a DLL e `SDL_Vulkan_LoadLibrary` carregou explicitamente a cópia local. Passaram ainda 9 testes de host pré-compilado, 4 de ferramentas e 8 do pipeline, incluindo atualização do manifesto com save e biblioteca do jogo preservados. Licença original do pacote adicionada em `docs/licenses/Vulkan-Loader.txt`, incluída pelo empacotador existente.
+
+Sem nova versão ou instalador publicado. Builds já distribuídas continuam precisando receber a correção e repetir a preparação/atualização do runtime. Incluir o loader não instala driver de GPU nem garante Vulkan 1.3: ainda falta validação na máquina do relato. `gameplay_verified` permanece falso.
+
 ## Encerramento do launcher e jogos em outras instâncias — fontes locais
 
 O executável tem dois modos internos de supervisão, acionados antes de carregar a janela/payload. Pedidos passam por stdin e confirmação por stdout, sem arquivo com comando/credenciais. A supervisão de ferramentas/build mantém os locks e observa um handle do processo do launcher. Antes de iniciar ferramentas, associa a si própria a um Job Object Windows com `KILL_ON_JOB_CLOSE`; os descendentes herdam o job e não recebem seu handle. Se o launcher termina, a supervisão sai e o Windows encerra a árvore, incluindo compiladores ou o interpretador real atrás do redirecionador do venv. Cancelar pela interface continua encerrando a árvore da operação.

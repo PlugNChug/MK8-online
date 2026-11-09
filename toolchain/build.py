@@ -22,6 +22,10 @@ def sha(path):
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
+def file_record(path):
+    return {'path': str(path.resolve()), 'sha256': sha(path), 'bytes': path.stat().st_size}
+
+
 def atomic_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     pending = path.with_suffix(".json.pending")
@@ -254,8 +258,6 @@ def finish(config, local, executable=None):
     mirror(data/'extracted/exefs', job/'inputs/exefs')
     mirror(data/'extracted/romfs', romfs)
     prepare_system_data(config, local)
-    def file_record(path):
-        return {'path': str(path.resolve()), 'sha256': sha(path), 'bytes': path.stat().st_size}
     files = {p.name: file_record(p) for p in output.glob('*.dll')}
     files['gamelib'] = files.pop(dll.name)
     files['gamelib-id'] = file_record(output/'mk8dgame.dll.id')
@@ -280,10 +282,16 @@ def refresh_runtime(local):
     for rel, expected in json.loads((source.parent/'runtime-hashes.json').read_text(encoding='utf-8')).items():
         if sha(source/rel) != expected:
             raise ValueError('Runtime preparado alterado; use uma preparação completa: '+rel)
-    exe = build_host(source, Path(candidate['executable']['path']).parent)
+    output = Path(candidate['executable']['path']).parent
+    exe = build_host(source, output)
     for file in candidate['files'].values():
         if sha(file['path']) != file['sha256']:
             raise ValueError('Biblioteca/dado alterado; use --finish: '+file['path'])
+    subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
+    candidate['files'] = {name: record for name, record in candidate['files'].items() if not name.lower().endswith('.dll')}
+    for dll in output.glob('*.dll'):
+        if dll.resolve() != Path(candidate['files']['gamelib']['path']).resolve():
+            candidate['files'][dll.name] = file_record(dll)
     candidate['executable'] = {'path': str(exe), 'sha256': sha(exe), 'bytes': exe.stat().st_size}
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': candidate['files'], 'exe': candidate['executable']}, sort_keys=True).encode()).hexdigest()
     atomic_json(local/'candidate.json', candidate)

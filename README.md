@@ -63,6 +63,8 @@ Tools downloads a pinned CPython package, verifies SHA-256 and creates its local
 
 Source fixes awaiting the next release: readiness checks now use the private Python environment; package installation ignores external pip settings and requires verified binary wheels. Damaged download archives are fetched again, and invalid compilation-cache metadata triggers recovery instead of aborting preparation. These additional fixes are not included in the published 0.1.7 installer. See [technical status](docs/STATUS.md).
 
+The source preparation now includes the pinned `vulkan-1.dll` loader next to the game and retains it during dependency cleanup. SDL loads this DLL dynamically, so scanning static imports alone missed it in 0.1.7. A compatible Vulkan 1.3 graphics driver is still required; bundling the loader does not install a GPU driver.
+
 Local stabilization also adds operation locks between launchers sharing data/tools and between pipeline runs sharing a data folder. Failed cancellation keeps the process tracked so cancellation can be retried. Cleanup rejects linked parent directories and stops on permission errors instead of forcing deletion. These protections are still under validation; see the remaining limitations in the technical status.
 
 The development launcher now supervises processes separately: closing or losing the launcher stops its tool/build processes, while a running game keeps its locks and can finish saving normally. Other instances cannot start another game with the same saves, rebuild, change paths or start an update against those resources. Games using separate data folders can share read-only tools. Closing the launcher still disconnects its multiplayer gateway; this does not provide session reconnection.

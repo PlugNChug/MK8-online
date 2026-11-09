@@ -424,7 +424,7 @@ def copy_runtime_dlls(output):
     ffmpeg = ffmpeg_dlls()
     if len(ffmpeg) != len(FFMPEG_PATTERNS):
         raise ValueError('FFmpeg ausente: execute de novo o passo Ferramentas (scripts/setup-runtime-deps.py)')
-    for dll in [*(dll for pattern in ['SDL3.dll', 'libshaderc_shared.dll'] for dll in (DEPS/'bin').glob(pattern)),
+    for dll in [*(dll for pattern in ['SDL3.dll', 'libshaderc_shared.dll', 'vulkan-1.dll'] for dll in (DEPS/'bin').glob(pattern)),
                 *ffmpeg]:
         target = output/dll.name
         if not target.is_file() or digest(target) != digest(dll):

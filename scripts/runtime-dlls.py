@@ -162,8 +162,8 @@ def prefetch():
     """Fills the DLL cache for the libraries the runtime links, then removes archives no build will read again."""
     from host import ffmpeg_dlls  # (the same libraries the build copies next to the runtime)
     bin = DEPS/'packages/ucrt64/bin'
-    linked = [*(bin/name for name in ('SDL3.dll', 'libshaderc_shared.dll')), *ffmpeg_dlls()]
-    if len(linked) != 6 or not all(p.is_file() for p in linked):
+    linked = [*(bin/name for name in ('SDL3.dll', 'libshaderc_shared.dll', 'vulkan-1.dll')), *ffmpeg_dlls()]
+    if len(linked) != 7 or not all(p.is_file() for p in linked):
         raise ValueError('Bibliotecas do runtime ausentes em '+str(bin))
     # (an antivirus may still be scanning the copies when the folder is removed: the check itself is already done)
     with tempfile.TemporaryDirectory(prefix='mk8-dlls-', ignore_cleanup_errors=True) as temp:

@@ -105,6 +105,14 @@ class PrebuiltFFmpegTests(unittest.TestCase):
     def test_checked_minimal_build_is_preferred(self):
         self.assertEqual(host.ffmpeg_dlls(), [self.prebuilt / name for name in self.NAMES])
 
+    def test_copy_includes_the_dynamically_loaded_vulkan_library(self):
+        loader = self.deps / 'bin/vulkan-1.dll'
+        loader.write_bytes(b'pinned loader fixture')
+        output = Path(self.folder.name) / 'output'
+        output.mkdir()
+        host.copy_runtime_dlls(output)
+        self.assertEqual((output / loader.name).read_bytes(), loader.read_bytes())
+
     def test_changed_or_missing_file_falls_back_to_the_pinned_build(self):
         (self.prebuilt / 'avcodec-63.dll').write_bytes(b'changed')
         self.assertEqual(host.ffmpeg_dlls(), [self.deps / 'bin' / name for name in self.NAMES])

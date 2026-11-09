@@ -167,5 +167,33 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(text,chunk.read_text())
 
 
+class RuntimeDependencyManifestTests(unittest.TestCase):
+    def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
+            local = Path(temporary)
+            source = local/'runtime'
+            source.mkdir()
+            (local/'runtime-hashes.json').write_text('{}')
+            (local/'generation.json').write_text(json.dumps({'source': str(source), 'identity': 'fixture'}))
+            output = local/'host'
+            output.mkdir()
+            exe, game = output/'runtime.exe', output/'game.dll'
+            exe.write_bytes(b'fixture runtime')
+            game.write_bytes(b'preserved game')
+            save = local/'user-save.bin'
+            save.write_bytes(b'preserved save')
+            (local/'candidate.json').write_text(json.dumps({'executable': pipeline.file_record(exe),
+                'files': {'gamelib': pipeline.file_record(game)}, 'gameplay_verified': False}))
+            def dependencies(*args, **kwargs):
+                (output/'vulkan-1.dll').write_bytes(b'verified loader fixture')
+            with patch('host.build_host', return_value=exe), patch.object(pipeline.subprocess, 'run', side_effect=dependencies):
+                pipeline.refresh_runtime(local)
+            candidate = json.loads((local/'candidate.json').read_text())
+            self.assertEqual(candidate['files']['vulkan-1.dll'], pipeline.file_record(output/'vulkan-1.dll'))
+            self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
+            self.assertEqual(save.read_bytes(), b'preserved save')
+            self.assertFalse(candidate['gameplay_verified'])
+
+
 if __name__=="__main__":
     unittest.main()

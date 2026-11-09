@@ -28,6 +28,10 @@ Direção futura solicitada pelo mantenedor: [Nextendo Network](https://nextendo
 
 Referência de metodologia solicitada pelo usuário: [Co-op Anything](https://github.com/cranebeaker/coop-anything), consultada em 07/11/2026, especialmente [falhas de rede](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md), [diagnóstico de dessincronização](https://github.com/cranebeaker/coop-anything/blob/main/playbook/desync-hunting.md) e [instâncias isoladas](https://github.com/cranebeaker/coop-anything/blob/main/playbook/multi-instance-testing.md). Útil para ampliar os testes da ponte LAN existente. Nenhum código, MCP ou relay Steam desse projeto foi incorporado; seus resultados em outros jogos não são evidência para MK8.
 
+## Vulkan Loader distribuído com o runtime
+
+O pacote MSYS2 `vulkan-loader-1~1.4.363.0-1` já é fixado no manifesto de dependências upstream com SHA-256 `065076fe13d39ab97eea4740596426d5ae741b5044e48e1c9495d04835c92dbe`. A DLL original passa a acompanhar a pasta do jogo; [licença original](licenses/Vulkan-Loader.txt) preservada (Apache 2.0 e avisos do projeto). Referências: [SDL_Vulkan_LoadLibrary](https://wiki.libsdl.org/SDL3/SDL_Vulkan_LoadLibrary) e [LunarG — Loader Application Interface](https://vulkan.lunarg.com/doc/view/1.4.309.0/windows/LoaderApplicationInterface.html). O loader é separado do driver Vulkan da GPU; nenhuma implementação de driver foi adicionada.
+
 ## Supervisão de processos Windows
 
 Supervisão de processos Windows (09/11/2026): [Microsoft — Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) e [AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject). Fundamentam a herança do job pelos descendentes e o encerramento com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Chamadas por `windows-sys 0.61.2`, já presente no lockfile; não se aplica terminação automática ao jogo quando apenas a janela do launcher fecha.
