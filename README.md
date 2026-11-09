@@ -13,7 +13,7 @@
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.6-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.7-ef795d)
 ![Status](https://img.shields.io/badge/Status-Experimental-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.6 installer includes the latest VRAM and language changes.
+> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.7 installer includes the latest VRAM and language changes.
 
 ## On the starting grid
 
@@ -53,11 +53,13 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 ### Requirements
 
-- **Windows x64**, WebView2 and **Python 3.12 x64** available on `PATH`.
+- **Windows x64** and WebView2. Tools setup provisions a private **Python 3.12 x64** automatically.
 - A GPU and working graphics driver exposing **Vulkan 1.3 or newer**. Vulkan 1.2 is rejected at startup; API version alone does not qualify all required features or performance. A general minimum CPU/GPU specification has not been qualified.
 - Your own base game, **4.0.1 update** and `prod.keys` from your console, or a supported extracted game folder.
 - About **28 GiB free for extraction/preparation**, including a 4 GiB safety reserve. Keep additional space for source packages, tools and build caches. An SSD is recommended for preparation.
 - Internet for the initial tool download (about 0.4 GiB installed, before build caches) and updates. Tools are shared across launcher versions.
+
+Tools downloads a pinned CPython package, verifies SHA-256 and creates its local environment without changing system Python or PATH. Incompatible or incomplete environments are preserved in `local/python-backup-*` and recreated automatically. Available in 0.1.7; users of 0.1.6 can update through Support before retrying Tools.
 
 ### Install and play
 

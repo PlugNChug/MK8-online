@@ -13,7 +13,7 @@
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.6-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.7-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Experimental-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador 0.1.6 inclui as mudanças mais recentes de VRAM e idiomas.
+> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador 0.1.7 inclui as mudanças mais recentes de VRAM e idiomas.
 
 ## No grid de largada
 
@@ -53,11 +53,13 @@ RatOne desenvolve e mantém a adaptação MK8, o launcher e a integração. A ba
 
 ### Requisitos
 
-- **Windows x64**, WebView2 e **Python 3.12 x64** disponível no `PATH`.
+- **Windows x64** e WebView2. A etapa Ferramentas instala um **Python 3.12 x64** privado durante a etapa Ferramentas.
 - GPU e driver gráfico que exponham **Vulkan 1.3 ou superior**. Vulkan 1.2 é rejeitado na inicialização; a versão da API sozinha não qualifica todos os recursos necessários nem o desempenho. Ainda não há especificação mínima geral de CPU/GPU qualificada.
 - Seu jogo base, **atualização 4.0.1** e `prod.keys` do seu console, ou uma pasta extraída compatível.
 - Cerca de **28 GiB livres para extração/preparação**, incluindo 4 GiB de reserva. Separe espaço adicional para os pacotes de origem, ferramentas e caches de compilação. SSD recomendado para a preparação.
 - Internet para baixar as ferramentas inicialmente (cerca de 0,4 GiB instalados, antes dos caches) e atualizar. As ferramentas são compartilhadas entre versões do launcher.
+
+Ferramentas baixa CPython fixado, verifica SHA-256 e cria o ambiente local sem alterar o Python do sistema ou o PATH. Ambientes incompatíveis ou incompletos são preservados em `local/python-backup-*` e recriados automaticamente. Disponível na 0.1.7; usuários da 0.1.6 podem atualizar pelo Suporte antes de repetir Ferramentas.
 
 ### Instalar e jogar
 

@@ -1,5 +1,19 @@
 # Estado técnico — 09/11/2026
 
+## Release 0.1.7 (09/11/2026)
+
+Instalador 0.1.7 gerado com Python automático e reparo de ambientes. Versões Cargo/Tauri/lock sincronizadas, atualizador configurado para Vnnc1/MK8-online. SHA-256: `972862012185c82b6af03a0950e2d10091b679c2eb17054df11f8648aabdfe38`. 32 testes Rust, formatação, Clippy e bootstrap passaram. Instalação real, abertura nos dois idiomas, desinstalação e preservação de dados passaram em pasta isolada; registro e atalhos anteriores restaurados. Executável/payload revisados; 910 arquivos, scripts conferidos, sem identificadores pessoais conhecidos. README EN/PT renderizados e conferidos. 15 testes de navegador (incluindo relay real) e 2 de idiomas passaram no pacote. Publicação em preparação, com fontes FFmpeg incluídos.
+
+## Python privado e reparo automático (09/11/2026)
+
+`setup-tools.ps1` reaproveita somente ambiente Python 3.12 x64 com pip funcional. Na ausência, versão errada (como o wheel cp313 rejeitado no relato) ou ambiente incompleto, baixa CPython 3.12.10 x64 oficial do NuGet, verifica SHA-256 fixado e extrai em `local/cpython-3.12.10`, preservando licenças. Cria `local/python` com venv/pip e instala os requisitos com hashes existentes. Não depende de PATH, Microsoft Store, py.exe, registro, administrador ou instalação global.
+
+O ambiente anterior é renomeado para `python-backup-<id>`, sem exclusão. Antes da renomeação confere limites absolutos, processos Python ativos e rejeita junctions/symlinks sem segui-los. Download interrompido fica separado; hash incorreto não é extraído. Reutiliza pacote verificado e base privada; reserva 4 GiB mais 250 MiB antes da instalação. Configurações, entradas, perfis e saves não são tocados. Scripts incluídos no instalador 0.1.7; usuários da 0.1.6 recebem a correção ao atualizar.
+
+Validação: teste PowerShell real com download substituído pelo pacote oficial local, hash incorreto, ambiente incompleto, versão 3.13 simulada, backup e reaproveitamento sem download. Download real do NuGet, criação de venv e instalação de todos os requisitos reais com hashes também concluídos em `local/python-bootstrap-live`. Uma interrupção durante a primeira execução deixou pip ausente; o teste de validade passou a verificar pip e a repetição reparou o ambiente com sucesso.
+
+Empacotamento concluído: `target/portable/Launcher.exe`, SHA-256 `597fea0f079c0c17d985f8bb20eda672ce131cdc605fe78f8263431500ee19f8`, com `MK8_UPDATE_REPO=Vnnc1/MK8-online`. Bootstrap no payload conferido byte a byte com as fontes. Teste de bootstrap e quatro testes de ferramentas passaram; `git diff --check` sem erros. Sem publicação, novo setup ou teste no PC do relato.
+
 ## Teste de disco no CI (09/11/2026)
 
 O log `logs_115262453029.zip` mostra o workflow de release parando em `disk_kind_of_the_system_drive_is_reported`: `hard_disk` retornou `None`, permitido pelo contrato quando a consulta Windows não informa o tipo de disco. O teste pressupunha incorretamente que qualquer disco local responderia. Substituído por uma verificação com chamadas reais à API: uma pasta inexistente deve retornar o mesmo resultado do diretório pai existente, inclusive `None`. Nenhuma detecção foi forçada para HD/SSD e nenhum teste foi ignorado. Runtime, guest e interface permanecem sem alterações. A execução remota do workflow ainda precisa ser repetida após publicar a correção.

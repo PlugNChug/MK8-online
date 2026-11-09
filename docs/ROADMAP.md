@@ -4,6 +4,8 @@ O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rod
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
 
+Preparação 0.1.7: Python 3.12 x64 privado baixado automaticamente, com reparo de ambientes incompatíveis/incompletos e backup. Resta acompanhar instalações em outras máquinas; detalhes em STATUS.md.
+
 ## 1. Multijogador
 
 - **[planejado]** Investigar integração com Nextendo Network para serviços online alternativos: mapear requisitos de conta, autenticação, amigos e matchmaking no runtime nativo antes de implementar. Ainda não integrado, sem prazo ou compatibilidade comprovada. Referência em [THIRD_PARTY.md](THIRD_PARTY.md).

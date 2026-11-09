@@ -1,9 +1,29 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $toolPython = Join-Path $projectRoot 'local/python/Scripts/python.exe'
-if (!(Test-Path -LiteralPath $toolPython)) {
-    python -m venv (Join-Path $projectRoot 'local/python')
-    if ($LASTEXITCODE -ne 0) { throw 'Falha criando ambiente Python local' }
+
+function Test-ToolPython([string]$Program, [string[]]$Prefix = @()) {
+    try {
+        & $Program @Prefix -c 'import sys, pip; sys.exit(0 if sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32 else 1)' 2>$null | Out-Null
+        return $LASTEXITCODE -eq 0
+    } catch { return $false }
+}
+
+if (!(Test-ToolPython $toolPython)) {
+    . (Join-Path $PSScriptRoot 'setup-python.ps1')
+    $python = Install-PrivatePython (Join-Path $projectRoot 'local')
+    $environment = Join-Path $projectRoot 'local/python'
+    if (Test-Path -LiteralPath $environment) {
+        Assert-PythonDirectory $environment (Join-Path $projectRoot 'local')
+        $backup = 'python-backup-' + [guid]::NewGuid().ToString('N')
+        Rename-Item -LiteralPath $environment -NewName $backup
+        Write-Output "Previous Python environment preserved / Ambiente anterior preservado: $backup"
+    }
+    Write-Output 'Configuring Python 3.12 x64 / Configurando Python 3.12 x64'
+    & $python -m venv $environment
+    if ($LASTEXITCODE -ne 0 -or !(Test-ToolPython $toolPython)) {
+        throw 'Failed to create Python 3.12 environment / Falha criando ambiente Python 3.12'
+    }
 }
 & $toolPython -m pip install --require-hashes -r (Join-Path $projectRoot 'upstream/smm2recomp/recomp/tools/requirements-gen.txt')
 if ($LASTEXITCODE -ne 0) { throw 'Falha instalando dependências verificadas do recompilador' }
