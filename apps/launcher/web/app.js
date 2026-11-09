@@ -16,7 +16,7 @@ async function api(path, body) {
   return value.data;
 }
 function notice(text, error = false) {
-  $("notice").textContent = text;
+  i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
 }
 async function action(fn) {
@@ -82,13 +82,13 @@ document.querySelectorAll("[data-log]").forEach((button) => {
   button.onclick = () => {
     const log = $(button.dataset.log);
     log.hidden = !log.hidden;
-    button.textContent = log.hidden ? "Ver log" : "Ocultar log";
+    i18n.text(button, log.hidden ? "Ver log" : "Ocultar log");
     if (!log.hidden) log.scrollTop = log.scrollHeight;
   };
 });
 function setStep(stage, pill, state, text) {
   if (stage && $(stage)) $(stage).dataset.state = state;
-  $(pill).textContent = text;
+  i18n.text($(pill), text);
 }
 function percentText(value) {
   return Math.floor(value) + "%";
@@ -102,7 +102,7 @@ function clock(seconds) {
   return (h ? h + ":" + two(m) : two(m)) + ":" + two(s);
 }
 function minutes(seconds) {
-  if (seconds < 60) return "menos de 1 min";
+  if (seconds < 60) return i18n.t("menos de 1 min");
   const m = Math.round(seconds / 60);
   return m < 60 ? "~" + m + " min" : "~" + Math.floor(m / 60) + " h " + (m % 60) + " min";
 }
@@ -112,6 +112,7 @@ $("setup-cancel").onclick = () => action(() => api("setup/cancel", {}));
 fieldNames.forEach((key) => {
   $(key).addEventListener("change", () =>
     action(async () => {
+  await i18n.ready;
       await api("config", config());
       return { message: "Arquivos salvos." };
     }),
@@ -123,6 +124,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       const input = $(button.dataset.browse);
       const result = await api("browse", {
         kind: button.dataset.kind,
+        language: i18n.language,
         title: button.getAttribute("aria-label"),
         current: input.value.trim(),
       });
@@ -156,7 +158,7 @@ $("build").onclick = () =>
   });
 $("cancel").onclick = () =>
   action(async () => {
-    if (!confirm("Cancelar a build? O que já foi feito é reaproveitado na próxima vez.")) return { message: "A build continua." };
+    if (!confirm(i18n.t("Cancelar a build? O que já foi feito é reaproveitado na próxima vez."))) return { message: "A build continua." };
     return api("build/cancel", {});
   });
 $("go-play").onclick = () => showTab("play");
@@ -182,7 +184,7 @@ function tick() {
   const build = lastBuild;
   if (!build || build.state !== "running" || !build.started_ms) return;
   const elapsed = (Date.now() - build.started_ms) / 1000;
-  $("build-elapsed").textContent = clock(elapsed);
+  i18n.text($("build-elapsed"), clock(elapsed));
 }
 setInterval(tick, 1000);
 
@@ -204,8 +206,8 @@ function renderInstall(status) {
     const running = setup.steps.find((s) => s.state === "running");
     const pct = setup.total ? ((setup.completed + 0.4) / setup.total) * 100 : 5;
     $("tools-meter").hidden = false;
-    $("tools-now").textContent = running ? running.name : "Preparando…";
-    $("tools-pct").textContent = percentText(pct);
+    i18n.text($("tools-now"), running ? running.name : "Preparando…");
+    i18n.text($("tools-pct"), percentText(pct));
     $("tools-bar").style.width = pct + "%";
     setStep("stage-tools", "tools-state", "running", "Baixando " + percentText(pct));
     toolsState = "running";
@@ -223,16 +225,15 @@ function renderInstall(status) {
     toolsState = "pending";
   }
   $("step-tools").dataset.state = toolsState;
-  $("tools-summary").textContent =
-    toolsState === "done"
+  i18n.text($("tools-summary"), toolsState === "done"
       ? "Compilador e bibliotecas prontos."
       : toolsState === "running"
-        ? $("tools-now").textContent
-        : "Compilador e bibliotecas, baixados uma única vez.";
-  $("setup-detail").textContent = setup.state === "failed" ? setup.detail : "";
+        ? setup.steps.find((step) => step.state === "running")?.name || "Preparando…"
+        : "Compilador e bibliotecas, baixados uma única vez.");
+  i18n.text($("setup-detail"), setup.state === "failed" ? setup.detail : "");
   $("setup-detail").classList.toggle("error", setup.state === "failed");
   $("setup-start").hidden = setupRunning || toolsState === "done";
-  $("setup-start").textContent = setup.state === "failed" ? "Tentar de novo" : "Baixar ferramentas";
+  i18n.text($("setup-start"), setup.state === "failed" ? "Tentar de novo" : "Baixar ferramentas");
   $("setup-start").disabled = busyNow;
   $("setup-cancel").hidden = !setupRunning;
 
@@ -242,11 +243,11 @@ function renderInstall(status) {
   $("tile-base").dataset.ok = String(files.base_ok);
   $("tile-update").dataset.ok = String(files.update_ok);
   $("tile-keys").dataset.ok = String(files.keys_ok);
-  $("keys-hint").textContent = files.keys_detected
+  i18n.text($("keys-hint"), files.keys_detected
     ? "Encontrado automaticamente: " + files.keys
     : files.keys_ok
       ? "Chaves do seu console"
-      : "Encontrado sozinho ao lado do jogo ou em %USERPROFILE%\\.switch";
+      : "Encontrado sozinho ao lado do jogo ou em %USERPROFILE%\\.switch");
   if (files.imported)
     setStep("stage-files", "files-state", "done", "Extraídos e verificados");
   else if (filesReady) setStep("stage-files", "files-state", "done", "Prontos");
@@ -255,16 +256,16 @@ function renderInstall(status) {
     setStep("stage-files", "files-state", "pending", files.folder ? "Pasta incompleta" : count + " de 3");
   }
   $("step-files").dataset.state = filesReady ? "done" : "pending";
-  $("files-summary").textContent = files.imported
+  i18n.text($("files-summary"), files.imported
     ? "Arquivos extraídos e verificados."
     : filesReady
       ? files.folder
         ? "Pasta do jogo extraído."
         : "Jogo base, atualização e chaves selecionados."
-      : "Jogo base, atualização 4.0.1 e chaves do seu console.";
+      : "Jogo base, atualização 4.0.1 e chaves do seu console.");
   fieldNames.forEach((key) => ($(key).disabled = buildRunning));
   const architecture = status.checks.find((c) => c.name === "Arquitetura do executável");
-  $("architecture-state").textContent = files.folder ? architecture?.detail || "" : "";
+  i18n.text($("architecture-state"), files.folder ? architecture?.detail || "" : "");
 
   // 3. Build
   // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
@@ -272,41 +273,39 @@ function renderInstall(status) {
   const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
-    $("build-stale").textContent =
-      "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+    i18n.text($("build-stale"), "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
       " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
-      ": o que já foi feito é reaproveitado e leva poucos minutos.";
+      ": o que já foi feito é reaproveitado e leva poucos minutos.");
   $("build-idle").hidden = buildRunning || done;
   $("build-live").hidden = !buildRunning && !(build.state === "failed" && build.started_ms);
   $("build-done").hidden = !done || buildRunning;
-  $("build").textContent = build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build";
+  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build");
   $("build").disabled = busyNow;
   $("cancel").disabled = !buildRunning;
   $("cancel").hidden = !buildRunning;
   if (buildRunning || build.state === "failed") {
     const pct = build.percent || 0;
-    $("build-phase").textContent = build.state === "failed" ? "A build parou" : build.phase || "Iniciando";
-    $("build-sub").textContent = build.state === "failed" ? "Veja o motivo abaixo; ao tentar de novo, o que já foi feito é reaproveitado." : "Etapa atual";
-    $("build-pct").textContent = percentText(pct);
+    i18n.text($("build-phase"), build.state === "failed" ? "A build parou" : build.phase || "Iniciando");
+    i18n.text($("build-sub"), build.state === "failed" ? "Veja o motivo abaixo; ao tentar de novo, o que já foi feito é reaproveitado." : "Etapa atual");
+    i18n.text($("build-pct"), percentText(pct));
     $("build-bar").style.width = pct + "%";
     $("build-live").classList.toggle("failed", build.state === "failed");
     if (buildRunning) {
       const left = remaining(build);
-      $("build-eta").textContent = left === null ? "calculando…" : minutes(left);
-      $("build-finish").textContent =
-        left === null ? "—" : new Date(Date.now() + left * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      i18n.text($("build-eta"), left === null ? "calculando…" : minutes(left));
+      i18n.text($("build-finish"), left === null ? "—" : new Date(Date.now() + left * 1000).toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" }));
       tick();
     } else {
-      $("build-eta").textContent = "—";
-      $("build-finish").textContent = "—";
-      if (build.duration_s) $("build-elapsed").textContent = clock(build.duration_s);
+      i18n.text($("build-eta"), "—");
+      i18n.text($("build-finish"), "—");
+      if (build.duration_s) i18n.text($("build-elapsed"), clock(build.duration_s));
     }
     if (build.state === "failed") $("build-idle").hidden = false;
   }
-  $("build-took").textContent = build.duration_s && build.state === "candidate"
+  i18n.text($("build-took"), build.duration_s && build.state === "candidate"
     ? "Concluída em " + clock(build.duration_s) + ". Gameplay ainda experimental."
-    : "Build experimental; gameplay ainda em validação.";
-  $("build-detail").textContent = build.state === "failed" || build.state === "cancelled" ? build.detail : "";
+    : "Build experimental; gameplay ainda em validação.");
+  i18n.text($("build-detail"), build.state === "failed" || build.state === "cancelled" ? build.detail : "");
   $("build-detail").classList.toggle("error", build.state === "failed");
   let buildStep = "pending";
   if (buildRunning) {
@@ -322,11 +321,12 @@ function renderInstall(status) {
     buildStep = "done";
   } else setStep("stage-build", "prepare-state", "pending", "Pendente");
   $("step-build").dataset.state = buildStep;
-  $("build-summary").textContent = buildRunning
-    ? (build.phase || "Em andamento") + " · " + percentText(build.percent || 0)
+  i18n.text($("build-summary"), buildRunning
+    ? (build.phase || "Em andamento")
     : done
       ? "Jogo pronto."
-      : "Traduz e compila o jogo para o seu PC.";
+      : "Traduz e compila o jogo para o seu PC.");
+  if (buildRunning) i18n.append($("build-summary"), " · " + percentText(build.percent || 0));
 
   // The step to act on is open; finished ones close unless the user opened them.
   const current = buildRunning || build.state === "failed" || done || stale ? "step-build"
@@ -425,11 +425,11 @@ let lastReport = null;
 let update = null;
 function renderUpdate(result) {
   update = result;
-  $("update-state").textContent = result.message;
+  i18n.text($("update-state"), result.message);
   $("update-install").disabled = !(result.available && result.installable);
   $("update-chip").hidden = !result.available;
   if (result.available && !result.installable)
-    $("update-state").textContent += " Esta é uma edição de desenvolvimento: atualize pelo git.";
+    i18n.append($("update-state"), " Esta é uma edição de desenvolvimento: atualize pelo git.");
 }
 $("update-check").onclick = () =>
   action(async () => {
@@ -440,7 +440,7 @@ $("update-check").onclick = () =>
 $("update-install").onclick = () =>
   action(async () => {
     if (!update?.available) return { message: "Verifique as atualizações primeiro." };
-    if (!confirm(`Instalar ${update.latest.tag} agora? O Launcher será fechado e reaberto.`))
+    if (!confirm(i18n.t(`Instalar ${update.latest.tag} agora? O Launcher será fechado e reaberto.`)))
       return { message: "Atualização adiada." };
     return api("update/install", {});
   });
@@ -462,7 +462,7 @@ async function refresh() {
     $("scan-rooms").click();
   }
   const running = status.build.state === "running";
-  $("version").textContent = "v" + status.version;
+  i18n.text($("version"), "v" + status.version);
   $("open-reports").hidden = !status.windowed;
   $("open-data").hidden = !status.windowed;
   $("data-dir").textContent = status.data_dir;
@@ -471,25 +471,24 @@ async function refresh() {
     lastReport = status.last_report;
     $("report-path").textContent = status.last_report;
   } else if (lastReport === null) lastReport = "";
-  $("build-state").textContent =
-    {
+  i18n.text($("build-state"), {
       idle: status.candidate ? "Pronto" : "Aguardando",
       running: "Build em andamento",
       failed: "Requer atenção",
       candidate: "Pronto para jogar",
       cancelled: "Cancelado",
-    }[status.build.state] || status.build.state;
+    }[status.build.state] || status.build.state);
   renderInstall(status);
-  $("installation-state").textContent = status.installed
+  i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."
-    : "Nenhuma instalação de jogo ativada.";
-  $("game-state").textContent = status.game_pid
+    : "Nenhuma instalação de jogo ativada.");
+  i18n.text($("game-state"), status.game_pid
     ? "Processo do jogo em execução."
     : status.game_exit
       ? "Processo encerrado: " + status.game_exit
       : status.candidate
         ? "Build experimental disponível para teste."
-        : "Prepare o jogo para habilitar a execução.";
+        : "Prepare o jogo para habilitar a execução.");
   $("play-solo").disabled =
     !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
@@ -497,25 +496,25 @@ async function refresh() {
   const active = session.hosting || session.slot !== null;
   $("host").disabled = active || !!status.game_pid;
   $("host-internet").disabled = active || !session.internet_available || !!status.game_pid;
-  $("internet-note").textContent = session.internet_available
+  i18n.text($("internet-note"), session.internet_available
     ? "Envie o código para amigos em outras redes."
-    : "Relay público ainda não configurado nesta edição.";
+    : "Relay público ainda não configurado nesta edição.");
   $("room-code-box").hidden = !session.room_code;
   $("room-code").value = session.room_code || "";
   $("join").disabled = active || !!status.game_pid;
   $("leave").disabled = !active || !!status.game_pid;
   $("invite").disabled = !session.hosting;
-  $("network-state").textContent = session.connected ? "Transporte conectado" : active ? "Conectando" : "Desconectado";
-  $("network-mode").textContent = session.diagnostic_only
+  i18n.text($("network-state"), session.connected ? "Transporte conectado" : active ? "Conectando" : "Desconectado");
+  i18n.text($("network-mode"), session.diagnostic_only
     ? "Modo de teste: transporte sem jogo. Não representa uma corrida."
-    : "Use Jogar na sala e entre no modo LAN do jogo. Multiplayer em validação.";
-  $("peers").textContent = session.hosting
+    : "Use Jogar na sala e entre no modo LAN do jogo. Multiplayer em validação.");
+  i18n.text($("peers"), session.hosting
     ? `${session.participants} conexão(ões) de transporte`
     : session.connected
       ? "Conectado ao anfitrião. Abra o jogo para entrar na sala LAN."
-      : "Sem conexão confirmada.";
+      : "Sem conexão confirmada.");
   const gameLog = await api("game/log");
-  $("game-log").textContent = gameLog.text || "Nenhum teste iniciado.";
+  $("game-log").textContent = gameLog.text || i18n.t("Nenhum teste iniciado.");
   const log = await api("log");
   const buildLog = $("build-log");
   const atEnd = buildLog.scrollTop + buildLog.clientHeight >= buildLog.scrollHeight - 30;
@@ -523,7 +522,7 @@ async function refresh() {
   if (atEnd) buildLog.scrollTop = buildLog.scrollHeight;
   if (status.build.state === "failed" && buildLog.hidden) {
     buildLog.hidden = false;
-    document.querySelector('[data-log="build-log"]').textContent = "Ocultar log";
+    i18n.text(document.querySelector('[data-log="build-log"]'), "Ocultar log");
   }
   if (status.setup.state !== "idle") {
     const setupLog = await api("setup/log");
@@ -542,11 +541,13 @@ async function refresh() {
     }
     const status = await refresh();
     if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
-    $("update-state").textContent = "Versão instalada: " + status.version;
+    i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
-    else $("update-state").textContent += ". Atualizações automáticas não configuradas nesta edição.";
+    else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");
   } catch (error) {
     notice(error.message, true);
   }
   setInterval(() => refresh().catch((error) => notice("Launcher indisponível: " + error.message, true)), 2000);
 })();
+
+window.addEventListener("languagechange", () => refresh().catch((error) => notice(error.message, true)));

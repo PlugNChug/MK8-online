@@ -8,12 +8,24 @@ __pycache__/
 *.dll
 *.lib
 *.xci
+*.xcz
 *.nsp
 *.nsz
 *.ncz
 *.nca
 prod.keys
 title.keys
+# Local credentials and private signing/SSH material.
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
 generated/
 node_modules/
 /tools/hactool/

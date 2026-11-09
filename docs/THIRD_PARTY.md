@@ -1,6 +1,10 @@
 # Dependências e atribuições
 
+Referência de diagnóstico de hardware (08/11/2026): [Intel — driver gráfico para processadores de 7ª a 10ª geração](https://www.intel.com/content/www/us/en/download/776137/intel-7th-10th-gen-processor-graphics-windows.html), pacote que inclui o i3-10110U e Windows 10. Consultado para o bloqueio Vulkan 1.2.131 descrito em `STATUS.md`; o driver não é distribuído pelo projeto, e sua compatibilidade com o runtime nessa máquina ainda precisa ser testada.
+
 O código próprio usa GPL-3.0-or-later (`../LICENSE`). Os snapshots e bibliotecas mantêm suas licenças originais. Nomes em caminhos, símbolos e identificadores serializados são contratos de integração, não alegações de equivalência entre projetos.
+
+Licenciamento conferido em 08/11/2026: o `LICENSE` do snapshot SMM2Recomp contém GPLv3; o de LASRecomp contém MIT. A origem MIT de partes do runtime não relicencia as alterações GPL incorporadas posteriormente. Uma eventual oferta MIT de código próprio independente exige separar sua proveniência; mudar apenas o `LICENSE` principal não transforma o conjunto em MIT. A licença atual foi preservada. Referência: [GNU — titularidade e licenciamento alternativo](https://www.gnu.org/licenses/gpl-faq.en.html#HeardOtherLicense).
 
 | Origem efetivamente utilizada | Revisão / uso | Licença preservada |
 | --- | --- | --- |
@@ -19,5 +23,7 @@ Os avisos MIT completos nesta pasta acompanham os trechos adaptados. Não retira
 As demais avaliações históricas não são dependências de execução nem evidência de FPS ou compatibilidade deste projeto. Não copiar DLLs, endereços ou resultados de jogos diferentes. ROM, chaves, código gerado e modelos do dump permanecem privados.
 
 Referência operacional do multiplayer: [Nintendo — How to Use the LAN Play Feature of Mario Kart 8 Deluxe](https://en-americas-support.nintendo.com/app/answers/detail/a_id/25961/p/897), consultada em 07/11/2026. Documenta o atalho L + R + clique no analógico esquerdo e o limite de 12 jogadores. Esse limite do jogo não constitui qualificação da nossa implementação.
+
+Direção futura solicitada pelo mantenedor: [Nextendo Network](https://nextendo.network/), consultada em 08/11/2026. O site apresenta serviços independentes de contas, amigos e matchmaking para suas integrações com Ryujinx, Citron e Switch com CFW. Não há código ou integração Nextendo nesta build MK8-online, nem validação de compatibilidade com seu runtime nativo ou afiliação entre os projetos. A avaliação está no roteiro; os resultados divulgados pelo serviço não qualificam este projeto.
 
 Referência de metodologia solicitada pelo usuário: [Co-op Anything](https://github.com/cranebeaker/coop-anything), consultada em 07/11/2026, especialmente [falhas de rede](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md), [diagnóstico de dessincronização](https://github.com/cranebeaker/coop-anything/blob/main/playbook/desync-hunting.md) e [instâncias isoladas](https://github.com/cranebeaker/coop-anything/blob/main/playbook/multi-instance-testing.md). Útil para ampliar os testes da ponte LAN existente. Nenhum código, MCP ou relay Steam desse projeto foi incorporado; seus resultados em outros jogos não são evidência para MK8.

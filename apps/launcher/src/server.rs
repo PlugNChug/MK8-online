@@ -250,6 +250,10 @@ impl App {
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
+            ("POST", "/api/language") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(crate::language::write(&self.local, &value)?))
+            }
             ("POST", "/api/username") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 let name = value["name"].as_str().unwrap_or("").trim();
@@ -587,16 +591,38 @@ pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
 /// answering status requests while the dialog is open.
 fn browse(req: Request, body: &str, parent: &DialogParent) {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
+    let english = value["language"] == "en";
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
-        Some("nacp") => Some(("Metadados NACP", &["nacp"][..])),
-        Some("package") => Some(("Pacotes MK8", &["nsz", "nsp"][..])),
-        Some("keys") => Some(("Chaves do console", &["keys"][..])),
+        Some("nacp") => Some((
+            if english {
+                "NACP metadata"
+            } else {
+                "Metadados NACP"
+            },
+            &["nacp"][..],
+        )),
+        Some("package") => Some((
+            if english {
+                "MK8 packages"
+            } else {
+                "Pacotes MK8"
+            },
+            &["nsz", "nsp"][..],
+        )),
+        Some("keys") => Some((
+            if english {
+                "Console keys"
+            } else {
+                "Chaves do console"
+            },
+            &["keys"][..],
+        )),
         _ => None,
     };
     let title = value["title"]
         .as_str()
-        .unwrap_or("Selecionar")
+        .unwrap_or(if english { "Select" } else { "Selecionar" })
         .chars()
         .take(120)
         .collect::<String>();
@@ -618,7 +644,14 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
         let picked = if let Some((name, extensions)) = filter {
             dialog
                 .add_filter(name, extensions)
-                .add_filter("Todos os arquivos", &["*"])
+                .add_filter(
+                    if english {
+                        "All files"
+                    } else {
+                        "Todos os arquivos"
+                    },
+                    &["*"],
+                )
                 .pick_file()
         } else {
             dialog.pick_folder()
@@ -650,8 +683,28 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             response(
                 req,
                 200,
-                include_str!("../web/index.html").replace("__TOKEN__", &token),
+                include_str!("../web/index.html")
+                    .replace("__TOKEN__", &token)
+                    .replace("__LANGUAGE__", &crate::language::read(&app.local)),
                 "text/html; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/i18n.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/i18n.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/en.json" {
+            response(
+                req,
+                200,
+                include_str!("../web/en.json").into(),
+                "application/json; charset=utf-8",
             );
             continue;
         }

@@ -30,27 +30,26 @@ async function space() {
   const text = $("space");
   text.className = "space";
   if (!/^[a-zA-Z]:[\\/]|^\\\\/.test(path)) {
-    text.textContent = "Use um caminho completo, como D:\\Jogos\\MK8-online.";
+    i18n.text(text, "Use um caminho completo, como D:\\Jogos\\MK8-online.");
     text.classList.add("bad");
     return;
   }
   try {
     const result = await api("space", { path });
     if (result.free_gib === null) {
-      text.textContent = "";
+      i18n.text(text, "");
       return;
     }
-    const free = result.free_gib.toFixed(1).replace(".", ",");
+    const free = result.free_gib.toLocaleString(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const ok = result.free_gib >= state.needed_gib;
     const hdd = result.hard_disk === true;
-    text.textContent =
-      (ok
+    i18n.text(text, (ok
         ? `${free} GB livres neste disco.`
         : `Só ${free} GB livres neste disco: a preparação do jogo precisa de cerca de ${state.needed_gib} GB.`) +
-      (hdd ? " Este disco é um HD: a preparação do jogo pode levar até 1 hora. Num SSD ela fica bem mais rápida." : "");
+      (hdd ? " Este disco é um HD: a preparação do jogo pode levar até 1 hora. Num SSD ela fica bem mais rápida." : ""));
     text.classList.add(ok && !hdd ? "ok" : "warn");
   } catch {
-    text.textContent = "";
+    i18n.text(text, "");
   }
 }
 let spaceTimer = 0;
@@ -64,14 +63,14 @@ document.querySelectorAll("[data-pick]").forEach((button) => {
     try {
       const result = await api("browse", {
         current: input.value.trim(),
-        title: button.dataset.pick === "app" ? "Pasta do programa" : "Pasta do jogo e dos dados",
+        title: i18n.t(button.dataset.pick === "app" ? "Pasta do programa" : "Pasta do jogo e dos dados"),
       });
       if (!result.path) return;
       // A chosen parent folder gets the program's own subfolder.
       input.value = /mk8-online$/i.test(result.path) ? result.path : result.path.replace(/[\\/]$/, "") + "\\MK8-online";
       if (input.id === "data") space();
     } catch (error) {
-      $("paths-error").textContent = error.message;
+      i18n.text($("paths-error"), error.message);
     }
   };
 });
@@ -79,9 +78,9 @@ document.querySelectorAll("[data-pick]").forEach((button) => {
 let polling = 0;
 function draw(progress) {
   const pct = Math.floor(progress.percent || 0);
-  $("pct").textContent = pct + "%";
+  i18n.text($("pct"), pct + "%");
   $("bar").style.width = (progress.percent || 0) + "%";
-  if (progress.step) $("progress-step").textContent = progress.step;
+  if (progress.step) i18n.text($("progress-step"), progress.step);
   document.querySelectorAll("#checklist li").forEach((li, n, all) => {
     const at = Number(li.dataset.at);
     const previous = n ? Number(all[n - 1].dataset.at) : 0;
@@ -97,29 +96,29 @@ async function poll() {
       setTimeout(() => show("done"), 450);
     } else if (progress.state === "failed") {
       clearInterval(polling);
-      $("progress-title").textContent = "A instalação não terminou";
-      $("progress-error").textContent = progress.error;
+      i18n.text($("progress-title"), "A instalação não terminou");
+      i18n.text($("progress-error"), progress.error);
       $("retry-actions").hidden = false;
       $("bar").parentElement.classList.add("failed");
     }
   } catch (error) {
-    $("progress-error").textContent = error.message;
+    i18n.text($("progress-error"), error.message);
   }
 }
 async function install() {
-  $("paths-error").textContent = "";
-  const body = { app: $("app").value.trim(), data: $("data").value.trim(), desktop: $("desktop").checked };
+  i18n.text($("paths-error"), "");
+  const body = { app: $("app").value.trim(), data: $("data").value.trim(), desktop: $("desktop").checked, language: i18n.language };
   try {
     await api("install", body);
   } catch (error) {
-    $("paths-error").textContent = error.message;
+    i18n.text($("paths-error"), error.message);
     return;
   }
-  $("progress-title").textContent = state.update ? "Atualizando…" : "Instalando…";
-  $("progress-error").textContent = "";
+  i18n.text($("progress-title"), state.update ? "Atualizando…" : "Instalando…");
+  i18n.text($("progress-error"), "");
   $("retry-actions").hidden = true;
   $("bar").parentElement.classList.remove("failed");
-  $("done-where").textContent = "Programa em " + body.app + " · dados em " + body.data;
+  i18n.text($("done-where"), "Programa em " + body.app + " · dados em " + body.data);
   draw({ percent: 0, step: "Preparando" });
   show("progress");
   clearInterval(polling);
@@ -131,15 +130,18 @@ $("open").onclick = () => api("finish", { launch: true }).catch(() => window.clo
 $("close").onclick = () => api("finish", { launch: false }).catch(() => window.close());
 
 (async () => {
+  await i18n.ready;
   state = await api("state");
-  $("version").textContent = "v" + state.version;
+  i18n.text($("version"), "v" + state.version);
   $("app").value = state.app;
   $("data").value = state.data;
   $("desktop").checked = state.desktop;
   if (state.update) {
     $("update-note").hidden = false;
-    $("go-paths").textContent = "Atualizar";
-    $("install").textContent = "Atualizar";
+    i18n.text($("go-paths"), "Atualizar");
+    i18n.text($("install"), "Atualizar");
   }
   space();
 })();
+
+window.addEventListener("languagechange", () => { if (state) space(); });

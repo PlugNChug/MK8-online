@@ -59,7 +59,7 @@ class LauncherTests(unittest.TestCase):
         cls.temporary.cleanup()
 
     def page(self,index=0,viewport=None):
-        page=self.browser.new_page(viewport=viewport or {"width":1365,"height":1024})
+        page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
@@ -164,6 +164,11 @@ class LauncherTests(unittest.TestCase):
         host.get_by_role("button", name="Criar sala pela internet").click()
         expect(host.locator("#network-state")).to_have_text("Transporte conectado", timeout=10000)
         code = host.locator("#room-code").input_value()
+        host.get_by_label("Idioma", exact=True).select_option("en")
+        expect(host.locator("#network-state")).to_have_text("Transport connected", timeout=10000)
+        self.assertEqual(host.locator("#room-code").input_value(), code)
+        host.get_by_label("Language", exact=True).select_option("pt-BR")
+        expect(host.locator("html")).to_have_attribute("lang", "pt-BR")
         self.assertRegex(code, r"^MK8-[A-Za-z0-9_-]{22}$")
         self.assertFalse(host.request.post(self.relay_url+"/v1/close", data={"code":code, "owner":"invalid"}).json()["ok"])
         self.assertFalse(guest.request.post(self.relay_url+"/v1/join", data={"code":code, "identity":"wrong"}).json()["ok"])
@@ -409,13 +414,16 @@ class LauncherTests(unittest.TestCase):
                 except Exception:time.sleep(.3)
             self.assertIsNotNone(browser,'WebView2 debugging endpoint not reachable')
             page=browser.contexts[0].pages[0]
+            page.locator('#language').select_option('pt-BR')
             expect(page.get_by_role('heading',name='Instalação',exact=True)).to_be_visible(timeout=15000)
             url=json.loads((folder/'launcher.json').read_text())['url']
             self.assertEqual(page.url.rstrip('/'),url)
             # Inside the native window the folder pickers are offered.
             expect(page.locator('[data-browse="base_package"]')).to_be_visible()
-            page.get_by_role('button',name='Jogar',exact=True).click()
-            expect(page.get_by_role('heading',name='Jogar',exact=True)).to_be_visible()
+            page.locator('#language').select_option('en')
+            expect(page.locator('[data-browse="base_package"]')).to_have_attribute('aria-label', 'Choose base game')
+            page.get_by_role('button',name='Play',exact=True).click()
+            expect(page.get_by_role('heading',name='Play',exact=True)).to_be_visible()
             # The window refuses to navigate away from the local launcher.
             page.evaluate("location.href='https://example.invalid/'")
             time.sleep(1.5)

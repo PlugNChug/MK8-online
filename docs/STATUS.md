@@ -1,5 +1,23 @@
 # Estado técnico — 08/11/2026
 
+## Apresentação pública e idiomas (08/11/2026)
+
+README principal refeito em inglês, com versão `README.pt-BR.md`, assinatura PNG e autoria RatOne em destaque, quadro de progresso, instalação, LAN/relay e medições contextualizadas. Nextendo aparece como investigação futura, sem integração ou compatibilidade presumida. GPL-3.0-or-later preservada: o snapshot SMM2Recomp contém GPLv3, embora parte da origem LASRecomp seja MIT; ver `THIRD_PARTY.md`.
+
+Launcher e instalador agora oferecem inglês/PT-BR. A interface escolhe inicialmente o idioma do WebView/navegador (inglês como alternativa) e permite trocar pelo seletor sem recarregar os campos. A preferência do launcher fica em `language.json` na pasta de dados, separada de `config.json`, perfis e saves; no instalador ela acompanha a instalação para `<pasta escolhida>/data/language.json`. Só `en` e `pt-BR` são aceitos. Estados de protocolo, nomes dos jogadores, caminhos e convites permanecem intactos. Logs de ferramentas e detalhes externos de diagnóstico mantêm o texto original; isso não traduz o jogo.
+
+Validação: build Rust release concluída, formatação e Clippy sem avisos, 32 testes Rust aprovados. A suíte de navegador teve 14 testes aprovados e um de relay inicialmente ignorado; esse teste foi executado separadamente com relay real em loopback e passou, incluindo troca de idioma com sala ativa e tráfego UDP bidirecional. Os dois testes novos verificaram persistência ao reiniciar o processo/servidor, rejeição de idioma inválido, mensagens de build/erro, campos preservados e a interface do instalador com API simulada. Capturas conferidas em desktop, largura de 390 px e instalador 880×620; previews e links dos dois READMEs verificados. Nenhuma corrida nova foi qualificada nesta etapa.
+
+Revisão de publicação: 178 arquivos atuais, mensagens de commit e 324 blobs dos 21 commits alcançáveis nas referências Git locais na conferência final. A busca por padrões de tokens, chaves privadas, credenciais em URLs, chaves de console, e-mails, nomes/caminhos pessoais conhecidos não encontrou ocorrência no conteúdo. Créditos públicos de dependências foram preservados. Os PNGs foram inspecionados; a assinatura tem metadados de software/perfil de cor, sem identificação pessoal encontrada. Não havia arquivos privados adicionais nos diretórios de fontes incluídos pelo empacotador, além de caches Python excluídos do payload. `.gitignore` agora também cobre XCZ e formatos comuns de credenciais. Essa revisão por padrões não é garantia de ausência de segredos e não cobre configurações, anexos ou logs já publicados no GitHub.
+
+**Pendência antes de abrir o histórico:** os 21 commits têm nome/e-mail pessoais nos campos de autor e committer. Alterar arquivos ou configurar `noreply` para novos commits não remove os registros anteriores. Não houve reescrita, force-push ou mudança de visibilidade do repositório.
+
+**Binários:** a revisão encontrou o identificador da conta local nos caminhos de compilação Rust do executável de desenvolvimento e em 347 ocorrências no portátil anterior. O payload ZIP anterior não apresentou esse identificador. `scripts/package-launcher.py` agora acrescenta `--remap-path-prefix` para checkout, perfil do usuário e cache Cargo, preservando flags preexistentes por `CARGO_ENCODED_RUSTFLAGS`. A primeira recompilação deixou uma ocorrência: o `generate_context` do Tauri embutia o diretório de configuração no modo de desenvolvimento. O empacotamento agora habilita `tauri/custom-protocol`, removendo esse dado do contexto de produção; as janelas continuam usando a API HTTP em loopback existente.
+
+Empacotamento concluído: runtime pré-compilado de 212 unidades e `target/portable/Launcher.exe`, SHA-256 `7827a7afc9904d1034f862400038ee98fbc5c8428c6a4378d4c2915479c77920`. A conferência do novo executável encontrou zero ocorrências do identificador da conta local, nome/e-mail de autoria e caminhos de perfil de usuário do Windows; os 909 arquivos do payload também não contêm o identificador da conta. Isso não substitui uma auditoria geral dos binários de terceiros. O executável de desenvolvimento depende do caminho do checkout e não deve ser distribuído como release.
+
+No portátil final passaram os dois testes de idioma, a abertura da janela nativa WebView2 nos dois idiomas e o teste de relay com UDP bidirecional. O modo nativo `--install` também foi aberto: boas-vindas e escolha de pastas trocaram entre inglês/PT-BR, preservando os caminhos, inclusive no fluxo de atualização de uma instalação existente. A instalação/desinstalação real não foi iniciada nessa conferência. Os 13 arquivos protegidos de configuração/perfis/saves conferidos mantêm os hashes anteriores. Nenhuma release foi publicada; os instaladores antigos no GitHub não recebem essas mudanças automaticamente.
+
 ## Funcional hoje
 
 | Área | Observado | Ainda não validado |
@@ -13,6 +31,14 @@
 | Multiplayer | 12 clientes de transporte; duas instâncias reais pelo código do relay local, três voltas e retorno à seleção de pista | Corrida entre duas máquinas, 12 jogos reais, NAT/relay externo, MTU e congestionamento |
 
 Configuração local atual: `local/config.json` (entradas extraídas da atualização 4.0.1 fora do repositório). MK8 4.0.1 usa `main`, `sdk`, `subsdk0`. O adaptador suporta até subsdk4 em fixtures, mas esses módulos não existem neste ExeFS. A base 1.0.0 é AArch32 e não deve alimentar este tradutor.
+
+## Diagnóstico externo: i3-10110U (08/11/2026)
+
+Os três relatórios `mk8-report-1794188373.zip`, `mk8-report-1794188407.zip` e `mk8-report-1794188419.zip` da máquina informada como i3-10110U (launcher 0.1.5, Windows 10 build 19045.6466) terminam em `[vk] gpu 0: Intel(R) UHD Graphics (api 1.2.131)` e `FATAL: no Vulkan 1.3 device`. O último ZIP também contém dois logs anteriores idênticos. O bloqueio confirmado é a versão Vulkan exposta pelo driver: `pick_device` rejeita dispositivos abaixo de 1.3 antes de criar o dispositivo gráfico. O código de saída `0xc0000409` acompanha esse fatal explícito; não constitui evidência de defeito no código guest ou de CPU insuficiente.
+
+A build concluiu as 484 unidades com dois compiladores, ligou os três módulos e verificou 12 executáveis/DLLs. Tempos registrados: geração C 1090,9 s (18min11s), compilação nativa 4369,9 s (1h12min50s), runtime/ligação 27,2 s; preparação 5488,0 s (1h31min28s, sem atribuir esse tempo à importação anterior). O print mostra 1h30min48s, 457/484 unidades e 71%: a barra pondera a compilação entre 21% e 75%, portanto esse percentual não é a fração de unidades compiladas. A estimativa de mais 19 min não mede o trabalho restante com precisão nessa máquina. Não há telemetria de temperatura, RAM ou disco que permita atribuir toda a demora apenas aos dois núcleos.
+
+Próximo teste nessa máquina: atualizar o driver gráfico compatível, reiniciar e abrir a build existente, conferindo Vulkan >=1.3 no novo log. Não é necessário recompilar o guest para atualizar o driver. A versão instalada do driver não consta dos relatórios; atualização ainda não testada, nem compatibilidade dos demais recursos Vulkan ou desempenho da Intel UHD. Referência oficial do driver em `docs/THIRD_PARTY.md`. README em ambos os idiomas agora explicita Vulkan 1.3; runtime e launcher não foram alterados por esta investigação. `gameplay_verified` permanece falso.
 
 ## Retomar o diagnóstico gráfico
 

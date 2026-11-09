@@ -35,6 +35,13 @@ a { color: var(--accent); }
 .logo { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 800; }
 .tag { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); padding: 0.1rem 0.5rem; border-radius: 99px; }
 .spacer { flex: 1; }
+.language-picker { display: flex; gap: 0.35rem; font-size: 0.8rem; }
+.language-picker select { width: auto; max-width: 11rem; background: var(--surface-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 6px; padding: 0.3rem; font: inherit; }
+.topbar .language-picker { flex-direction: row; align-items: center; }
+@media (max-width: 650px) {
+  .topbar { flex-wrap: wrap; }
+  .topbar .language-picker { margin-left: auto; }
+}
 .chip { font-size: 0.8rem; color: var(--muted); border: 1px solid var(--line-2); background: transparent; padding: 0.2rem 0.65rem; border-radius: 99px; font-family: var(--mono); }
 .chip.accent { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-family: inherit; font-weight: 600; cursor: pointer; }
 

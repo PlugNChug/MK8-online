@@ -593,14 +593,17 @@ fn uninstall(app: &Path, silent: bool) -> Result<(), Error> {
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .and_then(|v| v["home"].as_str().map(str::to_string))
         .unwrap_or_else(|| local_appdata().join("MK8-online").display().to_string());
+    let english = crate::language::read(&PathBuf::from(&data).join("data")) != "pt-BR";
     if !silent {
         let answer = rfd::MessageDialog::new()
-            .set_title("Desinstalar MK8-online")
+            .set_title(if english { "Uninstall MK8-online" } else { "Desinstalar MK8-online" })
             .set_level(rfd::MessageLevel::Info)
             .set_buttons(rfd::MessageButtons::YesNo)
-            .set_description(format!(
+            .set_description(if english { format!(
+                "Remove MK8-online from this PC?\n\nYour data (prepared game, builds and saves) will remain in:\n{data}\nYou can remove that folder later to free up space."
+            ) } else { format!(
                 "Remover o MK8-online deste computador?\n\nSeus dados (jogo preparado, builds e saves) ficam em:\n{data}\nApague essa pasta depois, se quiser liberar o espaço."
-            ))
+            ) })
             .show();
         if answer != rfd::MessageDialogResult::Yes {
             return Ok(());
@@ -630,9 +633,11 @@ fn uninstall(app: &Path, silent: bool) -> Result<(), Error> {
         rfd::MessageDialog::new()
             .set_title("MK8-online")
             .set_level(rfd::MessageLevel::Info)
-            .set_description(format!(
-                "O MK8-online foi removido. Seus dados continuam em {data}."
-            ))
+            .set_description(if english {
+                format!("MK8-online has been removed. Your data remains in {data}.")
+            } else {
+                format!("O MK8-online foi removido. Seus dados continuam em {data}.")
+            })
             .show();
     }
     // This copy in %TEMP% removes itself once it has exited.
@@ -659,6 +664,7 @@ struct Setup {
     progress: Arc<Mutex<Progress>>,
     app: Option<PathBuf>,
     started: bool,
+    language: String,
 }
 
 fn window() -> Result<(), Error> {
@@ -670,8 +676,10 @@ fn window() -> Result<(), Error> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let parent: Parent = Arc::new(OnceLock::new());
+    let previous = Previous::find();
     let setup = Setup {
-        previous: Previous::find(),
+        language: crate::language::read(&previous.data.join("data")),
+        previous,
         progress: Arc::new(Mutex::new(Progress::default())),
         app: None,
         started: false,
@@ -687,7 +695,7 @@ fn window() -> Result<(), Error> {
         .setup(move |tauri_app| {
             let window =
                 WebviewWindowBuilder::new(tauri_app, "setup", WebviewUrl::External(target))
-                    .title("Instalar MK8-online")
+                    .title("MK8-online Setup")
                     .inner_size(880.0, 620.0)
                     .resizable(false)
                     .maximizable(false)
@@ -721,6 +729,14 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
     let body: Value = serde_json::from_str(body).unwrap_or_default();
     match (method.as_str(), path) {
         ("GET", "/api/state") => Ok(state(setup)),
+        ("POST", "/api/language") => {
+            let language = body["language"]
+                .as_str()
+                .filter(|value| crate::language::valid(value))
+                .ok_or("Unsupported language / Idioma não suportado")?;
+            setup.language = language.into();
+            Ok(json!(language))
+        }
         ("POST", "/api/space") => {
             let path = PathBuf::from(body["path"].as_str().unwrap_or(""));
             let absolute = path.is_absolute();
@@ -747,6 +763,12 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
                 data: folder("data")?,
                 desktop: body["desktop"].as_bool().unwrap_or(true),
             };
+            let language = body["language"].as_str().unwrap_or(&setup.language);
+            if !crate::language::valid(language) {
+                return Err("Unsupported language / Idioma não suportado".into());
+            }
+            crate::language::write(&options.data.join("data"), &json!({"language": language}))?;
+            setup.language = language.into();
             *setup.progress.lock().unwrap() = Progress {
                 state: "running".into(),
                 ..Progress::default()
@@ -797,8 +819,18 @@ fn serve(
         let method = req.method().clone();
         let page = match (method.as_str(), path.as_str()) {
             ("GET", "/") => Some((
-                include_str!("../web/setup.html").replace("__TOKEN__", &token),
+                include_str!("../web/setup.html")
+                    .replace("__TOKEN__", &token)
+                    .replace("__LANGUAGE__", &setup.language),
                 "text/html; charset=utf-8",
+            )),
+            ("GET", "/i18n.js") => Some((
+                include_str!("../web/i18n.js").into(),
+                "text/javascript; charset=utf-8",
+            )),
+            ("GET", "/en.json") => Some((
+                include_str!("../web/en.json").into(),
+                "application/json; charset=utf-8",
             )),
             ("GET", "/setup.js") => Some((
                 include_str!("../web/setup.js").to_string(),

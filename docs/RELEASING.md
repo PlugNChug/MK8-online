@@ -49,3 +49,8 @@ Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe`
 - [ ] testes de navegador: `python -m unittest discover -s tests -p test_launcher_e2e.py` (com `MK8_TEST_RELAY_EXE` para o relay)
 - [ ] instalar o setup numa pasta temporária (`setup.exe /SILENT /DIR=... /DATADIR=... /DESKTOP=0 /NOLAUNCH`), abrir o Launcher e desinstalar com `Launcher.exe --uninstall /SILENT`; abrir a janela do setup e percorrer as quatro telas
 - [ ] `docs/STATUS.md` e `docs/ROADMAP.md` atualizados; nada de caminhos pessoais ou dados do jogo nos arquivos versionados
+- [ ] `README.md` (inglês) e `README.pt-BR.md` sincronizados; links e imagens verificados
+- [ ] `python -m unittest discover -s tests -p test_launcher_languages.py`; conferir launcher e instalador nos dois idiomas, incluindo persistência ao reiniciar
+- [ ] Revisar arquivos novos, histórico Git e metadados de autoria antes de abrir o repositório; `.gitignore` não remove informações já registradas em commits. Configurar identidade pública e e-mail `noreply` para commits futuros não altera os antigos
+- [ ] Revisar separadamente anexos de releases, logs públicos e configurações/segredos do GitHub; a varredura local não cobre esses serviços
+- [ ] Usar `scripts/package-launcher.py` para o executável público: o empacotamento remapeia caminhos Rust e habilita `tauri/custom-protocol` para não embutir o diretório de configuração de desenvolvimento. Conferir também os bytes do binário e o payload; o executável de desenvolvimento em `target/release` contém o caminho do checkout e não é um pacote de distribuição

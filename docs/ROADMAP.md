@@ -6,6 +6,8 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## 1. Multijogador
 
+- **[planejado]** Investigar integração com Nextendo Network para serviços online alternativos: mapear requisitos de conta, autenticação, amigos e matchmaking no runtime nativo antes de implementar. Ainda não integrado, sem prazo ou compatibilidade comprovada. Referência em [THIRD_PARTY.md](THIRD_PARTY.md).
+
 - **[validação]** Um erro de comunicação apareceu uma vez com duas instâncias na mesma máquina (não reproduzido na repetição). Se aparecer entre duas máquinas, testar com `MK8_ASYNC_SUBMIT=0` e enviar os relatórios dos dois PCs.
 
 - **[validação]** Corrida entre **duas máquinas** pela LAN direta (UDP 47820 no firewall do anfitrião). O transporte e o roteiro já existem; falta repetir com dois PCs reais.
@@ -39,6 +41,9 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 - **[validação]** Modelos Mii dentro do jogo (cabeça, corpo, retratos). Hoje o jogo roda sem modelos Mii.
 
 ## 5. Launcher e distribuição
+
+- Implementado nas fontes/build local: inglês e PT-BR no launcher e instalador, com seleção e preferência persistente. Os READMEs acompanham os dois idiomas. Ainda não publicado em novo setup.
+- **[validação]** Antes de tornar o repositório público, revisar nome/e-mail de autoria e commit no histórico Git. A revisão de 08/11 encontrou esses metadados pessoais nos 21 commits alcançáveis; a varredura de conteúdo não encontrou credenciais pelos padrões utilizados. O histórico não foi reescrito.
 
 - **[validação]** Atualização pelo botão **Atualizar agora** contra um Release publicado de verdade (os testes unitários cobrem versão, asset e SHA-256).
 - Instância única: duas janelas do Launcher competiriam pela mesma pasta de dados.

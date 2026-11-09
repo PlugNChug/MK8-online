@@ -58,9 +58,16 @@ def main():
                 raise ValueError(f"Fonte fora do projeto: {path}")
             archive.writestr(ZipInfo(path.relative_to(ROOT).as_posix()), path.read_bytes(), compress_type=ZIP_DEFLATED)
     digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+    env = dict(os.environ, MK8_LAUNCHER_PAYLOAD=str(payload), MK8_LAUNCHER_PAYLOAD_ID=digest)
+    flags = env["CARGO_ENCODED_RUSTFLAGS"].split("\x1f") if env.get("CARGO_ENCODED_RUSTFLAGS") else env.get("RUSTFLAGS", "").split()
+    # Rust panic/source locations otherwise expose the packager's Windows account in the executable.
+    for original, replacement in ((Path.home(), "build-user"), (Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")), "build-cargo"), (ROOT, "MK8-online")):
+        for spelling in dict.fromkeys((str(original), original.as_posix())):
+            flags.append(f"--remap-path-prefix={spelling}={replacement}")
+    env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
     subprocess.run(
-        ["cargo", "build", "--release", "--locked", "-p", "mk8-online", "--target-dir", str(BUILD)],
-        cwd=ROOT, env=dict(os.environ, MK8_LAUNCHER_PAYLOAD=str(payload), MK8_LAUNCHER_PAYLOAD_ID=digest),
+        ["cargo", "build", "--release", "--locked", "-p", "mk8-online", "--features", "tauri/custom-protocol", "--target-dir", str(BUILD)],
+        cwd=ROOT, env=env,
         check=True,
     )
     launcher = OUTPUT / "Launcher.exe"

@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="mk8-token" content="__TOKEN__" />
+    <meta name="mk8-language" content="__LANGUAGE__" />
     <title>MK8-online</title>
     <link rel="stylesheet" href="/style.css" />
+    <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -14,6 +16,7 @@
       <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
       <span class="tag">experimental</span>
       <span class="spacer"></span>
+      <label class="language-picker"><span>Idioma</span><select id="language" aria-label="Idioma"><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select></label>
       <button id="update-chip" class="chip accent" data-goto="support" hidden>Atualização disponível</button>
       <span id="version" class="chip">v—</span>
     </header>
