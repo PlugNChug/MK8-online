@@ -1,4 +1,10 @@
-# Estado técnico — 08/11/2026
+# Estado técnico — 09/11/2026
+
+## Teste de disco no CI (09/11/2026)
+
+O log `logs_115262453029.zip` mostra o workflow de release parando em `disk_kind_of_the_system_drive_is_reported`: `hard_disk` retornou `None`, permitido pelo contrato quando a consulta Windows não informa o tipo de disco. O teste pressupunha incorretamente que qualquer disco local responderia. Substituído por uma verificação com chamadas reais à API: uma pasta inexistente deve retornar o mesmo resultado do diretório pai existente, inclusive `None`. Nenhuma detecção foi forçada para HD/SSD e nenhum teste foi ignorado. Runtime, guest e interface permanecem sem alterações. A execução remota do workflow ainda precisa ser repetida após publicar a correção.
+
+Validação local da correção: 32 testes Rust passaram, incluindo a consulta real para pasta inexistente; `cargo fmt --all -- --check` e Clippy do workspace com `-D warnings` passaram. Build de desenvolvimento do launcher concluída com `cargo build -p mk8-online --bin Launcher --locked`.
 
 ## Release 0.1.6 (08/11/2026)
 

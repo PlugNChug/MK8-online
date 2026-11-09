@@ -149,7 +149,7 @@ Current priorities are repeated-cup VRAM stability, shader/frame-time consistenc
 
 ## Build and contribute
 
-Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the importer. Start from the repository root:
+Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the importer. Disk-type detection is optional: Windows storage drivers may report an unknown type, including on CI virtual disks. Start from the repository root:
 
 ```powershell
 .\scripts\start-launcher.ps1

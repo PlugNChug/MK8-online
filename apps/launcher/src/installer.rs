@@ -978,11 +978,20 @@ mod tests {
     }
 
     #[test]
-    fn disk_kind_of_the_system_drive_is_reported() {
-        // Every local fixed disk answers the seek-penalty query (true on a hard disk, false on an
-        // SSD); a folder still to be created is looked up through its existing parent.
-        let missing = std::env::temp_dir().join("mk8-online-nao-existe/ainda/nao");
-        assert!(hard_disk(&missing).is_some());
+    fn disk_kind_of_a_missing_folder_matches_its_existing_parent() {
+        // Storage drivers may not report seek penalty (including on CI virtual disks).
+        // Unknown is valid; looking up a missing folder must preserve the parent's result.
+        let parent = std::env::temp_dir();
+        let missing = parent.join(format!(
+            "mk8-disk-query-{}-{}/ainda/nao",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        assert!(!missing.exists());
+        assert_eq!(hard_disk(&missing), hard_disk(&parent));
     }
 
     #[test]
