@@ -62,10 +62,10 @@ def cache_lookup(cache, address):
     if not (obj.is_file() and receipt.is_file()):
         return None
     try:
-        expected = json.loads(receipt.read_text(encoding='utf-8')).get('sha256')
+        record = json.loads(receipt.read_text(encoding='utf-8'))
+        return obj if isinstance(record, dict) and record.get('sha256') == digest(obj) else None
     except (OSError, ValueError):
         return None
-    return obj if expected == digest(obj) else None
 
 
 def cache_store(cache, address, obj, sha256):
@@ -196,9 +196,12 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
         stamp = obj.with_suffix('.json')
         key = {'source': digest(src), 'environment': identity, 'flags': flags}
         if obj.exists() and stamp.exists():
-            receipt = json.loads(stamp.read_text())
-            if receipt.get('input') == key and receipt.get('sha256') == digest(obj):
-                return obj
+            try:
+                receipt = json.loads(stamp.read_text(encoding='utf-8'))
+                if isinstance(receipt, dict) and receipt.get('input') == key and receipt.get('sha256') == digest(obj):
+                    return obj
+            except (OSError, ValueError):
+                pass  # Interrupted metadata is not proof that an object can be reused.
         address = cache_key(key)
         cached = cache_lookup(cache, address)
         if cached:

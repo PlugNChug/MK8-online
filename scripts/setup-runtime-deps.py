@@ -99,8 +99,8 @@ def setup():
             return done.is_file() and done.read_text(encoding='ascii').strip() == expected
 
         wanted = [(expected, package) for expected, package in pins if not extracted(expected, package)]
-        fetch_all([(msys2(archive_of(package).name), archive_of(package))
-                   for _, package in wanted if not archive_of(package).exists()], label='Downloading')
+        fetch_all([(msys2(archive_of(package).name), archive_of(package), expected)
+                   for expected, package in wanted], label='Downloading')
         for expected, package in wanted:
             archive = archive_of(package)
             with archive.open('rb') as f:

@@ -20,9 +20,9 @@ def unlink_link(path):
     path = Path(path)
     if not is_link(path):
         return False
-    try:
+    if getattr(path, 'is_junction', lambda: False)() or (os.name == 'nt' and path.is_dir()):
         os.rmdir(path)  # a junction or a directory symlink
-    except OSError:
+    else:
         path.unlink()
     return True
 
@@ -36,11 +36,7 @@ def _remove_tree(path):
             elif entry.is_dir(follow_symlinks=False):
                 _remove_tree(child)
             else:
-                try:
-                    child.unlink()
-                except PermissionError:
-                    os.chmod(child, 0o666)
-                    child.unlink()
+                child.unlink()
     os.rmdir(path)
 
 
@@ -49,6 +45,9 @@ def remove_owned(path, owner):
     path, owner = Path(os.path.abspath(path)), Path(os.path.abspath(owner))
     if path == owner or not path.is_relative_to(owner):
         raise ValueError(f"Remoção recusada fora da pasta de dados: {path}")
+    for parent in path.parents:
+        if is_link(parent):
+            raise ValueError(f"Remoção recusada através de link: {parent}")
     if is_link(path):
         unlink_link(path)
     elif path.is_dir():
@@ -62,6 +61,10 @@ def unlink_links_on_the_way(path, owner):
     real folders of the data folder, never through a link into the folder it points at."""
     path, owner = Path(os.path.abspath(path)), Path(os.path.abspath(owner))
     removed = []
+    if path == owner or not path.is_relative_to(owner):
+        raise ValueError(f"Reparo recusado fora da pasta de dados: {path}")
+    if any(is_link(parent) for parent in [owner, *owner.parents]):
+        raise ValueError(f"Reparo recusado através de link na pasta de dados: {owner}")
     for part in reversed([path, *path.parents]):
         if part != owner and part.is_relative_to(owner) and unlink_link(part):
             removed.append(part)

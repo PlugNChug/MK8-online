@@ -1,4 +1,5 @@
 use mk8_manifest::Result;
+pub mod supervisor;
 use serde::Serialize;
 use std::{
     fs,
@@ -129,6 +130,87 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+pub fn acquire_operation(root: &Path, local: &Path) -> Result<Vec<fs::File>> {
+    acquire_resources(root, local, false)
+}
+
+pub fn acquire_game(root: &Path, local: &Path) -> Result<Vec<fs::File>> {
+    let mut guards = acquire_resources(root, local, true)?;
+    // Same file as the Python CLI's byte lock: refuse direct rebuilds while saves/game data are in use.
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(local.join(".build.lock"))
+        .map_err(|e| e.to_string())?;
+    file.try_lock()
+        .map_err(|e| format!("Preparação em andamento nesta pasta: {e}"))?;
+    guards.push(file);
+    Ok(guards)
+}
+
+fn acquire_resources(root: &Path, local: &Path, game: bool) -> Result<Vec<fs::File>> {
+    let mut guards = Vec::new();
+    let mut paths = vec![root.join("local"), local.to_path_buf()];
+    if let Some(shared) = std::env::var_os("MK8_NATIVE_TOOLS") {
+        paths.push(PathBuf::from(shared));
+    }
+    for path in &mut paths {
+        fs::create_dir_all(&*path).map_err(|e| e.to_string())?;
+        *path = fs::canonicalize(&*path).map_err(|e| e.to_string())?;
+    }
+    paths.sort();
+    paths.dedup();
+    let data = fs::canonicalize(local).map_err(|e| e.to_string())?;
+    for path in paths {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(path.join(".launcher-operation.lock"))
+            .map_err(|e| e.to_string())?;
+        let result = if game && path != data {
+            file.try_lock_shared()
+        } else {
+            file.try_lock()
+        };
+        result.map_err(|e| format!("Outra instância está usando dados ou ferramentas. Feche o jogo ou aguarde a operação: {e}"))?;
+        guards.push(file);
+    }
+    Ok(guards)
+}
+
+/// Keep ownership with the caller until termination has been confirmed.
+pub fn terminate_tree(child: &mut Child) -> Result<()> {
+    #[cfg(windows)]
+    {
+        terminate_tree_with(child, "taskkill")
+    }
+    #[cfg(not(windows))]
+    {
+        child.kill().map_err(|e| e.to_string())?;
+        child.wait().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn terminate_tree_with(child: &mut Child, program: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    let output = Command::new(program)
+        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| format!("Falha ao iniciar cancelamento: {e}"))?;
+    if !output.status.success() && child.try_wait().map_err(|e| e.to_string())?.is_none() {
+        return Err("Não foi possível cancelar a árvore de processos.".into());
+    }
+    child.wait().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 impl Manager {
     pub fn poll(&mut self) -> Status {
         if self.child.is_some() {
@@ -171,6 +253,7 @@ impl Manager {
             return Err("Já existe uma preparação em andamento.".into());
         }
         fs::create_dir_all(local).map_err(|e| e.to_string())?;
+        let guards = acquire_operation(root, local)?;
         let log_path = local.join("build.log");
         let log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
         let python = root.join("local/python/Scripts/python.exe");
@@ -195,9 +278,8 @@ impl Manager {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
-        let child = cmd
-            .spawn()
-            .map_err(|e| format!("Python não iniciou: {e}"))?;
+        drop(guards);
+        let child = supervisor::spawn(&cmd, root, local, &log_path)?;
         self.status = Status {
             state: "running".into(),
             detail: "Preparando o jogo.".into(),
@@ -214,6 +296,10 @@ impl Manager {
     }
     pub fn record_start(&mut self, result: Result<()>) {
         if let Err(detail) = result {
+            if self.child.is_some() {
+                self.status.detail = detail;
+                return;
+            }
             self.status = Status {
                 state: "failed".into(),
                 detail,
@@ -226,23 +312,9 @@ impl Manager {
     }
 
     pub fn cancel(&mut self) -> Result<()> {
-        if let Some(mut child) = self.child.take() {
-            #[cfg(windows)]
-            {
-                let status = Command::new("taskkill")
-                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
-                    .output()
-                    .map_err(|e| e.to_string())?;
-                if !status.status.success()
-                    && child.try_wait().map_err(|e| e.to_string())?.is_none()
-                {
-                    self.child = Some(child);
-                    return Err("Não foi possível cancelar a árvore de build".into());
-                }
-            }
-            #[cfg(not(windows))]
-            child.kill().map_err(|e| e.to_string())?;
-            let _ = child.wait();
+        if let Some(child) = self.child.as_mut() {
+            terminate_tree(child)?;
+            self.child = None;
             self.status.state = "cancelled".into();
             self.status.detail = "Cancelado. Etapas concluídas serão reutilizadas.".into();
             self.status.pid = None;
@@ -255,6 +327,60 @@ impl Manager {
 #[cfg(test)]
 mod tests {
     use super::progress;
+
+    #[test]
+    fn operation_locks_conflict_and_release_without_touching_data() {
+        let base = std::env::temp_dir().join(format!("mk8-operation-{}", std::process::id()));
+        let root = base.join("app");
+        let local = base.join("data");
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(local.join("config.json"), b"preserve").unwrap();
+        let guard = super::acquire_operation(&root, &local).unwrap();
+        assert!(super::acquire_operation(&root, &base.join("other-data")).is_err());
+        assert!(super::acquire_operation(&base.join("other-app"), &local).is_err());
+        assert_eq!(
+            std::fs::read(local.join("config.json")).unwrap(),
+            b"preserve"
+        );
+        drop(guard);
+        assert!(super::acquire_operation(&root, &local).is_ok());
+    }
+
+    #[test]
+    fn games_share_tools_but_never_the_same_save_directory() {
+        let base = std::env::temp_dir().join(format!("mk8-game-lock-{}", std::process::id()));
+        let root = base.join("app");
+        let first = super::acquire_game(&root, &base.join("one")).unwrap();
+        let second = super::acquire_game(&root, &base.join("two")).unwrap();
+        assert!(super::acquire_game(&root, &base.join("one")).is_err());
+        assert!(super::acquire_operation(&root, &base.join("three")).is_err());
+        drop(first);
+        assert!(super::acquire_game(&root, &base.join("one")).is_ok());
+        drop(second);
+        assert!(super::acquire_operation(&root, &base.join("three")).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cancellation_failure_keeps_child_available_for_retry() {
+        use std::os::windows::process::CommandExt;
+        let mut child = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 60",
+            ])
+            .creation_flags(0x08000000)
+            .spawn()
+            .unwrap();
+        let failed = super::terminate_tree_with(&mut child, "mk8-missing-cancel-command.exe");
+        let alive = child.try_wait().unwrap().is_none();
+        super::terminate_tree(&mut child).unwrap();
+        assert!(failed.is_err());
+        assert!(alive);
+        assert!(child.try_wait().unwrap().is_some());
+    }
 
     #[test]
     fn progress_follows_the_build_stages() {

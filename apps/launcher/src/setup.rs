@@ -84,6 +84,8 @@ pub struct Setup {
     steps: Vec<Step>,
     current: usize,
     child: Option<Child>,
+    guards: Vec<File>,
+    supervised: Option<(PathBuf, PathBuf)>,
     state: State,
     detail: String,
     log: PathBuf,
@@ -95,6 +97,8 @@ impl Default for Setup {
             steps: Vec::new(),
             current: 0,
             child: None,
+            guards: Vec::new(),
+            supervised: None,
             state: State::Idle,
             detail: "Nenhuma instalação de ferramentas iniciada nesta sessão.".into(),
             log: PathBuf::new(),
@@ -103,6 +107,20 @@ impl Default for Setup {
 }
 
 impl Setup {
+    pub fn start_guarded(&mut self, root: &Path, local: &Path) -> Result<(), String> {
+        if self.running() {
+            return Err("A instalação de ferramentas já está em andamento.".into());
+        }
+        let guards = mk8_build_manager::acquire_operation(root, local)?;
+        self.supervised = Some((root.into(), local.into()));
+        self.guards = guards;
+        let result = self.start(steps(root), &local.join("setup.log"));
+        if result.is_err() {
+            self.guards.clear();
+        }
+        result?;
+        Ok(())
+    }
     pub fn running(&self) -> bool {
         self.state == State::Running
     }
@@ -137,6 +155,7 @@ impl Setup {
         self.state = State::Failed;
         self.detail = detail;
         self.child = None;
+        self.guards.clear();
     }
 
     fn spawn_current(&mut self) {
@@ -164,7 +183,13 @@ impl Setup {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        match cmd.spawn() {
+        let spawned = if let Some((root, local)) = &self.supervised {
+            self.guards.clear();
+            mk8_build_manager::supervisor::spawn(&cmd, root, local, &self.log)
+        } else {
+            cmd.spawn().map_err(|e| e.to_string())
+        };
+        match spawned {
             Ok(child) => {
                 self.child = Some(child);
                 self.detail = format!("Etapa {}/{total}: {name}", self.current + 1);
@@ -198,6 +223,7 @@ impl Setup {
                 self.current += 1;
                 if self.current == total {
                     self.state = State::Done;
+                    self.guards.clear();
                     self.detail =
                         "Scripts concluídos sem erro; downloads conferidos por hash.".into();
                     self.append("== Concluído ==");
@@ -207,33 +233,21 @@ impl Setup {
                 !self.running()
             }
             Err(e) => {
-                self.fail(e.to_string());
-                true
+                self.detail = format!("Não foi possível consultar o processo: {e}");
+                false
             }
         }
     }
 
     pub fn cancel(&mut self) -> Result<(), String> {
-        let Some(mut child) = self.child.take() else {
+        let Some(child) = self.child.as_mut() else {
             return Ok(());
         };
-        #[cfg(windows)]
-        {
-            let mut kill = Command::new("taskkill");
-            kill.args(["/PID", &child.id().to_string(), "/T", "/F"]);
-            use std::os::windows::process::CommandExt;
-            kill.creation_flags(0x08000000);
-            let output = kill.output().map_err(|e| e.to_string())?;
-            if !output.status.success() && child.try_wait().map_err(|e| e.to_string())?.is_none() {
-                self.child = Some(child);
-                return Err("Não foi possível interromper a instalação de ferramentas.".into());
-            }
-        }
-        #[cfg(not(windows))]
-        child.kill().map_err(|e| e.to_string())?;
-        let _ = child.wait();
+        mk8_build_manager::terminate_tree(child)?;
+        self.child = None;
         self.append("== Cancelado ==");
         self.state = State::Cancelled;
+        self.guards.clear();
         self.detail = "Cancelado. Arquivos já baixados e conferidos serão reaproveitados.".into();
         Ok(())
     }
@@ -268,12 +282,12 @@ fn check(name: String, ok: bool, detail: String) -> Value {
     json!({"name": name, "ok": ok, "detail": detail})
 }
 
-fn system_python() -> Value {
-    let name = "Python 3.12 x64 no PATH".to_string();
-    let mut cmd = Command::new("python");
+fn python_check(root: &Path) -> Value {
+    let name = "Ambiente Python local".to_string();
+    let mut cmd = Command::new(local_python(root));
     cmd.args([
-        "-c",
-        "import sys,struct;print(sys.version.split()[0],struct.calcsize('P')*8)",
+        "-I", "-c",
+        "import sys,struct,pip,capstone,lz4.block,unicorn,pefile,zstandard,Crypto; print(sys.version.split()[0],struct.calcsize('P')*8)",
     ])
     .stdin(Stdio::null());
     #[cfg(windows)]
@@ -285,18 +299,14 @@ fn system_python() -> Value {
         Ok(out) if out.status.success() => {
             let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
             let ok = text.starts_with("3.12.") && text.ends_with(" 64");
-            let detail = if ok {
-                format!("Python {text} bits encontrado.")
+            check(name, ok, if ok {
+                format!("Python {text} bits e dependências encontrados no ambiente local.")
             } else {
-                format!("Encontrado Python {text} bits; instale Python 3.12 x64 (python.org) e reabra o Launcher.")
-            };
-            check(name, ok, detail)
+                "Ambiente Python incompatível. Execute Ferramentas para reparar automaticamente.".into()
+            })
         }
-        _ => check(
-            name,
-            false,
-            "Python não encontrado. Instale Python 3.12 x64 (python.org) com \"Add python.exe to PATH\" e reabra o Launcher.".into(),
-        ),
+        _ => check(name, false,
+            "Ambiente Python ausente ou incompleto. Execute Ferramentas para instalar ou reparar automaticamente.".into()),
     }
 }
 
@@ -351,17 +361,7 @@ fn tools_dir(root: &Path) -> std::path::PathBuf {
 }
 
 pub fn tool_checks(root: &Path) -> Vec<Value> {
-    let mut checks = vec![system_python()];
-    let venv = local_python(root);
-    checks.push(check(
-        "Ambiente Python local".into(),
-        venv.is_file(),
-        if venv.is_file() {
-            "Encontrado em local/python.".into()
-        } else {
-            "Ainda não criado.".into()
-        },
-    ));
+    let mut checks = vec![python_check(root)];
     let native = fs::read_to_string(root.join("scripts/setup-native.py")).unwrap_or_default();
     match script_constant(&native, "VERSION") {
         Some(version) => {
@@ -462,6 +462,45 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn cancellation_stops_sequence_and_releases_operation_locks() {
+        let log = temp("cancel");
+        let local = log.parent().unwrap();
+        let root = local.join("app");
+        let mut setup = Setup::default();
+        let guards = mk8_build_manager::acquire_operation(&root, local).unwrap();
+        setup
+            .start(
+                vec![
+                    Step::new(
+                        "espera",
+                        "powershell.exe",
+                        &[
+                            &"-NoProfile",
+                            &"-NonInteractive",
+                            &"-Command",
+                            &"Start-Sleep -Seconds 60",
+                        ],
+                    ),
+                    cmd("nao-executar", 0),
+                ],
+                &log,
+            )
+            .unwrap();
+        setup.guards = guards;
+        let locked = mk8_build_manager::acquire_operation(&root, local).is_err();
+        setup.cancel().unwrap();
+        assert!(locked);
+        assert_eq!(setup.status()["state"], "cancelled");
+        assert!(!setup.poll());
+        assert!(!fs::read_to_string(&log).unwrap().contains("nao-executar"));
+        assert!(mk8_build_manager::acquire_operation(&root, local).is_ok());
+        setup.start(vec![cmd("retomada", 0)], &log).unwrap();
+        wait(&mut setup);
+        assert_eq!(setup.status()["state"], "done");
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn stops_at_failed_step_without_running_the_rest() {
         let log = temp("fail");
         let mut setup = Setup::default();
@@ -490,6 +529,17 @@ mod tests {
             .unwrap();
         assert_eq!(setup.status()["state"], "failed");
         assert!(!setup.poll());
+    }
+
+    #[test]
+    fn python_requires_a_working_local_interpreter_not_just_a_file() {
+        let root = temp("python-check").with_file_name("python-root");
+        let python = local_python(&root);
+        fs::create_dir_all(python.parent().unwrap()).unwrap();
+        fs::write(&python, b"interrupted download").unwrap();
+        assert_eq!(python_check(&root)["ok"], false);
+        fs::remove_file(&python).unwrap();
+        assert_eq!(python_check(&root)["ok"], false);
     }
 
     #[test]

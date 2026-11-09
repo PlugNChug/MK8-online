@@ -354,5 +354,8 @@
   "Instalação sem identidade": "Installation has no identity",
   "Informe IP acessível e porta do anfitrião.": "Enter a reachable host IP and port.",
   "Limite de 12 convites atingido. Crie nova sala para renovar.": "Limit of 12 invitations reached. Create a new room to renew them.",
-  "Etapa {0}/{1} ({2}) falhou ({3}). Consulte o log, corrija e tente de novo.": "Step {0}/{1} ({2}) failed ({3}). Check the log, fix the problem and try again."
+  "Etapa {0}/{1} ({2}) falhou ({3}). Consulte o log, corrija e tente de novo.": "Step {0}/{1} ({2}) failed ({3}). Check the log, fix the problem and try again.",
+  "Python {0} bits e dependências encontrados no ambiente local.": "Python {0}-bit and dependencies found in the local environment.",
+  "Ambiente Python incompatível. Execute Ferramentas para reparar automaticamente.": "Incompatible Python environment. Run Tools to repair it automatically.",
+  "Ambiente Python ausente ou incompleto. Execute Ferramentas para instalar ou reparar automaticamente.": "Python environment missing or incomplete. Run Tools to install or repair it automatically."
 }

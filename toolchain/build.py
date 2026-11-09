@@ -12,6 +12,7 @@ import sys
 import time
 
 from repair import cleanup_stale, remove_owned, unlink_links_on_the_way
+from build_lock import exclusive_build
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -303,13 +304,14 @@ if __name__ == "__main__":
             errors = preflight(config)
             print(json.dumps({"ok": not errors, "errors": errors}, ensure_ascii=False))
             sys.exit(bool(errors))
-        if args.runtime_only:
-            prepare_system_data(config, args.local.resolve())
-            refresh_runtime(args.local.resolve())
-        elif args.finish:
-            finish(config, args.local.resolve())
-        else:
-            build(config, args.local.resolve())
+        with exclusive_build(args.local.resolve()):
+            if args.runtime_only:
+                prepare_system_data(config, args.local.resolve())
+                refresh_runtime(args.local.resolve())
+            elif args.finish:
+                finish(config, args.local.resolve())
+            else:
+                build(config, args.local.resolve())
     except Exception as error:
         print(str(error), file=sys.stderr, flush=True)
         sys.exit(1)

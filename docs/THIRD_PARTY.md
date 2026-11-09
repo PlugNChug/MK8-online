@@ -28,6 +28,12 @@ Direção futura solicitada pelo mantenedor: [Nextendo Network](https://nextendo
 
 Referência de metodologia solicitada pelo usuário: [Co-op Anything](https://github.com/cranebeaker/coop-anything), consultada em 07/11/2026, especialmente [falhas de rede](https://github.com/cranebeaker/coop-anything/blob/main/playbook/network-chaos-testing.md), [diagnóstico de dessincronização](https://github.com/cranebeaker/coop-anything/blob/main/playbook/desync-hunting.md) e [instâncias isoladas](https://github.com/cranebeaker/coop-anything/blob/main/playbook/multi-instance-testing.md). Útil para ampliar os testes da ponte LAN existente. Nenhum código, MCP ou relay Steam desse projeto foi incorporado; seus resultados em outros jogos não são evidência para MK8.
 
+## Supervisão de processos Windows
+
+Supervisão de processos Windows (09/11/2026): [Microsoft — Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) e [AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject). Fundamentam a herança do job pelos descendentes e o encerramento com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Chamadas por `windows-sys 0.61.2`, já presente no lockfile; não se aplica terminação automática ao jogo quando apenas a janela do launcher fecha.
+
 ## Python privado para ferramentas
+
+Diagnóstico do issue #4 (09/11/2026): [metadados oficiais de lz4 4.4.5](https://pypi.org/pypi/lz4/4.4.5/json) distinguem o SHA-256 do arquivo-fonte e do wheel CPython 3.12 Windows x64. A instalação segue a documentação do pip sobre [configuração e PIP_CONFIG_FILE](https://pip.pypa.io/en/stable/topics/configuration/) e [only-binary](https://pip.pypa.io/en/stable/cli/pip_install/#cmdoption-only-binary). Os hashes e avisos das dependências permanecem preservados.
 
 [CPython 3.12.10 x64 no NuGet](https://www.nuget.org/packages/python/3.12.10), distribuído pelos mantenedores CPython e documentado em [Using Python on Windows](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages). O bootstrap baixa o pacote original de `api.nuget.org`, SHA-256 `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`. A extração integral preserva `tools/LICENSE.txt` e os avisos incluídos (Python Software Foundation License e licenças de componentes). Sem redistribuição do interpretador no repositório.

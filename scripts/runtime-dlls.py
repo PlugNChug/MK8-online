@@ -28,6 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPS = Path(os.environ.get('MK8_NATIVE_TOOLS') or ROOT/'local/native-tools')/'deps'
 CACHE = DEPS/'dlls'
 
+# SDL loads the Vulkan loader at runtime; it is absent from the PE import table.
+DYNAMIC_IMPORTS = {'sdl3.dll': ('vulkan-1.dll',)}
+
 
 def digest(path):
     with path.open('rb') as f:
@@ -107,6 +110,7 @@ def resolve(folder, roots=None):
                 raise ValueError('Imagem Windows x64 inválida ou >= 2 GiB: '+path.name)
             pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
             imports = [entry.dll.decode('ascii') for entry in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', [])]
+            imports.extend(DYNAMIC_IMPORTS.get(path.name.lower(), ()))
             pe.close()
             for name in imports:
                 dll = folder/name
@@ -115,7 +119,8 @@ def resolve(folder, roots=None):
                     if entry and digest(dll) == entry['sha256']:
                         lock[entry['package']] = entry['package_sha256']  # (placed earlier from this archive)
                     queue.append(dll); continue
-                system = (Path(os.environ['SystemRoot'])/'System32'/name).is_file()
+                # Bundle the loader even when the build PC has a driver-provided copy.
+                system = name.lower() != 'vulkan-1.dll' and (Path(os.environ['SystemRoot'])/'System32'/name).is_file()
                 if name.lower() in missing or name.lower().startswith(('api-ms-', 'ext-ms-')) or system:
                     continue
                 record = owners.get(name.lower())
@@ -131,9 +136,9 @@ def resolve(folder, roots=None):
                     queue.append(dll)
                 else:
                     missing[name.lower()] = (name, filename, expected)
-        downloads = sorted({filename for _, filename, _ in missing.values() if not (DEPS/filename).exists()})
+        downloads = sorted({(filename, expected) for _, filename, expected in missing.values()})
         if downloads:
-            fetch_all([(msys2(filename), DEPS/filename) for filename in downloads], label='Dependência')
+            fetch_all([(msys2(filename), DEPS/filename, expected) for filename, expected in downloads], label='Dependência')
         for name, filename, expected in missing.values():
             unpack(filename, expected, name, cache)
             opened.add(filename)

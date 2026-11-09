@@ -2,6 +2,7 @@
 //! MK8-online Launcher: a native Tauri window over the local API server.
 //! `--headless` (or the older `--no-browser`) keeps only the server, for tests.
 mod console;
+mod game_session;
 mod installer;
 mod language;
 mod relay;
@@ -63,6 +64,24 @@ pub(crate) fn fatal(message: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(mode) = args
+        .get(1)
+        .filter(|m| *m == "--task-supervisor" || *m == "--game-supervisor")
+    {
+        let result = if mode == "--task-supervisor" {
+            mk8_build_manager::supervisor::run_task()
+        } else {
+            game_session::run()
+        };
+        let code = match result {
+            Ok(code) => code,
+            Err(error) => {
+                println!("{error}");
+                1
+            }
+        };
+        std::process::exit(code);
+    }
     if let Some(mode) = installer::mode(&args) {
         if let Err(error) = installer::run(mode, &args) {
             fatal(&format!("O instalador não pôde continuar: {error}"));

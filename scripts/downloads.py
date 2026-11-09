@@ -5,6 +5,7 @@ several at a time and a large file is fetched as byte ranges in parallel. Nothin
 caller checks the pinned or repository SHA-256 before using the file.
 """
 import concurrent.futures
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -55,9 +56,14 @@ def _ranged(url, pending, size, parts):
             piece.unlink(missing_ok=True)
 
 
-def fetch(urls, target, parts=1):
+def fetch(urls, target, parts=1, sha256=None):
     """Downloads the first URL that works into `target` (atomically). `parts` > 1 splits a large file into ranges."""
     target = Path(target)
+    def matches(path):
+        with path.open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').hexdigest() == sha256
+    if sha256 is not None and target.is_file() and matches(target):
+        return target
     pending = target.with_name(target.name + '.pending')
     errors = []
     for url in [urls] if isinstance(urls, str) else urls:
@@ -67,6 +73,8 @@ def fetch(urls, target, parts=1):
                 _ranged(url, pending, size, parts)
             else:
                 subprocess.run([*CURL, url, '--output', str(pending)], check=True)
+            if sha256 is not None and not matches(pending):
+                raise ValueError('SHA-256 mismatch: ' + target.name)
             os.replace(pending, target)
             return target
         except (OSError, subprocess.CalledProcessError, ValueError) as error:
@@ -76,12 +84,12 @@ def fetch(urls, target, parts=1):
 
 
 def fetch_all(jobs, workers=8, label='Baixando'):
-    """Downloads [(urls, target)] several at a time; prints one line per file as it starts."""
+    """Downloads [(urls, target[, sha256])] in parallel; verified cached files are reused."""
     def one(job):
-        urls, target = job
+        urls, target, *expected = job
         with _lock:
             print(f'{label}: {Path(target).name}', flush=True)
-        return fetch(urls, target)
+        return fetch(urls, target, sha256=expected[0] if expected else None)
 
     with concurrent.futures.ThreadPoolExecutor(max(1, min(workers, len(jobs)))) as pool:
         return list(pool.map(one, jobs))

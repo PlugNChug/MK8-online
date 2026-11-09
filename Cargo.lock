@@ -1919,6 +1919,8 @@ version = "0.1.7"
 dependencies = [
  "mk8-manifest",
  "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

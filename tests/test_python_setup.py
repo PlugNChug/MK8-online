@@ -1,10 +1,12 @@
 """Exercise the PowerShell bootstrap with a verified private CPython archive."""
 import os
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = Path(os.environ.get('MK8_TEST_PYTHON_ARCHIVE', ROOT / 'local/python-bootstrap-check/python.3.12.10.zip'))
@@ -23,6 +25,17 @@ class PythonSetupTests(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('')
+            wheel = root / 'mk8_probe-1.0-py3-none-any.whl'
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('mk8_probe.py', 'VALUE = 42\n')
+                archive.writestr('mk8_probe-1.0.dist-info/METADATA', 'Metadata-Version: 2.1\nName: mk8-probe\nVersion: 1.0\n')
+                archive.writestr('mk8_probe-1.0.dist-info/WHEEL', 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
+                archive.writestr('mk8_probe-1.0.dist-info/RECORD', '')
+            requirement = root / 'upstream/smm2recomp/recomp/tools/requirements-gen.txt'
+            requirement.write_text('--no-index\n--find-links ' + root.as_uri() + '\nmk8-probe==1.0 --hash=sha256:'
+                                   + hashlib.sha256(wheel.read_bytes()).hexdigest() + '\n')
+            config = root / 'bad-pip.ini'
+            config.write_text('[global]\nno-binary = :all:\nindex-url = https://invalid.invalid/simple\n')
             environment = root / 'local/python'
             environment.mkdir(parents=True)
             (environment / 'user-marker').write_text('preserve')
@@ -31,7 +44,8 @@ class PythonSetupTests(unittest.TestCase):
             def run(download):
                 command = download + "\n& '" + str(scripts / 'setup-tools.ps1').replace("'", "''") + "'"
                 return subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
-                    env=dict(os.environ, PIP_NO_INDEX='1', PIP_DISABLE_PIP_VERSION_CHECK='1'),
+                    env=dict(os.environ, PIP_NO_BINARY=':all:', PIP_CONFIG_FILE=str(config),
+                             PIP_INDEX_URL='https://invalid.invalid/simple', PYTHONHOME='Z:/missing-python'),
                     capture_output=True, text=True, timeout=180)
             bad = run("function Invoke-WebRequest { param([switch]$UseBasicParsing, $Uri, $OutFile); Set-Content -LiteralPath $OutFile -Value bad }")
             self.assertNotEqual(bad.returncode, 0)
@@ -44,6 +58,7 @@ class PythonSetupTests(unittest.TestCase):
             python = environment / 'Scripts/python.exe'
             version = subprocess.check_output([python, '-c', 'import sys; print(sys.version_info[:2])'], text=True)
             self.assertIn('(3, 12)', version)
+            self.assertEqual(subprocess.check_output([python, '-c', 'import mk8_probe; print(mk8_probe.VALUE)'], text=True).strip(), '42')
             before = python.stat().st_mtime_ns
             reused = run('function Invoke-WebRequest { throw "Unexpected download" }')
             self.assertEqual(reused.returncode, 0, reused.stdout + reused.stderr)

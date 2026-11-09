@@ -236,6 +236,12 @@ fn spawn_game(
             .env("LARECOMP_LAN_ROOM", "MK8ONLINE")
             .env("LARECOMP_LAN_SLOT", slot.to_string());
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // The independent supervisor has no console for the runtime to inherit.
+        cmd.creation_flags(0x08000000);
+    }
     cmd.spawn().map_err(|e| format!("Falha ao abrir jogo: {e}"))
 }
 

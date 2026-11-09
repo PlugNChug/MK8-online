@@ -58,6 +58,39 @@ class LauncherTests(unittest.TestCase):
             process.terminate();process.wait(timeout=10)
         cls.temporary.cleanup()
 
+    def test_private_python_does_not_require_system_path(self):
+        baseline = self.page()
+        try:
+            token = baseline.locator('meta[name="mk8-token"]').get_attribute('content')
+            state = baseline.request.get(self.urls[0]+'/api/status', headers={'X-MK8-Token': token}).json()['data']
+            expected = [c for c in state['tools'] if 'Python' in c['name']]
+        finally:
+            baseline.close()
+        folder = Path(self.temporary.name) / 'without-system-python'
+        exe = os.environ.get('MK8_LAUNCHER_EXE', str(ROOT/'target/release/Launcher.exe'))
+        env = dict(os.environ, PATH='', PYTHONHOME='Z:/missing-python', PYTHONPATH='Z:/missing-modules')
+        process = subprocess.Popen([exe, '--headless', '--data-dir', str(folder)], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            start = time.monotonic()
+            while not (folder/'launcher.json').exists():
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic()-start, 20)
+                time.sleep(.05)
+            url = json.loads((folder/'launcher.json').read_text())['url']
+            page = self.browser.new_page()
+            try:
+                page.goto(url)
+                token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+                state = page.request.get(url+'/api/status', headers={'X-MK8-Token': token}).json()['data']
+                checks = [c for c in state['tools'] if 'Python' in c['name']]
+                self.assertEqual(len(checks), 1)
+                self.assertEqual(checks, expected)
+            finally:
+                page.close()
+        finally:
+            process.terminate(); process.wait(timeout=10)
+
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")

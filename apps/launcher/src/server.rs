@@ -124,13 +124,17 @@ impl App {
         if self.prepare_after_setup || self.build.poll().state == "running" {
             return Err("Aguarde a preparação para alterar os caminhos.".into());
         }
+        let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
         save(&self.local.join("config.json"), &config)?;
         self.config = config;
         Ok(())
     }
 
     fn start_build(&mut self) -> Result<()> {
-        save(&self.local.join("config.json"), &self.config)?;
+        {
+            let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
+            save(&self.local.join("config.json"), &self.config)?;
+        }
         self.build
             .start(&self.root, &self.local.join("config.json"), &self.local)
     }
@@ -331,8 +335,7 @@ impl App {
                     self.start_build()?;
                     Ok(json!({"message":"Preparando o jogo."}))
                 } else {
-                    self.setup
-                        .start(setup::steps(&self.root), &self.local.join("setup.log"))?;
+                    self.setup.start_guarded(&self.root, &self.local)?;
                     self.prepare_after_setup = true;
                     Ok(json!({"message":"Instalando ferramentas. A preparação começa em seguida."}))
                 }
@@ -347,8 +350,7 @@ impl App {
                         "Aguarde ou cancele a preparação antes de instalar ferramentas.".into(),
                     );
                 }
-                self.setup
-                    .start(setup::steps(&self.root), &self.local.join("setup.log"))?;
+                self.setup.start_guarded(&self.root, &self.local)?;
                 Ok(json!({"message":"Instalação de ferramentas iniciada. Acompanhe o progresso."}))
             }
             ("POST", "/api/setup/cancel") => {
@@ -377,9 +379,7 @@ impl App {
                 if self.setup.running() {
                     return Err("Aguarde a instalação de ferramentas terminar.".into());
                 }
-                save(&self.local.join("config.json"), &self.config)?;
-                self.build
-                    .start(&self.root, &self.local.join("config.json"), &self.local)?;
+                self.start_build()?;
                 Ok(json!({"message":"Preparação iniciada. Acompanhe o diagnóstico."}))
             }
             ("POST", "/api/build/cancel") => {
@@ -516,16 +516,19 @@ impl App {
                     None
                 };
                 console::ensure_hidden();
-                let signal = self.local.join("open-rooms");
-                if signal.exists() {
-                    fs::remove_file(signal).map_err(|e| e.to_string())?;
-                }
-                let child = if let Some(install) = install {
-                    mk8_installer::launch(&install, &self.local, net, &self.username)?
-                } else {
-                    let candidate = load(&self.local.join("candidate.json"))?;
-                    mk8_installer::launch_candidate(&candidate, &self.local, net, &self.username)?
+                let candidate = install.is_none();
+                let install = match install {
+                    Some(install) => install,
+                    None => load(&self.local.join("candidate.json"))?,
                 };
+                let child = crate::game_session::spawn(&crate::game_session::Request {
+                    root: self.root.clone(),
+                    local: self.local.clone(),
+                    install,
+                    network: net,
+                    username: self.username.clone(),
+                    candidate,
+                })?;
                 let pid = child.id();
                 self.game_exit = None;
                 self.game = Some(child);
@@ -571,6 +574,7 @@ impl App {
                 if self.host.is_some() || self.gateway.is_some() {
                     return Err("Encerre a sessão multijogador antes de atualizar.".into());
                 }
+                let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
                 let setup = update::download_and_start(&self.local)?;
                 self.exit_requested = true;
                 Ok(

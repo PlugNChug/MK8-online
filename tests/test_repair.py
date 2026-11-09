@@ -55,6 +55,30 @@ class RepairTests(unittest.TestCase):
         self.assertTrue((self.outside / "romfs/Course/track.bin").is_file())
         self.assertEqual(unlink_links_on_the_way(extracted / "romfs", self.data), [])
 
+    def test_removal_rejects_a_junction_in_an_ancestor(self):
+        self.data.mkdir()
+        junction(self.data / 'redirect', self.outside)
+        with self.assertRaises(ValueError):
+            remove_owned(self.data / 'redirect/romfs/Course', self.data)
+        with self.assertRaises(ValueError):
+            remove_owned(self.data / 'redirect/romfs/Course', self.data / 'redirect')
+        with self.assertRaises(ValueError):
+            unlink_links_on_the_way(self.data / 'redirect/romfs', self.data / 'redirect')
+        self.assertEqual((self.outside / 'romfs/Course/track.bin').read_bytes(), b'keep')
+
+    def test_read_only_file_is_not_forced_or_retried(self):
+        owned = self.data / 'builds/fixture'
+        owned.mkdir(parents=True)
+        file = owned / 'locked.bin'
+        file.write_bytes(b'keep')
+        os.chmod(file, 0o444)
+        try:
+            with self.assertRaises(PermissionError):
+                remove_owned(owned, self.data)
+            self.assertEqual(file.read_bytes(), b'keep')
+        finally:
+            os.chmod(file, 0o666)  # Restore this fixture's original permissions for test teardown.
+
     def test_leftovers_of_cut_off_steps_are_removed(self):
         imports = self.data / "imports"
         (imports / "mk8-stage-abc/output").mkdir(parents=True)

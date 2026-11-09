@@ -50,11 +50,8 @@ def setup():
     compiler = folder / name / 'zig.exe'
     recorded = marker.read_text(encoding='ascii').split() if marker.is_file() else []
     if not (len(recorded) == 2 and recorded[0] == SHA256 and compiler.is_file() and sha256(compiler) == recorded[1]):
-        if compiler.parent.exists() and not archive.exists():
-            shutil.rmtree(compiler.parent)  # (changed or unverifiable: installed again from the pinned archive)
-        if not archive.exists():
-            print('Downloading pinned Zig compiler...', flush=True)
-            fetch(f'https://ziglang.org/download/{VERSION}/{name}.zip', archive, parts=8)
+        print('Checking/downloading pinned Zig compiler...', flush=True)
+        fetch(f'https://ziglang.org/download/{VERSION}/{name}.zip', archive, parts=8, sha256=SHA256)
         if sha256(archive) != SHA256:
             raise ValueError('Zig archive hash mismatch')
         with zipfile.ZipFile(archive) as bundle:

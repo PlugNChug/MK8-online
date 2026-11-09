@@ -61,6 +61,12 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 Tools downloads a pinned CPython package, verifies SHA-256 and creates its local environment without changing system Python or PATH. Incompatible or incomplete environments are preserved in `local/python-backup-*` and recreated automatically. Available in 0.1.7; users of 0.1.6 can update through Support before retrying Tools.
 
+Source fixes awaiting the next release: readiness checks now use the private Python environment; package installation ignores external pip settings and requires verified binary wheels. Damaged download archives are fetched again, and invalid compilation-cache metadata triggers recovery instead of aborting preparation. These additional fixes are not included in the published 0.1.7 installer. See [technical status](docs/STATUS.md).
+
+Local stabilization also adds operation locks between launchers sharing data/tools and between pipeline runs sharing a data folder. Failed cancellation keeps the process tracked so cancellation can be retried. Cleanup rejects linked parent directories and stops on permission errors instead of forcing deletion. These protections are still under validation; see the remaining limitations in the technical status.
+
+The development launcher now supervises processes separately: closing or losing the launcher stops its tool/build processes, while a running game keeps its locks and can finish saving normally. Other instances cannot start another game with the same saves, rebuild, change paths or start an update against those resources. Games using separate data folders can share read-only tools. Closing the launcher still disconnects its multiplayer gateway; this does not provide session reconnection.
+
 ### Install and play
 
 1. Download `MK8-online-<version>-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases). Choose the application and data folders. Installation is per user, without administrator privileges.

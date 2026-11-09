@@ -105,6 +105,20 @@ class NativeCacheTests(unittest.TestCase):
         (self.builds/'b').rename(self.root/'b-moved')
         self.assertEqual(native.seed_cache(self.builds, third_cache), 4)
 
+    def test_invalid_receipts_do_not_block_resuming_a_build(self):
+        job = make_build(self.builds, 'repair')
+        first, _ = compile_build(job, self.cache)
+        for name, content in [('main_000', '{broken'), ('main_001', '[]')]:
+            (job/f'native-optimized/main/{name}.json').write_text(content)
+            address = first[name]['cache']
+            (self.cache/address[:2]/(address + '.json')).write_text(content)
+        second, _ = compile_build(job, self.cache)
+        self.assertIn('seconds', second['main_000'])
+        self.assertIn('seconds', second['main_001'])
+        self.assertEqual(first['main_002'], second['main_002'])
+        for name in ('main_000', 'main_001'):
+            self.assertIsNotNone(native.cache_lookup(self.cache, second[name]['cache']))
+
     def test_key_ignores_only_the_job_include_path(self):
         key = {'source': 'a' * 64, 'environment': 'b' * 64,
                'flags': ['-O1', '-IC:\\x\\builds\\one\\runtime\\runtime']}

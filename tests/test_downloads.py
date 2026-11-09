@@ -1,5 +1,6 @@
 """Parallel and ranged downloads put back exactly the served bytes, and fall back to the next mirror."""
 import http.server
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -85,6 +86,19 @@ class DownloadTests(unittest.TestCase):
         jobs = [([self.base + '/file.bin'], self.target.with_name(f'{i}.bin')) for i in range(5)]
         downloads.fetch_all(jobs, workers=3)
         self.assertTrue(all(target.read_bytes() == DATA for _, target in jobs))
+
+    def test_verified_download_repairs_bad_cache_and_reuses_good_cache(self):
+        expected = hashlib.sha256(DATA).hexdigest()
+        self.target.write_bytes(b'interrupted download')
+        downloads.fetch_all([(self.base + '/file.bin', self.target, expected)])
+        self.assertEqual(self.target.read_bytes(), DATA)
+        requests = len(Handler.requests)
+        downloads.fetch(self.base + '/missing.bin', self.target, sha256=expected)
+        self.assertEqual(len(Handler.requests), requests)
+        with self.assertRaisesRegex(ValueError, 'SHA-256 mismatch'):
+            downloads.fetch(self.base + '/file.bin', self.target, sha256='0' * 64)
+        self.assertEqual(self.target.read_bytes(), DATA)
+        self.assertFalse(self.target.with_name('file.bin.pending').exists())
 
 
 if __name__ == '__main__':
