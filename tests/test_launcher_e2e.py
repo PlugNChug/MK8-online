@@ -377,7 +377,8 @@ class LauncherTests(unittest.TestCase):
         token=page.locator('meta[name="mk8-token"]').get_attribute('content')
         headers={'X-MK8-Token':token}
         self.assertFalse(page.request.post(self.urls[0]+'/api/open',headers=headers,data='{"what":"reports"}').json()['ok'])
-        if not os.environ.get('MK8_UPDATE_REPO'):
+        updates = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']['updates']
+        if not updates['configured']:
             page.get_by_role('button',name='Verificar atualizações',exact=True).click()
             expect(page.locator('#notice')).to_contain_text('não configuradas')
             expect(page.get_by_role('button',name='Atualizar agora',exact=True)).to_be_disabled()

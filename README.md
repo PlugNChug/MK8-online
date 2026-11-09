@@ -13,7 +13,7 @@
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.5-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.6-ef795d)
 ![Status](https://img.shields.io/badge/Status-Experimental-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The latest VRAM and language changes are in the source/local build; they have not been published in a new installer.
+> **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.6 installer includes the latest VRAM and language changes.
 
 ## On the starting grid
 

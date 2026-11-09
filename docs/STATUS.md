@@ -1,5 +1,13 @@
 # Estado técnico — 08/11/2026
 
+## Release 0.1.6 (08/11/2026)
+
+Setup recompilado a partir do estado atual, com inglês/PT-BR e `MK8_UPDATE_REPO=Vnnc1/MK8-online`, preservando a nomenclatura `MK8-online-0.1.6-setup.exe` e `.exe.sha256`. SHA-256: `0ac78e37a7cbbb081f6a6b9cb7946a455fbe698208e4dd8dd65c9882f3b796d4` (55.499.776 bytes). A publicação também inclui os fontes `ffmpeg-9.0.2.tar.xz` e `build-ffmpeg.sh`; o workflow agora os anexa nas próximas tags. O launcher consulta releases publicadas, incluindo pré-releases, sem autenticação; requer repositório público. A visibilidade pública foi observada no GitHub durante esta preparação, sem alteração de visibilidade pelo agente. Publicação e consulta final ainda em andamento.
+
+Validação do pacote: runtime pré-compilado concluído, build Rust release concluída, formatação e Clippy sem avisos; 32 testes Rust aprovados. Dos 17 testes de launcher/navegador, 16 passaram de primeira; o teste de suporte pressupunha que ausência de variável de ambiente significava repositório não configurado e falhou porque a configuração agora está embutida. Corrigido para consultar o estado real da API, passou na repetição. Inclui janela nativa, idiomas e relay real em loopback. Os dois READMEs foram renderizados e seus previews conferidos.
+
+Instalação real em pasta isolada, abertura da versão 0.1.6 com idioma persistente e desinstalação passaram. O registro de desinstalação e os atalhos anteriores foram restaurados e conferidos. Dados de teste foram preservados. Uma primeira asserção supunha incorretamente que abrir o launcher criaria `config.json`; o teste passou após criar explicitamente o arquivo antes de verificar sua preservação. A verificação do binário final e dos 909 arquivos do payload não encontrou os identificadores pessoais conhecidos. Os 13 arquivos protegidos de configuração/perfis/saves mantêm seus hashes. Nenhuma corrida ou qualificação multiplayer adicional foi feita nesta etapa; `gameplay_verified` permanece falso.
+
 ## Apresentação pública e idiomas (08/11/2026)
 
 README principal refeito em inglês, com versão `README.pt-BR.md`, assinatura PNG e autoria RatOne em destaque, quadro de progresso, instalação, LAN/relay e medições contextualizadas. Nextendo aparece como investigação futura, sem integração ou compatibilidade presumida. GPL-3.0-or-later preservada: o snapshot SMM2Recomp contém GPLv3, embora parte da origem LASRecomp seja MIT; ver `THIRD_PARTY.md`.

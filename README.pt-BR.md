@@ -13,7 +13,7 @@
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release base](https://img.shields.io/badge/Release_base-0.1.5-ef795d)
+![Release base](https://img.shields.io/badge/Release_base-0.1.6-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Experimental-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,7 +28,7 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. As mudanças mais recentes de VRAM e idiomas estão nas fontes/build local; não foram publicadas em um novo instalador.
+> **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador 0.1.6 inclui as mudanças mais recentes de VRAM e idiomas.
 
 ## No grid de largada
 

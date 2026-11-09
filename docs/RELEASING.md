@@ -2,6 +2,10 @@
 
 Este é o fluxo para o mantenedor e para agentes de IA que preparam uma release. Os testadores recebem o `setup.exe` pelos Releases do GitHub e se atualizam pelo próprio Launcher (**Suporte → Atualizar agora**).
 
+O atualizador consulta a API pública do GitHub sem autenticação. O repositório e os anexos precisam estar públicos; enquanto estiverem privados, a consulta falha. A versão 0.1.6 foi empacotada com `MK8_UPDATE_REPO=Vnnc1/MK8-online`: mudar a visibilidade desse mesmo repositório para público não exige recompilar nem configurar o PC do jogador. Não embuta tokens no launcher.
+
+Para as versões seguintes, aumente a versão compilada e publique a tag correspondente com `MK8-online-<versão>-setup.exe` e `MK8-online-<versão>-setup.exe.sha256`. O SHA-256 deve ser calculado **depois** de qualquer mudança ou assinatura do executável. Anexe também os fontes/scripts FFmpeg exigidos abaixo. Drafts não são oferecidos; pré-releases publicadas são. A atualização é acionada pelo jogador, sem instalação automática ao abrir o launcher.
+
 ## Versões
 
 O projeto usa `MAJOR.MINOR.PATCH`, com sufixo de pré-release enquanto for experimental (por exemplo `0.2.0-alpha.1`). A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
