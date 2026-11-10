@@ -36,6 +36,8 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 ## On the starting grid
 
+**Mii parts, phase 1:** local AFL extraction produced 585 nonempty meshes and 247 textures with a hashed inventory. `toolchain/mii_library.py` reproduces this using a separately obtained, verified extractor/resource. These private assets are not bundled with the launcher; style mapping, materials and assembled-head validation remain pending.
+
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
 | Launcher | Native Windows window, guided preparation, installer, updates and reports; English and Brazilian Portuguese UI | End-to-end update against a published release |

@@ -1,5 +1,24 @@
 # Estado técnico — 10/11/2026
 
+## Biblioteca de peças Mii — fase 1, 10/11/2026
+
+Encontrada e extraída uma fonte de peças, sem automatizar exportações no Mii Creator: `AFLResHigh_2_3.dat`, do Miitomo, obtido pelo endereço público arquivado do antigo CDN indicado por jaames/mii-assets e FFL-Testing. O arquivo tem 4.579.008 bytes e SHA-256 `4a4be71d75162c20b48720ef89cd3d4e6cd4e8e21bcbc2aed63ee08d96de7722`. Não é o recurso NXTexture/Shape do SDK Switch e não deve ser passado ao caminho original de firmware como se fosse equivalente.
+
+Resultado em `local/mii-parts-library`: **585 malhas GLB com geometria, uma entrada vazia (`shape_359.glb`) e 247 PNGs**. O arquivo contém 859 entradas de malha e 365 de textura; entradas sem dados não produzem arquivos. `manifest.json` registra hashes por arquivo, contagens, atributos, limites espaciais, dimensões e limitações. Verificados cabeçalhos/chunks, buffers, índices, posições finitas e contagens dos atributos; todas as imagens foram decodificadas. Amostra de 48 texturas inspecionada em `texture-contact-sheet.png`, com olhos, sobrancelhas, óculos, bocas e outros detalhes. Isso valida a extração/inventário, não a montagem nem o desenho dessas peças no MK8.
+
+Adicionado `toolchain/mii_library.py`: recebe recurso e checkout externo já obtidos, verifica hashes, reserva de 4 GiB e saída nova; adapta em memória duas incompatibilidades do extrator antigo com NumPy/Pillow atuais, sem editar o código de terceiros. O arquivo de recursos e as seis fontes Python do extrator estão fixados por hash. O teste completo com o script terminou com saída 0; quatro testes sintéticos passaram, cobrindo geometria/limites, truncamento, índice inválido e rejeição de recurso desconhecido antes de criar a saída. Dependências usadas apenas na pasta privada de pesquisa: NumPy 2.5.4 e Pillow 13.0.0.
+
+Reprodução local (escolher uma pasta de saída que ainda não exista):
+
+```powershell
+$env:PYTHONPATH=(Resolve-Path local/mii-library-research/python-libs).Path
+local/python/Scripts/python.exe toolchain/mii_library.py local/mii-library-research/AFLResHigh_2_3.dat local/mii-library-research/mii-assets local/nova-biblioteca-mii
+```
+
+**Decisão da fase 1:** há uma fonte de peças e um caminho de extração offline; não é necessário exportar combinações em massa do site. O acesso público a `mii.nxw.pw/app` redireciona para login, e o repositório público do Creator se identifica como versão antiga. Não foram usados endpoints privados nem alterada a conta do usuário. O FFL.js é candidato para compor as peças a partir dos dados do perfil; ele continua exigindo o recurso AFL/FFL.
+
+**Próxima fase:** mapear IDs/variantes, validar transformação e materiais, compor duas cabeças diferentes e testar o resultado antes de conectar a seleção de peças ao launcher. Os GLBs extraídos não incluem normais nem materiais, e sua convenção UV precisa ser tratada. Biblioteca atual permanece privada, com `editor_ready=false`, `native_integration_verified=false` e `distribution_license_verified=false`; não foi incorporada ao instalador. Não foi confirmada licença de distribuição dos recursos nem licença explícita do extrator arquivado. Referências em `THIRD_PARTY.md`. A pesquisa encontrou também um visualizador Fusion, mas a página o identifica como demonstração, não biblioteca; seu código não foi incorporado. Nenhuma mudança no runtime, nos saves ou nos perfis; `gameplay_verified` continua falso.
+
 
 ## Cabe?a Mii no motor nativo: encaixe e textura corrigidos ? 10/11/2026
 

@@ -1,5 +1,15 @@
 # Dependências e atribuições
 
+## Biblioteca Mii — investigação e extração local, 10/11/2026
+
+- [jaames/mii-assets](https://github.com/jaames/mii-assets/tree/c2811a81cad8be5330d8153ef3fc5b51e651e9e2), revisão `c2811a81cad8be5330d8153ef3fc5b51e651e9e2`, arquivado. Créditos declarados: Jaames, Cholip e Kinnay. Extrai GLB/PNG de AFL/FFL; não foi encontrada licença explícita no checkout consultado. Fontes preservadas somente em `local/mii-library-research/mii-assets`, sem cópia para fontes públicas/pacote. O adaptador próprio verifica os hashes antes de executar esse checkout externo.
+- Recurso obtido do [arquivo público do CDN Miitomo](https://web.archive.org/web/20180502054513id_/http://download-cdn.miitomo.com/native/20180125111639/android/v2/asset_model_character_mii_AFLResHigh_2_3_dat.zip), link documentado pelos projetos de pesquisa. `AFLResHigh_2_3.dat`, 4.579.008 bytes, SHA-256 `4a4be71d75162c20b48720ef89cd3d4e6cd4e8e21bcbc2aed63ee08d96de7722`. Recurso e derivados permanecem privados; disponibilidade do download não foi tratada como licença para distribuir as peças no launcher.
+- [FFL.js](https://github.com/ariankordi/FFL.js), AGPL-3.0: candidato para composição/renderização a partir dos dados Mii; o README confirma dependência de AFL/FFL separado. Não incorporado nesta fase.
+- [Resource Shape Viewer](https://ariankordi.net/uploads/2026-q2-update/2026-05-23-mii-fusion-shape-viewer): demonstração Fusion com exportação individual, suporte a diferentes recursos e sem tratamento completo de texturas; a página informa que ainda não é uma biblioteca pública e pede que seu código não seja extraído. Consultada como referência de disponibilidade, sem copiar código.
+- [Mii Creator público](https://github.com/datkat21/mii-creator): identificado pelo autor como versão muito antiga. A consulta pública ao site atual redirecionou para login. Não se presumiu que a API ou o formato interno atual corresponda ao repositório antigo.
+
+NumPy 2.5.4 e Pillow 13.0.0 foram instalados por wheels somente em `local/mii-library-research/python-libs`; seus metadados e licenças permanecem junto às dependências. Nenhum pacote ou recurso dessa pesquisa foi adicionado ao instalador.
+
 Referência de diagnóstico de hardware (08/11/2026): [Intel — driver gráfico para processadores de 7ª a 10ª geração](https://www.intel.com/content/www/us/en/download/776137/intel-7th-10th-gen-processor-graphics-windows.html), pacote que inclui o i3-10110U e Windows 10. Consultado para o bloqueio Vulkan 1.2.131 descrito em `STATUS.md`; o driver não é distribuído pelo projeto, e sua compatibilidade com o runtime nessa máquina ainda precisa ser testada.
 
 O código próprio usa GPL-3.0-or-later (`../LICENSE`). Os snapshots e bibliotecas mantêm suas licenças originais. Nomes em caminhos, símbolos e identificadores serializados são contratos de integração, não alegações de equivalência entre projetos.
