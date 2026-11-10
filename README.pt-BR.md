@@ -151,7 +151,7 @@ O candidato local mais recente percorreu as quatro pistas da Mushroom Cup e volt
 
 As medições excluem janelas de captura e não garantem 60 FPS em todas as cenas ou em outros PCs. O primeiro uso de shaders ainda pode causar engasgos ou ausência temporária de efeitos durante a compilação.
 
-As alterações de fontes de 10 de novembro acrescentam liberação dos pools de descritores e do histórico de cubemaps, preservando as referências de comandos gravados e da apresentação. Os testes nativos e a compilação completa do runtime são verificados separadamente do gameplay; a redução de VRAM ou melhora de FPS **ainda não foi medida**. Após preparar as ferramentas e fontes fixadas, execute `python scripts/verify-graphics.py`. O [estado técnico](docs/STATUS.md) contém o roteiro de validação em sessões longas.
+As alterações de fontes de 10 de novembro acrescentam liberação dos pools de descritores e do histórico de cubemaps, crescimento das tabelas de shaders, eliminação de pedidos duplicados e correção de uma disputa na fila de compilação. Os testes nativos agora habilitam assertions explicitamente; a suíte ampliada e a compilação completa do runtime são verificadas separadamente do gameplay. A redução de VRAM ou melhora de FPS **ainda não foi medida**. Após preparar as ferramentas e fontes fixadas, execute `local/python/Scripts/python.exe scripts/verify-graphics.py`. O [estado técnico](docs/STATUS.md) contém o roteiro de validação em sessões longas.
 
 ## Ajude a melhorar a próxima volta
 

@@ -177,7 +177,7 @@ int main(int argc, char **argv) {
 ''', encoding='utf-8')
             env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
             exe = out/'retire.exe'
-            result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1',
+            result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
                                      '-I'+str(ROOT/'runtime/mk8'), str(source), '-o', str(exe)],
                                     capture_output=True, text=True, env=env)
             self.assertEqual(result.returncode, 0, result.stderr)

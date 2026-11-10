@@ -7,10 +7,12 @@ Reports the mean FPS, percentiles and how many frames missed the 60 Hz budget, p
 into backend execution, shader prefetch, presentation and the rest (as the runtime logs them).
 """
 import argparse
+import math
 from pathlib import Path
 import re
 
-FRAME = re.compile(r'^\[frame\] (\d+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)', re.M)
+NUMBER = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+FRAME = re.compile(r'^\[frame\] (\d+)' + (r' (' + NUMBER + r')') * 5 + r'\s*$', re.M)
 SHOT = re.compile(r'saved .*frame-(\d+)\.png')
 
 
@@ -25,11 +27,14 @@ def stats(session, first, last, slowest):
     shots = {int(n) for n in SHOT.findall(text)}
     near = {f + d for f in shots for d in range(-3, 4)}
     rows = [(int(m[0]), *map(float, m[1:])) for m in FRAME.findall(text)]
+    rows = [r for r in rows if r[1] > 0 and all(math.isfinite(v) for v in r[1:])]
+    rejected = len(re.findall(r'^\[frame\]', text, re.M)) - len(rows)
     rows = [r for r in rows if first <= r[0] <= last and r[0] not in near]
     if not rows:
         return f'{log}: no [frame] lines in {first}-{last} (run with LARECOMP_VK_PROF=1 MK8_FRAME_TIMES=1)'
     total = [r[1] for r in rows]
     out = [f'{log.parent.name}: {len(rows)} frames {rows[0][0]}-{rows[-1][0]}',
+           f'  rejected invalid rows in log: {rejected}; capture-adjacent frames excluded',
            f'  mean {1000 * len(total) / sum(total):.2f} FPS | p50 {percentile(total, 50):.2f} | p95 {percentile(total, 95):.2f}'
            f' | p99 {percentile(total, 99):.2f} | max {max(total):.2f} ms',
            '  over budget: ' + ', '.join(f'>{b} ms {sum(t > b for t in total)}' for b in (17.5, 20, 25, 33.4, 50))]

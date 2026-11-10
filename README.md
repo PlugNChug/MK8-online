@@ -153,7 +153,7 @@ These measurements exclude capture windows and do not guarantee 60 FPS throughou
 
 Recent changes fix command-list references surviving buffer/pool finalization and use preferred 128 MiB VMA allocation blocks. **VRAM still grows between tracks**: heap 0 reserved memory peaked at 1,648 MiB and remained reserved after returning to the menu. That figure is an allocator measurement, not total Windows GPU memory use; the isolated benefit of smaller blocks is still unproven. Direct image release remains experimental and disabled by default. See [measurements and remaining investigations](docs/STATUS.md).
 
-Source changes dated 10 November add descriptor-pool and cubemap-history cleanup with ownership retained by recorded commands and presentation. The native regression suite and a full runtime build are checked separately from gameplay; reduced VRAM or better FPS has **not** yet been measured. Run `python scripts/verify-graphics.py` after setting up the pinned tools and upstream sources. See [the validation checklist](docs/STATUS.md) before testing long sessions.
+Source changes dated 10 November add descriptor-pool and cubemap-history cleanup, growing shader lookup tables, deduplicated prefetch requests and a compilation-queue race fix. Native tests now explicitly enable assertions; the expanded suite and a full runtime build are checked separately from gameplay. Reduced VRAM or better FPS has **not** yet been measured. Run `local/python/Scripts/python.exe scripts/verify-graphics.py` after setting up the pinned tools and upstream sources. See [the validation checklist](docs/STATUS.md) before testing long sessions.
 
 ## Help improve the next lap
 

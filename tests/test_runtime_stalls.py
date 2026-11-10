@@ -181,10 +181,9 @@ class RuntimeStallTests(unittest.TestCase):
                            check=True, capture_output=True, env=compiler_env())
             result = subprocess.run([exe], capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
-            # (the pipeline built before the thread started counts as saved: the thread starts with the cache)
-            # 110 s: 10 s after the one built at 100 s. 310 s: 10 s after the burst of 200-300 s ended, never in the
-            # middle of it. Nothing new afterwards, so no other save.
-            self.assertEqual(result.stdout.split(), ['110', '310'])
+            # Persist the initial build at 60 s; the 100 s build at 120 s (minimum interval).
+            # The burst ends at 300 s and saves at 310 s. No new builds means no further writes.
+            self.assertEqual(result.stdout.split(), ['60', '120', '310'])
 
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
     def test_textures_retired_on_a_game_thread_are_destroyed_by_the_translator(self):

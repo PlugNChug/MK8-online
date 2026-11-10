@@ -53,8 +53,13 @@ static struct { int vma; } g_vk;
 static float g_rs_x=1, g_rs_y=1;
 static unsigned retired, forgotten, creates, ended;
 static Dead deferred[16];
-static void defer(Dead d) { deferred[retired++]=d; }
-static void views_forget(TexBackend *b) { assert(b->image); forgotten++; }
+static void defer(Dead d) {
+    assert(d.img && d.mem);
+    for (unsigned i=0; i<retired; i++) assert(deferred[i].img != d.img);
+    deferred[retired++]=d;
+}
+// Real views_forget invalidates by backend pointer even after its image was retired.
+static void views_forget(TexBackend *b) { assert(b); forgotten++; }
 static void vk_collect_dead(void) {}
 static bool tex_scalable(NvnTexture *t) { (void)t; return false; }
 static bool mk8_vram_traced(void) { return false; }
@@ -93,14 +98,14 @@ int main(void) {
     assert(!nonalias.backend->image && outside.backend->image);
     backend_texture_destroyed(&b); backend_texture_destroyed(&c); backend_texture_destroyed(&d);
     backend_texture_destroyed(&upper); backend_texture_destroyed(&outside); backend_texture_destroyed(&nonalias);
-    assert(!g_nlive);
+    assert(!g_nlive && retired==7);
     return 0;
 }
 '''
             source = out/'pool.c'
             source.write_text(fixture + body + range_code + unlisted + checks, encoding='utf-8')
             exe = out/'pool.exe'
-            result = subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1',
+            result = subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
                                      source, '-o', exe], capture_output=True, text=True, env=compiler_env())
             self.assertEqual(result.returncode, 0, result.stderr)
             subprocess.run([exe], check=True, timeout=30, env=compiler_env())
@@ -140,7 +145,7 @@ int main(void) {
 }
 ''', encoding='utf-8')
             exe = out/'copies.exe'
-            result = subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1',
+            result = subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
                                      source, '-o', exe], capture_output=True, text=True, env=compiler_env())
             self.assertEqual(result.returncode, 0, result.stderr)
             subprocess.run([exe], check=True, timeout=30, env=compiler_env())

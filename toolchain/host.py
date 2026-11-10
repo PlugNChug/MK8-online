@@ -220,6 +220,8 @@ def prepare_host_sources(source, output):
     prepare_submit_ring(runtime)
     from shader_budget import prepare as prepare_shader_budget
     prepare_shader_budget(runtime)
+    from shader_storage import prepare as prepare_shader_storage
+    prepare_shader_storage(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread

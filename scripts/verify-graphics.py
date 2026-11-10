@@ -15,6 +15,7 @@ MODULES = [
     'test_descriptor_lifetime', 'test_texture_lifetime', 'test_texture_pool',
     'test_texture_memo', 'test_texture_init', 'test_pool_release', 'test_shader_budget',
     'test_runtime_stalls', 'test_compute_flush', 'test_gpu_sync', 'test_async_submit',
+    'test_shader_storage', 'test_frame_stats',
 ]
 
 
@@ -22,7 +23,8 @@ def main():
     missing = [p for p in (DEFAULT_COMPILER, DEPS/'include/SDL3/SDL.h',
                            DEPS/'include/vulkan/vulkan.h') if not p.is_file()]
     if missing:
-        raise SystemExit('Native prerequisites missing. Run scripts/setup-tools.ps1 first:\n' +
+        raise SystemExit('Native prerequisites missing. Run scripts/setup-tools.ps1, then scripts/setup-native.py '
+                         'and scripts/setup-runtime-deps.py with local/python/Scripts/python.exe:\n' +
                          '\n'.join(str(p) for p in missing))
     manifest = json.loads((ROOT/'upstream/manifests/smm2recomp.json').read_text(encoding='utf-8'))
     for relative, expected in manifest['files'].items():

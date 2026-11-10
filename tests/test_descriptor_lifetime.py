@@ -285,7 +285,7 @@ int main(int argc, char **argv) {
         cls.env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
         cls.env.pop('MK8_ASYNC_SUBMIT', None)
         cls.env.pop('MK8_TEXPOOL_CUBE_HISTORY', None)
-        result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1',
+        result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
                                  '-I'+str(cls.runtime), '-I'+str(DEPS/'include'), str(source), '-o', str(cls.exe)],
                                 env=cls.env, capture_output=True, text=True, timeout=300)
         if result.returncode:
