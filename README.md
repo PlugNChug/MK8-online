@@ -38,9 +38,11 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 **Mii parts, phase 1:** local AFL extraction produced 585 nonempty meshes and 247 textures with a hashed inventory. `toolchain/mii_library.py` reproduces this using a separately obtained, verified extractor/resource. These private assets are not bundled with the launcher; the composer below uses FFL to select and position the parts.
 
-**Phase 2:** the isolated local composer now builds two distinct heads from CharInfo using FFL.js, including normals/materials, bounded hair editing and GLB export. Browser tests reopen both exports and compare their pixels to the preview. The newly assembled heads still need native-game validation; see [status](docs/STATUS.md).
+**Phase 2:** the isolated local composer builds distinct heads from CharInfo using FFL.js, including normals/materials, bounded hair editing and GLB export. Browser tests reopen both exports and compare their pixels to the preview; see [status](docs/STATUS.md).
 
 **Phase 3:** the launcher now has **Perfil Mii → Editar Mii 3D**: select a saved profile, configure your local `AFLResHigh_2_3.dat`, edit Switch fields with a live head preview, then save the profile and its textured GLB together. Saved heads can be reopened/exported; profile changes invalidate stale heads. FFL.js/WASM code and its AGPL notice are bundled, while the AFL file stays private and is verified by hash. The editor does not apply these heads to MK8 yet. `python scripts/test-mii-composer.py` exercises the compiled debug launcher with disposable profiles and Chromium. See [third-party notices](docs/THIRD_PARTY.md) for the composition module's license.
+
+**Phase 4:** `toolchain/mii_native_head.py` converts supported launcher GLBs into private BFRES/Yaz0 overlays. Two different editor heads rendered on the native male Normal Suit driver in the kart menu and the opening section of Mario Kart Stadium. The converter handles node transforms, bone axes/scale and baked face textures, with identity/hash checks and explicit rejection of unsupported parts. Applying a selected profile automatically from the launcher is still pending. This remains a static shared-resource replacement, not independent heads for multiple players or a complete-race qualification. Reproduction and screenshots are recorded in [status](docs/STATUS.md).
 
 
 | Area | Current progress | Next checkpoint |
@@ -154,6 +156,16 @@ Set `MK8_RELAY_URL` to that HTTPS endpoint before running `python scripts/packag
 The daemon supports up to 16 rooms, with one host and up to 11 guests each. Rooms expire after four hours and are also removed after host inactivity. Treat codes and individual credentials as private.
 
 </details>
+
+### Steam rooms (experimental, `fix-multiplayer`)
+
+When `steam_api64.dll` is detected locally (from `MK8_STEAM_DLL`, `<data-dir>/steam_api64.dll`, or a local Steam game installation) and the Steam client is running, **Multiplayer → Create Steam room** creates a Steamworks lobby (`ISteamMatchmaking`) and routes all MK8 LAN traffic over `ISteamNetworking` P2P Relay (SDR) without VPN or firewall port forwarding:
+
+1. The host clicks **Create Steam room**, producing a single reusable `MK8S-…` room code and enabling **Invite friends on Steam** (`Shift+Tab` overlay).
+2. Friends paste the `MK8S-…` code under **Join** (or join directly via Steam invite / `+connect_lobby <id>`), automatically negotiating their dedicated authenticated channel with the host over Steam P2P.
+3. Once connected, everyone clicks **Play in room** and enters **LAN Play** (`L + R + left stick`) inside the game.
+
+No proprietary Valve DLL is bundled in the repository. Two-PC racing over Steam Relay still requires separate qualification; `gameplay_verified` remains `false`.
 
 ### Nextendo: developer prototype
 

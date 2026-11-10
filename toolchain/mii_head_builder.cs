@@ -20,8 +20,8 @@ public class HeadData { public HeadPart[] parts; public HeadTexture[] textures; 
 public class MiiHeadBuilder {
     static bool Finite(float n) { return !Single.IsNaN(n) && !Single.IsInfinity(n); }
     static void Validate(HeadData data,string root) {
-        if(data==null || data.parts==null || data.parts.Length!=4 || data.textures==null || data.textures.Length>8)
-            throw new InvalidDataException("Expected four opaque baked head parts and at most eight textures");
+        if(data==null || data.parts==null || data.parts.Length<3 || data.parts.Length>4 || data.textures==null || data.textures.Length>8)
+            throw new InvalidDataException("Expected face, nose, hair, optional forehead and at most eight textures");
         var names=new HashSet<string>();
         foreach(var t in data.textures) {
             if(t==null || t.name==null || !Regex.IsMatch(t.name,@"\A[a-z0-9_]{1,32}\z") || !names.Add(t.name)
@@ -51,6 +51,7 @@ public class MiiHeadBuilder {
             }
             if(p.indices.Any(i=>i>=p.positions.Length)) throw new InvalidDataException("Index outside vertex buffer");
         }
+        if(expected.Any(name=>name!="Forehead")) throw new InvalidDataException("Missing required opaque head part");
     }
     public static void Main(string[] args) {
         if(args.Length!=3) throw new ArgumentException("Usage: MiiHeadBuilder original-MiiM.bfres baked-head.json output.bfres");

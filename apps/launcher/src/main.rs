@@ -299,7 +299,10 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let parent = (!headless).then(|| Arc::new(OnceLock::new()));
-    let app = server::App::new(root, local.clone(), config, parent.clone());
+    let mut app = server::App::new(root, local.clone(), config, parent.clone());
+    if let Some(lobby) = argument(args, "+connect_lobby") {
+        app.auto_join_steam_lobby(&lobby);
+    }
     save(
         &local.join("launcher.json"),
         &json!({"url":url,"pid":std::process::id()}),

@@ -343,6 +343,17 @@ function renderInstall(status) {
 
 /* ---------- Multijogador ---------- */
 $("host").onclick = () => action(() => api("session/host", {}));
+$("host-steam").onclick = () =>
+  action(async () => {
+    const result = await api("session/host-steam", {});
+    try {
+      await navigator.clipboard.writeText(result.code);
+      return { message: "Sala Steam criada! Código copiado — envie aos amigos ou convide pela Steam." };
+    } catch {
+      return result;
+    }
+  });
+$("steam-invite").onclick = () => action(() => api("session/steam-overlay-invite", {}));
 $("host-internet").onclick = () =>
   action(async () => {
     const result = await api("session/host-internet", {});
@@ -501,15 +512,20 @@ async function refresh() {
   const session = status.session;
   const active = session.hosting || session.slot !== null;
   $("host").disabled = active || !!status.game_pid;
+  $("host-steam").disabled = active || !session.steam_available || !!status.game_pid;
   $("host-internet").disabled = active || !session.internet_available || !!status.game_pid;
+  i18n.text($("steam-note"), session.steam_available
+    ? "Steam detectada: crie uma sala sem precisar de VPN ou abrir portas no firewall."
+    : "Steam DLL (steam_api64.dll) não detectada neste PC.");
   i18n.text($("internet-note"), session.internet_available
     ? "Envie o código para amigos em outras redes."
     : "Relay público ainda não configurado nesta edição.");
   $("room-code-box").hidden = !session.room_code;
   $("room-code").value = session.room_code || "";
+  $("steam-invite").hidden = !session.steam_active;
   $("join").disabled = active || !!status.game_pid;
   $("leave").disabled = !active || !!status.game_pid;
-  $("invite").disabled = !session.hosting;
+  $("invite").disabled = !session.hosting || session.steam_active;
   i18n.text($("network-state"), session.connected ? "Transporte conectado" : active ? "Conectando" : "Desconectado");
   i18n.text($("network-mode"), session.diagnostic_only
     ? "Modo de teste: transporte sem jogo. Não representa uma corrida."

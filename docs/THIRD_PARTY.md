@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Conversão das cabeças do launcher — fase 4, 10/11/2026
+
+`toolchain/mii_native_head.py` é um adaptador próprio dos GLBs exportados pelo módulo FFL.js já atribuído abaixo. Usa os metadados das peças e transformações dos nós do arquivo; não incorpora tabelas de recursos ou código do extrator sem licença. Decodificação/redimensionamento PNG usa o Pillow privado já registrado. O construtor `mii_head_builder.cs` continua usando BfresLibrary 1.6.0 e DLLs Syroot do pacote privado com seus avisos preservados.
+
+GLBs, CharInfo, PNGs/RGBA derivados, BFRES, sobreposições Yaz0 e capturas dos dois perfis de teste permanecem em `local/`. O BFRES original é validado pelo mesmo hash registrado anteriormente. Nenhum recurso do jogo/AFL ou binário da ferramenta foi adicionado às fontes públicas. O manifesto da conversão registra hashes do GLB, BFRES original, construtor e sobreposição; evidências/limitações ficam em `STATUS.md`.
+
 ## Composição integrada ao launcher — fase 3, 10/11/2026
 
 A mesma revisão FFL.js `4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec` da fase 2 agora está em `apps/launcher/web/vendor/ffl`: bindings, WASM distribuído pelo autor, GeometryConverter, FFLShaderMaterial, LICENSE AGPL-3.0 e README com instruções de compilação/origem do FFL. Créditos: Arian Kordi e decompilação FFL de aboood40091. Hashes de todos os arquivos e URL da fonte estão no manifesto local. Arquivos copiados sem alteração; ao servir os módulos, o launcher resolve o import `three` para a versão local. Fontes correspondentes: [FFL.js nesta revisão](https://github.com/ariankordi/FFL.js/tree/4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec); instruções e dependências do WASM no README preservado. O modal oferece link para fonte e licença.

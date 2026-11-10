@@ -1,5 +1,44 @@
 # Estado técnico — 10/11/2026
 
+## Integração experimental com Steam Lobbies e P2P Relay (`fix-multiplayer`) — 10/11/2026
+
+Implementado em `crates/session/src/steam.rs` e integrado ao launcher (`apps/launcher/src/server.rs`, `apps/launcher/src/main.rs` e interface web) um adaptador dinâmico opcional para Steamworks (`ISteamMatchmaking` + `ISteamNetworking` P2P Relay), sem distribuir binários proprietários da Valve no repositório:
+
+- **Carregamento dinâmico (`LoadLibraryExW`):** procura `steam_api64.dll` em `MK8_STEAM_DLL`, na pasta de dados (`local/steam_api64.dll`), ao lado do executável ou em instalações locais da Steam (`steamapps/common`), configurando `SteamAppId=480` (ou `MK8_STEAM_APPID`) para testes.
+- **Código único `MK8S-…` e negociação automática de slots:** ao clicar em **Criar sala via Steam**, o anfitrião cria um lobby de até 12 jogadores na Steam e pré-aloca os 11 slots autenticados (`XChaCha20-Poly1305`) no `Host` local em `127.0.0.1:0`. Convidados que entram com o mesmo código `MK8S-…` ou via convite da Steam (`+connect_lobby <id>`) negociam automaticamente seu convite individual pelo canal de controle P2P (`P2P_CHANNEL_CONTROL`) e tunelam os pacotes `MMKDVL1` pelo canal de dados (`P2P_CHANNEL_DATA`) via Steam Datagram Relay, sem precisar de VPN, sem abrir a porta UDP `47820` no firewall e sem gerar convites individuais manualmente.
+- **Convite via Steam Overlay:** o botão **Convidar amigos na Steam** aciona `SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog` e publica Rich Presence (`+connect_lobby`).
+- **Validação executada:** formatação (`cargo fmt --all -- --check`), Clippy (`--workspace --all-targets -- -D warnings`), os 46 testes unitários Rust (incluindo roundtrip de `SteamCode` e teste determinístico de troca bidirecional de pacotes `MMKDVL1` sobre barramento P2P simulado) e os 18 testes de ponta a ponta em navegador (`test_launcher_e2e.py` e `test_launcher_languages.py`, com `mk8-relay` configurado, 0 skips) passaram. Corrida real entre dois PCs via Steam continua pendente de qualificação; `gameplay_verified` permanece `false`.
+
+## Cabeças do editor no MK8 — fase 4, 10/11/2026
+
+Dois modelos criados/salvos pelo editor do launcher foram convertidos e desenhados no **menu de kart e na pista do MK8 nativo**. O perfil A usa rosto 0, pele 2, cabelo 24; o perfil B usa rosto 4, pele 0, cabelo 33. São cabeças distintas, com quatro e três partes opacas respectivamente (o segundo cabelo não tem peça de testa). Os corpos e animações continuam vindo do recurso masculino Normal Suit. Não foi habilitado o renderer Mii original, nem alterado código guest/upstream, o RomFS original ou os perfis/saves pessoais.
+
+O novo `toolchain/mii_native_head.py` lê o GLB gerado pelo launcher e identifica as peças pelos metadados FFL `modulateType`. Valida CharInfo, envelope, buffers, índices, normais, limites, PNGs incorporados e transformações; recusa arquivos externos, extensões, animações e peças não suportadas. Aplica escala/translação dos nós de nariz e linha do nariz antes da conversão `(x,y,z) → (y,z,x) * 0,1` para o osso `Head`. Expande a UV espelhada da face e compõe máscara/linha do nariz em mapas opacos, multiplicando cores e misturando transparência em espaço linear. Mantém mapas sRGB, normal SNORM e brilho neutro do caminho anterior.
+
+O construtor C# foi recompilado e agora aceita a testa opcional, exigindo face, nariz e cabelo sem enfraquecer as validações existentes. Continua exigindo o hash do BFRES original MK8 4.0.1 e `Head` no índice 10. O empacotamento conserva o limite de 4 MiB, reserva de disco de 4 GiB e recusa de saídas existentes. A saída privada contém intermediários, perfil associado, BFRES, `romfs/Driver/MiiM.szs` e manifesto com hashes/escopo; o conversor também conserva o GLB de entrada nas novas saídas. Não é um importador de GLB arbitrário.
+
+**Evidência nativa inspecionada:**
+
+- A: sobreposição `local/mii-native-composer-a`, capturas em `local/race-time-trial-8w4elf4s`, saída 0 em 97,7 s.
+- B: sobreposição `local/mii-native-composer-b-short`, capturas em `local/race-time-trial-g9zz2cok`, saída 0 em 97,3 s.
+- Em ambos, `frame-02000.png` mostra rosto/cabelo no menu; `frame-03400.png` e `frame-04800.png` mostram a cabeça acompanhando o piloto na pista. Os trechos finais mediram aproximadamente 58–60 FPS, com pausas anteriores de compilação de shaders. O cabelo longo ainda apresenta sombreamento irregular nas pontas; não há equivalência visual geral com o renderer FFL.
+
+O roteiro acelera até a barreira na primeira volta: **não é corrida completa**. Não foram qualificados áudio, controle físico, save/reinício de corrida, velocidade global do relógio ou multiplayer. `gameplay_verified=false` e `multiplayer_verified=false` permanecem nos manifestos.
+
+Validação adicional: 18 testes Python passaram (geometria, transformações, cor linear/sRGB, composição, rejeições, arquivos sem sobrescrita e roteiro). O executável C# rejeitou um índice fora do buffer antes de escrever BFRES. O teste Chromium do launcher passou novamente e agora exporta os dois GLBs. `scripts/test-race.py --mii-profile` copia o perfil indicado para a sessão isolada, permitindo testar cada cabeça sem trocar o perfil pessoal ativo.
+
+Reproduzir com as dependências privadas já disponíveis nesta máquina (a pasta de saída precisa ser nova):
+
+```powershell
+$env:PYTHONPATH=(Resolve-Path local/mii-library-research/python-libs).Path
+local/python/Scripts/python.exe toolchain/mii_native_head.py local/mii-composer-check/profile-B.glb local/nova-cabeca-nativa --original local/mii-native-probe/MiiM.bfres --builder local/mii-native-probe/MiiHeadBuilder.exe
+local/python/Scripts/python.exe scripts/test-race.py time-trial --character mii --mii-profile local/nova-cabeca-nativa/mii-profile.json --last-frame 4800 --shots 3 --shot-step 1400 --timeout 180 --env RECOMP_MOD_DIR=C:/Users/dzvini/Documents/MK8-online/local/nova-cabeca-nativa
+```
+
+Antes de usar o conversor com uma versão alterada do construtor, recompilar `toolchain/mii_head_builder.cs` com o `csc.exe` do .NET Framework, referências `System.Web.Extensions`, `System.Core` e as quatro DLLs net48 do BfresLibrary privado; manter as DLLs junto ao executável. O hash do construtor executado é registrado no manifesto.
+
+**Próxima fase:** ligar a conversão e a seleção da sobreposição ao perfil escolhido no launcher, para aplicação na próxima abertura, com detecção de modelo desatualizado. Esta etapa ainda usa CLI/roteiro de desenvolvimento. A substituição é de `MiiM.szs` inteiro: todos os pilotos que compartilhem esse recurso podem receber a mesma cabeça. Feminino, carecas sem malha de cabelo, barbas/óculos com peças adicionais, expressões animadas, retratos, roupas alternativas e vários Miis simultâneos exigem trabalho separado. Não há troca de modelo durante partida nem modal dentro do renderizador.
+
 ## Editor e perfis Mii — fase 3, 10/11/2026
 
 O launcher agora oferece **Perfil Mii → Editar Mii 3D**. O usuário cria/seleciona um perfil existente, informa o caminho do AFL local verificado, edita os 49 campos Switch com prévia das peças reais e salva perfil + GLB texturizado. A cabeça pode ser girada, ampliada, reaberta e exportada. Criação/nome continuam no formulário principal; o modal faz a edição completa da cabeça. Altura, porte e campos administrativos são preservados no CharInfo, mas não mudam a prévia de cabeça isolada. Interface em português/inglês. Não há modal dentro do renderizador do jogo.

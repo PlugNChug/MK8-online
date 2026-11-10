@@ -136,7 +136,7 @@ def run(args):
     if args.cache_from:
         shutil.copytree(args.cache_from, data / 'cache')
     profile = session / 'mii-profile.json'
-    shutil.copyfile(LOCAL / 'mii-profile.json', profile)
+    shutil.copyfile(args.mii_profile or LOCAL / 'mii-profile.json', profile)
 
     script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track,
                         args.character)
@@ -193,6 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--character', choices=['mario', 'mii'], default='mario',
                         help='Mii selects the first profile and Normal Suit; does not enable model rendering')
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
+    parser.add_argument('--mii-profile', type=Path, help='Copy this profile into the isolated test; never modify it')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
                         help='Time Trial course in Mushroom Cup')
     parser.add_argument('--cup', choices=CUPS, default='mushroom', help='Time Trial cup (with --track)')

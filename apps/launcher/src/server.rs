@@ -1,6 +1,10 @@
 use mk8_build_manager::Manager;
 use mk8_manifest::{load, save, Config, Installation, Result};
-use mk8_session::{discover, Gateway, Host, Invite, DISCOVERY_PORT};
+use mk8_session::{
+    discover,
+    steam::{self, SteamRoom},
+    Gateway, Host, Invite, DISCOVERY_PORT,
+};
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -30,6 +34,7 @@ pub struct App {
     tools: Vec<Value>,
     host: Option<Host>,
     internet_room: Option<InternetRoom>,
+    steam_room: Option<SteamRoom>,
     gateway: Option<Gateway>,
     game: Option<Child>,
     game_exit: Option<String>,
@@ -109,6 +114,7 @@ impl App {
             tools,
             host: None,
             internet_room: None,
+            steam_room: None,
             gateway: None,
             game: None,
             game_exit: None,
@@ -119,6 +125,15 @@ impl App {
             window,
             exit_requested: false,
             last_report: None,
+        }
+    }
+
+    pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
+        let identity = self.identity();
+        if let Ok((room, gateway)) = SteamRoom::join_live(&self.local, lobby_id, &identity) {
+            self.steam_room = Some(room);
+            self.gateway = Some(gateway);
+            self.room_menu += 1;
         }
     }
 
@@ -259,7 +274,13 @@ impl App {
                 .to_string_lossy()
                 .into_owned();
         }
-        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        let steam_status = steam::probe_status(&self.local);
+        let room_code = self
+            .internet_room
+            .as_ref()
+            .map(|room| &room.code)
+            .or_else(|| self.steam_room.as_ref().map(|room| &room.code));
+        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
@@ -510,6 +531,7 @@ impl App {
                 if self.gateway.is_some()
                     || self.host.is_some()
                     || self.internet_room.is_some()
+                    || self.steam_room.is_some()
                     || self.game.is_some()
                 {
                     return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
@@ -529,6 +551,35 @@ impl App {
                     json!({"code":code,"message":"Sala criada no relay. Aguarde a confirmação da conexão."}),
                 )
             }
+            ("POST", "/api/session/host-steam") => {
+                if self.gateway.is_some()
+                    || self.host.is_some()
+                    || self.internet_room.is_some()
+                    || self.steam_room.is_some()
+                    || self.game.is_some()
+                {
+                    return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
+                }
+                let (room, host, invite) =
+                    SteamRoom::host_live(&self.local, &self.identity(), &self.username)?;
+                let gateway = Gateway::start(invite)?;
+                let code = room.code.clone();
+                let lobby_id = room.lobby_id.to_string();
+                self.gateway = Some(gateway);
+                self.host = Some(host);
+                self.steam_room = Some(room);
+                Ok(
+                    json!({"code":code,"lobby_id":lobby_id,"message":"Sala Steam criada! Envie o código MK8S-… ou convide amigos pela Steam."}),
+                )
+            }
+            ("POST", "/api/session/steam-overlay-invite") => {
+                let room = self
+                    .steam_room
+                    .as_ref()
+                    .ok_or("Crie ou entre em uma sala Steam primeiro.")?;
+                room.open_invite_overlay()?;
+                Ok(json!({"message":"Lista de convites da Steam solicitada (Shift+Tab)."}))
+            }
             ("POST", "/api/session/invite") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 let host = self.host.as_ref().ok_or("Crie uma sala primeiro")?;
@@ -544,7 +595,11 @@ impl App {
                 )
             }
             ("POST", "/api/session/join") => {
-                if self.gateway.is_some() || self.host.is_some() || self.game.is_some() {
+                if self.gateway.is_some()
+                    || self.host.is_some()
+                    || self.steam_room.is_some()
+                    || self.game.is_some()
+                {
                     return Err("Encerre a sessão atual antes de entrar em outra.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -553,6 +608,14 @@ impl App {
                     .ok_or("Convite ou código ausente")?
                     .trim();
                 let identity = self.identity();
+                if text.starts_with("MK8S-") || text.starts_with("steam://") {
+                    let (room, gateway) = SteamRoom::join_live(&self.local, text, &identity)?;
+                    self.steam_room = Some(room);
+                    self.gateway = Some(gateway);
+                    return Ok(
+                        json!({"message":"Conectado via Steam Relay! Use Jogar na sala para entrar no lobby."}),
+                    );
+                }
                 let invite = if text.starts_with("MK8-") {
                     InternetRoom::join(text, &identity)?
                 } else {
@@ -567,6 +630,7 @@ impl App {
                 }
                 self.gateway = None;
                 self.host = None;
+                self.steam_room = None;
                 if let Some(room) = self.internet_room.take() {
                     room.close().map_err(|_| {
                         "Sessão local encerrada. O relay não confirmou o fechamento da sala."

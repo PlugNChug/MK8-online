@@ -432,5 +432,15 @@
   "Valor fora do intervalo: {0}": "Value out of range: {0}",
   "Selecione o arquivo AFL local para montar o Mii.": "Select the local AFL file to assemble the Mii.",
   "O perfil mudou. Reabra o editor antes de salvar.": "The profile changed. Reopen the editor before saving.",
-  "Não há modelo atualizado salvo para este perfil.": "There is no up-to-date model saved for this profile."
+  "Não há modelo atualizado salvo para este perfil.": "There is no up-to-date model saved for this profile.",
+  "Criar sala via Steam": "Create Steam room",
+  "Convidar amigos na Steam": "Invite friends on Steam",
+  "Steam detectada: crie uma sala sem precisar de VPN ou abrir portas no firewall.": "Steam detected: create a room without VPN or firewall port forwarding.",
+  "Steam DLL (steam_api64.dll) não detectada neste PC.": "Steam DLL (steam_api64.dll) not detected on this PC.",
+  "Sala Steam criada! Código copiado — envie aos amigos ou convide pela Steam.": "Steam room created! Code copied — send it to friends or invite through Steam.",
+  "Sala Steam criada! Envie o código MK8S-… ou convide amigos pela Steam.": "Steam room created! Send the MK8S-… code or invite friends on Steam.",
+  "Lista de convites da Steam solicitada (Shift+Tab).": "Steam invite dialog requested (Shift+Tab).",
+  "Conectado via Steam Relay! Use Jogar na sala para entrar no lobby.": "Connected via Steam Relay! Use Play in room to join the lobby.",
+  "O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.": "The Steam client is not running. Open Steam and sign in before creating or joining a room.",
+  "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.": "Could not connect to the Steam client. Make sure you are signed in to Steam (AppID 480) and try again."
 }

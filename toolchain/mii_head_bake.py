@@ -96,7 +96,7 @@ def bary(p, a, b, c):
     v = ((c[1] - a[1]) * (p[0] - c[0]) + (a[0] - c[0]) * (p[1] - c[1])) / den
     return (u, v, 1 - u - v) if min(u, v, 1 - u - v) >= -1e-05 else None
 
-def blend(target, mask, size, base, root, data):
+def blend(target, mask, size, base, root, data, linear=False):
     out = bytearray(base)
     tex = next((t for t in data['textures'] if t['name'] == mask['texture']))
     rgba = (root / (mask['texture'] + '.rgba')).read_bytes()
@@ -130,9 +130,21 @@ def blend(target, mask, size, base, root, data):
                     oi = 4 * (y * size[0] + x)
                     alpha = rgba[si + 3] / 255
                     for c in range(3):
-                        out[oi + c] = round(rgba[si + c] * alpha + out[oi + c] * (1 - alpha))
+                        if linear:
+                            value = srgb_decode(rgba[si + c] / 255) * alpha + srgb_decode(out[oi + c] / 255) * (1 - alpha)
+                            out[oi + c] = round(srgb_encode(value) * 255)
+                        else:
+                            out[oi + c] = round(rgba[si + c] * alpha + out[oi + c] * (1 - alpha))
                     break
     return out
+
+
+def srgb_decode(value):
+    return value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
+
+
+def srgb_encode(value):
+    return 12.92 * value if value <= .0031308 else 1.055 * value ** (1 / 2.4) - .055
 
 def bake(source, output):
     source, output = (Path(source), Path(output))

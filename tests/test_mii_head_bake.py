@@ -44,6 +44,8 @@ class MiiHeadBakeTests(unittest.TestCase):
             out = blend(target, mask, (2, 2), bytes([255]*16), root, data)
             self.assertEqual(out[:4], bytes([255, 127, 127, 255]))
             self.assertEqual(out[-4:], bytes([255]*4))
+            linear = blend(target, mask, (2, 2), bytes([255]*16), root, data, linear=True)
+            self.assertEqual(linear[:4], bytes([255, 187, 187, 255]))
             target['normals'] = [[0, -1, 0]]*3
             self.assertEqual(blend(target, mask, (2, 2), bytes([255]*16), root, data),
                              bytes([255]*16))

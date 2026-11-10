@@ -92,13 +92,16 @@ def run():
                 expect(page.locator('#mii-full-fields input')).to_have_count(49)
                 page.locator('#mii-compose-open').click()
                 expect(page.locator('#mii-compose-reopen')).to_be_disabled()
-                hair.fill('12')
+                hair.fill('33')
                 page.locator('#mii-full-fields input[data-offset="45"]').fill('4')
                 page.locator('#mii-full-save').click()
                 expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
                 head_b = api('mii/composer')['head']
                 assert head_b['sha256'] != head_a['sha256']
                 page.locator('#mii-compose-canvas').screenshot(path=str(output/'profile-B.png'))
+                with page.expect_download() as download_b:
+                    page.locator('#mii-compose-export').click()
+                download_b.value.save_as(output/'profile-B.glb')
                 # A delayed save for A must not overwrite the newly selected B.
                 api('mii/composer/save', {'expected': before, 'data': before, 'glb': list(glb)}, 400)
                 assert api('mii/composer')['head'] == head_b

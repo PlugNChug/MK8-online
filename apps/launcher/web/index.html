@@ -252,12 +252,17 @@
               <h2>Criar sala</h2>
               <div class="row">
                 <button id="host" class="primary">Criar sala na rede local</button>
+                <button id="host-steam" class="ghost">Criar sala via Steam</button>
                 <button id="host-internet" class="ghost" disabled>Criar sala pela internet</button>
               </div>
+              <p id="steam-note" class="hint"></p>
               <p id="internet-note" class="hint"></p>
               <div id="room-code-box" hidden>
                 <label>Código da sala<input id="room-code" readonly /></label>
-                <button id="copy-room-code" class="ghost">Copiar código</button>
+                <div class="row">
+                  <button id="copy-room-code" class="ghost">Copiar código</button>
+                  <button id="steam-invite" class="ghost" hidden>Convidar amigos na Steam</button>
+                </div>
               </div>
               <button id="invite" class="ghost" disabled>Novo convite</button>
               <div id="invite-output" hidden>

@@ -12,6 +12,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+pub mod steam;
+
 pub const DISCOVERY_PORT: u16 = 47820;
 const PROBE: &[u8] = b"MK8-DISCOVER-1 ";
 
