@@ -27,20 +27,36 @@ REGISTER_OLD = '''    NvnTexEntry *e = &((NvnTexEntry *)d->entries)[id];
 
 SUPPORT = '''
 // MK8 (toolchain/texture_pool.py): the last cube map registered under each ID of a texture pool
-static struct { NvnDescPool *pool; NvnTexEntry *cubes; } mk8_cube_ids[64];
+typedef struct Mk8CubeHistory {
+    NvnDescPool *pool;
+    int count;
+    NvnTexEntry *cubes;
+    struct Mk8CubeHistory *next;
+} Mk8CubeHistory;
+static Mk8CubeHistory *mk8_cube_ids;
 static pthread_mutex_t mk8_cube_lock = PTHREAD_MUTEX_INITIALIZER;
 static NvnTexEntry *mk8_cube_table(NvnDescPool *d, bool create) {  // (mk8_cube_lock held)
-    for (int i = 0; i < 64 && mk8_cube_ids[i].pool; i++) if (mk8_cube_ids[i].pool == d) return mk8_cube_ids[i].cubes;
+    for (Mk8CubeHistory *h = mk8_cube_ids; h; h = h->next) if (h->pool == d) return h->cubes;
     if (!create) return NULL;
-    for (int i = 0; i < 64; i++)
-        if (!mk8_cube_ids[i].pool) {
-            NvnTexEntry *cubes = calloc((size_t)d->count, sizeof *cubes);
-            if (!cubes) return NULL;
-            mk8_cube_ids[i].cubes = cubes;
-            mk8_cube_ids[i].pool = d;
-            return cubes;
-        }
-    return NULL;
+    Mk8CubeHistory *h = calloc(1, sizeof *h);
+    if (!h) FATAL("Cube history allocation failed\\n");
+    h->cubes = calloc((size_t)d->count, sizeof *h->cubes);
+    if (!h->cubes) FATAL("Cube history entries allocation failed\\n");
+    h->pool = d; h->count = d->count; h->next = mk8_cube_ids; mk8_cube_ids = h;
+    return h->cubes;
+}
+// Called only after the pool's game, command-list and executor references are gone.
+void mk8_cube_forget(NvnDescPool *d) {
+    pthread_mutex_lock(&mk8_cube_lock);
+    Mk8CubeHistory **p = &mk8_cube_ids;
+    while (*p && (*p)->pool != d) p = &(*p)->next;
+    Mk8CubeHistory *h = *p;
+    if (h) *p = h->next;
+    pthread_mutex_unlock(&mk8_cube_lock);
+    if (!h) return;
+    for (int i = 0; i < h->count; i++) mk8_texture_release(h->cubes[i].tex);
+    free(h->cubes);
+    free(h);
 }
 static void mk8_cube_note(NvnDescPool *d, int id, const NvnTexEntry *e) {  // a registration of a cube map
     pthread_mutex_lock(&mk8_cube_lock);

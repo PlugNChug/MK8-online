@@ -73,6 +73,7 @@ static void *mk8_q_worker(void *arg) {
             renderer_prefetch_verify();
         } else if (it->kind == MK8_Q_PRESENT) {
             mk8_present_now(it->tex);
+            mk8_texture_release(it->tex);
         } else {
             // (the open submission goes out here, on this thread: a SyncWait then only waits for the GPU and never
             // flushes from the game's thread, which would record into this thread's command buffers)
@@ -100,6 +101,7 @@ static uint64_t mk8_q_put(Mk8QItem *it, NvnSync **syncs, int nsyncs) {
         started = true;
     }
     it->ticket = ++mk8_q_issued;
+    if (it->kind == MK8_Q_PRESENT) it->tex = mk8_texture_retain(it->tex);
     for (int i = 0; i < nsyncs; i++) syncs[i]->mk8_ticket = it->ticket;
     if (it->kind == MK8_Q_PRESENT) mk8_q_presents++;
     it->next = NULL;
@@ -145,8 +147,9 @@ static int mk8_scan_fences(uint64_t p, int depth, NvnSync **out, int n, int cap)
 static bool mk8_async_submit(int n, const uint64_t *handles) {
     if (!mk8_async_on() || n <= 0) return false;
     Mk8QItem *it = calloc(1, sizeof *it);
+    if (!it) FATAL("async translation: out of memory\\n");
     it->handles = malloc((size_t)n * sizeof *it->handles);
-    if (!it || !it->handles) FATAL("async translation: out of memory\\n");
+    if (!it->handles) FATAL("async translation: out of memory\\n");
     memcpy(it->handles, handles, (size_t)n * sizeof *it->handles);
     it->kind = MK8_Q_SUBMIT;
     it->n = n;

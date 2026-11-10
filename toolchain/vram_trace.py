@@ -26,6 +26,8 @@ STATS_TRACED = STATS + '''    if (getenv("MK8_TRACE_VRAM")) {  // MK8 (toolchain
 REPORT = '''
 // MK8 (toolchain/vram_trace.py)
 void mk8_vram_report(void) {
+    extern void mk8_descriptors_report(void);
+    mk8_descriptors_report();
     VmaTotalStatistics st;
     vmaCalculateStatistics(g_vk.vma, &st);
     VmaBudget budget[VK_MAX_MEMORY_HEAPS];
@@ -212,8 +214,8 @@ def prepare(runtime):
     text = replace(text, 'game_texture_final(t->addr); mk8_texture_release(t);',
                    'game_texture_final(t->addr); __atomic_store_n(&t->mk8_finalized, 1, __ATOMIC_RELAXED); mk8_texture_release(t);')
     for kind in ('Texture', 'Sampler'):
-        text = replace(text, f'NVN(nvn{kind}PoolFinalize) {{ (void)c; }}',
-                       f'NVN(nvn{kind}PoolFinalize) {{ if (getenv("MK8_TRACE_VRAM")) LOG("[mk8:vram] {kind}PoolFinalize %llx\\n", (unsigned long long)A(0)); }}')
+        text = replace(text, f'NVN(nvn{kind}PoolFinalize) {{\n',
+                       f'NVN(nvn{kind}PoolFinalize) {{\n    if (getenv("MK8_TRACE_VRAM")) LOG("[mk8:vram] {kind}PoolFinalize %llx\\n", (unsigned long long)A(0));\n')
     objects.write_text(text, encoding='utf-8')
     nvn = runtime/'nvn/nvn.h'
     nvn.write_text(replace(nvn.read_text(encoding='utf-8'), '    unsigned mk8_refs;',

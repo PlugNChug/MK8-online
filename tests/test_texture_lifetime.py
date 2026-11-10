@@ -21,7 +21,7 @@ class TextureLifetimeTests(unittest.TestCase):
             self.assertEqual(text.count('mk8_command_texture(r, t.tex)'), 2)
             self.assertEqual(text.count('mk8_command_texture(r, t[1].tex)'), 3)
             self.assertIn('cb->buf_used = 0;  // references now belong', text)
-            self.assertEqual(text.count('mk8_free_list(graveyard['), 2)
+            self.assertEqual(text.count('mk8_free_list(graveyard['), 3)
             self.assertIn('mk8_copy_command_textures(d, r)', text)
             self.assertIn('mk8_rt_release(&prev)', (runtime/'nvn/vulkan/exec.c').read_text())
 
@@ -39,6 +39,9 @@ typedef struct { unsigned mk8_refs, mk8_command_refs, mk8_finalized; unsigned ma
 static unsigned destroyed;
 static void backend_texture_destroyed(NvnTexture *t) { assert(t->marker==42); destroyed++; }
 #include "graphics/texture_refs.inc"
+typedef struct NvnDescPool NvnDescPool;
+static NvnDescPool *mk8_descriptor_retain(NvnDescPool *p) { assert(!p); return p; }
+static void mk8_descriptor_release(NvnDescPool *p) { assert(!p); }
 typedef struct { uint32_t op,size; struct Mk8TextureRefs *mk8_textures; } CmdRec;
 #define CMD_END 0
 #include "graphics/command_texture_refs.inc"
@@ -105,9 +108,13 @@ typedef struct { unsigned mk8_refs, mk8_command_refs; } NvnTexture;
 static unsigned destroyed;
 static void backend_texture_destroyed(NvnTexture *t) { (void)t; destroyed++; }
 #include "graphics/texture_refs.inc"
+typedef struct NvnDescPool NvnDescPool;
+static NvnDescPool *mk8_descriptor_retain(NvnDescPool *p) { assert(!p); return p; }
+static void mk8_descriptor_release(NvnDescPool *p) { assert(!p); }
 typedef struct { uint32_t op,size; struct Mk8TextureRefs *mk8_textures; } CmdRec;
 #define CMD_END 0
 typedef struct { uint8_t *buf, *calls_only[64]; uint64_t buf_used; } NvnCmdBuf;
+static void mk8_command_buffer_untrack(NvnCmdBuf *cb) { (void)cb; }
 typedef struct { uint64_t x[1]; } Cpu;
 #define NVN(name) void name(Cpu *c)
 #define A(i) (c->x[i])
