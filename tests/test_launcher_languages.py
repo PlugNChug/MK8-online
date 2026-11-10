@@ -112,6 +112,111 @@ class LanguageTests(unittest.TestCase):
                     process.terminate()
                 process.wait(timeout=10)
 
+    def test_rebuild_control_uses_existing_preparation(self):
+        """Recompilação visível, bilíngue e bloqueada durante operações, sem arquivos comerciais."""
+        page = self.browser.new_page(locale="en-US", viewport={"width": 1365, "height": 1024})
+        self.addCleanup(page.close)
+        errors, requests = [], []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        status = {
+            "version": "0.1.8", "room_menu": 0, "windowed": False, "last_report": None,
+            "data_dir": "C:/fixture", "native_dialogs": False, "tools_ready": True,
+            "setup": {"state": "idle"}, "files": {"folder": True, "ready": True},
+            "checks": [], "candidate": True, "candidate_stale": False, "installed": False,
+            "game_pid": None, "game_exit": None, "updates": {"configured": False},
+            "session": {"hosting": False, "slot": None, "connected": False, "internet_available": False},
+            "build": {"state": "candidate", "detail": "", "percent": 100,
+                      "started_ms": None, "duration_s": 20},
+        }
+        config = {"exefs": "C:/fixture/exefs", "base_package": "", "update_package": "", "prod_keys": ""}
+        language = "en"
+
+        def route(request):
+            nonlocal language
+            path = request.request.url.split("mk8.test", 1)[1]
+            if path.startswith("/api/"):
+                body = request.request.post_data_json if request.request.method == "POST" else None
+                requests.append((path, body))
+                data = {}
+                if path == "/api/status":
+                    data = status
+                elif path == "/api/config":
+                    data = config
+                elif path == "/api/game-folder":
+                    data = {"config": config}
+                elif path == "/api/username":
+                    data = "Teste"
+                elif path == "/api/language":
+                    language = body["language"]
+                request.fulfill(json={"ok": True, "data": data})
+            else:
+                file = WEB / ("index.html" if path == "/" else path[1:])
+                mime = {".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css"}[file.suffix]
+                request.fulfill(body=file.read_text(encoding="utf-8").replace("__TOKEN__", "test").replace("__LANGUAGE__", language), content_type=mime + "; charset=utf-8")
+
+        page.route("http://mk8.test/**", route)
+        page.goto("http://mk8.test/")
+        page.get_by_role("button", name="Install", exact=True).click()
+        rebuild = page.locator("#build")
+        expect(rebuild).to_have_text("Rebuild game")
+        expect(rebuild).to_be_visible()
+        expect(rebuild).to_be_enabled()
+        expect(page.locator("#build-done")).to_be_visible()
+        expect(page.locator("#go-play")).to_be_visible()
+        screenshots = ROOT / "local/screenshots"
+        screenshots.mkdir(parents=True, exist_ok=True)
+        for width, height in ((1365, 1024), (390, 844)):
+            page.set_viewport_size({"width": width, "height": height})
+            banner = page.locator("#build-done").bounding_box()
+            for button in (rebuild, page.locator("#go-play")):
+                expect(button).to_be_visible()
+                box = button.bounding_box()
+                self.assertGreaterEqual(box["y"], banner["y"] + banner["height"])
+                self.assertGreaterEqual(box["x"], 0)
+                self.assertLessEqual(box["x"] + box["width"], width)
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            page.screenshot(path=str(screenshots / f"launcher-rebuild-{width}.png"), full_page=True, animations="disabled")
+        page.set_viewport_size({"width": 1365, "height": 1024})
+        page.get_by_label("Language", exact=True).select_option("pt-BR")
+        expect(rebuild).to_have_text("Recompilar jogo")
+        page.get_by_label("Idioma", exact=True).select_option("en")
+        rebuild.click()
+        expect(page.locator("#build-done")).to_be_visible()
+        page.wait_for_function("!busy")
+        self.assertEqual([body for path, body in requests if path == "/api/prepare"], [{}])
+        self.assertEqual([body for path, body in requests if path == "/api/game-folder"], [{"path": "C:/fixture"}])
+
+        # Ao reabrir, o manifesto existe e o supervisor começa no estado idle.
+        status["build"].update(state="idle")
+        page.reload()
+        page.get_by_role("button", name="Install", exact=True).click()
+        expect(rebuild).to_have_text("Rebuild game")
+        expect(rebuild).to_be_visible()
+        for field, value in (("game_pid", 123), ("setup", {"state": "running", "steps": [], "total": 0})):
+            previous = status[field]
+            status[field] = value
+            page.evaluate("refresh()")
+            expect(rebuild).to_be_disabled()
+            status[field] = previous
+        status["build"].update(state="running")
+        page.evaluate("refresh()")
+        expect(rebuild).to_be_disabled()
+        expect(rebuild).to_be_hidden()
+        for state in ("failed", "cancelled"):
+            status["build"].update(state=state)
+            page.evaluate("refresh()")
+            expect(rebuild).to_have_text("Try again")
+            expect(rebuild).to_be_visible()
+            expect(rebuild).to_be_enabled()
+        status["build"].update(state="idle")
+        status["candidate_stale"] = True
+        page.evaluate("refresh()")
+        expect(rebuild).to_have_text("Update build")
+        status.update(candidate=False, candidate_stale=False)
+        page.evaluate("refresh()")
+        expect(rebuild).to_have_text("Start build")
+        self.assertEqual(errors, [])
+
     def test_installer_switches_language_and_keeps_paths(self):
         page = self.browser.new_page(locale="pt-BR", viewport={"width": 880, "height": 620})
         errors = []

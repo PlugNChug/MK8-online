@@ -1,5 +1,11 @@
 # Estado técnico — 09/11/2026
 
+## Controle de recompilação no launcher — fontes locais
+
+A etapa **Instalar → Build do jogo** mantém o botão **Recompilar jogo** após uma preparação concluída, inclusive ao reabrir o launcher. Em inglês, o botão aparece como **Rebuild game**. Os botões de recompilar e jogar ficam juntos abaixo do aviso verde de jogo pronto, com quebra de linha em telas estreitas; a explicação da primeira build fica oculta após a conclusão. A ação usa a preparação existente e reaproveita as etapas verificadas; não força limpeza nem nova extração. O botão fica desabilitado enquanto o jogo, a instalação de ferramentas ou outra build estiver em execução; durante a build, permanece oculto. Os estados de primeira build, nova tentativa e atualização conservam seus rótulos.
+
+Validação: 18 testes de navegador passaram nas suítes de launcher e idiomas; o caso de relay foi ignorado por ausência do binário de teste configurado. O novo `test_rebuild_control_uses_existing_preparation` usa Chromium e fixtures de API para exercitar os estados concluído e inicial com manifesto existente, troca inglês/PT-BR, bloqueios, rótulos anteriores e clique com exatamente uma chamada à preparação, preservando a seleção da pasta extraída. A posição dos dois botões abaixo do aviso e a ausência de transbordamento foram conferidas em larguras de 1365 e 390 px, com capturas revisadas. Passaram a verificação de sintaxe JavaScript, `cargo fmt --all -- --check`, `git diff --check` e a build release do launcher com o layout final. O usuário confirmou uma recompilação completa do jogo e sua execução em dados de desenvolvimento isolados. Isso não constitui qualificação de gameplay; `gameplay_verified` permanece falso.
+
 ## Release 0.1.8 — versão de testes
 
 Versões Cargo/Tauri/lock sincronizadas em 0.1.8. Esta release reúne as correções de preparação, Python/pip, integridade de caches, coordenação entre instâncias, supervisão de processos, tratamento de arquivos bloqueados e carregador Vulkan descritas abaixo. As referências a “correção local” nas seções seguintes registram o estado de cada investigação antes desta publicação.

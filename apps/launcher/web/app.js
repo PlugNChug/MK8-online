@@ -279,7 +279,9 @@ function renderInstall(status) {
   $("build-idle").hidden = buildRunning || done;
   $("build-live").hidden = !buildRunning && !(build.state === "failed" && build.started_ms);
   $("build-done").hidden = !done || buildRunning;
-  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build");
+  $("build-actions").hidden = buildRunning;
+  $("go-play").hidden = !done;
+  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : done ? "Recompilar jogo" : "Iniciar build");
   $("build").disabled = busyNow;
   $("cancel").disabled = !buildRunning;
   $("cancel").hidden = !buildRunning;
