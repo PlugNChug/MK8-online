@@ -30,6 +30,8 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 > [!NOTE]
 > **Disponível para testes, ainda experimental.** Corridas foram concluídas em testes locais, mas persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. Multiplayer entre PCs diferentes ainda não foi qualificado. O instalador de testes 0.1.8 inclui recuperação da preparação, coordenação de processos e o carregador Vulkan.
 
+Diagnóstico sem dados do jogo/firmware: `local/python/Scripts/python.exe scripts/verify-simulation.py --browser`. Exercita adaptadores nativos com chamadas sintéticas e a interface real do launcher; veja [escopo e pré-requisitos](docs/STATUS.md). Não simula a renderização do MK8 nem mede FPS/VRAM do jogo.
+
 ## No grid de largada
 
 | Área | Progresso atual | Próxima etapa |

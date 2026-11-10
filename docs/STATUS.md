@@ -1,5 +1,15 @@
 # Estado técnico — 10/11/2026
 
+## Diagnóstico por simulação sem jogo — 10/11/2026
+
+`local/python/Scripts/python.exe scripts/verify-simulation.py --browser` reúne a regressão gráfica nativa, os hooks condicionais, dados Mii e o editor real em Chromium. O novo chamador sintético compila o adaptador real `local_mii.inc` com assertions ativas e símbolos de debug. Percorre 10.112 combinações de capacidade/fonte/layout, confere sentinelas de memória, rejeita corrupção nos 50 bytes de aparência/padding e alterna identidade/cor em 20.000 ciclos, com três consultas por ciclo. As fases representam padrões de consulta; não executam lógica de corrida, renderer, IPC completo ou rede do MK8. Não há firmware falso ou modificação dos critérios de aceitação do jogo.
+
+Pré-requisitos: Python e compilador nativo provisionados, upstream fixado e dependências de runtime conforme o procedimento de preparação abaixo. `--browser` exige também launcher compilado, Playwright e Chromium; `MK8_LAUNCHER_EXE` permite indicar o executável. Omitir `--browser` executa somente os testes de adaptadores. `--cycles 100000` aumenta a repetição; aceita até 1.000.000. Perfis do teste ficam em diretórios temporários, sem alterar saves/perfis pessoais. O comando verifica a integridade do upstream e retorna erro se houver falha ou teste ignorado. O resumo é atualizado em `local/performance-validation/simulation.json`, incluindo duração, resultado e hash do adaptador. A saída do terminal contém os testes/assertions que falharem.
+
+Esse diagnóstico amplia a cobertura de contratos de dados, limites de buffers e ciclos de vida. Não mede VRAM, FPS, fidelidade dos modelos, estabilidade do driver ou aceitação Nextendo. `gameplay_verified`, `gpu_rendering_verified` e `nextendo_verified` permanecem falsos no resumo, mesmo quando todos os testes passam.
+
+Validação executada com `--browser`: 63 testes aprovados (46 de regressão gráfica e 17 de Mii/hooks/navegador), sem skips. A simulação completou 20.000 ciclos e 70.112 consultas, rejeitando as 50 corrupções de campo testadas. Nenhuma falha nova foi encontrada nesses cenários; isso não substitui a qualificação em jogo real.
+
 ## Perfis Mii e caminho experimental de modelos reais — 10/11/2026
 
 Pesquisa em Tomodachi LTD Recomp, Mush8, FFL.js/FFL-Testing e documentação de Nextendo/NX Native registrada com revisões e limitações em [THIRD_PARTY.md](THIRD_PARTY.md). O Tomodachi utiliza outro runtime e o editor do seu próprio jogo. O Mush8 demonstra a separação mais útil para esta base: dados CharInfo no serviço Mii, recursos do firmware para a cabeça desenhada pelo SDK, e login/token/rede para Nextendo. Não foi localizado um componente que, apenas adicionando um GLB, habilite o online do MK8.

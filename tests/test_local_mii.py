@@ -13,6 +13,29 @@ from native import DEFAULT_COMPILER
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class LocalMiiTests(unittest.TestCase):
+    def test_simulated_session_boundaries_and_repeated_profile_switches(self):
+        from native import compiler_env
+        source = (ROOT/'upstream/smm2recomp/recomp/runtime/services/mii.c').read_text(encoding='utf-8')
+        default = source[source.index('void mii_default_charinfo'):source.index('static bool one_mii')]
+        cycles = int(os.environ.get('MK8_SIMULATION_CYCLES', '20000'))
+        self.assertTrue(1 <= cycles <= 1000000)
+        with tempfile.TemporaryDirectory(prefix='mk8-simulation-') as directory:
+            root = Path(directory)
+            program = root/'simulation.c'
+            program.write_text('#include <stdint.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdio.h>\n#include <assert.h>\n'
+                               + default + '\n#include "mii/local_mii.inc"\n'
+                               + (ROOT/'tests/fixtures/mii_simulation.c').read_text(encoding='utf-8'), encoding='utf-8')
+            exe = root/'simulation.exe'
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
+                            '-g', '-I'+str(ROOT/'runtime/mk8'), str(program), '-o', str(exe)],
+                           env=compiler_env(), check=True, capture_output=True, timeout=120)
+            result = subprocess.run([str(exe), str(cycles)], check=True, capture_output=True, text=True, timeout=180)
+            report = json.loads(result.stdout)
+            self.assertEqual(report['cycles'], cycles)
+            self.assertEqual(report['requests'], 10112 + 3*cycles)
+            self.assertEqual(report['invalid_fields_rejected'], 50)
+            self.assertFalse(report['gameplay_verified'])
+
     def test_model_archive_mount_uses_only_configured_mii_directory(self):
         from host import prepare_host_sources
         from native import compiler_env

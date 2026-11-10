@@ -30,6 +30,8 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 > [!NOTE]
 > **Open for testing, still experimental.** Races have completed in local tests, but visual defects, first-use shader stutters and growing VRAM usage remain. Multiplayer between separate PCs is not yet qualified. The 0.1.8 test installer adds preparation recovery, process coordination and the bundled Vulkan loader.
 
+For diagnostics without game/firmware data, run `local/python/Scripts/python.exe scripts/verify-simulation.py --browser`. It exercises native adapters with synthetic callers and the real launcher UI; see [scope and prerequisites](docs/STATUS.md). It does not simulate MK8 rendering or measure game FPS/VRAM.
+
 ## On the starting grid
 
 | Area | Current progress | Next checkpoint |
