@@ -1,0 +1,41 @@
+{
+  "version": "0.183.0",
+  "changes": "Relative module import paths only",
+  "files": {
+    "three.module.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/build/three.module.min.js",
+      "source_sha256": "0a61c95f14e0fa015b3083475c73424f360e5f6f5b74c282b50fdbc2f4c228fc",
+      "sha256": "4ba5f27f0670ba7ab2b1e3e0857c4fc858b09a65246d70e953c265ac68300056"
+    },
+    "three.core.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/build/three.core.min.js",
+      "source_sha256": "0a9c2f0672c7b8d993ba7639e71919db181ca50c9dff99c78476d3e19057ca9c",
+      "sha256": "4802c86f51683f4242428af17f6dc3f5e4c7738eeae983a3a88f27b6def934d2"
+    },
+    "GLTFLoader.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/loaders/GLTFLoader.js",
+      "source_sha256": "e4e692923224a10bbc00be04365d6356b5e8c48b2bbd1f22a7fe929591646fb8",
+      "sha256": "9595c6ef39701ab114de3e4623e85e046d93b0a7c4cccf24385ce72b280373f5"
+    },
+    "BufferGeometryUtils.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/utils/BufferGeometryUtils.js",
+      "source_sha256": "fda7e946b8e0b5ab39b779206589e7a1079a22eb24efb89d7223e03fdfb1f751",
+      "sha256": "f07a335d7603eb09a46536fd8492bcb7ae8ef9c99b9c06e9910b2958f0b87310"
+    },
+    "OrbitControls.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/controls/OrbitControls.js",
+      "source_sha256": "09673b997864b8091943d2673637c0f31f7cf67daeddd0902fce9bf098a8d093",
+      "sha256": "ea23f827b4a3bec5122b6aa37a6edadfd7cb5d8b2c029db662a475c38207367e"
+    },
+    "LICENSE.txt": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/LICENSE",
+      "source_sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc",
+      "sha256": "5d5dad8147523d59bc15cca838ae0bdaae7075230ec49132c551a1d18e7b3412"
+    },
+    "SkeletonUtils.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/utils/SkeletonUtils.js",
+      "source_sha256": "0761b1e003917b215d25dd81439d854b36034b5a57ce84c2cfe3b02428d7b253",
+      "sha256": "1ccafd5ea1351fae3a48dadacb9cff1e817cf44f777108bdc1f0420dfdeda1df"
+    }
+  }
+}

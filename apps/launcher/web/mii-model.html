@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="__LANGUAGE__">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MK8 · Mii GLB</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/mii-model.css"></head>
+<body>
+<main class="model-page">
+  <a href="/">← Launcher</a>
+  <h1>GLB · Mii</h1>
+  <p data-pt="Inspecione o modelo exportado. Os arquivos ficam neste navegador; nenhum perfil ou save é alterado." data-en="Inspect an exported model. Files stay in this browser; no profile or save is changed."></p>
+  <label><span data-pt="Modelo GLB (até 8 MiB)" data-en="GLB model (up to 8 MiB)"></span><input id="model-file" type="file" accept=".glb"></label>
+  <div class="model-tools">
+    <label><span data-pt="Enquadramento" data-en="View"></span><select id="model-view"><option value="all" data-pt="Corpo inteiro" data-en="Full body"></option><option value="head" data-pt="Cabeça" data-en="Head"></option></select></label>
+    <label><input id="model-wire" type="checkbox"><span data-pt="Malha" data-en="Wireframe"></span></label>
+    <label><input id="model-bones" type="checkbox"><span data-pt="Esqueleto" data-en="Skeleton"></span></label>
+  </div>
+  <div id="model-viewport" aria-label="3D model"><canvas id="model-canvas"></canvas></div>
+  <p id="model-status" role="status"></p>
+  <pre id="model-info"></pre>
+  <label><span data-pt="Conferir arquivo .miic correspondente" data-en="Check matching .miic file"></span><input id="model-data" type="file" accept=".miic"></label>
+  <p id="model-match" role="status"></p>
+  <p data-pt="Este GLB é uma geometria exportada, não uma biblioteca de criação de Miis. Editar os campos do perfil não remodela este arquivo. A inserção no MK8 exige adaptação ao motor; este visualizador não a habilita." data-en="This GLB is exported geometry, not a Mii creation library. Editing profile fields does not reshape this file. Inserting it into MK8 requires engine adaptation; this viewer does not enable that."></p>
+</main>
+<script type="module" src="/mii-model.js"></script>
+</body></html>

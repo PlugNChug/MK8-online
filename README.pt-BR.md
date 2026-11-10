@@ -177,6 +177,8 @@ As prioridades são estabilizar VRAM ao repetir copas, melhorar shaders/tempo po
 
 O desenvolvimento está consolidado na `fix-chore`, incluindo as correções locais da master e o editor/recursos Mii. O foco atual é criar e editar Miis, integrar cabeças e retratos ao MK8 e depois qualificar o multiplayer. Veja [as evidências e os requisitos pendentes](docs/STATUS.md).
 
+**Modelos Mii exportados:** em **Perfil Mii**, use **Inspecionar GLB exportado** para visualizar um GLB autocontido localmente, isolar a cabeça, mostrar malha/esqueleto e conferir o `.miic` correspondente aos dados embutidos. Os arquivos ficam no navegador. Isso não instala o modelo no MK8 nem converte formatos `.miic` novos em CharInfo do Switch.
+
 O desenvolvimento exige Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 para o importador. Na raiz do repositório:
 
 ```powershell

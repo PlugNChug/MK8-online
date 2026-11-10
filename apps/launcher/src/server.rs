@@ -652,7 +652,7 @@ impl App {
 
 pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
     let mut res = Response::from_string(text).with_status_code(code);
-    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
+    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
     let _ = req.respond(res);
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
@@ -793,6 +793,64 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 "text/javascript; charset=utf-8",
             );
             continue;
+        }
+        if method == Method::Get {
+            let model_asset = match path.as_str() {
+                "/mii-model.html" => Some((
+                    include_str!("../web/mii-model.html"),
+                    "text/html; charset=utf-8",
+                )),
+                "/mii-model.css" => Some((
+                    include_str!("../web/mii-model.css"),
+                    "text/css; charset=utf-8",
+                )),
+                "/mii-model.js" => Some((
+                    include_str!("../web/mii-model.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/mii-glb.js" => Some((
+                    include_str!("../web/mii-glb.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/three.module.js" => Some((
+                    include_str!("../web/vendor/three/three.module.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/three.core.js" => Some((
+                    include_str!("../web/vendor/three/three.core.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/GLTFLoader.js" => Some((
+                    include_str!("../web/vendor/three/GLTFLoader.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/BufferGeometryUtils.js" => Some((
+                    include_str!("../web/vendor/three/BufferGeometryUtils.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/OrbitControls.js" => Some((
+                    include_str!("../web/vendor/three/OrbitControls.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/SkeletonUtils.js" => Some((
+                    include_str!("../web/vendor/three/SkeletonUtils.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/LICENSE.txt" => Some((
+                    include_str!("../web/vendor/three/LICENSE.txt"),
+                    "text/plain; charset=utf-8",
+                )),
+                _ => None,
+            };
+            if let Some((source, mime)) = model_asset {
+                response(
+                    req,
+                    200,
+                    source.replace("__LANGUAGE__", &crate::language::read(&app.local)),
+                    mime,
+                );
+                continue;
+            }
         }
         if method == Method::Get && path == "/style.css" {
             response(

@@ -405,5 +405,6 @@
   "Sem resposta do anfitrião. Confira a VPN e UDP 47820; peça um novo convite com o IP VPN do anfitrião. Encerre esta sessão antes de tentar novamente.": "No response from the host. Check the VPN and UDP 47820; request a new invitation with the host VPN IP. End this session before trying again.",
   "Aguardando confirmação do anfitrião.": "Waiting for confirmation from the host.",
   "Convite aceito pelo transporte. Use Jogar na sala e entre no lobby pelo modo LAN Play.": "Invitation accepted by the transport. Use Play in room and join the lobby through LAN Play.",
-  "Um convidado conectou ao transporte. Todos devem usar Jogar na sala e entrar no modo LAN Play.": "A guest connected to the transport. Everyone should use Play in room and enter LAN Play."
+  "Um convidado conectou ao transporte. Todos devem usar Jogar na sala e entrar no modo LAN Play.": "A guest connected to the transport. Everyone should use Play in room and enter LAN Play.",
+  "Inspecionar GLB exportado": "Inspect exported GLB"
 }

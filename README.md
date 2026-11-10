@@ -181,6 +181,8 @@ Current priorities are repeated-cup VRAM stability, shader/frame-time consistenc
 
 Development is consolidated on `fix-chore`, including the previously unpushed master fixes and Mii editor/resource support. The current focus is creating and editing Miis, integrating their heads and portraits into MK8, then qualifying multiplayer. See [the current evidence and remaining requirements](docs/STATUS.md).
 
+**Exported Mii models:** in **Mii profile**, choose **Inspect exported GLB** to view a self-contained GLB locally, isolate its head, inspect wireframe/skeleton and compare an accompanying `.miic` with embedded data. Files stay in the browser. This does not install a model into MK8 or convert newer `.miic` formats into Switch CharInfo.
+
 Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the importer. Disk-type detection is optional: Windows storage drivers may report an unknown type, including on CI virtual disks. Start from the repository root:
 
 ```powershell
