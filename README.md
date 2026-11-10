@@ -183,6 +183,8 @@ Development is consolidated on `fix-chore`, including the previously unpushed ma
 
 **Exported Mii models:** in **Mii profile**, choose **Inspect exported GLB** to view a self-contained GLB locally, isolate its head, inspect wireframe/skeleton and compare an accompanying `.miic` with embedded data. Files stay in the browser. This does not install a model into MK8 or convert newer `.miic` formats into Switch CharInfo.
 
+**Native Mii integration diagnostic:** `scripts/test-race.py time-trial --character mii --last-frame 4800` selects the first Mii and Normal Suit using isolated saves. The current test reaches the track with the game's body and kart, but no head. The GLB-to-native rendering bridge is still unimplemented; this is a reproducible baseline, not model qualification. See [evidence and tracing](docs/STATUS.md).
+
 Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the importer. Disk-type detection is optional: Windows storage drivers may report an unknown type, including on CI virtual disks. Start from the repository root:
 
 ```powershell

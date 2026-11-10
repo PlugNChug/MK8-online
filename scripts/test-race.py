@@ -23,7 +23,16 @@ CUPS = ('mushroom', 'flower', 'star', 'special', 'egg', 'crossing',
 COURSES = ('stadium', 'water-park', 'sweet-sweet-canyon')
 
 
-def race_input(mode, last_frame, course='stadium', cup=0, track=None):
+def race_input(mode, last_frame, course='stadium', cup=0, track=None, character='mario'):
+    if character == 'mii':
+        if mode != 'time-trial' or cup or track not in (None, 0) or course != 'stadium':
+            raise ValueError('Mii diagnostic currently supports Time Trial / Mushroom / Stadium only')
+        # MK8 4.0.1: wrap from Mario to the final row/column, select the first Mii,
+        # then Normal Suit. The extra two dialogs shift the kart/course inputs.
+        start = ('400:A:6,520:DOWN:6,580:A:6,760:A:6,880:DOWN:6,940:A:6,'
+                 '1100:UP:6,1160:LEFT:6,1240:A:6,1500:A:6,1760:A:6,'
+                 '2020:A:6,2200:A:6,2380:A:6,2560:A:6,2740:A:6,2920:A:6')
+        return start + f',3100:A:{max(last_frame - 3090, 10)}'
     start = '400:A:6,520:DOWN:6,580:A:6,760:A:6'
     if mode == 'time-trial':
         track = COURSES.index(course) if track is None else track
@@ -44,6 +53,45 @@ def race_input(mode, last_frame, course='stadium', cup=0, track=None):
     else:
         start += ''.join(f',{frame}:A:6' for frame in range(920, 2401, 160))
     return start + f',2700:A:{max(last_frame - 2690, 10)}'
+
+
+def profile_environment(profile):
+    """Match launcher profile overlays; the native service still validates CharInfo."""
+    data = json.loads(profile.read_text(encoding='utf-8'))
+    if data['schema'] != 1:
+        raise ValueError('Unsupported Mii profile schema')
+    identity = bytes(data['id'])
+    if len(identity) != 16 or identity[8] & 0xc0 != 0x80:
+        raise ValueError('Invalid Mii profile identity')
+    appearance = data['appearance']
+    name, color, gender = appearance['name'], appearance['color'], appearance['gender']
+    if (not name.strip() or len(name) > 10 or any(ord(c) < 32 or 127 <= ord(c) <= 159
+            or 0xd800 <= ord(c) <= 0xdfff or ord(c) > 0xffff for c in name)
+            or type(color) is not int or not 0 <= color <= 11
+            or type(gender) is not int or gender not in (0, 1)):
+        raise ValueError('Invalid Mii profile appearance')
+    env = dict(MK8_MII_ID=identity.hex(), MK8_MII_NAME=name,
+               MK8_MII_COLOR=str(color), MK8_MII_GENDER=str(gender))
+    raw = data.get('charinfo')
+    if raw is not None:
+        raw = bytearray(raw)
+        if len(raw) != 88:
+            raise ValueError('Mii CharInfo must contain 88 bytes')
+        raw[:16] = identity
+        raw[16:38] = name.encode('utf-16le').ljust(22, b'\0')
+        raw[0x27], raw[0x28] = color, gender
+        env['MK8_MII_CHARINFO'] = raw.hex()
+    else:
+        face = appearance.get('face', {})
+        fields = [('skin', 0, 5), ('shape', 0, 2), ('hair', 1, 3), ('hair_color', 1, 7),
+                  ('eyes', 0, 2), ('eye_color', 0, 5), ('glasses', False, 1),
+                  ('height', 64, 127), ('build', 64, 127)]
+        values = [face.get(key, default) for key, default, _ in fields]
+        if any(not isinstance(value, int) or not 0 <= value <= limit
+               for value, (_, _, limit) in zip(values, fields)):
+            raise ValueError('Invalid Mii face parameters')
+        env['MK8_MII_FACE'] = bytes(values).hex()
+    return env
 
 
 def wait_capture(child, timeout, log):
@@ -90,9 +138,11 @@ def run(args):
     profile = session / 'mii-profile.json'
     shutil.copyfile(LOCAL / 'mii-profile.json', profile)
 
-    script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track)
+    script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track,
+                        args.character)
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(('MK8_', 'LARECOMP_', 'RECOMP_', 'NX_LAN_'))}
+    env.update(profile_environment(profile))
     env.update(dict(args.env))
     # The runtime writes shader sources and debug-frame pass images under build/ relative to its data root.
     if any(key in env for key in ('LARECOMP_SAVE_MSL', 'LARECOMP_DEBUG_FRAME')):
@@ -109,6 +159,8 @@ def run(args):
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
         'input': env['LARECOMP_INPUT'], 'last_frame': args.last_frame,
+        'character': args.character, 'mii_profile_sha256': hashlib.sha256(profile.read_bytes()).hexdigest(),
+        'model_rendering_verified': False,
         'cache_from': str(args.cache_from.resolve()) if args.cache_from else None,
     }, indent=2), encoding='utf-8')
     started = monotonic()
@@ -137,6 +189,8 @@ if __name__ == '__main__':
     parser.add_argument('--shot-step', type=int, default=400)
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--input', help='Override frame:button:duration input sequence')
+    parser.add_argument('--character', choices=['mario', 'mii'], default='mario',
+                        help='Mii selects the first profile and Normal Suit; does not enable model rendering')
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
                         help='Time Trial course in Mushroom Cup')

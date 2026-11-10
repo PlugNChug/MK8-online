@@ -1,5 +1,19 @@
 # Estado técnico — 10/11/2026
 
+## Integração Mii: corrida de referência e consumidores nativos — 10/11/2026
+
+Executado o caminho real de seleção do primeiro Mii, Normal Suit e Time Trial em Mario Kart Stadium, com cópias isoladas dos saves/perfil. `local/race-time-trial-ps9fgizm/frame-04200.png` mostra o corpo Mii azul e kart na pista, **sem cabeça**. Isso confirma que o corpo/animação do piloto pode ser mantido; não confirma carregamento do GLB. O teste acelera sem dirigir e termina junto à barreira, na primeira volta; não é uma corrida completa.
+
+Corrigido `scripts/test-race.py`: copiar `mii-profile.json` sozinho não fornecia os dados ao serviço Mii. Agora passa identidade/aparência e, quando presente, CharInfo com os mesmos overlays de nome/cor/tipo do launcher; preserva campos importados e não modifica o perfil original. `--character mii` reproduz os diálogos extras dessa seleção, limitado por enquanto a Time Trial/Stadium. O recibo registra personagem, hash do perfil e `model_rendering_verified=false`. O modo gráfico sem Mii continua explícito; este roteiro ainda não aceita/instala GLB no jogo.
+
+Adicionado `MK8_TRACE_MII_CONSUMERS=1` no runtime: registra no máximo 64 locais de chamada distintos da política sem modelos, sem acessar estruturas guest, alterar retornos ou bloquear outra thread de desenho. A execução identificou preparação `0x700080fa44`, atualização `0x7000810278`, consulta `0x700041a834`, worker `0x700041a6b0`, retratos `0x700041b2f0` e os consumidores de seleção/confirmacão já protegidos. A leitura do código gerado verificado localizou também `0x7000815724`, que prepara texturas com o nome `MiiCharModelTexture`, chamado por `0x7000814a04`. Esses endereços são referências de investigação do perfil 4.0.1, **não uma ABI de renderização substituta validada**. Não foram alterados upstream ou arquivos gerados.
+
+Validação: runtime recompilado com `--runtime-only`, link e dependências concluídos; 11 testes de layout/host (incluindo deduplicação/limite do diagnóstico e preservação da política) e sete do roteiro passaram. Repetição com o código atualizado: `local/race-time-trial-_ap1xdzt`, saída 0 após 98,2 s, captura `frame-04800.png` inspecionada, corpo presente e cabeça ausente. Não houve crash nessa execução. Logs de build/testes em `local/mii-integration-build.log` e `local/mii-integration-host-tests.log`.
+
+Reprodução: `local/python/Scripts/python.exe scripts/test-race.py time-trial --character mii --last-frame 4800 --shots 3 --shot-step 1200 --timeout 180 --env MK8_TRACE_MII_CONSUMERS=1`.
+
+**Objetivo pendente:** conectar a cabeça/texturas do GLB à transformação animada do pescoço e ao passe de desenho nativo. Ainda falta estabelecer esse contrato e a vida útil dos recursos gráficos; não existe carregador GLB conectado ao renderer do jogo nesta etapa. Não reativar a preparação original sem os recursos exigidos, nem retornar um objeto vazio como substituto. Retratos, expressões, corrida completa e multiplayer continuam pendentes; `gameplay_verified` permanece falso.
+
 ## Inspeção da exportação pessoal do Mii Creator — 10/11/2026
 
 Os dois arquivos mais recentes fornecidos em Downloads foram `Test_all_body_2026-11-10T21_43_21.682Z.glb` (281.044 bytes) e `Test.miic` (140 bytes). O GLB 2.0 contém oito malhas, 3.423 triângulos, três texturas PNG embutidas e um esqueleto com 31 juntas. As partes da cabeça são separadas (`Faceline`, `Nose`, `Forehead`, `Hair`, `Mask`, `Noseline`); o corpo usa skinning. Não há clipes de animação. `asset.extras.miiData` corresponde byte a byte ao `.miic` fornecido. Trata-se de geometria real de um personagem, não de uma biblioteca de todas as peças de Mii.
