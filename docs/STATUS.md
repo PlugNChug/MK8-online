@@ -1,5 +1,28 @@
 # Estado técnico — 10/11/2026
 
+
+## Cabe?a Mii no motor nativo: encaixe e textura corrigidos ? 10/11/2026
+
+A exporta??o pessoal agora aparece no **menu e na pista do MK8**, pela sobreposi??o privada `local/mii-head-mod/romfs/Driver/MiiM.szs`. A cabe?a foi incorporada ao modelo do corpo Mii masculino, rigidamente ligada ao osso `Head` (?ndice 10), mantendo o esqueleto/anima??es originais. N?o foram alterados RomFS original, perfis, saves, upstream ou c?digo guest; a pol?tica sem renderer Mii original permanece ativa. Isso ? uma integra??o est?tica de um modelo, n?o qualifica??o de uma biblioteca de Miis.
+
+Corre??es preservadas em `toolchain/mii_head_bake.py` e `toolchain/mii_head_builder.cs`: transforma??o local `(x,y,z) -> (x,z,-y)` com escala calibrada 7,14; expans?o das UVs espelhadas da pele de 0?2 para 0?1; proje??o/composi??o est?tica de olhos, boca, sobrancelhas e linha do nariz nas texturas opacas. O material comum do jogo substitui os shaders especiais Mii que continuavam pretos. Mapas de cor usam sRGB, normal neutra usa SNORM e uma m?scara neutra de brilho evita o aspecto met?lico herdado do capacete. A transpar?ncia original n?o foi qualificada; a composi??o evita depender dela para esta express?o fixa.
+
+O construtor C# valida o SHA-256 do BFRES original descomprimido (`d2d4f0992ab12c0773e0a89add358576c2ceccff0450deb5053740f73c57568a`), osso/modelo esperado, nomes, dimens?es, ?ndices, normais e limites. O empacotador recusa BFRES acima de 4 MiB e n?o sobrescreve sa?da existente. Texturas limitadas a 256 pixels; a tentativa privada com texturas maiores e BFRES de aproximadamente 9 MB falhou ao selecionar o Mii, sem causa interna completamente estabelecida. N?o tratar o limite conservador como or?amento oficial do motor. Depend?ncia de convers?o/avisos registrados em `THIRD_PARTY.md`.
+
+**Evid?ncia final:** `local/race-time-trial-4yvvjdnd`, sa?da 0 ap?s 97,2 s; capturas `frame-02000.png` (rosto no menu), `frame-03400.png` e `frame-04800.png` (cabe?a na pista). Capturas inspecionadas: pele/olhos/boca presentes e cabe?a acompanhando o corpo; brilho met?lico removido. O roteiro acelera at? a barreira na primeira volta, portanto **n?o ? uma corrida completa**. Trechos finais medidos entre 59,4?60 FPS, com pico de 40 ms em um intervalo; isso n?o qualifica desempenho em outras m?quinas. `local/mii-head-mod/manifest.json` registra hashes, escopo e evid?ncia, mantendo `gameplay_verified=false` e `multiplayer_verified=false`.
+
+Valida??o: construtor C# compilado e seu artefato executado no jogo; seis testes de geometria/composi??o/Yaz0 com dados sint?ticos e os sete testes do roteiro passaram. Reprodu??o da composi??o gera JSON e pixels id?nticos; o execut?vel do construtor rejeitou um ?ndice fora do buffer antes de criar a sa?da. O roteiro agora for?a `LARECOMP_SAVE_DIR` para a c?pia isolada, porque um `RECOMP_MOD_DIR` poderia redirecionar saves para dentro da sobreposi??o.
+
+Repetir o teste local j? preparado:
+
+```powershell
+local/python/Scripts/python.exe scripts/test-race.py time-trial --character mii --last-frame 4800 --shots 3 --shot-step 1400 --timeout 180 --env RECOMP_MOD_DIR=C:/Users/dzvini/Documents/MK8-online/local/mii-head-mod
+```
+
+Reprodu??o da convers?o em desenvolvimento: o est?gio Python recebe o intermedi?rio privado `head-small.json` (seis partes, posi??es j? escaladas, eixos locais do GLB e RGBA redimensionados), n?o um GLB arbitr?rio. `python toolchain/mii_head_bake.py <intermediario.json> <nova-pasta>` produz `head.json` e mapas compostos. Compilar `toolchain/mii_head_builder.cs` com o `csc.exe` do .NET Framework, refer?ncias `System.Web.Extensions`, `System.Core` e as quatro DLLs net48 do pacote BfresLibrary verificado; manter as DLLs junto ao execut?vel. Executar `MiiHeadBuilder.exe <MiiM-original.bfres> <nova-pasta/head.json> <novo-output.bfres>`; depois `python toolchain/mii_head_bake.py --pack <novo-output.bfres> <overlay/romfs/Driver/MiiM.szs>`. Pastas de sa?da precisam existir para o empacotamento; sa?das existentes s?o recusadas. Os arquivos de entrada, intermedi?rios, DLLs e recursos derivados permanecem privados.
+
+**Limites e pr?ximo trabalho:** substitui o corpo masculino Normal Suit inteiro; outros Miis que usem esse recurso podem receber a mesma cabe?a. N?o h? escolha de cabe?a por identidade/perfil, importador geral no launcher, express?es din?micas, retratos integrados ou suporte feminino qualificado. O GLB cont?m um Mii pronto, n?o todos os cabelos/olhos/formatos. O launcher j? salva v?rios perfis e o menu do runtime pode traz?-lo ? frente; ainda falta associar um recurso nativo a cada perfil e implementar o editor modal solicitado. Um editor completo precisa de biblioteca de pe?as pr?pria ou importada localmente, composi??o de malhas/materiais e a mesma convers?o usada pelo jogo. A troca segura inicial deve ocorrer na pr?xima abertura do jogo; carregamento durante partida e multiplayer exigem trabalho e testes separados. N?o confundir o editor procedural aproximado existente com essa biblioteca.
+
 ## Integração Mii: corrida de referência e consumidores nativos — 10/11/2026
 
 Executado o caminho real de seleção do primeiro Mii, Normal Suit e Time Trial em Mario Kart Stadium, com cópias isoladas dos saves/perfil. `local/race-time-trial-ps9fgizm/frame-04200.png` mostra o corpo Mii azul e kart na pista, **sem cabeça**. Isso confirma que o corpo/animação do piloto pode ser mantido; não confirma carregamento do GLB. O teste acelera sem dirigir e termina junto à barreira, na primeira volta; não é uma corrida completa.

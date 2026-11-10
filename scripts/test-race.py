@@ -150,6 +150,7 @@ def run(args):
     env.update(
         MK8_EXPERIMENTAL_NO_MII='1', MK8_MII_PROFILE_PATH=str(profile),
         LARECOMP_DATA_ROOT=str(data), LARECOMP_GAME_LIB=candidate['files']['gamelib']['path'],
+        LARECOMP_SAVE_DIR=str(data / 'save'),
         LARECOMP_INPUT=args.input or script,
         LARECOMP_WINDOW_SHOT=f'{args.last_frame - args.shot_step * (args.shots - 1)}:{args.last_frame}:{args.shot_step}',
         LARECOMP_SHOT_PATH=(session / 'frame-%05d.png').as_posix(),

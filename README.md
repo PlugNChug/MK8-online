@@ -32,6 +32,8 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 
 For diagnostics without game/firmware data, run `local/python/Scripts/python.exe scripts/verify-simulation.py --browser`. It exercises native adapters with synthetic callers and the real launcher UI; see [scope and prerequisites](docs/STATUS.md). It does not simulate MK8 rendering or measure game FPS/VRAM.
 
+**Local Mii model experiment:** a private exported head now renders on the native driver using a derived RomFS overlay, corrected head axes and baked face textures. This is a static replacement for the male Normal Suit body, not a general GLB importer or online Mii renderer. See [evidence, reproduction and limitations](docs/STATUS.md). Original game assets and profiles remain unchanged.
+
 ## On the starting grid
 
 | Area | Current progress | Next checkpoint |
