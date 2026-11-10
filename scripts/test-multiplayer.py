@@ -39,6 +39,9 @@ def api(url, token, route, body=None):
 
 
 def run(args):
+    metadata = json.loads(subprocess.check_output(
+        ['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT, text=True))
+    binaries = Path(metadata['target_directory']) / 'release'
     local = ROOT / 'local'
     if shutil.disk_usage(local).free < 4 * 1024**3:
         raise RuntimeError('At least 4 GiB free required')
@@ -59,7 +62,7 @@ def run(args):
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.bind(('127.0.0.1', 0))
                 port = min(probe.getsockname()[1], 65000)
-            relay = subprocess.Popen([str(ROOT/'target/release/mk8-relay.exe'),
+            relay = subprocess.Popen([str(binaries/'mk8-relay.exe'),
                 '127.0.0.1:0', '127.0.0.1', '127.0.0.1', str(port)],
                 stdout=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             children.append(relay)
@@ -82,7 +85,7 @@ def run(args):
                 LARECOMP_SHOT_PATH=(folder/'frame-%05d.png').as_posix(),
                 RECOMP_NET_LOG='1')
             env.update(dict(args.env))
-            process = subprocess.Popen([str(ROOT/'target/release/Launcher.exe'), '--headless',
+            process = subprocess.Popen([str(binaries/'Launcher.exe'), '--headless',
                 '--data-dir', str(folder)], env=env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
             children.append(process)

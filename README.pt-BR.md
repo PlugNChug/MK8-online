@@ -175,6 +175,8 @@ As prioridades são estabilizar VRAM ao repetir copas, melhorar shaders/tempo po
 
 ## Compilar e contribuir
 
+O desenvolvimento está consolidado na `fix-chore`, incluindo as correções locais da master e o editor/recursos Mii. O foco atual é criar e editar Miis, integrar cabeças e retratos ao MK8 e depois qualificar o multiplayer. Veja [as evidências e os requisitos pendentes](docs/STATUS.md).
+
 O desenvolvimento exige Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 para o importador. Na raiz do repositório:
 
 ```powershell
