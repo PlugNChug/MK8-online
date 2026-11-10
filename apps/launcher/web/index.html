@@ -176,13 +176,26 @@
               <div class="row"><button type="submit" class="primary">Salvar Mii</button><button type="button" id="mii-export">Exportar .charinfo</button></div>
               <label>Importar Mii do Switch (.charinfo)<input id="mii-import" type="file" accept=".charinfo,.ufsd" /></label>
               <p id="mii-identity" class="fine"></p>
-              <details><summary>Detalhes completos do Switch</summary>
-                <p class="fine">Salve ou selecione um perfil primeiro. Os números correspondem aos estilos do Switch; a prévia aproximada não representa todas as opções.</p>
-                <div id="mii-full-fields" class="mii-fields"></div>
-                <button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button>
-              </details>
+              <button id="mii-compose-open" type="button">Editar Mii 3D</button>
             </form>
           </div>
+          <dialog id="mii-composer" aria-labelledby="mii-composer-title">
+            <div class="row"><h2 id="mii-composer-title">Editor Mii 3D</h2><button id="mii-compose-close" type="button">Fechar</button></div>
+            <p>Salve ou selecione um perfil para editar suas peças. A cabeça é salva junto ao perfil; a aplicação desse novo modelo ao MK8 ainda depende da conversão nativa.</p>
+            <details id="mii-compose-resource-panel"><summary>Biblioteca local de peças</summary>
+              <label>Arquivo AFLResHigh_2_3.dat<input id="mii-compose-path" spellcheck="false" placeholder="C:\…\AFLResHigh_2_3.dat"></label>
+              <button id="mii-compose-resource" type="button">Carregar biblioteca</button>
+            </details>
+            <p id="mii-compose-status" role="status">Selecione a biblioteca local.</p>
+            <div class="mii-compose-layout">
+              <div><canvas id="mii-compose-canvas" width="520" height="520" aria-label="Cabeça Mii montada"></canvas>
+                <p>Arraste para girar. Use a roda do mouse para aproximar.</p>
+                <div class="row"><button id="mii-compose-reopen" type="button" disabled>Ver modelo salvo</button><button id="mii-compose-export" type="button" disabled>Exportar GLB salvo</button></div>
+              </div>
+              <div><div id="mii-full-fields" class="mii-fields"></div><button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button></div>
+            </div>
+            <p class="fine">Composição por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>. Recurso AFL mantido localmente.</p>
+          </dialog>
           <details class="card">
             <summary>Modelos dentro do jogo — experimental</summary>
             <p>Use a pasta extraída do título MiiModel 0100000000000802 do seu console, contendo ShapeMid/High e NXTextureLow/MidLinear/SRGB. Não use um arquivo GLB nesta opção.</p>
@@ -324,5 +337,7 @@
     </div>
 
     <footer>MK8-online · projeto experimental sem vínculo com a Nintendo · use somente arquivos do seu próprio console</footer>
-  </body>
+  <script src="/vendor/ffl/ffl-emscripten.cjs"></script>
+<script type="module" src="/mii-composer.js"></script>
+</body>
 </html>

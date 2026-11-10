@@ -2,6 +2,7 @@ use mk8_manifest::{verify, Config, Installation, Result};
 use serde::Serialize;
 pub mod avatar;
 pub mod mii;
+pub mod mii_composer;
 pub mod mii_data;
 pub mod mii_resources;
 use std::{

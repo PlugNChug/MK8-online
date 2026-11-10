@@ -36,6 +36,11 @@
       "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/utils/SkeletonUtils.js",
       "source_sha256": "0761b1e003917b215d25dd81439d854b36034b5a57ce84c2cfe3b02428d7b253",
       "sha256": "1ccafd5ea1351fae3a48dadacb9cff1e817cf44f777108bdc1f0420dfdeda1df"
+    },
+    "GLTFExporter.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r183/examples/jsm/exporters/GLTFExporter.js",
+      "source_sha256": "0dd325edc550303a2955012f7aa07988e6da8e7b86d4743454c87105cafe058b",
+      "sha256": "0dd325edc550303a2955012f7aa07988e6da8e7b86d4743454c87105cafe058b"
     }
   }
 }

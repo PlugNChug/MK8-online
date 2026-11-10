@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/ariankordi/FFL.js",
+  "revision": "4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec",
+  "license": "AGPL-3.0",
+  "changes": "None. Bare three imports are rewritten to the bundled relative module when served.",
+  "files": {
+    "ffl.js": "e6af33e3f353648003d1eb01f1439c30eb02a8fd1a52a1cb42288ae6ec920992",
+    "ffl-emscripten.cjs": "0469080a09f8ab005f04eb1c27a3fa8b894c72341d0f0bd0cb3bd13fa3d71a74",
+    "ffl-emscripten.wasm": "40cb0e8a164a5df79e51c84104d9c1f76ed7b83fb333aaf45645d9fd7b114f5d",
+    "helpers/GeometryConverter.js": "2842b4856f61d6b6b368ef137540f5403d02a698f4a9ac0f7104047060f39189",
+    "materials/FFLShaderMaterial.js": "77da08f52414ea595007e73cab3f6822c4f15f9dc35a397afac0c886aea470a1",
+    "LICENSE": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+    "README.md": "1c76a4f1773fda2a9c58ef0f62e9b0c348ad8a53cdb7fa86ac3a54a94484e14c"
+  }
+}

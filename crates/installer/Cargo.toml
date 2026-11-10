@@ -8,3 +8,4 @@ mk8-manifest = { path = "../manifest" }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
+sha2.workspace = true

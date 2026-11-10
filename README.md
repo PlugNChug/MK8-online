@@ -36,7 +36,12 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 ## On the starting grid
 
-**Mii parts, phase 1:** local AFL extraction produced 585 nonempty meshes and 247 textures with a hashed inventory. `toolchain/mii_library.py` reproduces this using a separately obtained, verified extractor/resource. These private assets are not bundled with the launcher; style mapping, materials and assembled-head validation remain pending.
+**Mii parts, phase 1:** local AFL extraction produced 585 nonempty meshes and 247 textures with a hashed inventory. `toolchain/mii_library.py` reproduces this using a separately obtained, verified extractor/resource. These private assets are not bundled with the launcher; the composer below uses FFL to select and position the parts.
+
+**Phase 2:** the isolated local composer now builds two distinct heads from CharInfo using FFL.js, including normals/materials, bounded hair editing and GLB export. Browser tests reopen both exports and compare their pixels to the preview. The newly assembled heads still need native-game validation; see [status](docs/STATUS.md).
+
+**Phase 3:** the launcher now has **Perfil Mii → Editar Mii 3D**: select a saved profile, configure your local `AFLResHigh_2_3.dat`, edit Switch fields with a live head preview, then save the profile and its textured GLB together. Saved heads can be reopened/exported; profile changes invalidate stale heads. FFL.js/WASM code and its AGPL notice are bundled, while the AFL file stays private and is verified by hash. The editor does not apply these heads to MK8 yet. `python scripts/test-mii-composer.py` exercises the compiled debug launcher with disposable profiles and Chromium. See [third-party notices](docs/THIRD_PARTY.md) for the composition module's license.
+
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |

@@ -1,5 +1,33 @@
 # Estado técnico — 10/11/2026
 
+## Editor e perfis Mii — fase 3, 10/11/2026
+
+O launcher agora oferece **Perfil Mii → Editar Mii 3D**. O usuário cria/seleciona um perfil existente, informa o caminho do AFL local verificado, edita os 49 campos Switch com prévia das peças reais e salva perfil + GLB texturizado. A cabeça pode ser girada, ampliada, reaberta e exportada. Criação/nome continuam no formulário principal; o modal faz a edição completa da cabeça. Altura, porte e campos administrativos são preservados no CharInfo, mas não mudam a prévia de cabeça isolada. Interface em português/inglês. Não há modal dentro do renderizador do jogo.
+
+`crates/installer/src/mii_composer.rs` mantém a configuração separada em `local/mii-composer.json`; lê o AFL por tamanho e SHA-256 conhecido a cada carregamento/salvamento. `local/mii-resources.json` e os consumidores originais de MiiModel não são alterados. O recurso gráfico não é incorporado ao executável ou ao Git. Somente FFL.js/WASM, seus auxiliares/licença e o GLTFExporter são dependências públicas incorporadas ao launcher; procedência e hashes em `web/vendor/*/manifest.json` e `THIRD_PARTY.md`.
+
+Os modelos ficam em `local/profiles/<id>/assembled-<sha256>.glb`, com recibo `assembled-head.json` contendo CharInfo completo, hashes e `native_integration_verified=false`. O `head.glb` procedural anterior é preservado. A gravação confere o perfil esperado, valida o envelope GLB, proíbe recursos externos e exige vínculo CharInfo, normais e imagens incorporadas. Trocar/editar o perfil rejeita um salvamento atrasado e invalida o recibo antigo; arquivos anteriores são conservados. O arquivo derivado é escrito antes do perfil/recibo: uma falha posterior é reportada, podendo deixar um GLB órfão, sem substituir o modelo anterior por conteúdo parcial.
+
+Validação: 30 testes Rust do installer/launcher passaram; build debug e Clippy com `-D warnings` concluídos. `scripts/test-mii-composer.py` inicia o executável real com `--data-dir` temporário, exercita criação de dois perfis, cabelo/pele/rosto, intervalo inválido, salvamento, reabertura, exportação, recarga da página, isolamento por identidade, rejeição de GLB/recurso inválidos e invalidação após edição. Verifica idiomas, ausência de requisições externas e erros de navegador. Evidências privadas em `local/mii-composer-check` (imagens, GLB e manifesto). Os perfis/saves pessoais são preservados.
+
+**Próxima fase:** converter as cabeças geradas por perfil para os materiais, coordenadas e attachment do pipeline BFRES nativo e testá-las no MK8. O teste nativo anterior cobre apenas a cabeça pessoal estática; não foi repetido nesta mudança de launcher. Não há cobertura de todos os estilos/expressões, corpo completo, troca durante partida ou multiplayer. `gameplay_verified` permanece falso.
+
+## Montagem de cabeças Mii — fase 2, 10/11/2026
+
+Implementado um protótipo local em `toolchain/mii_assembly.html`, separado do launcher/runtime, que usa FFL.js/WASM e o AFL verificado na fase 1. Dois CharInfo sintéticos de 88 bytes produzem cabeças distintas, com seleção de formato do rosto, pele, cabelo, olhos e boca. Há edição do ID de cabelo (0–131), composição das texturas, exportação GLB e reabertura do arquivo exportado. Nenhum perfil pessoal foi lido ou alterado.
+
+A montagem usa a seleção de peças e as transformações da FFL, em vez de tratar a sequência `shape_N.glb` como IDs de estilos do editor. Campos exercitados: formato em `0x2d`, pele `0x2e`, cabelo `0x31`, cor do cabelo `0x32`, olhos `0x34` e boca `0x45`. Perfil A: rosto 0, cabelo 33, olhos 2, boca 23; perfil B: rosto 4, cabelo 24, olhos 16, boca 7. A edição adicional de cabelo 12 passou; 132 foi rejeitado. A API recebe CharInfo diretamente, conservando o contrato de dados do launcher. Isso ainda não qualifica todos os estilos/campos.
+
+As cabeças montadas incluem normais e materiais, ausentes nos GLBs brutos da fase 1. As máscaras são compostas pelo shader FFL e convertidas para texturas RGBA para exportação. O shader auxiliar `TextureShaderMaterial` da revisão consultada falhou ao compilar; foi usado `FFLShaderMaterial` para a composição, sem modificar fontes externas. Corrigida na adaptação própria a conversão linear→sRGB dos pixels lidos dos render targets, pois o GLB reaberto inicialmente escurecia os detalhes do rosto.
+
+`scripts/test-mii-assembly.py` executa Chromium/Playwright com servidor temporário limitado aos arquivos de teste em loopback, valida recurso e revisão do FFL.js e preserva a licença junto à cópia temporária. Exercita os dois perfis, normais, texturas, downloads distintos, reabertura pelo GLTFLoader, edição/rejeição de cabelo, erros de console e ausência de requisições externas. Compara os pixels da prévia com os do GLB reaberto, exigindo diferença média RGB inferior a 0,1/255. O teste completo passou; também passaram os quatro testes da biblioteca.
+
+Evidências privadas em `local/mii-assembly-check`: `profile-A.png`, `profile-B.png`, `export-A.png`, `export-B.png`, os dois GLBs e `manifest.json` com hashes e diferenças de pixels. Imagens originais/reabertas inspecionadas. O manifesto mantém `native_integration_verified=false`: **estes dois modelos ainda não foram testados no MK8**. O teste anterior em jogo continua limitado ao GLB pessoal, pela sobreposição estática.
+
+Reprodução nesta máquina: `python scripts/test-mii-assembly.py` (Python com Playwright/Chromium). Pré-requisitos privados: o AFL da fase 1, checkout limpo `local/mii-library-research/FFL.js` na revisão `4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec` e `local/mii-library-research/GLTFExporter.js` do Three.js r183, hash registrado em `THIRD_PARTY.md` e verificado pelo teste. O teste não baixa dependências nem publica um serviço externo.
+
+**Próxima fase:** conectar a composição ao editor/perfil do launcher, com importação local do recurso e geração de modelo por identidade; depois adaptar e testar as cabeças geradas no pipeline nativo. O protótipo não é um modal integrado ao jogo, não habilita carregamento durante partida nem inclui a biblioteca no instalador. Expressões animadas, cobertura completa de estilos e multiplayer continuam pendentes. `gameplay_verified` permanece falso.
+
 ## Biblioteca de peças Mii — fase 1, 10/11/2026
 
 Encontrada e extraída uma fonte de peças, sem automatizar exportações no Mii Creator: `AFLResHigh_2_3.dat`, do Miitomo, obtido pelo endereço público arquivado do antigo CDN indicado por jaames/mii-assets e FFL-Testing. O arquivo tem 4.579.008 bytes e SHA-256 `4a4be71d75162c20b48720ef89cd3d4e6cd4e8e21bcbc2aed63ee08d96de7722`. Não é o recurso NXTexture/Shape do SDK Switch e não deve ser passado ao caminho original de firmware como se fosse equivalente.

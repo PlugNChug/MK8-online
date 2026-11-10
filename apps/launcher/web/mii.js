@@ -15,6 +15,7 @@
     button.disabled=true;
     try {await action(fn);} finally {button.disabled=false;}
   }
+  window.miiEditorData=()=>fullData?.slice();
   const fieldSchema=api("mii/fields");
   const fullLabels=["Região da fonte","Cor favorita","Tipo","Altura","Porte","Tipo de Mii","Região de origem",
     "Formato do rosto","Tom de pele","Rugas","Maquiagem","Estilo do cabelo","Cor do cabelo","Inverter cabelo",
@@ -33,18 +34,20 @@
   async function fullFields(profile) {
     const sequence=++fullSequence;
     fullData=null; $("mii-full-save").disabled=true; $("mii-full-fields").replaceChildren();
+    window.dispatchEvent(new Event("miiprofilechange"));
     if(!profile)return;
     const [schema, exported]=await Promise.all([fieldSchema,api("mii/export")]);
     if(sequence!==fullSequence)return;
     fullData=exported.data;
     for(const field of schema) {
       const label=document.createElement("label"), text=document.createElement("span"), input=document.createElement("input");
-      text.dataset.english=field.name; input.type="number"; input.min=field.min; input.max=field.max; input.step=1;
+      text.dataset.english=field.name; input.type="number"; input.min=field.min; input.max=field.max; input.step=1; input.required=true;
       input.value=fullData[field.offset]; input.dataset.offset=field.offset; input.setAttribute("aria-label",field.name);
       label.append(text,input); $("mii-full-fields").append(label);
     }
     fullLanguage();
     $("mii-full-save").disabled=false;
+    window.dispatchEvent(new Event("miiprofilechange"));
   }
   for (const [key,title,max] of fields) {
     const label=document.createElement("label"), text=document.createElement("span"), input=document.createElement("input");
@@ -150,7 +153,9 @@
       if(!input.reportValidity())return;
       data[Number(input.dataset.offset)]=Number(input.value);
     }
-    await api("mii/data",data); await load();
+    if(window.miiComposer?.ready) await window.miiComposer.save(data, fullData);
+    else await api("mii/data",data);
+    await load();
     return {message:"Perfil salvo. Alterações serão usadas na próxima abertura do jogo."};
   });
   $("mii-resources-save").onclick=()=>miiAction(async()=>{

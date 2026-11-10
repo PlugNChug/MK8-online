@@ -1,5 +1,19 @@
 # Dependências e atribuições
 
+## Composição integrada ao launcher — fase 3, 10/11/2026
+
+A mesma revisão FFL.js `4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec` da fase 2 agora está em `apps/launcher/web/vendor/ffl`: bindings, WASM distribuído pelo autor, GeometryConverter, FFLShaderMaterial, LICENSE AGPL-3.0 e README com instruções de compilação/origem do FFL. Créditos: Arian Kordi e decompilação FFL de aboood40091. Hashes de todos os arquivos e URL da fonte estão no manifesto local. Arquivos copiados sem alteração; ao servir os módulos, o launcher resolve o import `three` para a versão local. Fontes correspondentes: [FFL.js nesta revisão](https://github.com/ariankordi/FFL.js/tree/4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec); instruções e dependências do WASM no README preservado. O modal oferece link para fonte e licença.
+
+O adaptador novo `apps/launcher/web/mii-composer.js` usa SPDX `AGPL-3.0-or-later`; não tratar o módulo combinado com FFL.js como dependência MIT. O aviso e a licença AGPL são incorporados ao launcher e servidos localmente. A licença declarada dos demais componentes permanece a existente. O GLTFExporter r183 original também foi incorporado a `web/vendor/three`, sob o aviso MIT já preservado; origem/hash adicionados ao manifesto Three.js. A conversão linear→sRGB, os controles e o vínculo GLB/CharInfo estão no adaptador próprio.
+
+Nenhum AFL, GLB pessoal, peça/textura extraída ou dado de jogo foi copiado para fontes públicas. `mii-composer.json` referencia o arquivo privado; SHA-256 e tamanho limitam a revisão suportada. A licença das bibliotecas de código não concede licença dos recursos gráficos.
+
+## Composição Mii — fase 2, 10/11/2026
+
+[FFL.js](https://github.com/ariankordi/FFL.js/tree/4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec), revisão `4b62d7e6bb7b5ba3932b5236a2c05a2ef1b02fec`, AGPL-3.0, Arian Kordi, sobre a decompilação FFL de aboood40091. Checkout íntegro preservado em `local/mii-library-research/FFL.js`; o teste copia somente bindings, WASM, shader, conversor de geometria e LICENSE para a pasta temporária. Nenhuma fonte externa foi editada ou adicionada ao instalador. A adaptação própria chama CharModel com CharInfo de 88 bytes e usa a FFL para selecionar/posicionar peças e compor máscaras; não copia as tabelas de peças do extrator sem licença explícita.
+
+[Three.js GLTFExporter r183](https://github.com/mrdoob/three.js/blob/r183/examples/jsm/exporters/GLTFExporter.js), MIT; arquivo original privado, SHA-256 `0dd325edc550303a2955012f7aa07988e6da8e7b86d4743454c87105cafe058b`. Usa o Three.js r183 e GLTFLoader já presentes no projeto, cujos avisos MIT são preservados junto à cópia temporária. As adaptações de geração/exportação estão em `toolchain/mii_assembly.html`. Recursos AFL e modelos derivados continuam privados; a licença do código FFL.js não foi tratada como licença dos recursos gráficos.
+
 ## Biblioteca Mii — investigação e extração local, 10/11/2026
 
 - [jaames/mii-assets](https://github.com/jaames/mii-assets/tree/c2811a81cad8be5330d8153ef3fc5b51e651e9e2), revisão `c2811a81cad8be5330d8153ef3fc5b51e651e9e2`, arquivado. Créditos declarados: Jaames, Cholip e Kinnay. Extrai GLB/PNG de AFL/FFL; não foi encontrada licença explícita no checkout consultado. Fontes preservadas somente em `local/mii-library-research/mii-assets`, sem cópia para fontes públicas/pacote. O adaptador próprio verifica os hashes antes de executar esse checkout externo.

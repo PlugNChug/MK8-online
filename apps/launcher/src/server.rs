@@ -270,6 +270,24 @@ impl App {
                 "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
             ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
             ("GET", "/api/mii/fields") => Ok(json!(mk8_installer::mii_data::fields())),
+            ("GET", "/api/mii/composer") => Ok(
+                json!({"resource":mk8_installer::mii_composer::resource_config(&self.local)?, "head":mk8_installer::mii_composer::saved(&self.local)?}),
+            ),
+            ("POST", "/api/mii/composer/resource") => {
+                let value: mk8_installer::mii_composer::Resource =
+                    serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_composer::configure(
+                    &self.local,
+                    &value.path
+                )?))
+            }
+            ("POST", "/api/mii/composer/save") => {
+                let value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_composer::store(
+                    &self.local,
+                    value
+                )?))
+            }
             ("POST", "/api/mii/data") => {
                 let data: Vec<u8> = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 Ok(json!(mk8_installer::mii::update_data(&self.local, &data)?))
@@ -651,8 +669,11 @@ impl App {
 }
 
 pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
-    let mut res = Response::from_string(text).with_status_code(code);
-    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
+    binary_response(req, code, text.into_bytes(), mime);
+}
+fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
+    let mut res = Response::from_data(bytes).with_status_code(code);
+    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
     let _ = req.respond(res);
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
@@ -794,8 +815,53 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
+        if method == Method::Get && path == "/vendor/ffl/ffl-emscripten.wasm" {
+            binary_response(
+                req,
+                200,
+                include_bytes!("../web/vendor/ffl/ffl-emscripten.wasm").to_vec(),
+                "application/wasm",
+            );
+            continue;
+        }
         if method == Method::Get {
             let model_asset = match path.as_str() {
+                "/mii-composer.js" => Some((
+                    include_str!("../web/mii-composer.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/GLTFExporter.js" => Some((
+                    include_str!("../web/vendor/three/GLTFExporter.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/ffl.js" => Some((
+                    include_str!("../web/vendor/ffl/ffl.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/ffl-emscripten.cjs" => Some((
+                    include_str!("../web/vendor/ffl/ffl-emscripten.cjs"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/helpers/GeometryConverter.js" => Some((
+                    include_str!("../web/vendor/ffl/helpers/GeometryConverter.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/materials/FFLShaderMaterial.js" => Some((
+                    include_str!("../web/vendor/ffl/materials/FFLShaderMaterial.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/LICENSE" => Some((
+                    include_str!("../web/vendor/ffl/LICENSE"),
+                    "text/plain; charset=utf-8",
+                )),
+                "/vendor/ffl/README.md" => Some((
+                    include_str!("../web/vendor/ffl/README.md"),
+                    "text/plain; charset=utf-8",
+                )),
+                "/vendor/ffl/manifest.json" => Some((
+                    include_str!("../web/vendor/ffl/manifest.json"),
+                    "text/plain; charset=utf-8",
+                )),
                 "/mii-model.html" => Some((
                     include_str!("../web/mii-model.html"),
                     "text/html; charset=utf-8",
@@ -846,7 +912,9 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 response(
                     req,
                     200,
-                    source.replace("__LANGUAGE__", &crate::language::read(&app.local)),
+                    source
+                        .replace("__LANGUAGE__", &crate::language::read(&app.local))
+                        .replace("from 'three'", "from '/vendor/three/three.module.js'"),
                     mime,
                 );
                 continue;
@@ -879,17 +947,44 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
-        if req.body_length().is_some_and(|n| n > 32768) {
+        if method == Method::Get
+            && matches!(
+                path.as_str(),
+                "/api/mii/composer/resource" | "/api/mii/composer/model"
+            )
+        {
+            let result = if path.ends_with("resource") {
+                mk8_installer::mii_composer::resource(&app.local)
+            } else {
+                mk8_installer::mii_composer::saved_bytes(&app.local)
+            };
+            match result {
+                Ok(bytes) => binary_response(req, 200, bytes, "application/octet-stream"),
+                Err(error) => response(
+                    req,
+                    400,
+                    json!({"ok":false,"error":error}).to_string(),
+                    "application/json",
+                ),
+            }
+            continue;
+        }
+        let limit = if path == "/api/mii/composer/save" {
+            9 * 1024 * 1024
+        } else {
+            32768
+        };
+        if req.body_length().is_some_and(|n| n > limit) {
             response(req, 413, "{}".into(), "application/json");
             continue;
         }
         let mut body = String::new();
         if req
             .as_reader()
-            .take(32769)
+            .take((limit + 1) as u64)
             .read_to_string(&mut body)
             .is_err()
-            || body.len() > 32768
+            || body.len() > limit
         {
             response(req, 400, "{}".into(), "application/json");
             continue;
