@@ -41,7 +41,7 @@ Diagnóstico sem dados do jogo/firmware: `local/python/Scripts/python.exe script
 | Desempenho | Cerca de 60 FPS nos trechos medidos no PC de teste | Repetir copas, estabilizar VRAM e testar mais hardware |
 | LAN / códigos de sala | Dois jogos correram no mesmo PC; transporte testado com 12 clientes | Dois PCs reais, relay na internet e mais de quatro jogadores reais |
 | Tela dividida | Em investigação | Corrigir entrada na seleção de personagens para dois jogadores |
-| Nextendo | Clientes investigados; conexão ainda não implementada | Compatibilidade de conta, NEX e matchmaking |
+| Nextendo | Protótipo opcional; OAuth e obtenção real de token NEX validados | Qualificar TLS do jogo, login MK8, lobby e corrida em dois PCs |
 
 São marcos observados, sem estimativa artificial de porcentagem concluída. `gameplay_verified` permanece `false` até passar pela qualificação completa. Evidências e limitações: [estado técnico](docs/STATUS.md) e [roteiro](docs/ROADMAP.md).
 
@@ -71,6 +71,8 @@ As correções da 0.1.8 também distinguem arquivos inacessíveis de caches corr
 
 A preparação nas fontes agora inclui o carregador `vulkan-1.dll` fixado ao lado do jogo e o preserva na limpeza de dependências. O SDL carrega essa DLL dinamicamente; verificar apenas imports estáticos a deixava de fora na 0.1.7. Continua sendo necessário um driver gráfico compatível com Vulkan 1.3: incluir o carregador não instala o driver da GPU.
 
+Correções locais adicionais (ainda não publicadas) verificam a prontidão das ferramentas por recibo de conclusão e hashes, mesmo sem downloads extras de DLLs. Antes de iniciar o jogo, um processo separado verifica as bibliotecas Vulkan/SDL locais e suas dependências resolvidas pelo Windows. Falhas impedem o início e entram no relatório de suporte como `vulkan-check.log`. O jogo usa o caminho explícito do Vulkan local. Essa checagem valida carregamento de bibliotecas, não compatibilidade da GPU ou gameplay, e não apaga dados do jogo nem saves.
+
 A versão 0.1.8 também bloqueia operações concorrentes entre launchers que compartilham dados/ferramentas e entre execuções do pipeline na mesma pasta de dados. Falhas no cancelamento mantêm o processo sob controle para permitir nova tentativa. A limpeza rejeita diretórios pais com links e para diante de erros de permissão, sem forçar exclusões. Essas proteções continuam em validação; os limites restantes estão no estado técnico.
 
 O launcher 0.1.8 supervisiona os processos separadamente: fechar ou perder o launcher interrompe suas ferramentas/builds, enquanto o jogo ativo mantém os bloqueios e pode concluir o salvamento normalmente. Outras instâncias não podem abrir outro jogo com os mesmos saves, recompilar, alterar caminhos ou iniciar atualização desses recursos. Jogos com pastas de dados diferentes podem compartilhar ferramentas somente para leitura. Fechar o launcher ainda desconecta seu gateway multijogador; isso não implementa reconexão de sessão.
@@ -95,9 +97,15 @@ Use a mesma pasta nas próximas aberturas. Pastas antigas de dados por versão n
 
 **Atualizações:** **Suporte → Verificar atualizações** consulta as Releases do GitHub, incluindo pré-releases. **Atualizar agora** baixa o setup, verifica o SHA-256 publicado e reabre o launcher após instalar.
 
+O teste local **0.1.9-test.1** corrige a solicitação e o uso de retratos Mii ausentes e inclui logs do runtime nos relatórios. Os dois jogadores devem instalar o setup de teste e preparar novamente a build, mantendo as pastas de dados existentes. Saves são preservados; renderização integrada dos Miis e corrida entre dois PCs continuam sem qualificação. Esta versão não foi publicada no GitHub.
+
 ## Corra com amigos
 
 ### Salas LAN
+
+Para **Radmin VPN**, os dois PCs precisam estar na mesma rede VPN. No **PC anfitrião**, informe seu IP Radmin seguido de `:47820` em **Endereço alternativo** e gere um **novo convite** para cada convidado. O convidado apenas cola o convite em **Entrar**; seu campo de endereço alternativo não altera convites recebidos. Permita UDP 47820 no firewall do anfitrião. Alterar o endereço invalida o convite exibido; recolher o painel mantém o endereço escolhido.
+
+A correção local distingue transporte de lobby, exclui o anfitrião da contagem de convidados e mostra orientação após 20 segundos sem confirmação. **Wireless Play não está implementado**; use **LAN Play** para as salas do launcher. Estas mudanças de teste ainda não foram publicadas. A coleta de diagnóstico no código local também inclui o log ao lado do executável do runtime quando stdout está vazio; esta correção ainda não está no instalador VPN enviado anteriormente.
 
 Cada PC precisa preparar sua própria cópia da mesma versão do jogo. Em **Multijogador**, salve seu nome, crie ou busque uma sala e gere **Novo convite** para cada amigo. Os convidados colam seus convites individuais no launcher. O convite contém o endereço do anfitrião: compartilhe em privado.
 
@@ -136,9 +144,11 @@ O daemon admite até 16 salas, cada uma com anfitrião e até 11 convidados. Ela
 
 </details>
 
-### Nextendo: uma direção futura
+### Nextendo: protótipo de desenvolvimento
 
-Investigar a **[Nextendo Network](https://nextendo.network/)** está no roteiro para oferecer uma alternativa de serviço online. **Esta build ainda não integra Nextendo.** Contas, amigos e matchmaking exigiriam trabalho de compatibilidade e validação neste runtime nativo. É uma intenção de desenvolvimento, sem data anunciada ou vínculo presumido; não substitui o caminho LAN/relay atual.
+Execute `powershell -File scripts/test-nextendo.ps1` no checkout com launcher/runtime recompilados. Abra solo e **F1 → Online → Nextendo account**. Depois do login no navegador, escolha Nextendo e reinicie pelo overlay após salvar. Tokens e chave de assinatura de teste ficam apenas em memória; fechar o jogo exige novo login. Sair da conta não apaga os dados do jogo. Esse fluxo é separado das salas LAN do launcher.
+
+OAuth e obtenção de token NEX reais passaram com o aplicativo próprio MK8-Online. **Login do jogo, amigos, lobby e corrida Nextendo ainda não estão qualificados.** As releases oficiais confirmam exatamente MK8 4.0.1. O teste real de Online Play reproduziu 2306-0502: o certificado TLS do MK8 diverge do pin herdado. A CA pública do Prelude também não autentica esse certificado autoassinado do MK8. Com confiança temporária autorizada somente para teste local, o TLS passou e o jogo chegou a “You're spectating. Get ready!”. Um acesso nulo no caminho de recursos/Mii ainda interrompe a transição; corrida online não está qualificada. O pin padrão permanece intacto, a verificação continua ativa e a distribuição depende da confirmação oficial do certificado/SPKI MK8. Sem saves em nuvem ou publicação nesta etapa; o instalador 0.1.8 publicado não contém o protótipo. Veja o [estado técnico](docs/STATUS.md).
 
 ## Desempenho, com contexto
 

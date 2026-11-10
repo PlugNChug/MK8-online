@@ -10,7 +10,7 @@ Preparação 0.1.8 (testes): recuperação de caches, isolamento Python/pip, coo
 
 ## 1. Multijogador
 
-- **[planejado]** Investigar integração com Nextendo Network para serviços online alternativos: mapear requisitos de conta, autenticação, amigos e matchmaking no runtime nativo antes de implementar. Ainda não integrado, sem prazo ou compatibilidade comprovada. Referência em [THIRD_PARTY.md](THIRD_PARTY.md).
+- **[protótipo local]** Nextendo: cliente próprio cadastrado; OAuth e token NEX reais validados. Sessão somente em memória, opt-in pelo script de teste. Versão 4.0.1 confirmada nas releases oficiais. Pin temporário autorizado somente em testes permitiu chegar ao modo espectador. Falhas de animação Mii foram tratadas parcialmente; o consumidor de recursos/retratos ainda encerra a transição. Falta confirmar a chave MK8 com o Nextendo e separar a confiança TLS do serviço ZNC. Aceitação BAAS/NEX, lobby, NAT/Pia, corrida em duas máquinas e amigos continuam pendentes. Cloud saves fora do protótipo. Evidências e limites em [STATUS.md](STATUS.md); fontes/licenças em [THIRD_PARTY.md](THIRD_PARTY.md).
 
 - **[validação]** Um erro de comunicação apareceu uma vez com duas instâncias na mesma máquina (não reproduzido na repetição). Se aparecer entre duas máquinas, testar com `MK8_ASYNC_SUBMIT=0` e enviar os relatórios dos dois PCs.
 

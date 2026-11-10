@@ -21,6 +21,12 @@ pub fn spawn(request: &Request) -> Result<Child> {
 pub fn run() -> Result<i32> {
     let request: Request = supervisor::read_request()?;
     let _guards = acquire_game(&request.root, &request.local)?;
+    if request.candidate {
+        mk8_installer::validate_candidate(&request.install)?;
+    } else {
+        mk8_installer::validate_installation(&request.install)?;
+    }
+    crate::vulkan::check(&request.install, &request.local)?;
     let signal = request.local.join("open-rooms");
     if signal.exists() {
         std::fs::remove_file(signal).map_err(|e| e.to_string())?;

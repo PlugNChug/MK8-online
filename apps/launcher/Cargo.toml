@@ -22,3 +22,6 @@ serde_json.workspace = true
 tiny_http = "0.12"
 tauri = { version = "2", features = [] }
 rfd = "0.17"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }

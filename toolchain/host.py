@@ -223,6 +223,8 @@ def prepare_host_sources(source, output):
     prepare_split_screen(runtime)
     from online_notice import prepare as prepare_online_notice
     prepare_online_notice(runtime)
+    from nextendo import prepare as prepare_nextendo
+    prepare_nextendo(runtime)
     from movie_output import prepare as prepare_movie_output
     prepare_movie_output(runtime)
     from sampler_inline import prepare as prepare_sampler_inline
@@ -356,7 +358,7 @@ def build_host(source, output, workers=None):
                     'runtime/nvn/maxwell/*.c', 'runtime/net/*.c', 'runtime/nvn/vulkan/*.c',
                     'runtime/nvn/vulkan/*.cpp', 'runtime/ui/*.mm', 'third_party/mbedtls/library/*.c', 'games/mk8d/*.c']:
         sources.extend(sorted(source.glob(pattern)))
-    sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm')]
+    sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
     sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
     sources += [source/'runtime/platform/windows.c', export_source]
     sources += [source/'third_party/imgui'/name for name in ['imgui.cpp', 'imgui_draw.cpp', 'imgui_tables.cpp', 'imgui_widgets.cpp', 'backends/imgui_impl_sdl3.cpp', 'backends/imgui_impl_vulkan.cpp']]

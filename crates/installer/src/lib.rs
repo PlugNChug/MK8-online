@@ -217,6 +217,15 @@ fn spawn_game(
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
+        .env(
+            "SDL_VULKAN_LIBRARY",
+            install
+                .executable
+                .path
+                .parent()
+                .ok_or("Pasta do runtime ausente")?
+                .join("vulkan-1.dll"),
+        )
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
