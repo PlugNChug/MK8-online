@@ -13,6 +13,50 @@ from native import DEFAULT_COMPILER
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class LocalMiiTests(unittest.TestCase):
+    def test_model_archive_mount_uses_only_configured_mii_directory(self):
+        from host import prepare_host_sources
+        from native import compiler_env
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)
+            runtime=prepare_host_sources(ROOT/'upstream/smm2recomp/recomp',out/'host')
+            text=(runtime/'services/fs.c').read_text(encoding='utf-8')
+            start=text.index('static Service *open_data_storage(')
+            body=text[start:text.index('// ------------------------------------------------------------------ host-directory filesystem',start)]
+            source=out/'mount.c'
+            source.write_text(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+typedef struct { int nfiles; } RomfsIndex;
+typedef struct { void *state; } Service;
+static char mounted[4096];
+static int calls;
+#define LOG(...) ((void)0)
+static void data_storage(void) {}
+static int romfs_index(const char *dir, void *unused, RomfsIndex *ix, char *why, size_t n) {
+    snprintf(mounted,sizeof mounted,"%s",dir); calls++; ix->nfiles=6; return 1;
+}
+static Service *service_new(const char *n,void (*fn)(void),void *state) {
+    static Service s; s.state=state; return &s;
+}
+''' + body + r'''
+int main(int argc,char **argv) {
+    assert(argc==2); _putenv_s("MK8_MII_RESOURCE_DIR",argv[1]);
+    assert(!open_data_storage(0x0100000000000806ull)); // not redirected to the Mii archive
+    assert(calls==0);
+    assert(open_data_storage(0x0100000000000802ull));
+    assert(calls==1 && !strcmp(mounted,argv[1]));
+    assert(open_data_storage(0x0100000000000802ull) && calls==1); // reuse index
+    return 0;
+}
+''',encoding='utf-8')
+            exe=out/'mount.exe'
+            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O1','-UNDEBUG',str(source),'-o',str(exe)],check=True,env=compiler_env(),capture_output=True)
+            subprocess.run([str(exe),str(out)],cwd=out,check=True,timeout=15)
+
     def test_editor_persists_profile_and_cancel_preserves_it(self):
         source = (ROOT/'upstream/smm2recomp/recomp/runtime/services/mii.c').read_text(encoding='utf-8')
         default = source[source.index('void mii_default_charinfo'):source.index('static bool one_mii')]
@@ -30,6 +74,8 @@ class LocalMiiTests(unittest.TestCase):
 #include "mii/local_mii.inc"
 #include "mii/mii_editor.inc"
 static int confirm=1;
+static int opened;
+void mk8_open_mii_menu(void) { opened++; }
 void menu_keyboard_title(const char *t) {}
 void menu_notice(const char *t,double s) {}
 int menu_keyboard_run(const char *i,int n,char *o,int cap) { snprintf(o,cap,"Jo\\xc3\\xa3o");return confirm; }
@@ -47,6 +93,9 @@ int main(int argc,char **argv) {
  assert(!mk8_mii_save_name("12345678901",info));assert(!mk8_mii_save_name("A\\nB",info));
  confirm=0;assert(mk8_mii_editor(4,out)==0x80 && out[0]==1);
  assert(mk8_mii_editor(2,out)==0x20 && out[0]==1);
+ assert(mk8_profile_charinfo(info) && info[16]=='J');
+ _putenv_s("MK8_MII_MENU_SIGNAL","fixture");
+ assert(mk8_mii_editor(4,out)==0x80 && out[0]==1 && opened==1);
  assert(mk8_profile_charinfo(info) && info[16]=='J');
  return 0;
 }
@@ -74,6 +123,7 @@ int main(int argc,char **argv) {
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 '''+default+'''
 #include "mii/local_mii.inc"
 int main(void) {
@@ -103,6 +153,15 @@ int main(void) {
  _putenv_s("MK8_MII_GENDER", "1");assert(mk8_profile_charinfo(out));assert(out[0x28]==1 && out[0x27]==11);
  _putenv_s("MK8_MII_ID", "00112233445566770099aabbccddeeff");assert(!mk8_profile_charinfo(out));
  _putenv_s("MK8_MII_ID", "0011");assert(!mk8_profile_charinfo(out));
+ mii_default_charinfo(again,"Imported"); again[0x31]=131; again[0x32]=99;
+ char encoded[0x58*2+1];
+ for(int i=0;i<0x58;i++)snprintf(encoded+2*i,3,"%02x",again[i]);
+ _putenv_s("MK8_MII_CHARINFO",encoded);
+ assert(mk8_profile_charinfo(out) && !memcmp(out,again,0x58));
+ assert(mk8_mii_get(list,sizeof list,0x5c,1,true)==1 && !memcmp(list,again,0x58));
+ encoded[0x31*2]='f'; encoded[0x31*2+1]='f';
+ _putenv_s("MK8_MII_CHARINFO",encoded); assert(!mk8_profile_charinfo(out));
+ _putenv_s("MK8_MII_CHARINFO","00"); assert(!mk8_profile_charinfo(out));
  return 0;
 }
 ''', encoding='utf-8')

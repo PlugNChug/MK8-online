@@ -36,6 +36,7 @@ pub struct App {
     username: String,
     prepare_after_setup: bool,
     room_menu: u64,
+    mii_menu: u64,
     window: Option<DialogParent>,
     /// Set by a started update: the server exits after answering, so the installer can replace the launcher.
     exit_requested: bool,
@@ -114,6 +115,7 @@ impl App {
             username,
             prepare_after_setup: false,
             room_menu: 0,
+            mii_menu: 0,
             window,
             exit_requested: false,
             last_report: None,
@@ -199,6 +201,14 @@ impl App {
             }
         }
         let signal = self.local.join("open-rooms");
+        if self.game.is_some() && fs::remove_file(self.local.join("open-miis")).is_ok() {
+            self.mii_menu += 1;
+            if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }
         if self.game.is_some() && fs::remove_file(signal).is_ok() {
             self.room_menu += 1;
             if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
@@ -254,6 +264,56 @@ impl App {
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
+            ("GET", "/api/mii") => Ok(json!({"active":mk8_installer::mii::read(&self.local)?,
+                "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
+            ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
+            ("GET", "/api/mii/fields") => Ok(json!(mk8_installer::mii_data::fields())),
+            ("POST", "/api/mii/data") => {
+                let data: Vec<u8> = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::update_data(&self.local, &data)?))
+            }
+            ("GET", "/api/mii/export") => {
+                let profile = mk8_installer::mii::read(&self.local)?
+                    .ok_or("Crie ou importe um Mii primeiro.")?;
+                Ok(json!({"data":profile.data()?}))
+            }
+            ("GET", "/api/mii/resources") => {
+                Ok(json!(mk8_installer::mii_resources::read(&self.local)?))
+            }
+            ("POST", "/api/mii/resources") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_resources::configure(
+                    &self.local,
+                    Path::new(value["directory"].as_str().unwrap_or("")),
+                    value["enabled"].as_bool().unwrap_or(false)
+                )?))
+            }
+            ("POST", "/api/mii/preview") => {
+                let face = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::avatar::head(&face)?))
+            }
+            ("POST", "/api/mii/save" | "/api/mii/create") => {
+                let appearance = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let profile = if path.ends_with("create") {
+                    mk8_installer::mii::create(&self.local, appearance)?
+                } else {
+                    mk8_installer::mii::store(&self.local, appearance)?
+                };
+                Ok(
+                    json!({"profile":profile,"message":"Perfil salvo. Alterações serão usadas na próxima abertura do jogo."}),
+                )
+            }
+            ("POST", "/api/mii/select") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::select(
+                    &self.local,
+                    value["id"].as_str().unwrap_or("")
+                )?))
+            }
+            ("POST", "/api/mii/import") => {
+                let data: Vec<u8> = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::import(&self.local, &data)?))
+            }
             ("POST", "/api/language") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 Ok(json!(crate::language::write(&self.local, &value)?))
@@ -717,6 +777,15 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 req,
                 200,
                 include_str!("../web/app.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/mii.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/mii.js").into(),
                 "text/javascript; charset=utf-8",
             );
             continue;

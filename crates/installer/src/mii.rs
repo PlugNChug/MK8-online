@@ -36,6 +36,50 @@ pub struct Profile {
     pub schema: u8,
     pub id: [u8; 16],
     pub appearance: Appearance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charinfo: Option<Vec<u8>>,
+}
+
+impl Profile {
+    pub fn data(&self) -> Result<Vec<u8>> {
+        self.appearance.validate()?;
+        let mut data = self.charinfo.clone().unwrap_or_else(crate::mii_data::base);
+        if self.charinfo.is_some() {
+            crate::mii_data::validate(&data)?;
+        }
+        data[..16].copy_from_slice(&self.id);
+        crate::mii_data::set_name(&mut data, &self.appearance.name);
+        data[0x27] = self.appearance.color;
+        data[0x28] = self.appearance.gender;
+        if self.charinfo.is_none() {
+            apply_face(&mut data, &self.appearance.face, None);
+        }
+        crate::mii_data::validate(&data)?;
+        Ok(data)
+    }
+}
+
+fn apply_face(data: &mut [u8], face: &crate::avatar::Face, old: Option<&crate::avatar::Face>) {
+    let values = face.bytes();
+    let previous = old.map(|f| f.bytes());
+    for (i, (offset, value)) in [
+        (0x2e, face.skin),
+        (0x2d, face.shape),
+        (0x31, [0, 33, 24, 12][face.hair as usize]),
+        (0x32, face.hair_color),
+        (0x34, [2, 4, 8][face.eyes as usize]),
+        (0x35, [8, 10, 11, 12, 9, 0][face.eye_color as usize]),
+        (0x4f, face.glasses as u8),
+        (0x29, face.height),
+        (0x2a, face.build),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if previous.is_none_or(|p| p[i] != values[i]) {
+            data[offset] = value;
+        }
+    }
 }
 
 pub fn read(local: &Path) -> Result<Option<Profile>> {
@@ -48,24 +92,32 @@ pub fn read(local: &Path) -> Result<Option<Profile>> {
     if profile.schema != 1 || profile.id[8] & 0xc0 != 0x80 {
         return Err("Perfil Mii local inválido; o arquivo foi preservado.".into());
     }
+    profile.data()?;
     Ok(Some(profile))
 }
 
 pub fn store(local: &Path, mut appearance: Appearance) -> Result<Profile> {
     appearance.name = appearance.name.trim().to_owned();
     appearance.validate()?;
-    let id = if let Some(previous) = read(local)? {
+    let previous = read(local)?;
+    let id = if let Some(previous) = &previous {
         previous.id
     } else {
         let mut id = [0; 16];
         rand::thread_rng().fill_bytes(&mut id);
+        id[6] = (id[6] & 0x0f) | 0x40;
         id[8] = (id[8] & 0x3f) | 0x80;
         id
     };
+    let mut raw = previous.as_ref().and_then(|p| p.charinfo.clone());
+    if let (Some(data), Some(old)) = (&mut raw, &previous) {
+        apply_face(data, &appearance.face, Some(&old.appearance.face));
+    }
     let profile = Profile {
         schema: 1,
         id,
         appearance,
+        charinfo: raw,
     };
     persist(local, &profile)?;
     Ok(profile)
@@ -93,6 +145,7 @@ fn archive(local: &Path, profile: &Profile) -> Result<()> {
 }
 
 fn persist(local: &Path, profile: &Profile) -> Result<()> {
+    profile.data()?;
     archive(local, profile)?;
     save(&local.join("mii-profile.json"), profile)
 }
@@ -113,6 +166,7 @@ pub fn list(local: &Path) -> Result<Vec<Profile>> {
         }
         let p: Profile = load(&entry.path().join("profile.json"))?;
         p.appearance.validate()?;
+        p.data()?;
         if p.schema != 1
             || p.id[8] & 0xc0 != 0x80
             || entry.file_name().to_str() != Some(&id_text(&p))
@@ -138,11 +192,13 @@ pub fn create(local: &Path, mut appearance: Appearance) -> Result<Profile> {
     }
     let mut id = [0; 16];
     rand::thread_rng().fill_bytes(&mut id);
+    id[6] = (id[6] & 0x0f) | 0x40;
     id[8] = (id[8] & 0x3f) | 0x80;
     let profile = Profile {
         schema: 1,
         id,
         appearance,
+        charinfo: None,
     };
     persist(local, &profile)?;
     Ok(profile)
@@ -172,11 +228,20 @@ pub fn configure(command: &mut Command, local: &Path) -> Result<()> {
         "MK8_MII_COLOR",
         "MK8_MII_GENDER",
         "MK8_MII_FACE",
+        "MK8_MII_CHARINFO",
     ] {
         command.env_remove(key);
     }
     if let Some(profile) = read(local)? {
         archive(local, &profile)?;
+        command.env(
+            "MK8_MII_CHARINFO",
+            profile
+                .data()?
+                .iter()
+                .map(|v| format!("{v:02x}"))
+                .collect::<String>(),
+        );
         let id: String = profile.id.iter().map(|b| format!("{b:02x}")).collect();
         command
             .env("MK8_MII_ID", id)
@@ -197,9 +262,92 @@ pub fn configure(command: &mut Command, local: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn import(local: &Path, data: &[u8]) -> Result<Profile> {
+    crate::mii_data::validate(data)?;
+    let id: [u8; 16] = data[..16].try_into().unwrap();
+    if list(local)?.iter().any(|p| p.id == id) {
+        return Err("Este Mii já existe. Selecione o perfil para editar.".into());
+    }
+    persist_data(local, data)
+}
+
+pub fn update_data(local: &Path, data: &[u8]) -> Result<Profile> {
+    crate::mii_data::validate(data)?;
+    let current = read(local)?.ok_or("Crie ou importe um Mii primeiro.")?;
+    if current.id != data[..16] {
+        return Err("O perfil ativo mudou. Recarregue o editor antes de salvar.".into());
+    }
+    persist_data(local, data)
+}
+
+fn persist_data(local: &Path, data: &[u8]) -> Result<Profile> {
+    let id = data[..16].try_into().unwrap();
+    let profile = Profile {
+        schema: 1,
+        id,
+        charinfo: Some(data.to_vec()),
+        appearance: Appearance {
+            name: crate::mii_data::name(data)?,
+            color: data[0x27],
+            gender: data[0x28],
+            face: crate::avatar::Face {
+                skin: data[0x2e].min(5),
+                shape: data[0x2d].min(2),
+                hair: [0, 33, 24, 12]
+                    .iter()
+                    .position(|&v| v == data[0x31])
+                    .unwrap_or(1) as u8,
+                hair_color: data[0x32].min(7),
+                eyes: [2, 4, 8].iter().position(|&v| v == data[0x34]).unwrap_or(0) as u8,
+                eye_color: [8, 10, 11, 12, 9, 0]
+                    .iter()
+                    .position(|&v| v == data[0x35])
+                    .unwrap_or(0) as u8,
+                glasses: data[0x4f] != 0,
+                height: data[0x29],
+                build: data[0x2a],
+            },
+        },
+    };
+    persist(local, &profile)?;
+    Ok(profile)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imported_details_survive_export_and_name_edits() {
+        let root = std::env::temp_dir().join(format!("mk8-import-{}", rand::random::<u64>()));
+        let mut data = crate::mii_data::base();
+        data[8] = 0x80;
+        crate::mii_data::set_name(&mut data, "Importado");
+        data[0x31] = 131;
+        data[0x32] = 99;
+        data[0x4f] = 19;
+        data[0x2e] = 9;
+        let p = import(&root, &data).unwrap();
+        assert_eq!(p.data().unwrap(), data);
+        assert!(import(&root, &data).is_err());
+        let mut appearance = p.appearance.clone();
+        appearance.name = "Novo".into();
+        let edited = store(&root, appearance).unwrap();
+        crate::mii_data::set_name(&mut data, "Novo");
+        assert_eq!(edited.data().unwrap(), data);
+        assert_eq!(read(&root).unwrap().unwrap(), edited);
+        data[0x42] = 17;
+        assert_eq!(update_data(&root, &data).unwrap().data().unwrap(), data);
+        let mut wrong = data.clone();
+        wrong[15] ^= 1;
+        assert!(update_data(&root, &wrong).is_err());
+        let before = std::fs::read(root.join("mii-profile.json")).unwrap();
+        assert!(import(&root, &[0; 88]).is_err());
+        assert_eq!(
+            std::fs::read(root.join("mii-profile.json")).unwrap(),
+            before
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn profile_survives_reload_and_edits_keep_identity() {
         let root = std::env::temp_dir().join(format!("mk8-mii-{}", rand::random::<u64>()));

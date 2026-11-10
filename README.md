@@ -39,7 +39,7 @@ with a native launcher, a Vulkan runtime and multiplayer rooms under development
 | Performance | Around 60 FPS in the measured race sections on the test PC | Repeated cups, VRAM stability and more hardware |
 | LAN / room codes | Two game instances raced on one PC; 12 transport clients tested | Two real PCs, internet relay and more than four actual players |
 | Split-screen | Under investigation | Fix the two-player character-selection input issue |
-| Nextendo | Planned investigation | Assess integration with this native runtime |
+| Nextendo | Client implementations researched; no connection implemented | Account, NEX and matchmaking compatibility |
 
 These are observed milestones, not a percentage-complete estimate. `gameplay_verified` remains `false` until the complete qualification passes. Detailed evidence and limitations: [technical status](docs/STATUS.md) and [roadmap](docs/ROADMAP.md) (Portuguese).
 
@@ -161,7 +161,7 @@ In **Support → Create report**, create a diagnostic ZIP and attach it to an [i
 
 Reports include game/build/tool logs and the build manifest. The launcher redacts personal paths and account names and excludes saves and keys; review attachments before sharing. Reports are stored in `<data folder>\data\reports`; a report is also created automatically after a game crash. Never post ROMs, console keys or private invitations.
 
-Current priorities are repeated-cup VRAM stability, shader/frame-time consistency, visual fidelity, split-screen input and multiplayer on separate machines. Mii models are not integrated into gameplay; the current launcher does not expose a profile editor. Full qualification must cover image, audio, physical controls, clock speed and restart/save together.
+Current priorities are repeated-cup VRAM stability, shader/frame-time consistency, visual fidelity, split-screen input and multiplayer on separate machines. Local source builds now expose **Mii profile**: create/edit/select profiles, an approximate procedural 3D preview, full Switch field editing and lossless `.charinfo` import/export. The runtime menu can open the editor; changes apply on the next game launch, and saves remain shared. An experimental option mounts the player's extracted MiiModel resources and restores the game's original model path. **Actual in-game heads, portraits and animations remain unqualified; this does not implement Nextendo.** See [Mii setup and test instructions](docs/STATUS.md). Full qualification must cover image, audio, physical controls, clock speed and restart/save together.
 
 ## Build and contribute
 

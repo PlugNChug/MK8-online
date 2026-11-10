@@ -146,6 +146,17 @@ def prepare_host_sources(source, output):
     text = text.replace(old, '    case 0: OUT(uint8_t, 0) = mk8_mii_updated; mk8_mii_updated = false; resp_size(resp, 1); break;\n    case 1: case 20:')
     mii.write_text(text+'\n'+(ROOT/'runtime/mk8/mii/mii_editor.inc').read_text(encoding='utf-8'), encoding='utf-8')
     from mii_applet import adapt as adapt_mii_applet
+    fs = runtime/'services/fs.c'
+    text = fs.read_text(encoding='utf-8')
+    old = '    char dir[64], why[256];\n    snprintf(dir, sizeof dir, "sysdata/%016llx", (unsigned long long)data_id);'
+    if text.count(old) != 1:
+        raise ValueError('System archive path boundary changed')
+    text = text.replace(old, '''    char dir[4096], why[256];
+    const char *mii = data_id == 0x0100000000000802ull ? getenv("MK8_MII_RESOURCE_DIR") : NULL;
+    int length = mii && *mii ? snprintf(dir, sizeof dir, "%s", mii)
+        : snprintf(dir, sizeof dir, "sysdata/%016llx", (unsigned long long)data_id);
+    if (length < 0 || (size_t)length >= sizeof dir) return NULL;''')
+    fs.write_text(text, encoding='utf-8')
     am = runtime/'services/am.c'
     am.write_text(adapt_mii_applet(am.read_text(encoding='utf-8')), encoding='utf-8')
     movie = runtime/'hle/movie.c'
@@ -250,8 +261,10 @@ def prepare_host_sources(source, output):
     boundary = '        tabs_body(scale, true, NULL);'
     if text.count(boundary) != 1:
         raise ValueError('Runtime room menu boundary changed')
-    text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n' + boundary)
-    menu.write_text('extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
+    text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n'
+                        '        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();\n' + boundary)
+    menu.write_text('extern "C" bool mk8_mii_menu_available(void);\nextern "C" void mk8_open_mii_menu(void);\n'
+                   'extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
     kernel = runtime/'kernel.c'
     text = kernel.read_text(encoding='utf-8')
     stack = '    pthread_attr_setstacksize(&attr, 256ull << 20);  // guest recursion runs on the host stack'

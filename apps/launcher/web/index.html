@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/style.css" />
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/mii.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -27,6 +28,7 @@
         <button class="tab" data-tab="play" aria-selected="false">Jogar</button>
         <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
         <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
+        <button class="tab" data-tab="miis" aria-selected="false">Perfil Mii</button>
       </nav>
 
       <main>
@@ -151,6 +153,43 @@
             </div>
           </article>
           <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. Tudo é feito com os arquivos do seu console, neste computador.</p>
+        </section>
+
+        <section id="miis" class="panel" hidden>
+          <h1>Perfil Mii</h1>
+          <p class="muted">Crie, edite ou importe um Mii do Switch. Alterações entram em vigor na próxima abertura do jogo. Os saves continuam compartilhados entre perfis.</p>
+          <div class="card">
+            <label>Perfis salvos<select id="mii-profiles"><option value="">Novo perfil</option></select></label>
+            <div class="row"><button id="mii-select">Usar perfil selecionado</button><button id="mii-new">Novo perfil</button></div>
+          </div>
+          <div class="mii-layout">
+            <div class="card">
+              <canvas id="mii-canvas" width="420" height="420" aria-label="Prévia 3D aproximada do perfil"></canvas>
+              <p id="mii-preview-status" class="fine" role="status"></p>
+              <p class="fine">Prévia procedural aproximada. O MK8 usa seus próprios modelos com os recursos MiiModel; detalhes importados podem diferir desta prévia.</p>
+              <label>Rotação<input id="mii-rotation" type="range" min="-180" max="180" value="0" /></label>
+            </div>
+            <form id="mii-form" class="card">
+              <label>Nome do Mii<input id="mii-name" maxlength="10" required value="Player" /></label>
+              <div id="mii-fields" class="mii-fields"></div>
+              <div class="row"><button type="submit" class="primary">Salvar Mii</button><button type="button" id="mii-export">Exportar .charinfo</button></div>
+              <label>Importar Mii do Switch (.charinfo)<input id="mii-import" type="file" accept=".charinfo,.ufsd" /></label>
+              <p id="mii-identity" class="fine"></p>
+              <details><summary>Detalhes completos do Switch</summary>
+                <p class="fine">Salve ou selecione um perfil primeiro. Os números correspondem aos estilos do Switch; a prévia aproximada não representa todas as opções.</p>
+                <div id="mii-full-fields" class="mii-fields"></div>
+                <button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button>
+              </details>
+            </form>
+          </div>
+          <details class="card">
+            <summary>Modelos dentro do jogo — experimental</summary>
+            <p>Use a pasta extraída do título MiiModel 0100000000000802 do seu console, contendo ShapeMid/High e NXTextureLow/MidLinear/SRGB. Não use um arquivo GLB nesta opção.</p>
+            <label>Pasta MiiModel<input id="mii-resource-dir" spellcheck="false" /></label>
+            <label><input id="mii-render-enabled" type="checkbox" /> Ativar modelos reais na próxima abertura (ainda não qualificado)</label>
+            <button id="mii-resources-save">Salvar recursos Mii</button>
+            <p class="fine">Sem os recursos, o modo sem modelos continua disponível. Esta opção não conecta ao Nextendo.</p>
+          </details>
         </section>
 
         <!-- Jogar -->

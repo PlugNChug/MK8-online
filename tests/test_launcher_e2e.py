@@ -108,7 +108,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(json.loads((Path(self.temporary.name)/'0'/'username.json').read_text(encoding='utf-8')), "João")
         token = page.locator('meta[name="mk8-token"]').get_attribute('content')
         response = page.request.get(self.urls[0]+"/api/mii", headers={"X-MK8-Token":token})
-        self.assertFalse(response.json()['ok'])
+        self.assertTrue(response.json()['ok'])
         page.close()
 
     def test_01_preparation_missing_files_and_disabled_play(self):

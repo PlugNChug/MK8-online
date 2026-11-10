@@ -39,7 +39,7 @@ com launcher nativo, runtime Vulkan e salas multijogador em desenvolvimento.
 | Desempenho | Cerca de 60 FPS nos trechos medidos no PC de teste | Repetir copas, estabilizar VRAM e testar mais hardware |
 | LAN / códigos de sala | Dois jogos correram no mesmo PC; transporte testado com 12 clientes | Dois PCs reais, relay na internet e mais de quatro jogadores reais |
 | Tela dividida | Em investigação | Corrigir entrada na seleção de personagens para dois jogadores |
-| Nextendo | Investigação prevista | Avaliar integração com este runtime nativo |
+| Nextendo | Clientes investigados; conexão ainda não implementada | Compatibilidade de conta, NEX e matchmaking |
 
 São marcos observados, sem estimativa artificial de porcentagem concluída. `gameplay_verified` permanece `false` até passar pela qualificação completa. Evidências e limitações: [estado técnico](docs/STATUS.md) e [roteiro](docs/ROADMAP.md).
 
@@ -159,7 +159,7 @@ Em **Suporte → Gerar relatório**, crie um ZIP de diagnóstico e anexe a uma [
 
 Os relatórios contêm logs do jogo, build e ferramentas e o manifesto da build. O launcher oculta caminhos pessoais e nomes de conta e exclui saves e chaves; revise os anexos antes de compartilhar. Os arquivos ficam em `<pasta de dados>\data\reports`; um relatório também é criado automaticamente após falha do jogo. Nunca publique ROMs, chaves do console ou convites privados.
 
-As prioridades são estabilizar VRAM ao repetir copas, melhorar shaders/tempo por quadro e fidelidade visual, corrigir a entrada em tela dividida e testar multiplayer entre máquinas. Modelos Mii não estão integrados ao jogo; o launcher atual não oferece editor de perfis. A qualificação completa deve verificar imagem, áudio, controle físico, velocidade do relógio e reinício/save juntos.
+As prioridades são estabilizar VRAM ao repetir copas, melhorar shaders/tempo por quadro e fidelidade visual, corrigir a entrada em tela dividida e testar multiplayer entre máquinas. As fontes locais agora oferecem **Perfil Mii**: criação/edição/seleção de perfis, prévia 3D procedural aproximada, edição dos campos completos do Switch e importação/exportação `.charinfo` sem perda. O menu do runtime abre o editor; alterações valem na próxima abertura do jogo e os saves continuam compartilhados. Uma opção experimental monta os recursos MiiModel extraídos pelo usuário e reativa o caminho original de modelos do jogo. **Cabeças, retratos e animações dentro do jogo ainda não foram qualificados; isso não implementa Nextendo.** Veja [configuração e testes de Mii](docs/STATUS.md). A qualificação completa deve verificar imagem, áudio, controle físico, velocidade do relógio e reinício/save juntos.
 
 ## Compilar e contribuir
 

@@ -1,5 +1,9 @@
 use mk8_manifest::{verify, Config, Installation, Result};
 use serde::Serialize;
+pub mod avatar;
+pub mod mii;
+pub mod mii_data;
+pub mod mii_resources;
 use std::{
     fs,
     path::Path,
@@ -199,6 +203,8 @@ fn spawn_game(
     network: Option<(String, u8)>,
     username: &str,
 ) -> Result<Child> {
+    let mii_directory = mii_resources::launch_directory(local)?;
+    mii::read(local)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     rotate_game_log(local)?;
@@ -236,6 +242,13 @@ fn spawn_game(
             .env("LARECOMP_LAN_ROOM", "MK8ONLINE")
             .env("LARECOMP_LAN_SLOT", slot.to_string());
     }
+    mii::configure(&mut cmd, local)?;
+    cmd.env_remove("MK8_MII_RESOURCE_DIR");
+    if let Some(directory) = mii_directory {
+        cmd.env("MK8_MII_RESOURCE_DIR", directory)
+            .env("MK8_EXPERIMENTAL_NO_MII", "0");
+    }
+    cmd.env("MK8_MII_MENU_SIGNAL", local.join("open-miis"));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
