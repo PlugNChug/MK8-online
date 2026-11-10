@@ -222,7 +222,8 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             save = local/'user-save.bin'
             save.write_bytes(b'preserved save')
             (local/'candidate.json').write_text(json.dumps({'executable': pipeline.file_record(exe),
-                'files': {'gamelib': pipeline.file_record(game)}, 'gameplay_verified': False}))
+                'files': {'gamelib': pipeline.file_record(game)}, 'data_root': str(local/'game-data/test'),
+                'gameplay_verified': False}))
             def dependencies(*args, **kwargs):
                 (output/'vulkan-1.dll').write_bytes(b'verified loader fixture')
             with patch('host.build_host', return_value=exe), patch.object(pipeline.subprocess, 'run', side_effect=dependencies):
@@ -232,6 +233,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertFalse(candidate['gameplay_verified'])
+            self.assertTrue(candidate['dlc_supported'])
 
 
 if __name__=="__main__":

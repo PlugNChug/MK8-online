@@ -1,4 +1,5 @@
 use mk8_manifest::{verify, Config, Installation, Result};
+pub mod dlc;
 use serde::Serialize;
 use std::{
     fs,
@@ -199,6 +200,7 @@ fn spawn_game(
     network: Option<(String, u8)>,
     username: &str,
 ) -> Result<Child> {
+    let dlc_root = dlc::launch_root(local, install)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     rotate_game_log(local)?;
@@ -211,6 +213,10 @@ fn spawn_game(
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
+        .env(
+            "MK8_DLC_ROOT",
+            dlc_root.as_deref().unwrap_or_else(|| Path::new("")),
+        )
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
@@ -289,6 +295,7 @@ mod tests {
             data_root: root.clone(),
             shader_root: root.clone(),
             gameplay_verified: false,
+            dlc_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

@@ -150,6 +150,32 @@
               <pre id="build-log" class="log" aria-label="Log da preparação" hidden>Nenhuma preparação iniciada.</pre>
             </div>
           </article>
+          <article id="dlc-card" class="card dlc-card" aria-labelledby="dlc-title">
+            <div class="row">
+              <h2 id="dlc-title">Conteúdo adicional</h2>
+              <span id="dlc-state" class="pill">Não instalado</span>
+            </div>
+            <p>Booster Course Pass</p>
+            <p class="hint">Opcional. Importe o NSP do DLC do seu console após preparar o jogo.</p>
+            <div id="dlc-files">
+              <div class="path-field">
+                <label>NSP do DLC<input id="dlc-package" spellcheck="false" placeholder="Caminho do arquivo" /></label>
+                <button type="button" class="ghost" data-browse="dlc-package" data-kind="dlc" aria-label="Escolher NSP do DLC" hidden>Escolher</button>
+              </div>
+              <div class="path-field">
+                <label>Chaves para importar DLC<input id="dlc-keys" spellcheck="false" placeholder="Automático" /></label>
+                <button type="button" class="ghost" data-browse="dlc-keys" data-kind="keys" aria-label="Escolher chaves para DLC" hidden>Escolher</button>
+              </div>
+            </div>
+            <div class="row">
+              <label class="dlc-toggle"><input type="checkbox" id="dlc-enabled" disabled />Ativar Booster Course Pass</label>
+              <button type="button" id="dlc-import" class="ghost" disabled>Importar DLC NSP…</button>
+              <button type="button" class="link" data-log="dlc-log">Ver log</button>
+            </div>
+            <p id="dlc-hint" class="hint">Prepare o jogo antes de importar DLC.</p>
+            <p id="dlc-detail" class="hint" role="status"></p>
+            <pre id="dlc-log" class="log" aria-label="Log do DLC" hidden></pre>
+          </article>
           <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. Tudo é feito com os arquivos do seu console, neste computador.</p>
         </section>
 

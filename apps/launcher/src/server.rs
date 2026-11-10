@@ -27,6 +27,7 @@ pub struct App {
     config: Config,
     build: Manager,
     setup: setup::Setup,
+    dlc_import: setup::Setup,
     tools: Vec<Value>,
     host: Option<Host>,
     internet_room: Option<InternetRoom>,
@@ -105,6 +106,7 @@ impl App {
             config,
             build: Manager::default(),
             setup: setup::Setup::default(),
+            dlc_import: setup::Setup::default(),
             tools,
             host: None,
             internet_room: None,
@@ -121,7 +123,10 @@ impl App {
     }
 
     fn store_config(&mut self, config: Config) -> Result<()> {
-        if self.prepare_after_setup || self.build.poll().state == "running" {
+        if self.prepare_after_setup
+            || self.build.poll().state == "running"
+            || self.dlc_import.running()
+        {
             return Err("Aguarde a preparação para alterar os caminhos.".into());
         }
         let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
@@ -131,6 +136,9 @@ impl App {
     }
 
     fn start_build(&mut self) -> Result<()> {
+        if self.dlc_import.running() {
+            return Err("Aguarde a importação do DLC.".into());
+        }
         {
             let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
             save(&self.local.join("config.json"), &self.config)?;
@@ -186,6 +194,7 @@ impl App {
             })
     }
     fn status(&mut self) -> Value {
+        self.dlc_import.poll();
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
             self.game_exit = Some(exit.to_string());
             self.game = None;
@@ -235,6 +244,8 @@ impl App {
         let candidate_stale =
             candidate_exists && candidate_version.as_deref() != Some(update::CURRENT);
         let install = self.installation();
+        let dlc =
+            mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
         let package_import =
             !self.config.base_package.is_empty() || !self.config.update_package.is_empty();
         let imported = self.local.join("imports/mk8-4.0.1");
@@ -247,10 +258,78 @@ impl App {
                 .to_string_lossy()
                 .into_owned();
         }
-        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
+            ("POST", "/api/dlc/toggle") | ("POST", "/api/dlc/import") => {
+                self.status();
+                if self.game.is_some()
+                    || self.setup.running()
+                    || self.dlc_import.running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err("Feche o jogo ou aguarde a operação atual.".into());
+                }
+                let guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
+                let pipeline = fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .read(true)
+                    .write(true)
+                    .open(self.local.join(".build.lock"))
+                    .map_err(|e| e.to_string())?;
+                pipeline
+                    .try_lock()
+                    .map_err(|_| "Já existe uma preparação usando esta pasta de dados.")?;
+                let install = self
+                    .installation()
+                    .or_else(|| self.candidate())
+                    .ok_or("Prepare o jogo antes de importar DLC.")?;
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                if path == "/api/dlc/toggle" {
+                    let enabled = value["enabled"]
+                        .as_bool()
+                        .ok_or("Preferência de DLC inválida.")?;
+                    mk8_installer::dlc::set_enabled(&self.local, &install, enabled)?;
+                    return Ok(json!({"message": "Preferência de DLC salva."}));
+                }
+                let package = value["package"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("Selecione o NSP do DLC.")?;
+                if !install.dlc_supported {
+                    return Err("Atualize a build para usar DLC.".into());
+                }
+                let package = Path::new(package);
+                if !package.is_file()
+                    || !package
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp"))
+                {
+                    return Err("Selecione o NSP do DLC.".into());
+                }
+                let explicit_keys = value["keys"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        (!self.config.prod_keys.is_empty())
+                            .then(|| PathBuf::from(&self.config.prod_keys))
+                    });
+                let mut config = self.config.clone();
+                config.base_package = package.to_string_lossy().into_owned();
+                let keys = explicit_keys
+                    .or_else(|| detect_keys(&config))
+                    .filter(|p| p.is_file())
+                    .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+                drop(guards);
+                drop(pipeline);
+                self.dlc_import
+                    .start_dlc(&self.root, &self.local, package, &keys)?;
+                Ok(json!({"message": "Importação do DLC iniciada."}))
+            }
+            ("GET", "/api/dlc/log") => Ok(json!({"text":self.log_tail("dlc.log")?})),
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
@@ -304,6 +383,7 @@ impl App {
                 self.status();
                 if self.game.is_some()
                     || self.setup.running()
+                    || self.dlc_import.running()
                     || self.build.poll().state == "running"
                 {
                     return Err("Feche o jogo ou aguarde a operação atual.".into());
@@ -345,7 +425,7 @@ impl App {
                 if self.game.is_some() {
                     return Err("Feche o jogo antes de instalar ferramentas.".into());
                 }
-                if self.build.poll().state == "running" {
+                if self.build.poll().state == "running" || self.dlc_import.running() {
                     return Err(
                         "Aguarde ou cancele a preparação antes de instalar ferramentas.".into(),
                     );
@@ -360,8 +440,8 @@ impl App {
                 Ok(json!({"message":"Instalação de ferramentas cancelada."}))
             }
             ("POST", "/api/setup/check") => {
-                if self.setup.running() {
-                    return Err("Aguarde a instalação de ferramentas terminar.".into());
+                if self.setup.running() || self.dlc_import.running() {
+                    return Err("Aguarde a operação atual terminar.".into());
                 }
                 self.tools = setup::tool_checks(&self.root);
                 let missing = self.tools.iter().filter(|c| c["ok"] != true).count();
@@ -376,8 +456,8 @@ impl App {
                 if self.game.is_some() {
                     return Err("Feche o jogo antes de preparar uma instalação.".into());
                 }
-                if self.setup.running() {
-                    return Err("Aguarde a instalação de ferramentas terminar.".into());
+                if self.setup.running() || self.dlc_import.running() {
+                    return Err("Aguarde a operação atual terminar.".into());
                 }
                 self.start_build()?;
                 Ok(json!({"message":"Preparação iniciada. Acompanhe o diagnóstico."}))
@@ -499,7 +579,10 @@ impl App {
                 if self.game.is_some() {
                     return Err("O jogo já está aberto.".into());
                 }
-                if self.setup.running() || self.build.poll().state == "running" {
+                if self.setup.running()
+                    || self.dlc_import.running()
+                    || self.build.poll().state == "running"
+                {
                     return Err("Aguarde a preparação.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -567,6 +650,7 @@ impl App {
                 self.status();
                 if self.game.is_some()
                     || self.setup.running()
+                    || self.dlc_import.running()
                     || self.build.poll().state == "running"
                 {
                     return Err("Feche o jogo e aguarde a preparação antes de atualizar.".into());
@@ -598,6 +682,7 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
     let english = value["language"] == "en";
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
+        Some("dlc") => Some((if english { "DLC NSP" } else { "NSP do DLC" }, &["nsp"][..])),
         Some("nacp") => Some((
             if english {
                 "NACP metadata"
@@ -797,6 +882,40 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 mod tests {
     use super::*;
     #[test]
+    fn dlc_changes_refuse_resources_owned_by_another_session() {
+        let root = std::env::temp_dir().join(format!("mk8-dlc-lock-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let guards = mk8_build_manager::acquire_game(&root, &root).unwrap();
+        let error = app
+            .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        let error = app
+            .handle(
+                &Method::Post,
+                "/api/dlc/import",
+                r#"{"package":"fixture.nsp"}"#,
+            )
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("dlc.json").exists());
+        drop(guards);
+        let pipeline = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(".build.lock"))
+            .unwrap();
+        pipeline.try_lock().unwrap();
+        let error = app
+            .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
+            .unwrap_err();
+        assert!(error.contains("Já existe uma preparação"), "{error}");
+        drop(pipeline);
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn candidate_network_identity_uses_content_and_launch_still_checks_hashes() {
         let root =
             std::env::temp_dir().join(format!("mk8-network-manifest-{}", std::process::id()));
@@ -816,6 +935,7 @@ mod tests {
             data_root: root.clone(),
             shader_root: root.clone(),
             gameplay_verified: false,
+            dlc_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

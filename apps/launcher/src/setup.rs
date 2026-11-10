@@ -108,13 +108,47 @@ impl Default for Setup {
 
 impl Setup {
     pub fn start_guarded(&mut self, root: &Path, local: &Path) -> Result<(), String> {
+        self.start_steps_guarded(root, local, steps(root), &local.join("setup.log"))
+    }
+
+    pub fn start_dlc(
+        &mut self,
+        root: &Path,
+        local: &Path,
+        package: &Path,
+        keys: &Path,
+    ) -> Result<(), String> {
+        let steps = vec![Step::new(
+            "Importação do Booster Course Pass",
+            local_python(root),
+            &[
+                &"-u",
+                &root.join("toolchain/import_dlc.py"),
+                &"--package",
+                &package,
+                &"--keys",
+                &keys,
+                &"--local",
+                &local,
+            ],
+        )];
+        self.start_steps_guarded(root, local, steps, &local.join("dlc.log"))
+    }
+
+    fn start_steps_guarded(
+        &mut self,
+        root: &Path,
+        local: &Path,
+        steps: Vec<Step>,
+        log: &Path,
+    ) -> Result<(), String> {
         if self.running() {
             return Err("A instalação de ferramentas já está em andamento.".into());
         }
         let guards = mk8_build_manager::acquire_operation(root, local)?;
         self.supervised = Some((root.into(), local.into()));
         self.guards = guards;
-        let result = self.start(steps(root), &local.join("setup.log"));
+        let result = self.start(steps, log);
         if result.is_err() {
             self.guards.clear();
         }

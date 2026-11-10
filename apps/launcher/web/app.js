@@ -131,6 +131,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       if (!result.path) return { message: "Nenhum arquivo selecionado." };
       input.value = result.path;
       if (input.id === "game-folder") return selectGameFolder();
+      if (input.id.startsWith("dlc-")) return { message: "Arquivo selecionado." };
       await api("config", config());
       return { message: "Arquivo selecionado." };
     });
@@ -162,6 +163,16 @@ $("cancel").onclick = () =>
     return api("build/cancel", {});
   });
 $("go-play").onclick = () => showTab("play");
+$("dlc-import").onclick = () => action(() => api("dlc/import", {
+  package: $("dlc-package").value.trim(), keys: $("dlc-keys").value.trim(),
+}));
+$("dlc-enabled").onchange = () => action(async () => {
+  try {
+    return await api("dlc/toggle", { enabled: $("dlc-enabled").checked });
+  } finally {
+    await refresh();
+  }
+});
 
 // Progress of the running build: smoothed estimate from the recent rate and the average rate so far.
 let samples = [];
@@ -194,7 +205,28 @@ function renderInstall(status) {
   const files = status.files;
   const setupRunning = setup.state === "running";
   const buildRunning = build.state === "running";
-  const busyNow = setupRunning || buildRunning || !!status.game_pid;
+  const dlcRunning = status.dlc_import?.state === "running";
+  const busyNow = setupRunning || buildRunning || dlcRunning || !!status.game_pid;
+  const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
+  $("dlc-enabled").checked = dlc.enabled;
+  $("dlc-enabled").disabled = busyNow || !dlc.installed;
+  $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
+  $("dlc-import").hidden = dlc.state === "ready";
+  i18n.text($("dlc-import"), dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
+  $("dlc-files").hidden = dlc.state === "ready";
+  for (const id of ["dlc-package", "dlc-keys"]) $(id).disabled = busyNow;
+  document.querySelectorAll("[data-browse]").forEach((button) => (button.disabled = busyNow));
+  i18n.text($("dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlcRunning ? "Verificando e importando o DLC. Aguarde."
+    : setupRunning || buildRunning ? "Aguarde a operação atual terminar."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.state === "unprepared" ? "Prepare o jogo antes de importar DLC."
+    : "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
+  i18n.text($("dlc-detail"), status.dlc_import?.state === "failed" ? status.dlc_import.detail : dlc.detail || "");
+  $("dlc-detail").classList.toggle("error", status.dlc_import?.state === "failed" || dlc.state === "invalid");
   lastBuild = build;
   document
     .querySelectorAll("[data-browse]")
@@ -269,11 +301,12 @@ function renderInstall(status) {
 
   // 3. Build
   // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
-  const stale = !!status.candidate_stale && build.state !== "running";
+  const dlcUpgrade = status.candidate && dlc.state === "unsupported";
+  const stale = (!!status.candidate_stale || dlcUpgrade) && build.state !== "running";
   const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
-    i18n.text($("build-stale"), "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+    i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." : "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
       " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
       ": o que já foi feito é reaproveitado e leva poucos minutos.");
   $("build-idle").hidden = buildRunning || done;
@@ -490,7 +523,7 @@ async function refresh() {
         ? "Build experimental disponível para teste."
         : "Prepare o jogo para habilitar a execução.");
   $("play-solo").disabled =
-    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running";
+    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
@@ -527,6 +560,10 @@ async function refresh() {
   if (status.setup.state !== "idle") {
     const setupLog = await api("setup/log");
     $("setup-log").textContent = setupLog.text || status.setup.detail;
+  }
+  if (status.dlc_import && status.dlc_import.state !== "idle") {
+    const log = await api("dlc/log");
+    $("dlc-log").textContent = log.text || status.dlc_import.detail;
   }
   return status;
 }
