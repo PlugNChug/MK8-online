@@ -1,4 +1,4 @@
-# Estado técnico — 09/11/2026
+# Estado técnico — 10/11/2026
 
 ## Release 0.1.8 — versão de testes
 
@@ -9,6 +9,14 @@ A validação inicial do instalador reproduziu acesso negado em 77%: a extraçã
 Validação: formatação, Clippy e 38 testes Rust aprovados; 49 testes Python de acesso, downloads, armazenamento, pipeline, cache nativo, reparo, Vulkan, host pré-compilado e ferramentas aprovados. Passaram 16 testes de navegador com relay real, 2 de idiomas e 3 de supervisão com processos reais no pacote final. O teste de supervisão aguarda o JSON de prontidão terminar de ser escrito antes de lê-lo. Instalação real, abertura e desinstalação em pasta isolada passaram; atualização silenciosa 0.1.7 → 0.1.8 preservou pastas, idioma, configuração e save sintético. Registro e atalhos pessoais restaurados. READMEs EN/PT renderizados e conferidos. Executável e 912 arquivos do payload revisados, sem identificadores pessoais conhecidos; 13 arquivos privados monitorados permaneceram intactos.
 
 Instalador final: `MK8-online-0.1.8-setup.exe`, SHA-256 `bd2574ec3d430b16c07e7841b107036632213febc1112c9c4a352379324099fb`. Publicada inicialmente como pré-release v0.1.8, com setup, SHA-256 e fontes/script FFmpeg. A pedido do mantenedor, passou a release Latest para aparecer na página inicial; título bilíngue e notas em inglês seguidas de português. O caráter experimental permanece explícito. A API `/releases/latest` confirmou v0.1.8, sem alteração dos anexos. Publicada em https://github.com/Vnnc1/MK8-online/releases/tag/v0.1.8. O download público foi conferido pelo SHA-256; o launcher 0.1.7 real em pasta isolada retornou `available=true`, `installable=true` e `latest.tag=v0.1.8`. A instalação de atualização foi validada separadamente, sem atualizar a instalação pessoal. Gameplay e multiplayer entre máquinas continuam não qualificados.
+
+## Importação NSP/NSZ — segunda variante verificada do jogo base
+
+O erro “Conteúdo do MK8 base ou da atualização 4.0.1 ausente no pacote” foi reproduzido com um NSP cujo programa base é `6d1fd4733f0e29b754081d2bf0c56d702ad89a86ea30e67b69bb84a0a66c8b0d`. O importador aceitava apenas `e1ace5248218fa6393ec1637ce8c2c7943fb1d126c2dea93135d641cfd692183`. Os dois têm o mesmo tamanho, mas conteúdo binário diferente; renomear o arquivo não satisfaz a verificação de integridade.
+
+A seleção agora aceita essas duas identidades explícitas do programa base. Mantém o SHA-256 completo de cada NCA reconstruído, os conteúdos fixados da atualização, a integridade do LibHac e os hashes exatos do ExeFS 4.0.1 AArch64. Bases desconhecidas ou pacotes com ambas as variantes são recusados. A reserva de disco considera uma base por importação, sem somar o espaço das duas alternativas.
+
+Validação: 5 testes do importador, 5 de acesso a arquivos e 3 de armazenamento passaram. Fixtures autorais cobrem as duas identidades, NCA e NCZ, importação de contêineres PFS0, tamanho/hash divergentes, seleção ambígua e orçamento de disco. Nos arquivos privados, a nova variante foi importada com a atualização em 47,3 s; passaram a integridade do LibHac, os hashes do ExeFS e a versão NACP. Todos os 6.597 arquivos do RomFS (12.131.696.580 bytes) são idênticos à extração que já funcionava. A build completa usando a configuração NSP concluiu em 41,2 s com os caches existentes, e os hashes do candidato resultante foram conferidos. Essas durações não representam uma build sem cache. Configurações salvas, arquivos de usuário e a instalação original foram preservados; as saídas novas ficaram nos dados de desenvolvimento isolados. Não houve nova execução do jogo nem qualificação de gameplay; `gameplay_verified` permanece falso.
 
 ## Permissões, arquivos em uso e unidades removíveis — correções locais
 

@@ -83,6 +83,8 @@ O launcher 0.1.8 supervisiona os processos separadamente: fechar ou perder o lau
 
 Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`); selecione **Já tenho o jogo extraído numa pasta**. O perfil ativo é 4.0.1 AArch64. Outras versões, DLC e importação XCI/XCZ ainda precisam de validação.
 
+A importação direta de NSP/NSZ aceita duas variantes verificadas do programa base, mantendo a conferência integral dos hashes e da atualização 4.0.1. Outros conteúdos base continuam sem suporte; nesse caso, use uma pasta extraída compatível. Os detalhes da validação estão no [estado técnico](docs/STATUS.md).
+
 O setup inclui o runtime host pré-compilado e um FFmpeg mínimo para vídeos; o código do jogo é compilado no seu PC. Extrações/preparações incompletas são reparadas na build seguinte. Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e são preservados nas atualizações e na desinstalação. Para escolher outro disco ao iniciar o launcher portátil:
 
 ```powershell
