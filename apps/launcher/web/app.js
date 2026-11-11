@@ -16,9 +16,20 @@ async function api(path, body) {
   return value.data;
 }
 function notice(text, error = false) {
+  const popup = $("notice-popup");
+  popup.getAnimations().forEach((animation) => animation.cancel());
+  popup.hidden = !text;
   i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
+  popup.classList.toggle("error", error);
+  if (text && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    popup.animate([
+      { opacity: 0, transform: "translate(-50%, -24px)" },
+      { opacity: 1, transform: "translate(-50%, 0)" },
+    ], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
 }
+$("notice-close").onclick = () => notice("");
 async function action(fn) {
   if (busy) return;
   busy = true;

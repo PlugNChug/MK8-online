@@ -96,6 +96,47 @@ class LauncherTests(unittest.TestCase):
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
+    def test_notices_are_fixed_dismissible_and_respect_reduced_motion(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('[data-key="volume"]')).to_be_enabled()
+            page.evaluate("notice('Aviso de teste')")
+            popup = page.locator("#notice-popup")
+            close = page.locator("#notice-close")
+            expect(popup).to_be_visible()
+            expect(page.locator("#notice")).to_have_text("Aviso de teste")
+            page.wait_for_timeout(260)
+            top = popup.bounding_box()["y"]
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            self.assertAlmostEqual(popup.bounding_box()["y"], top, delta=1)
+            self.assertGreater(page.evaluate("window.scrollY"), 0)
+            close.click()
+            expect(popup).to_be_hidden()
+            expect(page.locator("#notice")).to_have_text("")
+            page.emulate_media(reduced_motion="reduce")
+            page.evaluate("notice('Falha de teste', true)")
+            expect(popup).to_be_visible()
+            self.assertEqual(popup.evaluate("el => el.getAnimations().length"), 0)
+            expect(page.locator("#notice")).to_have_class("error")
+            close.focus()
+            page.keyboard.press("Enter")
+            expect(popup).to_be_hidden()
+            page.set_viewport_size({"width":390, "height":844})
+            page.evaluate("notice('Mensagem longa: ' + 'arquivo/'.repeat(50))")
+            expect(popup).to_be_visible()
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            box = popup.bounding_box()
+            self.assertGreaterEqual(box["x"], 0)
+            self.assertLessEqual(box["x"] + box["width"], 390)
+            page.locator("#language").select_option("en")
+            expect(close).to_have_attribute("aria-label", "Close notification")
+            close.click()
+            page.locator("#language").select_option("pt-BR")
+            expect(popup).to_be_hidden()
+        finally:
+            page.close()
+
     def test_settings_save_locks_edits_through_delayed_response_and_reload(self):
         folder = Path(self.temporary.name) / "0/user-no-mii"
         folder.mkdir(exist_ok=True)

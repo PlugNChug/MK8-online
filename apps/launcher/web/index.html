@@ -12,6 +12,10 @@
     <script src="/app.js" defer></script>
   </head>
   <body>
+    <div id="notice-popup" hidden>
+      <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button id="notice-close" type="button" class="ghost" aria-label="Fechar aviso"><span aria-hidden="true">×</span></button>
+    </div>
     <header class="topbar">
       <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
       <span class="tag">experimental</span>
@@ -31,8 +35,6 @@
       </nav>
 
       <main>
-        <div id="notice" role="status" aria-live="polite"></div>
-
         <!-- Instalar -->
         <section id="install" class="panel">
           <div class="panel-head">
