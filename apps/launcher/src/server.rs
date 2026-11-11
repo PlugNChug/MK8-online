@@ -333,10 +333,15 @@ impl App {
                     .or_else(|| detect_keys(&config))
                     .filter(|p| p.is_file())
                     .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+                let reinstall = value
+                    .get("reinstall")
+                    .map(|value| value.as_bool().ok_or("Opção de reinstalação inválida."))
+                    .transpose()?
+                    .unwrap_or(false);
                 drop(guards);
                 drop(pipeline);
                 self.dlc_import
-                    .start_dlc(&self.root, &self.local, package, &keys)?;
+                    .start_dlc(&self.root, &self.local, package, &keys, reinstall)?;
                 Ok(json!({"message": "Importação do DLC iniciada."}))
             }
             ("GET", "/api/dlc/log") => Ok(json!({"text":self.log_tail("dlc.log")?})),

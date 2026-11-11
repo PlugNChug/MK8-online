@@ -56,6 +56,38 @@ class LauncherDlcTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertFalse((self.folder / "dlc.json").exists())
 
+    def test_installed_dlc_can_be_reinstalled_from_a_selected_package(self):
+        page = self.page()
+        token = page.locator('meta[name="mk8-token"]').get_attribute("content")
+        state = page.request.get(self.url + "/api/status", headers={"X-MK8-Token": token}).json()["data"]
+        state.update(candidate=True, candidate_stale=False)
+        state["dlc"] = {"state":"ready", "installed":True, "enabled":False, "detail":""}
+        state["dlc_import"] = {"state":"idle", "detail":""}
+        page.route("**/api/status", lambda route: route.fulfill(json={"ok":True,"data":state}))
+        imports = []
+        def run(route):
+            imports.append(route.request.post_data_json)
+            state["dlc_import"]["state"] = "running"
+            route.fulfill(json={"ok":True,"data":{}})
+        page.route("**/api/dlc/import", run)
+        page.reload()
+        page.locator('[data-tab="install"]').click()
+        expect(page.locator("#dlc-files")).to_be_hidden()
+        expect(page.locator("#dlc-change")).to_be_visible()
+        page.locator("#dlc-change").click()
+        page.locator("#dlc-package").fill("D:/Switch/Other DLC.nsp")
+        page.locator("#dlc-keys").fill("D:/Switch/prod.keys")
+        page.locator("#dlc-import").click()
+        expect(page.locator("#dlc-import")).to_be_disabled()
+        self.assertEqual(imports, [{"package":"D:/Switch/Other DLC.nsp","keys":"D:/Switch/prod.keys","reinstall":True}])
+        state["dlc_import"]["state"] = "done"
+        expect(page.locator("#dlc-files")).to_be_hidden(timeout=5000)
+        expect(page.locator("#dlc-change")).to_be_enabled()
+        page.set_viewport_size({"width":390, "height":844})
+        self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+        page.locator('[data-tab="settings"]').click()
+        expect(page.locator("#dlc-enabled")).not_to_be_checked()
+
     def test_controls_translate_toggle_report_errors_and_lock_during_operations(self):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute("content")
@@ -113,7 +145,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.locator("#dlc-keys").fill("D:/Switch/prod.keys")
         page.locator("#dlc-import").click()
         expect(page.locator("#dlc-import")).to_be_disabled()
-        self.assertEqual(imports, [{"package": "D:/Switch/DLC.nsp", "keys": "D:/Switch/prod.keys"}])
+        self.assertEqual(imports, [{"package": "D:/Switch/DLC.nsp", "keys": "D:/Switch/prod.keys", "reinstall": False}])
         page.set_viewport_size({"width": 390, "height": 844})
         self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
         page.screenshot(path=str(screenshots / "dlc-launcher-mobile.png"), full_page=True)

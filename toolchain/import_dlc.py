@@ -89,7 +89,7 @@ def attach(candidate, local):
         candidate["files"][label] = file_record(path)
 
 
-def install(package, keys, local):
+def install(package, keys, local, *, reinstall=False):
     local = local.absolute()
     regular_path(local)
     local = local.resolve()
@@ -128,7 +128,7 @@ def install(package, keys, local):
             valid = True
         except (ValueError, FileNotFoundError):
             pass
-    if not valid:
+    if not valid or reinstall:
         stage = local / f"dlc-stage-{time.time_ns()}"
         stage.mkdir()
         with package.open("rb") as stream:
@@ -183,6 +183,7 @@ if __name__ == "__main__":
     parser.add_argument("--package", required=True, type=Path)
     parser.add_argument("--keys", required=True, type=Path)
     parser.add_argument("--local", required=True, type=Path)
+    parser.add_argument("--reinstall", action="store_true", help="Valida o NSP novamente e preserva a instalação anterior em backup.")
     args = parser.parse_args()
     with exclusive_build(args.local):
-        install(args.package, args.keys, args.local)
+        install(args.package, args.keys, args.local, reinstall=args.reinstall)

@@ -308,9 +308,18 @@ $("cancel").onclick = () =>
     return api("build/cancel", {});
   });
 $("go-play").onclick = () => showTab("play");
-$("dlc-import").onclick = () => action(() => api("dlc/import", {
-  package: $("dlc-package").value.trim(), keys: $("dlc-keys").value.trim(),
-}));
+let dlcReplace = false;
+let lastDlcImport = "idle";
+$("dlc-change").onclick = () => action(async () => {
+  dlcReplace = true;
+});
+$("dlc-import").onclick = () => action(async () => {
+  const result = await api("dlc/import", {
+    package: $("dlc-package").value.trim(), keys: $("dlc-keys").value.trim(), reinstall: dlcReplace,
+  });
+  lastDlcImport = "running";
+  return result;
+});
 $("dlc-enabled").onchange = () => action(async () => {
   try {
     return await api("dlc/toggle", { enabled: $("dlc-enabled").checked });
@@ -354,13 +363,18 @@ function renderInstall(status) {
   const busyNow = setupRunning || buildRunning || dlcRunning || !!status.game_pid;
   settingsBlocked = busyNow;
   const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
+  if (lastDlcImport === "running" && status.dlc_import?.state === "done") dlcReplace = false;
+  lastDlcImport = status.dlc_import?.state || "idle";
   $("dlc-enabled").checked = dlc.enabled;
   $("dlc-enabled").disabled = busyNow || !dlc.installed;
   updateSettingsLock();
   $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
-  $("dlc-import").hidden = dlc.state === "ready";
-  i18n.text($("dlc-import"), dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
-  $("dlc-files").hidden = dlc.state === "ready";
+  $("dlc-import").hidden = dlc.state === "ready" && !dlcReplace;
+  $("dlc-change").hidden = dlc.state !== "ready" || dlcReplace;
+  $("dlc-change").disabled = busyNow;
+  i18n.text($("dlc-import"), dlc.state === "ready" ? "Reinstalar DLC…"
+    : dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
+  $("dlc-files").hidden = dlc.state === "ready" && !dlcReplace;
   for (const id of ["dlc-package", "dlc-keys"]) $(id).disabled = busyNow;
   document.querySelectorAll("[data-browse]").forEach((button) => (button.disabled = busyNow));
   i18n.text($("dlc-state"), dlcRunning ? "Importando…"

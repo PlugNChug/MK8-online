@@ -163,6 +163,18 @@ class DlcImportTests(unittest.TestCase):
                 import_dlc.install(package_path, root / "fixture.keys", local)
                 self.assertEqual(len(calls), 2)
                 self.assertEqual(json.loads((local / "candidate.json").read_text())["identity"], installed["identity"])
+                (local / "dlc.json").write_text('{"enabled":false}')
+                before_reinstall = json.loads((local / "candidate.json").read_text())
+                with patch.object(import_dlc.subprocess, "run", return_value=subprocess.CompletedProcess([], 20)):
+                    with self.assertRaises(ValueError):
+                        import_dlc.install(package_path, root / "fixture.keys", local, reinstall=True)
+                self.assertEqual(json.loads((local / "candidate.json").read_text()), before_reinstall)
+                self.assertEqual(list(local.glob("dlc-backup-*")), [])
+                import_dlc.install(package_path, root / "fixture.keys", local, reinstall=True)
+                self.assertEqual(len(calls), 4)
+                self.assertEqual(json.loads((local / "dlc.json").read_text()), {"enabled": False})
+                self.assertEqual(json.loads((local / "candidate.json").read_text()), before_reinstall)
+                self.assertEqual(len(list(local.glob("dlc-backup-*"))), 1)
                 content_path = Path(installed["files"]["dlc-contents"]["path"])
                 content_path.write_bytes(b"danificado")
                 with patch.object(import_dlc.subprocess, "run", return_value=subprocess.CompletedProcess([], 20)):
@@ -173,8 +185,8 @@ class DlcImportTests(unittest.TestCase):
                 import_dlc.install(package_path, root / "fixture.keys", local)
                 self.assertEqual(content_path.read_bytes(), (authored / "contents.dat").read_bytes())
                 backups = list(local.glob("dlc-backup-*"))
-                self.assertEqual(len(backups), 1)
-                self.assertEqual((backups[0] / "0100152000023001/romfs/contents.dat").read_bytes(), b"danificado")
+                self.assertEqual(len(backups), 2)
+                self.assertIn(b"danificado", [(backup / "0100152000023001/romfs/contents.dat").read_bytes() for backup in backups])
                 installed["data_root"] = str(local / "../fora")
                 (local / "candidate.json").write_text(json.dumps(installed))
                 with self.assertRaises(ValueError):

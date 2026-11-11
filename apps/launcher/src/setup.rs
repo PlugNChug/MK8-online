@@ -117,8 +117,9 @@ impl Setup {
         local: &Path,
         package: &Path,
         keys: &Path,
+        reinstall: bool,
     ) -> Result<(), String> {
-        let steps = vec![Step::new(
+        let mut step = Step::new(
             "Importação do Booster Course Pass",
             local_python(root),
             &[
@@ -131,8 +132,11 @@ impl Setup {
                 &"--local",
                 &local,
             ],
-        )];
-        self.start_steps_guarded(root, local, steps, &local.join("dlc.log"))
+        );
+        if reinstall {
+            step.args.push("--reinstall".into());
+        }
+        self.start_steps_guarded(root, local, vec![step], &local.join("dlc.log"))
     }
 
     fn start_steps_guarded(
