@@ -133,9 +133,24 @@ public class MiiHeadBuilder {
             shape.RadiusArray=new List<float>{20};
             body.Materials.Add(mat.Name,mat);body.VertexBuffers.Add(vh.ToVertexBuffer());body.Shapes.Add(shape.Name,shape);
         }
+        // With the Mii renderer disabled the game draws Helmet and MiiFace (head-bone space) at the kart
+        // origin, beside the rear wheel. Collapse their vertices; models/materials stay for the game's lookups.
+        foreach(var name in new[]{"Helmet","MiiFace"}) {
+            var model=res.Models[name];
+            for(int i=0;i<model.VertexBuffers.Count;i++) {
+                var hidden=new VertexBufferHelper(model.VertexBuffers[i],res.ByteOrder);
+                var position=hidden.Attributes.First(x=>x.Name=="_p0");
+                for(int k=0;k<position.Data.Length;k++) position.Data[k]=new Vector4F(0,0,0,1);
+                model.VertexBuffers[i]=hidden.ToVertexBuffer();
+            }
+        }
         using(var stream=new MemoryStream()) { bntx.Save(stream); res.ExternalFiles["textures.bntx"].Data=stream.ToArray(); }
         res.Save(args[2]);
         var check=new ResFile(args[2]);
+        foreach(var name in new[]{"Helmet","MiiFace"})
+            foreach(var vb in check.Models[name].VertexBuffers)
+                if(new VertexBufferHelper(vb,check.ByteOrder).Attributes.First(x=>x.Name=="_p0").Data.Any(v=>v.X!=0||v.Y!=0||v.Z!=0))
+                    throw new InvalidDataException(name+" geometry was not hidden");
         Console.WriteLine("Saved {0} head on bone {1}, shapes {2}, materials {3}",bodyName,head,check.Models["Mii"].Shapes.Count,check.Models["Mii"].Materials.Count);
     }
 }
