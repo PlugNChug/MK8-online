@@ -188,6 +188,8 @@ def prepare_host_sources(source, output):
     text = text.replace(boundary, (ROOT/'runtime/mk8/graphics/maxwell_gather.inc').read_text(encoding='utf-8')+'\n'+boundary)
     text = text.replace(opcode, '    } else if (OPM(0xdf00000000000000ull, 0xffc0000000000000ull)) {  // TLD4S F32\n        mk8_emit_tld4s(c, w);\n'+opcode)
     translator.write_text(text, encoding='utf-8')
+    from interpolation import prepare as prepare_interpolation
+    prepare_interpolation(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
     prepare_texture_lifetime(runtime)
     from gpu_sync import prepare as prepare_gpu_sync
@@ -206,6 +208,8 @@ def prepare_host_sources(source, output):
     prepare_texture_init(runtime)
     from packed_formats import prepare as prepare_packed_formats
     prepare_packed_formats(runtime)
+    from render_scale import prepare as prepare_render_scale
+    prepare_render_scale(runtime)
     from texture_pool import prepare as prepare_texture_pool
     prepare_texture_pool(runtime)
     from bc_render import prepare as prepare_bc_render
