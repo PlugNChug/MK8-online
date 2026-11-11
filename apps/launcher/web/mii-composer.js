@@ -14,6 +14,7 @@ scene.background=new THREE.Color('#c6d5df');
 scene.add(new THREE.HemisphereLight(0xffffff,0x536170,2));
 const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(30,60,80);scene.add(light);
 let renderer,controls,ffl,model,loaded,timer,working=false,initializing=null,revision=0;
+let nativeRunning=false, savedHead=false, nativePolling=false, nativeReady=false, nativeEnabled=false;
 const render=()=>{if(renderer)renderer.render(scene,camera);};
 function clearLoaded(){
   if(!loaded)return;
@@ -50,6 +51,7 @@ function show(){
 async function savedStatus(){
   const turn=revision;const info=await api('mii/composer');if(turn!==revision)return;
   el('mii-compose-reopen').disabled=!info.head;el('mii-compose-export').disabled=!info.head;
+  savedHead=!!info.head;await nativeStatus();
   if(info.resource)el('mii-compose-path').value=info.resource.path;
   el('mii-compose-resource-panel').open=!info.resource;
   if(info.head)i18n.text(status,'Modelo salvo para este perfil. Você pode reabrir ou continuar editando.');
@@ -115,6 +117,7 @@ el('mii-compose-resource').onclick=()=>action(async()=>{
 });
 el('mii-full-fields').addEventListener('input',()=>{
   clearTimeout(timer);el('mii-compose-reopen').disabled=true;el('mii-compose-export').disabled=true;
+  savedHead=false;el('mii-native-prepare').disabled=true;
   timer=setTimeout(()=>action(show),150);
 });
 window.addEventListener('miiprofilechange',()=>{
@@ -134,3 +137,40 @@ el('mii-compose-export').onclick=()=>action(async()=>{
   const a=document.createElement('a');a.href=url;a.download='mii-head.glb';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 window.addEventListener('beforeunload',()=>{clearTimeout(timer);clearLoaded();model?.dispose();controls?.dispose();renderer?.dispose();});
+
+async function nativeStatus(){
+  if(nativePolling)return;
+  nativePolling=true;
+  const turn=revision;
+  try{
+    const info=await api('mii/native');if(turn!==revision)return;
+    nativeRunning=info.state==='running';
+    nativeReady=info.ready;nativeEnabled=info.enabled;
+    el('mii-native-prepare').disabled=working||nativeRunning||!savedHead||(!nativeReady&&!info.tools_ready)||(nativeReady&&nativeEnabled);
+    i18n.text(el('mii-native-prepare'),nativeReady&&!nativeEnabled?'Ativar no jogo':'Preparar e usar no jogo');
+    el('mii-native-disable').disabled=working||nativeRunning||!info.enabled;
+    const message=nativeRunning?'Convertendo a cabeça para o jogo…':
+      info.state==='failed'?info.detail:info.enabled?(info.error||'Modelo preparado para a próxima abertura do jogo.'):
+      info.ready?'Uso no jogo desativado.':
+      !info.tools_ready?'Ferramentas locais de conversão indisponíveis. Configure mii-native-tools.json conforme STATUS.md.':
+      savedHead?'Modelo salvo. Prepare para usar no jogo.':'Salve o perfil e o modelo 3D antes de preparar para o jogo.';
+    i18n.text(el('mii-native-status'),message);
+  }catch(e){i18n.text(el('mii-native-status'),e.message);}
+  finally{nativePolling=false;}
+}
+el('mii-native-prepare').onclick=async()=>{
+  if(working||nativeRunning)return;
+  el('mii-native-prepare').disabled=true;
+  try{
+    const expected=window.miiEditorData();
+    if(nativeReady&&!nativeEnabled)await api('mii/native/enabled',{expected,enabled:true});
+    else{await api('mii/native/prepare',{expected});nativeRunning=true;}
+    await nativeStatus();
+  }
+  catch(e){i18n.text(el('mii-native-status'),e.message);el('mii-native-prepare').disabled=!savedHead;}
+};
+el('mii-native-disable').onclick=async()=>{
+  try{await api('mii/native/enabled',{expected:window.miiEditorData(),enabled:false});await nativeStatus();}
+  catch(e){i18n.text(el('mii-native-status'),e.message);}
+};
+setInterval(()=>{if(nativeRunning||dialog.open)nativeStatus();},1000);

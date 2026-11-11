@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Automação da conversão no launcher — fase 5, 10/11/2026
+
+O módulo Rust `crates/installer/src/mii_native.rs` e sua integração ao servidor são adaptações próprias; reutilizam o conversor Python/C# e a supervisão de processos existentes. Não foi adicionada dependência externa. A interface de composição mantém seu aviso AGPL-3.0-or-later e os avisos FFL.js/Three.js abaixo. Python/Pillow, BfresLibrary e DLLs continuam locais, com suas licenças preservadas; nenhum desses binários, AFL, corpo original ou modelo derivado foi incorporado ao instalador nesta fase. Os manifestos privados registram os hashes utilizados e `STATUS.md` documenta a evidência desta build.
+
 ## Conversão das cabeças do launcher — fase 4, 10/11/2026
 
 `toolchain/mii_native_head.py` é um adaptador próprio dos GLBs exportados pelo módulo FFL.js já atribuído abaixo. Usa os metadados das peças e transformações dos nós do arquivo; não incorpora tabelas de recursos ou código do extrator sem licença. Decodificação/redimensionamento PNG usa o Pillow privado já registrado. O construtor `mii_head_builder.cs` continua usando BfresLibrary 1.6.0 e DLLs Syroot do pacote privado com seus avisos preservados.

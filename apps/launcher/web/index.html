@@ -181,7 +181,7 @@
           </div>
           <dialog id="mii-composer" aria-labelledby="mii-composer-title">
             <div class="row"><h2 id="mii-composer-title">Editor Mii 3D</h2><button id="mii-compose-close" type="button">Fechar</button></div>
-            <p>Salve ou selecione um perfil para editar suas peças. A cabeça é salva junto ao perfil; a aplicação desse novo modelo ao MK8 ainda depende da conversão nativa.</p>
+            <p>Salve o perfil e o modelo, depois prepare a cabeça para usá-la na próxima abertura do jogo.</p>
             <details id="mii-compose-resource-panel"><summary>Biblioteca local de peças</summary>
               <label>Arquivo AFLResHigh_2_3.dat<input id="mii-compose-path" spellcheck="false" placeholder="C:\…\AFLResHigh_2_3.dat"></label>
               <button id="mii-compose-resource" type="button">Carregar biblioteca</button>
@@ -193,6 +193,12 @@
                 <div class="row"><button id="mii-compose-reopen" type="button" disabled>Ver modelo salvo</button><button id="mii-compose-export" type="button" disabled>Exportar GLB salvo</button></div>
               </div>
               <div><div id="mii-full-fields" class="mii-fields"></div><button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button></div>
+            </div>
+            <div class="card">
+              <h3>Cabeça no jogo · experimental</h3>
+              <p>Compatível com o Mii masculino Normal Suit. Outros pilotos que usem esse recurso recebem a mesma cabeça. Não use em multiplayer.</p>
+              <div class="row"><button id="mii-native-prepare" type="button" disabled>Preparar e usar no jogo</button><button id="mii-native-disable" type="button" disabled>Desativar no jogo</button></div>
+              <p id="mii-native-status" role="status"></p>
             </div>
             <p class="fine">Composição por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>. Recurso AFL mantido localmente.</p>
           </dialog>

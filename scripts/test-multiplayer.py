@@ -76,6 +76,8 @@ def run(args):
             folder.mkdir()
             for name in ('candidate.json', 'config.json'):
                 shutil.copyfile(local/name, folder/name)
+            if args.mii_profile:
+                shutil.copyfile(args.mii_profile, folder/'mii-profile.json')
             saves = folder/'user-no-mii'
             shutil.copytree(local/'user-no-mii/save', saves/'save')
             shutil.copyfile(local/'user-no-mii/mk8d.ini', saves/'mk8d.ini')
@@ -164,6 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--guest-input', required=True)
     parser.add_argument('--shots', default='1200:2400:400')
     parser.add_argument('--cache-from', type=Path)
+    parser.add_argument('--mii-profile', type=Path, help='Optional mii-profile.json to copy into each instance')
     parser.add_argument('--timeout', type=int, default=240)
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     run(parser.parse_args())

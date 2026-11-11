@@ -13,8 +13,6 @@ import shutil
 import struct
 import subprocess
 
-from PIL import Image
-
 if __package__:
     from .mii_head_bake import blend, expand_mirrored_skin, pack_yaz0, srgb_decode, srgb_encode
 else:
@@ -100,6 +98,7 @@ class Glb:
         return rows
 
     def image(self, texture):
+        from PIL import Image
         textures = self.doc['textures']
         t = textures[bounded_int(texture['index'], 0, len(textures)-1)]
         if texture.get('texCoord', 0) != 0 or texture.get('extensions') or t.get('extensions'):
@@ -182,6 +181,7 @@ class Glb:
 
 
 def colored_pixels(image, size, color):
+    from PIL import Image
     pixels = bytearray(image.resize(size, Image.Resampling.LANCZOS).tobytes() if image else bytes([255])*math.prod(size)*4)
     for i in range(0, len(pixels), 4):
         for c in range(3):
@@ -270,5 +270,9 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path, help='New private overlay directory')
     parser.add_argument('--original', required=True, type=Path)
     parser.add_argument('--builder', required=True, type=Path)
+    parser.add_argument('--python-libs', type=Path, help='Local directory containing Pillow')
     args = parser.parse_args()
+    if args.python_libs:
+        import sys
+        sys.path.insert(0, str(args.python_libs.resolve()))
     print(json.dumps(convert(args.glb, args.output, args.original, args.builder), indent=2))
