@@ -124,7 +124,6 @@
               <div id="build-idle">
                 <p class="muted">A primeira build leva de 15 a 40 minutos, conforme o computador; as seguintes reaproveitam o que já foi feito. Dá para usar o PC normalmente enquanto isso.</p>
                 <p id="build-stale" class="stale" hidden></p>
-                <div class="cta"><button type="button" id="build" class="primary big">Iniciar build</button></div>
               </div>
               <div id="build-live" class="live" hidden>
                 <div class="live-top">
@@ -145,7 +144,10 @@
               <div id="build-done" class="done" hidden>
                 <span class="done-mark" aria-hidden="true">✓</span>
                 <div><strong>Jogo pronto para jogar</strong><small id="build-took"></small></div>
-                <button type="button" id="go-play" class="primary">Jogar agora</button>
+              </div>
+              <div id="build-actions" class="cta">
+                <button type="button" id="build" class="primary big">Iniciar build</button>
+                <button type="button" id="go-play" class="primary big" hidden>Jogar agora</button>
               </div>
               <p id="build-detail" class="hint" role="status"></p>
               <pre id="build-log" class="log" aria-label="Log da preparação" hidden>Nenhuma preparação iniciada.</pre>
