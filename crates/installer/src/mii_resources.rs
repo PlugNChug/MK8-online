@@ -1,7 +1,14 @@
-//! Opt-in mounting of the player's extracted MiiModel system archive. Never manufactures assets.
+//! Opt-in mounting of a MiiModel-layout folder: the player's extracted system archive, or files
+//! derived by `toolchain/mii_resource_nx.py` from the verified local AFL. Never manufactures assets.
+use crate::{mii_composer, mii_native};
 use mk8_manifest::{hash_file, load, save, verify, FileIdentity, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use serde_json::Value;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 const FILES: [&str; 6] = [
     "ShapeMid.dat",
@@ -94,6 +101,60 @@ pub fn launch_directory(local: &Path) -> Result<Option<PathBuf>> {
     Ok(Some(runtime_path(&value.directory)))
 }
 
+/// A derivation job: the converter writes `output`; `finish` validates it before enabling.
+pub struct Generation {
+    pub output: PathBuf,
+    pub log: PathBuf,
+}
+
+/// Command deriving the six files from the editor's verified AFL into a new private folder.
+pub fn generate(root: &Path, local: &Path) -> Result<(Command, Generation)> {
+    // Re-checks size and SHA-256 of the configured AFL before any output exists.
+    mii_composer::resource(local)?;
+    let afl = mii_composer::resource_config(local)?
+        .ok_or("Selecione o arquivo AFL local no editor Mii.")?
+        .path;
+    let python = mii_native::tools(root, local)?.python;
+    let script = root.join("toolchain/mii_resource_nx.py");
+    if !python.is_file() || !script.is_file() {
+        return Err("Python local ou conversor de recursos Mii indisponível.".into());
+    }
+    let work = local
+        .join("mii-resources-generated")
+        .join(format!("{:016x}", rand::random::<u64>()));
+    fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    let output = work.join("files");
+    let mut cmd = Command::new(python);
+    cmd.arg(script).arg(afl).arg(&output).current_dir(root);
+    Ok((
+        cmd,
+        Generation {
+            output,
+            log: work.join("generation.log"),
+        },
+    ))
+}
+
+/// Accepts only a complete converter output for the verified AFL, then enables it.
+pub fn finish(local: &Path, generation: &Generation) -> Result<Resources> {
+    let manifest: Value = load(&generation.output.join("manifest.json"))?;
+    if manifest["schema"] != 1
+        || manifest["afl_sha256"] != mii_composer::RESOURCE_SHA256
+        || manifest["rendering_verified"] != false
+        || FILES
+            .iter()
+            .any(|name| manifest["files"][*name].as_str().is_none())
+    {
+        return Err("A geração não produziu um manifesto válido de recursos Mii.".into());
+    }
+    for name in FILES {
+        if hash_file(&generation.output.join(name))?.sha256 != manifest["files"][name] {
+            return Err(format!("Recurso Mii gerado diverge do manifesto: {name}"));
+        }
+    }
+    configure(local, &generation.output, true)
+}
+
 /// The C runtime appends slash-separated names to these folders. Windows verbatim prefixes
 /// produced by `canonicalize` reject forward slashes, so pass the plain equivalent.
 pub(crate) fn runtime_path(path: &Path) -> PathBuf {
@@ -124,6 +185,57 @@ mod tests {
         assert!(launch_directory(&root).unwrap().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn generated_output_is_enabled_only_with_a_consistent_manifest() {
+        let root =
+            std::env::temp_dir().join(format!("mk8-mii-generated-{}", rand::random::<u64>()));
+        let output = root.join("generated/files");
+        std::fs::create_dir_all(&output).unwrap();
+        // Without a configured AFL nothing is derived.
+        assert!(generate(&root, &root).is_err());
+        let mut files = serde_json::Map::new();
+        for name in FILES {
+            // Synthetic envelopes exercise manifest/hash handling only, never rendering validity.
+            let mut data = vec![0u8; 0x15000];
+            data[12] = 1;
+            std::fs::write(output.join(name), &data).unwrap();
+            files.insert(
+                name.into(),
+                hash_file(&output.join(name)).unwrap().sha256.into(),
+            );
+        }
+        let generation = Generation {
+            output: output.clone(),
+            log: root.join("generation.log"),
+        };
+        let manifest = |afl: &str, files: &serde_json::Map<String, Value>| serde_json::json!({"schema":1,"afl_sha256":afl,"files":files,"rendering_verified":false});
+        save(&output.join("manifest.json"), &manifest("other", &files)).unwrap();
+        assert!(finish(&root, &generation).is_err());
+        let mut incomplete = files.clone();
+        incomplete.remove(FILES[0]);
+        save(
+            &output.join("manifest.json"),
+            &manifest(mii_composer::RESOURCE_SHA256, &incomplete),
+        )
+        .unwrap();
+        assert!(finish(&root, &generation).is_err());
+        save(
+            &output.join("manifest.json"),
+            &manifest(mii_composer::RESOURCE_SHA256, &files),
+        )
+        .unwrap();
+        std::fs::write(output.join(FILES[1]), vec![1u8; 0x15000]).unwrap();
+        assert!(finish(&root, &generation).is_err());
+        assert!(read(&root).unwrap().is_none());
+        let mut data = vec![0u8; 0x15000];
+        data[12] = 1;
+        std::fs::write(output.join(FILES[1]), data).unwrap();
+        let enabled = finish(&root, &generation).unwrap();
+        assert!(enabled.enabled);
+        assert!(launch_directory(&root).unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn resource_manifest_detects_changes_before_launch() {
         let root = std::env::temp_dir().join(format!(

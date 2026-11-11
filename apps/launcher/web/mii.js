@@ -162,8 +162,23 @@
     await api("mii/resources",{directory:$("mii-resource-dir").value.trim(),enabled:$("mii-render-enabled").checked});
     return {message:"Recursos salvos para a próxima abertura do jogo."};
   });
+  function showResources(r){if(r){$("mii-resource-dir").value=r.directory;$("mii-render-enabled").checked=r.enabled;}}
+  let resourceTimer=null;
+  async function resourceJob(){
+    const job=await api("mii/resources/job");
+    $("mii-resources-generate").disabled=job.state==="running";
+    if(job.detail)i18n.text($("mii-resources-status"),job.detail);
+    showResources(job.resources);
+    if(job.state==="running"&&!resourceTimer)resourceTimer=setInterval(()=>resourceJob().catch(e=>notice(e.message,true)),1000);
+    if(job.state!=="running"&&resourceTimer){clearInterval(resourceTimer);resourceTimer=null;}
+  }
+  $("mii-resources-generate").onclick=async()=>{
+    $("mii-resources-generate").disabled=true;
+    try{await api("mii/resources/generate",{});await resourceJob();}
+    catch(e){i18n.text($("mii-resources-status"),e.message);$("mii-resources-generate").disabled=false;}
+  };
   load().catch(e=>notice(e.message,true));
-  api("mii/resources").then(r=>{if(r){$("mii-resource-dir").value=r.directory;$("mii-render-enabled").checked=r.enabled;}}).catch(e=>notice(e.message,true));
+  resourceJob().catch(e=>notice(e.message,true));
   setInterval(async()=>{
     try {const data=await api("mii/menu");if(data.menu!==menu){menu=data.menu;showTab("miis");}}
     catch(_) {} // Main status polling reports connection failures.

@@ -49,6 +49,9 @@ pub struct App {
     native_job: Option<(Child, mk8_installer::mii_native::Pending)>,
     native_state: &'static str,
     native_detail: String,
+    resources_job: Option<(Child, mk8_installer::mii_resources::Generation)>,
+    resources_state: &'static str,
+    resources_detail: String,
 }
 /// The console keys beside the base package (or in its `keys` folder) or in `%USERPROFILE%\.switch`.
 fn detect_keys(config: &Config) -> Option<PathBuf> {
@@ -131,6 +134,9 @@ impl App {
             native_job: None,
             native_state: "idle",
             native_detail: String::new(),
+            resources_job: None,
+            resources_state: "idle",
+            resources_detail: String::new(),
         }
     }
 
@@ -141,6 +147,51 @@ impl App {
             self.gateway = Some(gateway);
             self.room_menu += 1;
         }
+    }
+
+    fn poll_resources(&mut self) {
+        let exit = match self.resources_job.as_mut() {
+            Some((child, _)) => child.try_wait(),
+            None => return,
+        };
+        let exit = match exit {
+            Ok(Some(exit)) => exit,
+            Ok(None) => return,
+            Err(error) => {
+                self.resources_detail = error.to_string();
+                return;
+            }
+        };
+        let (_, generation) = self.resources_job.take().unwrap();
+        let result = if exit.success() {
+            mk8_installer::mii_resources::finish(&self.local, &generation).map(|_| ())
+        } else {
+            let log = fs::read_to_string(&generation.log).unwrap_or_default();
+            let tail = log.lines().rev().take(3).collect::<Vec<_>>();
+            Err(format!(
+                "Falha ao gerar recursos Mii ({exit}). {}",
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            ))
+        };
+        match result {
+            Ok(()) => {
+                self.resources_state = "done";
+                self.resources_detail =
+                    "Recursos Mii gerados e ativados para a próxima abertura do jogo.".into();
+            }
+            Err(error) => {
+                self.resources_state = "failed";
+                self.resources_detail = error;
+            }
+        }
+    }
+
+    fn resources_status(&mut self) -> Result<Value> {
+        self.poll_resources();
+        Ok(
+            json!({"state":self.resources_state, "detail":self.resources_detail,
+            "resources":mk8_installer::mii_resources::read(&self.local)?}),
+        )
     }
 
     fn poll_native(&mut self) {
@@ -421,6 +472,35 @@ impl App {
             }
             ("GET", "/api/mii/resources") => {
                 Ok(json!(mk8_installer::mii_resources::read(&self.local)?))
+            }
+            ("GET", "/api/mii/resources/job") => self.resources_status(),
+            ("POST", "/api/mii/resources/generate") => {
+                self.status();
+                self.poll_resources();
+                self.poll_native();
+                if self.resources_job.is_some()
+                    || self.native_job.is_some()
+                    || self.game.is_some()
+                    || self.setup.running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err(
+                        "Feche o jogo e aguarde a operação atual antes de gerar os recursos Mii."
+                            .into(),
+                    );
+                }
+                let (command, generation) =
+                    mk8_installer::mii_resources::generate(&self.root, &self.local)?;
+                let child = mk8_build_manager::supervisor::spawn(
+                    &command,
+                    &self.root,
+                    &self.local,
+                    &generation.log,
+                )?;
+                self.resources_job = Some((child, generation));
+                self.resources_state = "running";
+                self.resources_detail = "Gerando recursos Mii a partir da biblioteca local…".into();
+                self.resources_status()
             }
             ("POST", "/api/mii/resources") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -741,7 +821,8 @@ impl App {
             }
             ("POST", "/api/play") => {
                 self.poll_native();
-                if self.native_job.is_some() {
+                self.poll_resources();
+                if self.native_job.is_some() || self.resources_job.is_some() {
                     return Err("Aguarde a conversão Mii terminar.".into());
                 }
                 self.status();

@@ -48,7 +48,7 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 **Phase 6:** female Miis are supported. The CharInfo gender selects the verified `MiiF.bfres` body. In the current no-Mii runtime mode the game loads `Driver/MiiM.szs` for every Mii, so the female body and head are served under that name. Configure `original_female` in `mii-native-tools.json` if the private female body is elsewhere. Tested from the launcher's editor button through **Play solo**, with the head visible in the kart menu and on track. See [status](docs/STATUS.md).
 
-**Original Mii renderer (experimental):** `toolchain/mii_resource_nx.py` derives private MiiModel-layout files (`ShapeMid/High.dat`, `NXTexture*.dat`) from the verified local AFL resource. With `scripts/test-race.py --mii-resources <folder>`, the game's own Mii renderer runs: Mii portraits in character select, Mii Suits previews and full faces with the original helmet on the driver. Lobbies, MKTV, full races and multiplayer are still untested. See [status](docs/STATUS.md).
+**Original Mii renderer (experimental):** `toolchain/mii_resource_nx.py` derives private MiiModel-layout files (`ShapeMid/High.dat`, `NXTexture*.dat`) from the verified local AFL resource. In the launcher, **Mii profile → In-game models → Generate from local library** derives and enables them from the AFL configured in the Mii editor; `scripts/test-race.py --mii-resources <folder>` does the same for tests. The game's own Mii renderer then runs: Mii portraits in character select, Mii Suits previews and full faces with the original helmet on the driver. Lobbies, MKTV, full races and multiplayer are still untested. See [status](docs/STATUS.md).
 
 
 | Area | Current progress | Next checkpoint |

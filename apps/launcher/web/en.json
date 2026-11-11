@@ -458,5 +458,12 @@
   "Lista de convites da Steam solicitada (Shift+Tab).": "Steam invite dialog requested (Shift+Tab).",
   "Conectado via Steam Relay! Use Jogar na sala para entrar no lobby.": "Connected via Steam Relay! Use Play in room to join the lobby.",
   "O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.": "The Steam client is not running. Open Steam and sign in before creating or joining a room.",
-  "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.": "Could not connect to the Steam client. Make sure you are signed in to Steam (AppID 480) and try again."
+  "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.": "Could not connect to the Steam client. Make sure you are signed in to Steam (AppID 480) and try again.",
+  "Sem o título do console, gere os recursos a partir da biblioteca local AFL configurada no editor Mii. O jogo passa a desenhar rostos, retratos e corpos Mii pelo renderer original. Os arquivos ficam somente nesta pasta de dados.": "Without the console title, generate the resources from the local AFL library configured in the Mii editor. The game then draws Mii faces, portraits and bodies with its original renderer. The files stay only in this data folder.",
+  "Gerar a partir da biblioteca local": "Generate from local library",
+  "Gerando recursos Mii a partir da biblioteca local…": "Generating Mii resources from the local library…",
+  "Recursos Mii gerados e ativados para a próxima abertura do jogo.": "Mii resources generated and enabled for the next game launch.",
+  "Feche o jogo e aguarde a operação atual antes de gerar os recursos Mii.": "Close the game and wait for the current operation before generating Mii resources.",
+  "Python local ou conversor de recursos Mii indisponível.": "Local Python or Mii resource converter unavailable.",
+  "Selecione o arquivo AFL local no editor Mii.": "Select the local AFL file in the Mii editor."
 }
