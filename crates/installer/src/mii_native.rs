@@ -140,17 +140,7 @@ fn validate(local: &Path, receipt: &Receipt) -> Result<PathBuf> {
         }
     }
     let directory = romfs.parent().ok_or("Pasta da sobreposição ausente")?;
-    // The C++ runtime appends slash-separated paths; avoid Windows verbatim prefixes.
-    #[cfg(windows)]
-    if let Some(text) = directory.to_str() {
-        if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
-            return Ok(PathBuf::from(format!(r"\\{unc}")));
-        }
-        if let Some(disk) = text.strip_prefix(r"\\?\") {
-            return Ok(PathBuf::from(disk));
-        }
-    }
-    Ok(directory.to_path_buf())
+    Ok(crate::mii_resources::runtime_path(directory))
 }
 
 pub fn status(root: &Path, local: &Path) -> Result<Value> {

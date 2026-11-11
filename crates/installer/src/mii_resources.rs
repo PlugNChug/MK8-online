@@ -91,7 +91,22 @@ pub fn launch_directory(local: &Path) -> Result<Option<PathBuf>> {
         }
         verify(file)?;
     }
-    Ok(Some(value.directory))
+    Ok(Some(runtime_path(&value.directory)))
+}
+
+/// The C runtime appends slash-separated names to these folders. Windows verbatim prefixes
+/// produced by `canonicalize` reject forward slashes, so pass the plain equivalent.
+pub(crate) fn runtime_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(text) = path.to_str() {
+        if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        if let Some(disk) = text.strip_prefix(r"\\?\") {
+            return PathBuf::from(disk);
+        }
+    }
+    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -123,10 +138,11 @@ mod tests {
             std::fs::write(root.join(name), data).unwrap();
         }
         configure(&root, &root, true).unwrap();
-        assert_eq!(
-            launch_directory(&root).unwrap().unwrap(),
-            root.canonicalize().unwrap()
-        );
+        // The runtime appends "/ShapeMid.dat": the folder must not keep a verbatim prefix.
+        let selected = launch_directory(&root).unwrap().unwrap();
+        assert_eq!(selected, runtime_path(&root.canonicalize().unwrap()));
+        assert!(!selected.to_string_lossy().starts_with(r"\\?\"));
+        assert!(std::path::Path::new(&format!("{}/ShapeMid.dat", selected.display())).is_file());
         std::fs::write(root.join(FILES[2]), b"changed").unwrap();
         assert!(launch_directory(&root).is_err());
         configure(&root, &root, false).unwrap();
