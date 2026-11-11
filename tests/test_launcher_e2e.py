@@ -96,6 +96,94 @@ class LauncherTests(unittest.TestCase):
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
+    def test_settings_save_locks_edits_through_delayed_response_and_reload(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\nshow_fps = 0\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        phase, held_post, held_get = ["post"], [], []
+        def delay(route):
+            if phase[0] == "post" and route.request.method == "POST":
+                held_post.append((route, route.fetch()))
+            elif phase[0] == "reload" and route.request.method == "GET":
+                held_get.append((route, route.fetch()))
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            fps = page.locator('[data-key="show_fps"]')
+            expect(volume).to_be_enabled()
+            volume.fill("70")
+            page.route("**/api/settings", delay)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-save")).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held_post), 1)
+            phase[0] = "reload"
+            held_post[0][0].fulfill(response=held_post[0][1])
+            page.wait_for_timeout(2300)
+            self.assertEqual(len(held_get), 1)
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            phase[0] = "pass"
+            held_get[0][0].fulfill(response=held_get[0][1])
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(fps).not_to_be_checked()
+            fps.check()
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+            self.assertIn("show_fps = 1", ini.read_text())
+            self.assertIn("unknown_future = preserve", ini.read_text())
+        finally:
+            page.close()
+
+    def test_settings_save_failure_unlocks_form_and_keeps_edits_for_retry(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\n", encoding="utf-8")
+        page = self.page()
+        held = []
+        def fail(route):
+            if route.request.method == "POST":
+                held.append(route)
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            expect(volume).to_be_enabled()
+            volume.fill("70")
+            page.route("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held), 1)
+            held[0].fulfill(status=500, json={"ok":False, "error":"Falha simulada ao salvar."})
+            expect(page.locator("#notice")).to_contain_text("Falha simulada ao salvar.")
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(page.locator("#settings-save")).to_be_enabled()
+            expect(page.locator("#settings-reload")).to_be_enabled()
+            expect(page.locator("#settings-pending")).to_have_text("Alterações não salvas.")
+            self.assertEqual(ini.read_text(), "volume = 1\n")
+            page.unroute("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+        finally:
+            page.close()
+
     def test_settings_tab_updates_shared_ini_and_keeps_unsaved_edits_during_polling(self):
         folder = Path(self.temporary.name) / "0/user-no-mii"
         folder.mkdir(exist_ok=True)

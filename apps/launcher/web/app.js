@@ -60,16 +60,23 @@ document
 let settingsLoaded = false;
 let settingsDirty = false;
 let settingsBlocked = false;
+let settingsSaving = false;
 let settingsBaseline = {};
+function updateSettingsLock() {
+  const locked = settingsBlocked || settingsSaving;
+  $("settings-fields").disabled = locked || !settingsLoaded;
+  $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty;
+  $("settings-reload").disabled = locked;
+}
 function markSettingsDirty() {
   settingsDirty = true;
-  $("settings-save").disabled = $("settings-fields").disabled;
+  updateSettingsLock();
   i18n.text($("settings-pending"), "Alterações não salvas.");
 }
 async function loadGameSettings(force = false) {
-  if (settingsDirty && !force) return;
+  if ((settingsDirty || settingsSaving) && !force) return;
   const data = await api("settings");
-  if (settingsDirty && !force) return;
+  if ((settingsDirty || settingsSaving) && !force) return;
   if (!settingsLoaded) {
     for (const group of data.groups) {
       const card = document.createElement(group.binding ? "details" : "article");
@@ -159,8 +166,7 @@ async function loadGameSettings(force = false) {
   }
   settingsDirty = false;
   updateSettingsDependencies();
-  $("settings-fields").disabled = settingsBlocked;
-  $("settings-save").disabled = true;
+  updateSettingsLock();
   i18n.text($("settings-pending"), "");
 }
 function updateSettingsDependencies() {
@@ -179,9 +185,16 @@ $("game-settings").onsubmit = (event) => {
       if (input.dataset.kind === "volume" ? Number(value) !== Number(previous) : value !== previous)
         patch[input.dataset.key] = value;
     }
-    const result = await api("settings", patch);
-    await loadGameSettings(true);
-    return result;
+    settingsSaving = true;
+    updateSettingsLock();
+    try {
+      const result = await api("settings", patch);
+      await loadGameSettings(true);
+      return result;
+    } finally {
+      settingsSaving = false;
+      updateSettingsLock();
+    }
   });
 };
 $("settings-reload").onclick = () => action(async () => {
@@ -343,9 +356,7 @@ function renderInstall(status) {
   const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
   $("dlc-enabled").checked = dlc.enabled;
   $("dlc-enabled").disabled = busyNow || !dlc.installed;
-  $("settings-fields").disabled = busyNow || !settingsLoaded;
-  $("settings-save").disabled = busyNow || !settingsLoaded || !settingsDirty;
-  $("settings-reload").disabled = busyNow;
+  updateSettingsLock();
   $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
   $("dlc-import").hidden = dlc.state === "ready";
   i18n.text($("dlc-import"), dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
