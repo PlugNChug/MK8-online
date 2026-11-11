@@ -276,7 +276,10 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       if (!result.path) return { message: "Nenhum arquivo selecionado." };
       input.value = result.path;
       if (input.id === "game-folder") return selectGameFolder();
-      if (input.id.startsWith("dlc-")) return { message: "Arquivo selecionado." };
+      if (input.id.startsWith("dlc-")) {
+        await refreshDlcFiles();
+        return { message: "Arquivo selecionado." };
+      }
       await api("config", config());
       return { message: "Arquivo selecionado." };
     });
@@ -310,6 +313,29 @@ $("cancel").onclick = () =>
 $("go-play").onclick = () => showTab("play");
 let dlcReplace = false;
 let lastDlcImport = "idle";
+let dlcFilesVersion = 0;
+let dlcFilesTimer;
+async function refreshDlcFiles() {
+  const version = ++dlcFilesVersion;
+  const packagePath = $("dlc-package").value.trim();
+  const keys = $("dlc-keys").value.trim();
+  const files = await api("dlc/files", { package: packagePath, keys });
+  if (version !== dlcFilesVersion || packagePath !== $("dlc-package").value.trim()
+      || keys !== $("dlc-keys").value.trim()) return;
+  $("tile-dlc-package").dataset.ok = String(files.package_ok);
+  $("tile-dlc-keys").dataset.ok = String(files.keys_ok);
+  i18n.text($("dlc-keys-hint"), files.keys_ok && files.keys_detected
+    ? "Encontrado automaticamente: " + files.keys : "Chaves do seu console para importar o DLC");
+}
+for (const id of ["dlc-package", "dlc-keys"]) {
+  $(id).addEventListener("input", () => {
+    ++dlcFilesVersion;
+    $("tile-dlc-package").dataset.ok = "false";
+    $("tile-dlc-keys").dataset.ok = "false";
+    clearTimeout(dlcFilesTimer);
+    dlcFilesTimer = setTimeout(() => refreshDlcFiles().catch((error) => notice(error.message, true)), 200);
+  });
+}
 $("dlc-change").onclick = () => action(async () => {
   dlcReplace = true;
 });
@@ -681,6 +707,7 @@ async function refresh() {
       cancelled: "Cancelado",
     }[status.build.state] || status.build.state);
   renderInstall(status);
+  if (!$("dlc-files").hidden) await refreshDlcFiles();
   if (!$("settings").hidden && !settingsDirty) await loadGameSettings();
   i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."

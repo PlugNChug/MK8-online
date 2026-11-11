@@ -56,6 +56,39 @@ class LauncherDlcTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertFalse((self.folder / "dlc.json").exists())
 
+    def test_file_tiles_show_green_only_for_files_found_by_the_api(self):
+        package = self.folder / "fixture.nsp"
+        keys = self.folder / "fixture.keys"
+        package.write_bytes(b"pacote autoral")
+        keys.write_bytes(b"chaves autorais")
+        page = self.page()
+        page.locator("#dlc-package").fill(str(package))
+        page.locator("#dlc-keys").fill(str(keys))
+        expect(page.locator("#tile-dlc-package")).to_have_attribute("data-ok", "true")
+        expect(page.locator("#tile-dlc-keys")).to_have_attribute("data-ok", "true")
+        self.assertEqual(page.locator("#tile-dlc-package .ft-icon").evaluate(
+            "el => getComputedStyle(el, '::after').content"), '"✓"')
+        held = []
+        def delay_old_path(route):
+            if route.request.post_data_json["package"] == str(package):
+                held.append((route, route.fetch()))
+            else:
+                route.continue_()
+        page.route("**/api/dlc/files", delay_old_path)
+        page.locator("#dlc-package").fill("")
+        page.locator("#dlc-package").fill(str(package))
+        page.wait_for_timeout(500)
+        self.assertTrue(held)
+        page.locator("#dlc-package").fill(str(self.folder / "missing.nsp"))
+        expect(page.locator("#tile-dlc-package")).to_have_attribute("data-ok", "false")
+        expect(page.locator("#tile-dlc-keys")).to_have_attribute("data-ok", "true")
+        for route, response in held:
+            route.fulfill(response=response)
+        page.wait_for_timeout(300)
+        expect(page.locator("#tile-dlc-package")).to_have_attribute("data-ok", "false")
+        page.locator("#dlc-keys").fill(str(self.folder / "missing.keys"))
+        expect(page.locator("#tile-dlc-keys")).to_have_attribute("data-ok", "false")
+
     def test_installed_dlc_can_be_reinstalled_from_a_selected_package(self):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute("content")

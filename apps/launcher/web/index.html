@@ -161,15 +161,15 @@
             <p>Booster Course Pass</p>
             <p class="hint">Opcional. Importe o NSP do DLC do seu console após preparar o jogo.</p>
             <div id="dlc-files" class="files">
-              <div class="file-tile">
+              <div class="file-tile" id="tile-dlc-package">
                 <span class="ft-icon" aria-hidden="true">D</span>
                 <span class="ft-text"><strong>NSP do DLC</strong><small>Arquivo .nsp do Booster Course Pass</small></span>
                 <input id="dlc-package" aria-label="NSP do DLC" spellcheck="false" placeholder="Caminho do arquivo" />
                 <button type="button" class="ghost" data-browse="dlc-package" data-kind="dlc" aria-label="Escolher NSP do DLC" hidden>Escolher</button>
               </div>
-              <div class="file-tile">
+              <div class="file-tile" id="tile-dlc-keys">
                 <span class="ft-icon" aria-hidden="true">K</span>
-                <span class="ft-text"><strong>prod.keys</strong><small>Chaves do seu console para importar o DLC</small></span>
+                <span class="ft-text"><strong>prod.keys</strong><small id="dlc-keys-hint">Chaves do seu console para importar o DLC</small></span>
                 <input id="dlc-keys" aria-label="Chaves para importar DLC" spellcheck="false" placeholder="Automático" />
                 <button type="button" class="ghost" data-browse="dlc-keys" data-kind="keys" aria-label="Escolher chaves para DLC" hidden>Escolher</button>
               </div>

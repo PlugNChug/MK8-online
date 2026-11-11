@@ -57,6 +57,30 @@ fn detect_keys(config: &Config) -> Option<PathBuf> {
     .find(|p| p.is_file())
 }
 
+fn dlc_keys(config: &Config, package: &str, keys: &str) -> Option<PathBuf> {
+    if !keys.is_empty() {
+        return Some(keys.into());
+    }
+    if !config.prod_keys.is_empty() {
+        return Some((&config.prod_keys).into());
+    }
+    let mut config = config.clone();
+    config.base_package = package.into();
+    detect_keys(&config)
+}
+
+fn dlc_files(config: &Config, package: &str, keys: &str) -> Value {
+    let selected = dlc_keys(config, package, keys);
+    let package_path = Path::new(package);
+    json!({
+        "package_ok": !package.is_empty() && package_path.is_file()
+            && package_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("nsp")),
+        "keys_ok": selected.as_ref().is_some_and(|path| path.is_file()),
+        "keys_detected": keys.is_empty(),
+        "keys": selected.map(|path| path.to_string_lossy().into_owned()),
+    })
+}
+
 /// The three files of step 2 of the install screen, as the page shows them.
 fn game_files(config: &Config, imported: bool) -> Value {
     let file = |path: &str| !path.is_empty() && Path::new(path).is_file();
@@ -262,6 +286,14 @@ impl App {
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
+            ("POST", "/api/dlc/files") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(dlc_files(
+                    &self.config,
+                    value["package"].as_str().unwrap_or(""),
+                    value["keys"].as_str().unwrap_or(""),
+                ))
+            }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
             ("POST", "/api/settings")
             | ("POST", "/api/dlc/toggle")
@@ -319,20 +351,13 @@ impl App {
                 {
                     return Err("Selecione o NSP do DLC.".into());
                 }
-                let explicit_keys = value["keys"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .map(PathBuf::from)
-                    .or_else(|| {
-                        (!self.config.prod_keys.is_empty())
-                            .then(|| PathBuf::from(&self.config.prod_keys))
-                    });
-                let mut config = self.config.clone();
-                config.base_package = package.to_string_lossy().into_owned();
-                let keys = explicit_keys
-                    .or_else(|| detect_keys(&config))
-                    .filter(|p| p.is_file())
-                    .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+                let keys = dlc_keys(
+                    &self.config,
+                    package.to_str().ok_or("Caminho do DLC inválido.")?,
+                    value["keys"].as_str().unwrap_or(""),
+                )
+                .filter(|p| p.is_file())
+                .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
                 let reinstall = value
                     .get("reinstall")
                     .map(|value| value.as_bool().ok_or("Opção de reinstalação inválida."))
@@ -896,6 +921,42 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dlc_file_readiness_uses_real_files_and_the_importers_key_selection() {
+        let root = std::env::temp_dir().join(format!("mk8-dlc-fields-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let package = root.join("dlc.nsp");
+        let keys = root.join("prod.keys");
+        fs::write(&package, b"pacote autoral").unwrap();
+        fs::write(&keys, b"chaves autorais").unwrap();
+        let config = Config {
+            prod_keys: keys.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        let state = dlc_files(&config, package.to_str().unwrap(), "");
+        assert_eq!(state["package_ok"], true);
+        assert_eq!(state["keys_ok"], true);
+        assert_eq!(state["keys_detected"], true);
+        assert_eq!(state["keys"], config.prod_keys);
+        let detected = dlc_files(&Config::default(), package.to_str().unwrap(), "");
+        assert_eq!(detected["keys_ok"], true);
+        assert_eq!(detected["keys"], config.prod_keys);
+        let missing = root.join("missing.keys");
+        assert_eq!(
+            dlc_files(
+                &config,
+                package.to_str().unwrap(),
+                missing.to_str().unwrap()
+            )["keys_ok"],
+            false
+        );
+        fs::remove_file(&package).unwrap();
+        fs::remove_file(&keys).unwrap();
+        let state = dlc_files(&config, package.to_str().unwrap(), "");
+        assert_eq!(state["package_ok"], false);
+        assert_eq!(state["keys_ok"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn dlc_changes_refuse_resources_owned_by_another_session() {
         let root = std::env::temp_dir().join(format!("mk8-dlc-lock-{}", std::process::id()));
