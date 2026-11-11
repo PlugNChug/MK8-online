@@ -156,6 +156,9 @@ def run(args):
         LARECOMP_SHOT_PATH=(session / 'frame-%05d.png').as_posix(),
         LARECOMP_EXIT_AFTER_SHOT='1',
     )
+    if args.mii_resources:
+        # Opt-in original Mii renderer with a MiiModel-layout folder (for example toolchain/mii_resource_nx.py output).
+        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=str(args.mii_resources))
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
@@ -193,6 +196,8 @@ if __name__ == '__main__':
     parser.add_argument('--character', choices=['mario', 'mii'], default='mario',
                         help='Mii selects the first profile and Normal Suit; does not enable model rendering')
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
+    parser.add_argument('--mii-resources', type=Path,
+                        help='Folder with the six MiiModel-layout files; enables the original Mii renderer')
     parser.add_argument('--mii-profile', type=Path, help='Copy this profile into the isolated test; never modify it')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
                         help='Time Trial course in Mushroom Cup')
@@ -207,4 +212,10 @@ if __name__ == '__main__':
     if (args.shots < 1 or args.shot_step < 1 or args.last_frame <= args.shot_step * (args.shots - 1)
             or any(len(pair) != 2 for pair in args.env)):
         parser.error('Require positive capture frames, capture count and step, and --env NAME=VALUE')
+    if args.mii_resources:
+        args.mii_resources = args.mii_resources.resolve()
+        names = ('ShapeMid.dat', 'ShapeHigh.dat', 'NXTextureLowLinear.dat', 'NXTextureLowSRGB.dat',
+                 'NXTextureMidLinear.dat', 'NXTextureMidSRGB.dat')
+        if not all((args.mii_resources / name).is_file() for name in names):
+            parser.error('--mii-resources requires the six MiiModel-layout files')
     run(args)

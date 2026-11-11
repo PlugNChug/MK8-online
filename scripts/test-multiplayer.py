@@ -52,6 +52,8 @@ def run(args):
         'candidate': json.loads((local/'candidate.json').read_text())['identity'],
         'relay': args.relay, 'host_input': args.host_input, 'guest_input': args.guest_input,
         'shots': args.shots, 'options': args.env,
+        'mii_resources': str(args.mii_resources) if args.mii_resources else None,
+        'profiles': [str(p) if p else None for p in (args.host_profile, args.guest_profile)],
     }, indent=2), encoding='utf-8')
     children, clients = [], []
     clean = {k: v for k, v in os.environ.items()
@@ -80,6 +82,10 @@ def run(args):
             shutil.copyfile(local/'user-no-mii/mk8d.ini', saves/'mk8d.ini')
             if args.cache_from:
                 shutil.copytree(args.cache_from, saves/'cache')
+            profile = args.host_profile if index == 0 else args.guest_profile
+            if profile:
+                # Each player gets its own Mii profile; the personal profile is never modified.
+                shutil.copyfile(profile, folder/'mii-profile.json')
             env = dict(clean, LARECOMP_INPUT=args.host_input if index == 0 else args.guest_input,
                 LARECOMP_WINDOW_SHOT=args.shots, LARECOMP_EXIT_AFTER_SHOT='1',
                 LARECOMP_SHOT_PATH=(folder/'frame-%05d.png').as_posix(),
@@ -100,6 +106,9 @@ def run(args):
             token = re.search(r'name="mk8-token" content="([^"]+)"', html)[1]
             clients.append((url, token))
             api(url, token, 'username', {'name': 'Host' if index == 0 else 'Guest'})
+            if args.mii_resources:
+                # Same launcher option as "Modelos dentro do jogo": hashes the six files and enables the renderer.
+                api(url, token, 'mii/resources', {'directory': str(args.mii_resources), 'enabled': True})
         if args.relay:
             invite = api(*clients[0], 'session/host-internet', {})['code']
         else:
@@ -159,4 +168,10 @@ if __name__ == '__main__':
     parser.add_argument('--cache-from', type=Path)
     parser.add_argument('--timeout', type=int, default=240)
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
-    run(parser.parse_args())
+    parser.add_argument('--mii-resources', type=Path, help='MiiModel-layout folder; enables the original Mii renderer')
+    parser.add_argument('--host-profile', type=Path, help='mii-profile.json copied into the host test folder')
+    parser.add_argument('--guest-profile', type=Path, help='mii-profile.json copied into the guest test folder')
+    parsed = parser.parse_args()
+    if parsed.mii_resources:
+        parsed.mii_resources = parsed.mii_resources.resolve()
+    run(parsed)
