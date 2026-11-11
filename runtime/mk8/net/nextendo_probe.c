@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <windows.h>
+#include <shellapi.h>
 #include "net/nextendo.h"
 #include "net/netcfg.h"
 #include "net/token.h"
@@ -16,6 +17,8 @@ int mk8_nextendo_probe(bool keep_session) {
         return 1;
     }
     puts(url); fflush(stdout); // PKCE challenge only, never the verifier or callback code.
+    if (keep_session && !strncmp(url, "https://", 8))
+        ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
     for (int i = 0; i < 3100; ++i) {
         NxStatus status; nextendo_status(&status);
         if (status.state == NX_SIGNED_IN) {

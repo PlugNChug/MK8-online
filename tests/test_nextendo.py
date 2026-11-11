@@ -108,5 +108,74 @@ class NextendoTests(unittest.TestCase):
     def test_login_play_stops_on_denial(self): self.run_flow('denied', login_play=True)
     def test_login_play_stops_without_nex(self): self.run_flow('no_nex', login_play=True)
 
+    def test_per_host_tls_pin_separation(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'toolchain'))
+        from native import DEFAULT_COMPILER, compiler_env
+        from host import DEPS
+        from nextendo import prepare as prepare_nextendo
+        import shutil
+        upstream = ROOT / 'upstream/smm2recomp/recomp/runtime'
+        with tempfile.TemporaryDirectory(prefix='mk8-nextendo-pin-') as tmp:
+            tmp_path = Path(tmp)
+            shutil.copytree(upstream, tmp_path / 'runtime')
+            prepare_nextendo(tmp_path / 'runtime')
+            harness = tmp_path / 'pin_test.c'
+            harness.write_text(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "runtime/net/netcfg.h"
+void rt_log(const char *fmt, ...) { (void)fmt; }
+uint64_t plat_now_ns(void) { return 0; }
+bool nextendo_signed_in(void) { return true; }
+bool nextendo_online_status(int timeout_ms, bool *allow, char *reason, size_t cap) {
+    (void)timeout_ms; (void)reason; (void)cap; *allow = true; return true;
+}
+bool mk8_nextendo_enabled(void) { return true; }
+bool game_net_config(const char *k, char *out, size_t cap) {
+    if (!strcmp(k, "backend") && cap > 8) { strcpy(out, "nextendo"); return true; }
+    return false;
+}
+void game_net_config_set(const char *k, const char *v) { (void)k; (void)v; }
+int main(void) {
+    uint8_t game_pin[32], znc_pin[32], other_pin[32];
+    _putenv("RECOMP_NEXTENDO_TLS_PIN=770551f13152f3d55370de6c039d3859cff0d39882f27c6c9fc6cfdb327d74b8");
+    _putenv("RECOMP_NEXTENDO_ZNC_TLS_PIN=");
+    net_config_reload();
+    assert(net_tls_pin_for_host("g2b309e01-lp1.s.n.srv.nintendo.net", game_pin));
+    assert(net_tls_pin_for_host("api-lp1.znc.srv.nintendo.net", znc_pin));
+    assert(memcmp(game_pin, znc_pin, 32) == 0);
+    assert(game_pin[0] == 0x77 && game_pin[1] == 0x05);
+
+    _putenv("RECOMP_NEXTENDO_ZNC_TLS_PIN=eb22631902f276218368e59dfac73f656bf8391c356e6c37f079049db40d596f");
+    net_config_reload();
+    assert(net_tls_pin_for_host("g2b309e01-lp1.s.n.srv.nintendo.net", game_pin));
+    assert(net_tls_pin_for_host("api-lp1.znc.srv.nintendo.net", znc_pin));
+    assert(net_tls_pin_for_host("other.nintendo.net", other_pin));
+    assert(game_pin[0] == 0x77 && game_pin[1] == 0x05);
+    assert(znc_pin[0] == 0xeb && znc_pin[1] == 0x22);
+    assert(memcmp(game_pin, other_pin, 32) == 0);
+    assert(memcmp(game_pin, znc_pin, 32) != 0);
+
+    _putenv("RECOMP_NEXTENDO_ZNC_TLS_PIN=invalid-short-pin");
+    net_config_reload();
+    assert(net_tls_pin_for_host("api-lp1.znc.srv.nintendo.net", znc_pin));
+    assert(memcmp(game_pin, znc_pin, 32) == 0);
+    return 0;
+}
+''', encoding='utf-8')
+            exe = tmp_path / 'pin_test.exe'
+            subprocess.check_call([
+                str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-std=gnu11', '-O1', '-UNDEBUG',
+                '-I' + str(DEPS / 'include'), '-L' + str(DEPS / 'lib'),
+                str(harness), str(tmp_path / 'runtime/net/netcfg.c'),
+                '-lwinpthread', '-lws2_32', '-o', str(exe)
+            ], env=compiler_env())
+            subprocess.check_call([str(exe)], env=compiler_env())
+
 
 if __name__ == '__main__': unittest.main()
