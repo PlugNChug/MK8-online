@@ -442,5 +442,8 @@
   "Lista de convites da Steam solicitada (Shift+Tab).": "Steam invite dialog requested (Shift+Tab).",
   "Conectado via Steam Relay! Use Jogar na sala para entrar no lobby.": "Connected via Steam Relay! Use Play in room to join the lobby.",
   "O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.": "The Steam client is not running. Open Steam and sign in before creating or joining a room.",
-  "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.": "Could not connect to the Steam client. Make sure you are signed in to Steam (AppID 480) and try again."
+  "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.": "Could not connect to the Steam client. Make sure you are signed in to Steam (AppID 480) and try again.",
+  "Sala P2P criada! Código único copiado — envie aos seus amigos.": "P2P room created! Single room code copied — send it to your friends.",
+  "Conectando pelo código único da sala. Aguarde confirmação do transporte.": "Connecting with the single room code. Waiting for transport confirmation.",
+  "Código único P2P (STUN automático) pronto para enviar aos amigos sem VPN.": "Single P2P code (automatic STUN) ready to share with friends without VPN."
 }

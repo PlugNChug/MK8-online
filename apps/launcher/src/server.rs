@@ -2,6 +2,7 @@ use mk8_build_manager::Manager;
 use mk8_manifest::{load, save, Config, Installation, Result};
 use mk8_session::{
     discover,
+    p2p::{self, RoomTicket},
     steam::{self, SteamRoom},
     Gateway, Host, Invite, DISCOVERY_PORT,
 };
@@ -275,12 +276,20 @@ impl App {
                 .into_owned();
         }
         let steam_status = steam::probe_status(&self.local);
+        let p2p_code = self.host.as_ref().and_then(|host| {
+            if self.internet_room.is_some() || self.steam_room.is_some() {
+                None
+            } else {
+                host.room_ticket(None).ok().map(|t| t.encode())
+            }
+        });
         let room_code = self
             .internet_room
             .as_ref()
-            .map(|room| &room.code)
-            .or_else(|| self.steam_room.as_ref().map(|room| &room.code));
-        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+            .map(|room| room.code.clone())
+            .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
+            .or(p2p_code);
+        json!({"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
@@ -536,19 +545,40 @@ impl App {
                 {
                     return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
                 }
-                let (room, invite) = InternetRoom::create(&self.identity())?;
-                let gateway = match Gateway::start(invite) {
-                    Ok(gateway) => gateway,
-                    Err(error) => {
-                        let _ = room.close();
-                        return Err(error);
-                    }
-                };
-                let code = room.code.clone();
+                if relay::url().is_some() {
+                    let (room, invite) = InternetRoom::create(&self.identity())?;
+                    let gateway = match Gateway::start(invite) {
+                        Ok(gateway) => gateway,
+                        Err(error) => {
+                            let _ = room.close();
+                            return Err(error);
+                        }
+                    };
+                    let code = room.code.clone();
+                    self.gateway = Some(gateway);
+                    self.internet_room = Some(room);
+                    return Ok(
+                        json!({"code":code,"message":"Sala criada no relay. Aguarde a confirmação da conexão."}),
+                    );
+                }
+                let default = format!("0.0.0.0:{DISCOVERY_PORT}");
+                let bind = default.parse::<SocketAddr>().map_err(|e| e.to_string())?;
+                let host = Host::start_named(bind, &self.identity(), &self.username, true)
+                    .or_else(|_| {
+                        Host::start_named(
+                            "0.0.0.0:0".parse().unwrap(),
+                            &self.identity(),
+                            &self.username,
+                            true,
+                        )
+                    })?;
+                let local = SocketAddr::new("127.0.0.1".parse().unwrap(), host.address.port());
+                let gateway = Gateway::start(host.invite(local)?)?;
+                let code = host.room_ticket(None)?.encode();
                 self.gateway = Some(gateway);
-                self.internet_room = Some(room);
+                self.host = Some(host);
                 Ok(
-                    json!({"code":code,"message":"Sala criada no relay. Aguarde a confirmação da conexão."}),
+                    json!({"code":code,"message":"Sala P2P criada! Código único copiado — envie aos seus amigos."}),
                 )
             }
             ("POST", "/api/session/host-steam") => {
@@ -590,8 +620,9 @@ impl App {
                     )?,
                 };
                 let invite = host.invite(endpoint)?;
+                let code = host.room_ticket(Some(endpoint)).ok().map(|t| t.encode());
                 Ok(
-                    json!({"invite":invite.encode(),"message":"Convite individual criado. Válido por quatro horas; não publique."}),
+                    json!({"invite":invite.encode(),"code":code,"message":"Convite individual criado. Válido por quatro horas; não publique."}),
                 )
             }
             ("POST", "/api/session/join") => {
@@ -614,6 +645,14 @@ impl App {
                     self.gateway = Some(gateway);
                     return Ok(
                         json!({"message":"Conectado via Steam Relay! Use Jogar na sala para entrar no lobby."}),
+                    );
+                }
+                if text.starts_with("MK8P-") {
+                    let ticket = RoomTicket::decode(text)?;
+                    let gateway = p2p::join_with_ticket(&ticket, &identity)?;
+                    self.gateway = Some(gateway);
+                    return Ok(
+                        json!({"message":"Conectando pelo código único da sala. Aguarde confirmação do transporte."}),
                     );
                 }
                 let invite = if text.starts_with("MK8-") {

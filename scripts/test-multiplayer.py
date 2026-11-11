@@ -50,7 +50,8 @@ def run(args):
     print(f'Test output: {session}', flush=True)
     (session/'run.json').write_text(json.dumps({
         'candidate': json.loads((local/'candidate.json').read_text())['identity'],
-        'relay': args.relay, 'host_input': args.host_input, 'guest_input': args.guest_input,
+        'relay': args.relay, 'p2p': args.p2p,
+        'host_input': args.host_input, 'guest_input': args.guest_input,
         'shots': args.shots, 'options': args.env,
     }, indent=2), encoding='utf-8')
     children, clients = [], []
@@ -102,6 +103,11 @@ def run(args):
             api(url, token, 'username', {'name': 'Host' if index == 0 else 'Guest'})
         if args.relay:
             invite = api(*clients[0], 'session/host-internet', {})['code']
+        elif args.p2p:
+            api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
+            invite = api(*clients[0], 'status')['session']['room_code']
+            if not invite or not invite.startswith('MK8P-'):
+                raise RuntimeError(f'Expected MK8P- room code, got {invite!r}')
         else:
             api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
             invite = api(*clients[0], 'session/invite', {})['invite']
@@ -153,6 +159,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', action='store_true', help='Local relay through the internet-code path')
+    parser.add_argument('--p2p', action='store_true', help='Single reusable P2P room code (MK8P-...) path')
     parser.add_argument('--host-input', required=True)
     parser.add_argument('--guest-input', required=True)
     parser.add_argument('--shots', default='1200:2400:400')

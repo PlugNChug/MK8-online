@@ -387,6 +387,14 @@ $("scan-rooms").onclick = () =>
       ...rooms.map((room) => {
         const row = document.createElement("li");
         row.textContent = room.name;
+        if (room.code) {
+          row.style.cursor = "pointer";
+          row.dataset.code = room.code;
+          row.onclick = () => {
+            $("invite-input").value = room.code;
+            $("join").click();
+          };
+        }
         return row;
       }),
     );
@@ -407,6 +415,10 @@ $("invite").onclick = () =>
   action(async () => {
     const endpoint = $("endpoint").value.trim();
     const result = await api("session/invite", endpoint ? { endpoint } : {});
+    if (result.code) {
+      $("room-code").value = result.code;
+      $("room-code-box").hidden = false;
+    }
     $("invite-text").value = result.invite;
     $("invite-output").hidden = false;
     try {
@@ -513,13 +525,13 @@ async function refresh() {
   const active = session.hosting || session.slot !== null;
   $("host").disabled = active || !!status.game_pid;
   $("host-steam").disabled = active || !session.steam_available || !!status.game_pid;
-  $("host-internet").disabled = active || !session.internet_available || !!status.game_pid;
+  $("host-internet").disabled = active || !!status.game_pid;
   i18n.text($("steam-note"), session.steam_available
     ? "Steam detectada: crie uma sala sem precisar de VPN ou abrir portas no firewall."
     : "Steam DLL (steam_api64.dll) não detectada neste PC.");
   i18n.text($("internet-note"), session.internet_available
     ? "Envie o código para amigos em outras redes."
-    : "Relay público ainda não configurado nesta edição.");
+    : "Código único P2P (STUN automático) pronto para enviar aos amigos sem VPN.");
   $("room-code-box").hidden = !session.room_code;
   $("room-code").value = session.room_code || "";
   $("steam-invite").hidden = !session.steam_active;

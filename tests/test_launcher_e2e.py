@@ -174,6 +174,13 @@ class LauncherTests(unittest.TestCase):
         host.get_by_role("button",name="Criar sala na rede local",exact=True).click()
         expect(host.locator("#network-state")).to_have_text("Transporte conectado",timeout=10000)
         expect(host.locator("#peers")).to_contain_text("Aguardando convidados")
+        p2p_code = host.locator("#room-code").input_value()
+        self.assertTrue(p2p_code.startswith("MK8P-"))
+        client.locator("#invite-input").fill(p2p_code)
+        client.get_by_role("button",name="Entrar na sala",exact=True).click()
+        expect(client.locator("#network-state")).to_have_text("Transporte conectado",timeout=10000)
+        client.get_by_role("button",name="Encerrar sessão",exact=True).click()
+        expect(client.locator("#network-state")).to_have_text("Desconectado")
         token=host.locator('meta[name="mk8-token"]').get_attribute('content')
         state=host.request.get(self.urls[0]+"/api/status",headers={"X-MK8-Token":token}).json()["data"]
         endpoint=state["session"]["relay"]

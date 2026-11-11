@@ -12,15 +12,18 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+pub mod p2p;
 pub mod steam;
 
 pub const DISCOVERY_PORT: u16 = 47820;
 const PROBE: &[u8] = b"MK8-DISCOVER-1 ";
+const JOIN_PROBE: &[u8] = b"MK8-JOIN-1";
 
 #[derive(Serialize)]
 pub struct Room {
     name: String,
     endpoint: SocketAddr,
+    code: String,
 }
 
 pub fn discover(identity: &str) -> Result<Vec<Room>> {
@@ -36,7 +39,7 @@ pub fn discover(identity: &str) -> Result<Vec<Room>> {
     broadcast.or(loopback).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_millis(350);
     let mut rooms: Vec<Room> = Vec::new();
-    let mut buf = [0; 128];
+    let mut buf = [0; 256];
     while Instant::now() < deadline && rooms.len() < 32 {
         let Ok((n, endpoint)) = socket.recv_from(&mut buf) else {
             continue;
@@ -44,7 +47,11 @@ pub fn discover(identity: &str) -> Result<Vec<Room>> {
         let Some(data) = buf[..n].strip_prefix(nonce.as_slice()) else {
             continue;
         };
-        let Ok(name) = std::str::from_utf8(data) else {
+        if data.len() <= 16 {
+            continue;
+        }
+        let token: [u8; 16] = data[..16].try_into().unwrap();
+        let Ok(name) = std::str::from_utf8(&data[16..]) else {
             continue;
         };
         if endpoint.port() == DISCOVERY_PORT
@@ -53,9 +60,13 @@ pub fn discover(identity: &str) -> Result<Vec<Room>> {
             && !name.chars().any(char::is_control)
             && !rooms.iter().any(|room| room.endpoint == endpoint)
         {
+            let Ok(ticket) = p2p::RoomTicket::new(vec![endpoint], token) else {
+                continue;
+            };
             rooms.push(Room {
                 name: name.into(),
                 endpoint,
+                code: ticket.encode(),
             });
         }
     }
@@ -120,6 +131,8 @@ struct Peer {
 }
 pub struct Host {
     pub address: SocketAddr,
+    pub stun_endpoint: Option<SocketAddr>,
+    pub room_token: [u8; 16],
     session: [u8; 16],
     identity: String,
     peers: Arc<Mutex<Vec<Peer>>>,
@@ -145,21 +158,93 @@ impl Host {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| e.to_string())?;
         let address = socket.local_addr().map_err(|e| e.to_string())?;
+        let stun_endpoint = if advertise {
+            p2p::stun_discover_on_socket(&socket)
+        } else {
+            None
+        };
+        let session: [u8; 16] = random();
+        let room_token: [u8; 16] = random();
         let peers: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let p = peers.clone();
         let s = stop.clone();
         let name = name.as_bytes().to_vec();
+        let identity_str = identity.to_owned();
         let identity_bytes = identity.as_bytes().to_vec();
         let worker = thread::spawn(move || {
             let mut buf = [0; MAX_PACKET + 1];
+            let mut stun_keepalive = Instant::now();
             while !s.load(Ordering::Relaxed) {
+                if advertise
+                    && stun_endpoint.is_some()
+                    && stun_keepalive.elapsed() >= Duration::from_secs(20)
+                {
+                    let _ = p2p::stun_discover_on_socket(&socket);
+                    stun_keepalive = Instant::now();
+                }
                 let Ok((n, from)) = socket.recv_from(&mut buf) else {
                     continue;
                 };
                 if let Some(query) = buf[..n].strip_prefix(PROBE).filter(|_| advertise) {
                     if query.len() == 16 + identity_bytes.len() && query[16..] == identity_bytes {
-                        let _ = socket.send_to(&[&query[..16], name.as_slice()].concat(), from);
+                        let _ = socket
+                            .send_to(&[&query[..16], &room_token, name.as_slice()].concat(), from);
+                    }
+                    continue;
+                }
+                if let Some(join_body) = buf[..n].strip_prefix(JOIN_PROBE) {
+                    if join_body.len() >= 16 && join_body[..16] == room_token {
+                        let guest_id = &join_body[16..];
+                        if guest_id != identity_bytes.as_slice() {
+                            let _ = socket.send_to(
+                                b"MK8-ERR-1Instala\xc3\xa7\xc3\xa3o incompat\xc3\xadvel com a sala.",
+                                from,
+                            );
+                            continue;
+                        }
+                        let mut peers = p.lock().unwrap();
+                        let existing = peers
+                            .iter()
+                            .find(|peer| peer.endpoint == Some(from) && peer.invite.expires > now())
+                            .map(|peer| peer.invite.clone());
+                        let assigned = if let Some(inv) = existing {
+                            Some(inv)
+                        } else if peers.len() < 12 {
+                            let inv = Invite {
+                                version: 2,
+                                endpoint: from,
+                                identity: identity_str.clone(),
+                                session,
+                                slot: peers.len() as u8,
+                                key: random(),
+                                expires: now() + 4 * 3600,
+                            };
+                            peers.push(Peer {
+                                channel: Channel::new(inv.key, inv.session, inv.slot, true),
+                                invite: inv.clone(),
+                                endpoint: Some(from),
+                                seen: Instant::now(),
+                                window: Instant::now(),
+                                packets: 0,
+                            });
+                            Some(inv)
+                        } else {
+                            None
+                        };
+                        match assigned {
+                            Some(inv) => {
+                                let mut reply = b"MK8-INV-1".to_vec();
+                                reply.extend_from_slice(inv.encode().as_bytes());
+                                let _ = socket.send_to(&reply, from);
+                            }
+                            None => {
+                                let _ = socket.send_to(
+                                    b"MK8-ERR-1Sala sem vagas (limite de 12 jogadores).",
+                                    from,
+                                );
+                            }
+                        }
                     }
                     continue;
                 }
@@ -217,12 +302,28 @@ impl Host {
         });
         Ok(Self {
             address,
-            session: random(),
+            stun_endpoint,
+            room_token,
+            session,
             identity: identity.into(),
             peers,
             stop,
             worker: Some(worker),
         })
+    }
+
+    pub fn room_ticket(&self, explicit_endpoint: Option<SocketAddr>) -> Result<p2p::RoomTicket> {
+        let mut endpoints = Vec::new();
+        if let Some(ep) = explicit_endpoint {
+            endpoints.push(ep);
+        }
+        if let Some(stun) = self.stun_endpoint {
+            endpoints.push(stun);
+        }
+        if let Some(lan) = self.invite_endpoint() {
+            endpoints.push(lan);
+        }
+        p2p::RoomTicket::new(endpoints, self.room_token)
     }
     pub fn invite_endpoint(&self) -> Option<SocketAddr> {
         if !self.address.ip().is_unspecified() {
@@ -304,13 +405,17 @@ pub struct Gateway {
 }
 impl Gateway {
     pub fn start(invite: Invite) -> Result<Self> {
-        let local = UdpSocket::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         let remote = UdpSocket::bind(if invite.endpoint.is_ipv4() {
             "0.0.0.0:0"
         } else {
             "[::]:0"
         })
         .map_err(|e| e.to_string())?;
+        Self::start_with_remote(invite, remote)
+    }
+
+    pub fn start_with_remote(invite: Invite, remote: UdpSocket) -> Result<Self> {
+        let local = UdpSocket::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         remote.connect(invite.endpoint).map_err(|e| e.to_string())?;
         local
             .set_read_timeout(Some(Duration::from_millis(50)))
