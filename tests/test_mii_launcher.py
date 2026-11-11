@@ -52,7 +52,9 @@ class MiiLauncherTests(unittest.TestCase):
                         expect(page.get_by_role('button',name='Salvar Mii',exact=True)).to_be_enabled()
                         exported=page.request.get(url+'/api/mii/export',headers=headers).json()['data']['data']
                         self.assertEqual(exported,raw)
-                        page.get_by_text('Detalhes completos do Switch',exact=True).click()
+                        # The 49 Switch fields live in the 3D editor modal; without an AFL they still save the profile.
+                        page.locator('#mii-compose-open').click()
+                        expect(page.locator('#mii-compose-status')).to_contain_text('Selecione o arquivo AFL')
                         expect(page.locator('#mii-full-fields input[data-offset="49"]')).to_have_value('131')
                         page.locator('#mii-full-fields input[data-offset="66"]').fill('17') # nose
                         page.locator('#mii-full-save').click()
@@ -63,6 +65,7 @@ class MiiLauncherTests(unittest.TestCase):
                             if new[66]==17: break
                             page.wait_for_timeout(50)
                         self.assertEqual(new[66],17);self.assertEqual(new[49],131)
+                        page.locator('#mii-compose-close').click()
                         expect(page.get_by_role('button',name='Salvar Mii',exact=True)).to_be_enabled()
                         with page.expect_download() as download:
                             page.locator('#mii-export').click()
