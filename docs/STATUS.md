@@ -1,5 +1,13 @@
 # Estado técnico — 10/11/2026
 
+## Correção da interface azul — RGB565
+
+Causa local confirmada para os ícones de copas. O dump privado contém ícones RGB565 (`0x701` no BNTX). `soft16_decode` no snapshot atribui os bits 0–4 ao vermelho; o mapeamento Vulkan de NVN `0x3C` usava `R5G6B5_UNORM_PACK16`, com vermelho nos bits 11–15. `toolchain/packed_formats.py` adapta somente essa entrada para `B5G6R5_UNORM_PACK16`, rejeitando layout desconhecido/duplicado e preservando os demais formatos. Aplicado pela preparação do host; não há alteração de dados comerciais nem de guest.
+
+Um teste nativo autoral da função real de formatos falhou com saída 1 antes da correção e passou depois: vermelho, azul, amarelo e preservação dos mapeamentos RGBA8/sRGB/BC3/BGRA8. O segundo teste cobre fronteiras desconhecidas/duplicadas. Passaram ainda os cinco testes adjacentes de memo, inicialização e BC render. O candidato RGB565 recompilou as 213 unidades do host, concluiu ligação e verificou 13 dependências; a biblioteca recompilada do jogo foi preservada. O candidato recebeu seu próprio espelho de dados, com hard links verificados, para respeitar o limite de pasta do DLC; o manifesto de origem não foi substituído.
+
+Capturas equivalentes aos 2200 quadros: `local/race-grand-prix-sb6kotkf` reproduz os ícones azul/ciano; `local/race-grand-prix-q0z4pc3d` mostra cogumelo vermelho, estrela/raio amarelos e bordas douradas. Ambas saíram com 0; a segunda registrou AC presente sem transição. A correção ainda não constitui qualificação de todos os formatos ou pistas. Referências em `THIRD_PARTY.md`; `gameplay_verified` permanece falso.
+
 ## Controle de recompilação no launcher — fontes locais
 
 A etapa **Instalar → Build do jogo** mantém o botão **Recompilar jogo** após uma preparação concluída, inclusive ao reabrir o launcher. Em inglês, o botão aparece como **Rebuild game**. Os botões de recompilar e jogar ficam juntos abaixo do aviso verde de jogo pronto, com quebra de linha em telas estreitas; a explicação da primeira build fica oculta após a conclusão. A ação usa a preparação existente e reaproveita as etapas verificadas; não força limpeza nem nova extração. O botão fica desabilitado enquanto o jogo, a instalação de ferramentas ou outra build estiver em execução; durante a build, permanece oculto. Os estados de primeira build, nova tentativa e atualização conservam seus rótulos.

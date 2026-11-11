@@ -204,6 +204,8 @@ def prepare_host_sources(source, output):
     prepare_shader_ahead(runtime)
     from texture_init import prepare as prepare_texture_init
     prepare_texture_init(runtime)
+    from packed_formats import prepare as prepare_packed_formats
+    prepare_packed_formats(runtime)
     from texture_pool import prepare as prepare_texture_pool
     prepare_texture_pool(runtime)
     from bc_render import prepare as prepare_bc_render
