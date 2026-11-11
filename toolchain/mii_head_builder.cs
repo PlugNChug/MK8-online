@@ -18,6 +18,11 @@ public class HeadPart { public string name,texture; public float[][] positions,n
 public class HeadTexture { public string name; public uint width,height; }
 public class HeadData { public HeadPart[] parts; public HeadTexture[] textures; }
 public class MiiHeadBuilder {
+    // Verified MK8 4.0.1 Normal Suit bodies. Both share the Head bone (index 10) and Helmet template.
+    static readonly Dictionary<string,string> Originals=new Dictionary<string,string> {
+        {"d2d4f0992ab12c0773e0a89add358576c2ceccff0450deb5053740f73c57568a","MiiM"},
+        {"8fa6b46908450bb05d24a2a4607fdd205e51ee00f956abd33ea80368b5a4dfc8","MiiF"},
+    };
     static bool Finite(float n) { return !Single.IsNaN(n) && !Single.IsInfinity(n); }
     static void Validate(HeadData data,string root) {
         if(data==null || data.parts==null || data.parts.Length<3 || data.parts.Length>4 || data.textures==null || data.textures.Length>8)
@@ -54,14 +59,15 @@ public class MiiHeadBuilder {
         if(expected.Any(name=>name!="Forehead")) throw new InvalidDataException("Missing required opaque head part");
     }
     public static void Main(string[] args) {
-        if(args.Length!=3) throw new ArgumentException("Usage: MiiHeadBuilder original-MiiM.bfres baked-head.json output.bfres");
+        if(args.Length!=3) throw new ArgumentException("Usage: MiiHeadBuilder original-MiiM-or-MiiF.bfres baked-head.json output.bfres");
         if(File.Exists(args[2])) throw new IOException("Output exists; choose a new derived file");
         if(new DriveInfo(Path.GetPathRoot(Path.GetFullPath(args[2]))).AvailableFreeSpace < 4L*1024*1024*1024)
             throw new IOException("At least 4 GiB free required");
+        string bodyName;
         using(var sha=SHA256.Create()) using(var input=File.OpenRead(args[0])) {
             var hash=BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
-            if(hash!="d2d4f0992ab12c0773e0a89add358576c2ceccff0450deb5053740f73c57568a")
-                throw new InvalidDataException("Unsupported original MiiM BFRES; expected verified MK8 4.0.1 asset");
+            if(!Originals.TryGetValue(hash,out bodyName))
+                throw new InvalidDataException("Unsupported original MiiM/MiiF BFRES; expected verified MK8 4.0.1 asset");
         }
         if(new FileInfo(args[1]).Length>8*1024*1024) throw new InvalidDataException("Head JSON too large");
         string root=Path.GetDirectoryName(Path.GetFullPath(args[1]));
@@ -130,12 +136,6 @@ public class MiiHeadBuilder {
         using(var stream=new MemoryStream()) { bntx.Save(stream); res.ExternalFiles["textures.bntx"].Data=stream.ToArray(); }
         res.Save(args[2]);
         var check=new ResFile(args[2]);
-        Console.WriteLine("Saved head on bone {0}, shapes {1}, materials {2}",head,check.Models["Mii"].Shapes.Count,check.Models["Mii"].Materials.Count);
+        Console.WriteLine("Saved {0} head on bone {1}, shapes {2}, materials {3}",bodyName,head,check.Models["Mii"].Shapes.Count,check.Models["Mii"].Materials.Count);
     }
 }
-
-
-
-
-
-

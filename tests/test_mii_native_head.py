@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from PIL import Image
-from toolchain.mii_native_head import Glb, native_vector, colored_pixels, prepare
+from toolchain.mii_native_head import Glb, native_vector, colored_pixels, convert, prepare
 from toolchain.mii_head_bake import srgb_decode, srgb_encode
 
 
@@ -78,7 +78,7 @@ class NativeHeadTests(unittest.TestCase):
             lambda d: d['buffers'][0].update(uri='private.dat'),
             lambda d: d['images'][0].update(uri='https://invalid.example/image.png'),
             lambda d: d['asset']['extras']['mii_charinfo'].__setitem__(49, 132),
-            lambda d: d['asset']['extras']['mii_charinfo'].__setitem__(40, 1),
+            lambda d: d['asset']['extras']['mii_charinfo'].__setitem__(40, 2),
         ):
             doc, binary = fixture()
             mutation(doc)
@@ -120,6 +120,36 @@ class NativeHeadTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 prepare(source, output)
             self.assertEqual((output/'source.glb').read_bytes(), source.read_bytes())
+
+
+    def test_female_selects_miif_body_and_male_keeps_miim(self):
+        for gender, body in ((0, 'MiiM'), (1, 'MiiF')):
+            doc, binary = fixture()
+            doc['asset']['extras']['mii_charinfo'][40] = gender
+            with tempfile.TemporaryDirectory() as folder:
+                source = Path(folder)/'source.glb'
+                source.write_bytes(encode(doc, binary))
+                manifest = prepare(source, Path(folder)/'derived')
+                self.assertEqual(manifest['body'], body)
+                self.assertIn(body, manifest['scope'])
+                profile = json.loads((Path(folder)/'derived/mii-profile.json').read_text())
+                self.assertEqual(profile['appearance']['gender'], gender)
+
+    def test_rejects_original_body_that_does_not_match_gender_before_output(self):
+        doc, binary = fixture()
+        doc['asset']['extras']['mii_charinfo'][40] = 1
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root/'source.glb'
+            source.write_bytes(encode(doc, binary))
+            builder = root/'builder.exe'
+            builder.write_bytes(b'')
+            # An unverified original is refused before any output exists.
+            original = root/'MiiF.bfres'
+            original.write_bytes(b'FRES not the verified asset')
+            with self.assertRaises(ValueError):
+                convert(source, root/'out', original, builder)
+            self.assertFalse((root/'out').exists())
 
 
 if __name__ == '__main__':

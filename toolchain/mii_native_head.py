@@ -1,4 +1,4 @@
-"""Convert the launcher's FFL GLB to a private MK8 4.0.1 male Normal Suit overlay.
+"""Convert the launcher's FFL GLB to a private MK8 4.0.1 Normal Suit overlay (MiiM or MiiF).
 
 Static face/nose/hair only, optional forehead; unsupported parts fail explicitly.
 Requires Pillow, the verified original BFRES and the compiled mii_head_builder.cs.
@@ -19,6 +19,12 @@ else:
     from mii_head_bake import blend, expand_mirrored_skin, pack_yaz0, srgb_decode, srgb_encode
 
 ORIGINAL_SHA256 = 'd2d4f0992ab12c0773e0a89add358576c2ceccff0450deb5053740f73c57568a'
+ORIGINAL_FEMALE_SHA256 = '8fa6b46908450bb05d24a2a4607fdd205e51ee00f956abd33ea80368b5a4dfc8'
+# CharInfo gender (byte 40) -> verified body resource. Both share bone layout and Head index 10.
+# With MK8_EXPERIMENTAL_NO_MII the game loads Driver/MiiM.szs for every Mii (observed in-game:
+# a MiiF.szs overlay is never read), so the selected body is always served under that name.
+OVERLAY_NAME = 'MiiM.szs'
+BODIES = {0: ('MiiM', ORIGINAL_SHA256), 1: ('MiiF', ORIGINAL_FEMALE_SHA256)}
 PARTS = {0: 'Faceline', 2: 'Nose', 3: 'Forehead', 4: 'Hair', 6: 'Mask', 7: 'Noseline'}
 # Same serialized Switch contract as crates/installer/src/mii_data.rs.
 CHARINFO_MAX = (3, 11, 1, 127, 127, 1, 3, 11, 9, 11, 11, 131, 99, 1, 59, 99, 7, 6, 7, 12, 18,
@@ -59,8 +65,8 @@ class Glb:
         self.charinfo = d['asset'].get('extras', {}).get('mii_charinfo')
         if not isinstance(self.charinfo, list) or len(self.charinfo) != 88 or any(type(v) != int or not 0 <= v <= 255 for v in self.charinfo):
             raise ValueError('Missing launcher CharInfo binding')
-        if self.charinfo[8] & 0xc0 != 0x80 or self.charinfo[40] != 0:
-            raise ValueError('Only a valid male Mii identity is supported by this overlay')
+        if self.charinfo[8] & 0xc0 != 0x80 or self.charinfo[40] not in BODIES:
+            raise ValueError('Invalid Mii identity or gender')
         chars = self.charinfo
         name = bytes(chars[16:36]).decode('utf-16le').split('\0')[0]
         if not name.strip() or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in name) or chars[36:38] != [0, 0] or chars[65] < 3 or any(v > cap for v, cap in zip(chars[38:], CHARINFO_MAX)):
@@ -240,25 +246,33 @@ def prepare(source, output):
     name = bytes(chars[16:38]).decode('utf-16le').split('\0')[0]
     profile = dict(schema=1, id=chars[:16], charinfo=chars, appearance=dict(name=name, color=chars[39], gender=chars[40]))
     (output/'mii-profile.json').write_text(json.dumps(profile), encoding='utf-8')
-    return dict(schema=1, glb_sha256=hashlib.sha256(raw).hexdigest(), charinfo=chars,
+    body, original = BODIES[chars[40]]
+    return dict(schema=1, glb_sha256=hashlib.sha256(raw).hexdigest(), charinfo=chars, body=body,
                 transform='FFL (x,y,z) -> Head (y,z,x) * 0.1', parts=[p['name'] for p in opaque],
-                original_bfres_sha256=ORIGINAL_SHA256, scope='static male Normal Suit; all users of MiiM share this head',
+                original_bfres_sha256=original, overlay_file=OVERLAY_NAME,
+                scope=f'static {body} Normal Suit served as Driver/{OVERLAY_NAME}; every Mii driver shares this head and body',
                 gameplay_verified=False, multiplayer_verified=False)
 
 
 def convert(source, output, original, builder):
     original, builder, output = Path(original).resolve(), Path(builder).resolve(), Path(output).resolve()
     with original.open('rb') as stream:
-        if hashlib.file_digest(stream, 'sha256').hexdigest() != ORIGINAL_SHA256:
-            raise ValueError('Unsupported original MK8 4.0.1 BFRES')
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if digest not in (sha for _, sha in BODIES.values()):
+        raise ValueError('Unsupported original MK8 4.0.1 BFRES')
     if not builder.is_file():
         raise ValueError('Compile mii_head_builder.cs first')
+    # Check gender/body pairing before creating any output.
+    expected = BODIES[Glb(Path(source).read_bytes()).charinfo[40]]
+    if digest != expected[1]:
+        raise ValueError(f'This Mii requires the original {expected[0]}.bfres')
     manifest = prepare(source, output)
-    subprocess.run([str(builder), str(original), str(output/'head.json'), str(output/'MiiM.bfres')], check=True)
+    body = manifest['body']
+    subprocess.run([str(builder), str(original), str(output/'head.json'), str(output/f'{body}.bfres')], check=True)
     driver = output/'romfs/Driver'
     driver.mkdir(parents=True)
-    pack_yaz0(output/'MiiM.bfres', driver/'MiiM.szs')
-    manifest['overlay_sha256'] = hashlib.sha256((driver/'MiiM.szs').read_bytes()).hexdigest()
+    pack_yaz0(output/f'{body}.bfres', driver/OVERLAY_NAME)
+    manifest['overlay_sha256'] = hashlib.sha256((driver/OVERLAY_NAME).read_bytes()).hexdigest()
     manifest['builder_sha256'] = hashlib.sha256(builder.read_bytes()).hexdigest()
     (output/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
@@ -268,7 +282,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('glb', type=Path)
     parser.add_argument('output', type=Path, help='New private overlay directory')
-    parser.add_argument('--original', required=True, type=Path)
+    parser.add_argument('--original', required=True, type=Path, help='Verified MiiM.bfres (male) or MiiF.bfres (female)')
     parser.add_argument('--builder', required=True, type=Path)
     parser.add_argument('--python-libs', type=Path, help='Local directory containing Pillow')
     args = parser.parse_args()

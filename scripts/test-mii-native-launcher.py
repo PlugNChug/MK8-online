@@ -1,4 +1,5 @@
 """Prepare a real editor head and start MK8 through the launcher, using isolated saves."""
+import argparse
 import hashlib
 import json
 import os
@@ -15,7 +16,7 @@ from playwright.sync_api import sync_playwright, expect
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run():
+def run(source):
     assert shutil.disk_usage(ROOT/'local').free >= 4*1024**3
     metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT, text=True))
     launcher = Path(metadata['target_directory'])/'debug/Launcher.exe'
@@ -24,7 +25,7 @@ def run():
     shutil.copyfile(ROOT/'local/candidate.json', local/'candidate.json')
     shutil.copytree(ROOT/'local/user-no-mii/save', local/'user-no-mii/save')
     shutil.copyfile(ROOT/'local/user-no-mii/mk8d.ini', local/'user-no-mii/mk8d.ini')
-    glb = (ROOT/'local/mii-composer-check/profile-B.glb').read_bytes()
+    glb = source.read_bytes()
     size = struct.unpack_from('<I', glb, 12)[0]
     doc = json.loads(glb[20:20+size])
     data = doc['asset']['extras']['mii_charinfo']
@@ -84,7 +85,10 @@ def run():
             receipt = json.loads((profile_dir/'native-head.json').read_text())
             assert receipt['glb_sha256'] == hashlib.sha256(glb).hexdigest()
             overlay = Path(receipt['overlay']['path'])
+            # The game reads Driver/MiiM.szs for every Mii; female heads use the MiiF body under that name.
             assert overlay.samefile(next(profile_dir.glob('native/*/model/romfs/Driver/MiiM.szs')))
+            manifest = json.loads((overlay.parents[2]/'manifest.json').read_text())
+            assert manifest['body'] == ('MiiF' if data[40] else 'MiiM') and manifest['overlay_file'] == 'MiiM.szs'
             page.locator('#mii-compose-close').click()
             page.locator('[data-tab="play"]').click()
             expect(page.locator('#play-solo')).to_be_enabled(timeout=30000)
@@ -152,7 +156,7 @@ def run():
             expect(page.locator('#mii-native-status')).to_have_text('Uso no jogo desativado.')
             assert set((profile_dir/'native').iterdir()) == jobs_before
             assert not errors, errors
-            (local/'evidence.json').write_text(json.dumps({'launcher_ui_conversion': True, 'launcher_game_exit': 0,
+            (local/'evidence.json').write_text(json.dumps({'source_glb': source.name, 'body': manifest['body'], 'launcher_ui_conversion': True, 'launcher_game_exit': 0,
                 'profile_id': bytes(data[:16]).hex(), 'native_receipt': receipt, 'stale_launch_rejected': True,
                 'profile_switch_rejected': True, 'converter_failure_reported': True, 'cached_reactivation': True, 'gameplay_verified': False,
                 'multiplayer_verified': False}, indent=2))
@@ -167,4 +171,7 @@ def run():
 
 
 if __name__ == '__main__':
-    run()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--glb', type=Path, default=ROOT/'local/mii-composer-check/profile-B.glb',
+                        help='Saved editor GLB; profile-C.glb from test-mii-composer.py is the female case')
+    run(parser.parse_args().glb)

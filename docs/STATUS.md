@@ -1,4 +1,26 @@
-# Estado técnico — 10/11/2026
+# Estado técnico — 11/11/2026
+
+## Mii feminino nativo — fase 6, 11/11/2026
+
+A conversão nativa agora aceita Miis **femininos**. O gênero do CharInfo (byte `0x28`) escolhe o corpo verificado: `MiiM.bfres` (SHA-256 `d2d4f099…568a`) para masculino e `MiiF.bfres` (SHA-256 `8fa6b46908450bb05d24a2a4607fdd205e51ee00f956abd33ea80368b5a4dfc8`) para feminino. Uma sonda BfresLibrary confirmou que os dois têm os mesmos modelos (`Helmet`, `Mii`, `MiiFace`), 29 ossos, `Head` no índice 10 e transformações idênticas na cadeia `Skl_Root → Spine1 → Spine2 → Head`. Por isso a transformação calibrada `(x,y,z) → (y,z,x) * 0,1` vale para os dois.
+
+**Achado em jogo:** com `MK8_EXPERIMENTAL_NO_MII=1`, o jogo carrega `Driver/MiiM.szs` para todo Mii, mesmo com um perfil feminino. Prova: uma sobreposição só com `MiiF.szs` (`local/race-time-trial-qz0_nyvm`) não mostrou cabeça; uma sobreposição com `MiiM.szs` da cabeça A e `MiiF.szs` da cabeça C, usando o perfil feminino (`local/race-time-trial-neb2uo1t`), mostrou a cabeça **A**. Assim, o corpo feminino com a cabeça convertida é servido com o nome `romfs/Driver/MiiM.szs`. O manifesto registra `body` (`MiiM`/`MiiF`) e `overlay_file="MiiM.szs"`. Um arquivo `MiiF.szs` ativo é recusado pelo launcher, pois o jogo nunca o lê.
+
+- `toolchain/mii_head_builder.cs` aceita os dois originais verificados por hash e informa o corpo usado. O executável local foi recompilado; o anterior foi conservado como `local/mii-native-probe/MiiHeadBuilder-phase5.exe`.
+- `toolchain/mii_native_head.py` escolhe o corpo pelo gênero e recusa, antes de criar qualquer saída, um original que não corresponda ao gênero. Gênero diferente de 0/1 é recusado.
+- `crates/installer/src/mii_native.rs`: novo campo opcional `original_female` em `mii-native-tools.json` (padrão `local/mii-native-probe/MiiF.bfres`). Configurações antigas continuam válidas, apenas sem suporte feminino. `status` informa `body` e considera as ferramentas prontas conforme o corpo do perfil selecionado. `publish` confere `body`, `overlay_file` e o hash do original correspondente.
+- O texto do editor (PT/EN) agora informa suporte a masculino e feminino.
+
+**Evidência nativa inspecionada:**
+
+- `local/race-time-trial-_kwzk43q`: perfil feminino C (cabelo 12, pele 1), corpo MiiF servido como `MiiM.szs`, saída 0 em 96,4 s, aproximadamente 60 FPS. `frame-02000.png` mostra a cabeça no menu de kart; `frame-04800.png` mostra a cabeça na pista.
+- `local/mii-native-launcher-cretj_th`: `scripts/test-mii-native-launcher.py --glb local/mii-composer-check/profile-C.glb`. Conversão pelo botão do editor, abertura real por **Jogar solo**, saída 0, cabeça visível em `frame-03400.png`, além das recusas de modelo desatualizado, troca de perfil e peça não suportada.
+- `scripts/test-mii-composer.py` agora cria também o perfil feminino `Editor C` e exporta `profile-C.glb`.
+
+**Validação:** 13 testes Python do conversor/composição, testes Rust de installer/launcher (32), Clippy `-D warnings`, formatação, `test_mii_glb.py`, `test_launcher_languages.py` e os roteiros de navegador acima passaram.
+
+**Limites:** continua sendo uma substituição estática do único recurso que o jogo carrega. Todos os pilotos Mii da sessão recebem o mesmo corpo e a mesma cabeça; isso também vale para o corpo feminino de um perfil feminino. Carecas, barba/óculos, expressões, retratos, cabeças por jogador, multiplayer com cabeça ativa e corrida completa continuam pendentes. `gameplay_verified=false` e `multiplayer_verified=false`. A forma do corpo feminino é a do recurso original MiiF; não houve comparação lado a lado com o renderer Mii original.
+
 
 ## Conversão e aplicação pelo launcher — fase 5, 10/11/2026
 
@@ -15,6 +37,7 @@ Na abertura do jogo, o installer verifica novamente identidade, integridade, loc
   "python": "D:/Ferramentas/python/python.exe",
   "libraries": "D:/Ferramentas/python-libs",
   "original": "D:/DadosPrivados/MiiM.bfres",
+  "original_female": "D:/DadosPrivados/MiiF.bfres",
   "builder": "D:/Ferramentas/mii/MiiHeadBuilder.exe"
 }
 ```

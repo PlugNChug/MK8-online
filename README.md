@@ -46,6 +46,8 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 **Phase 5:** with the private conversion tools configured, save the profile/model, then choose **Prepare and use in game** in the editor and **Play solo**. The launcher converts the head, verifies the result and applies the selected profile's overlay at the next launch. You can disable or reactivate a prepared head without converting again. Stale/corrupted models and launcher multiplayer rooms are rejected while enabled. The actual launcher-to-game flow was tested in the kart menu and opening lap with isolated saves. This development feature still requires local Python/Pillow, the compiled BFRES builder and the verified original male body; these resources are not bundled. See [setup, evidence and remaining limits](docs/STATUS.md).
 
+**Phase 6:** female Miis are supported. The CharInfo gender selects the verified `MiiF.bfres` body. In the current no-Mii runtime mode the game loads `Driver/MiiM.szs` for every Mii, so the female body and head are served under that name. Configure `original_female` in `mii-native-tools.json` if the private female body is elsewhere. Tested from the launcher's editor button through **Play solo**, with the head visible in the kart menu and on track. See [status](docs/STATUS.md).
+
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |

@@ -130,6 +130,26 @@ def run():
                 assert api('mii/composer')['head'] is None, 'Changed profile must invalidate its head'
                 assert (local/'profiles'/first_id/f"assembled-{head_a['sha256']}.glb").read_bytes() == glb
                 assert len(api('mii')['profiles']) == 2
+                # Female profile: CharInfo gender (offset 40) selects the MiiF body for native conversion.
+                page.locator('#mii-new').click()
+                page.locator('#mii-name').fill('Editor C')
+                page.locator('#mii-form button[type=submit]').click()
+                expect(page.locator('#mii-full-fields input')).to_have_count(49)
+                page.locator('#mii-compose-open').click()
+                expect(page.locator('#mii-compose-reopen')).to_be_disabled()
+                page.locator('#mii-full-fields input[data-offset="40"]').fill('1')
+                hair.fill('12')
+                page.locator('#mii-full-fields input[data-offset="46"]').fill('1')
+                expect(page.locator('#mii-compose-status')).to_contain_text('Prévia atualizada')
+                page.locator('#mii-full-save').click()
+                expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
+                head_c = api('mii/composer')['head']
+                assert head_c['charinfo'][40] == 1 and head_c['sha256'] not in (head_a['sha256'], head_b['sha256'])
+                page.locator('#mii-compose-canvas').screenshot(path=str(output/'profile-C.png'))
+                with page.expect_download() as download_c:
+                    page.locator('#mii-compose-export').click()
+                download_c.value.save_as(output/'profile-C.glb')
+                page.locator('#mii-compose-close').click()
                 page.locator('#language').select_option('en')
                 expect(page.locator('#mii-compose-open')).to_have_text('Edit Mii in 3D')
                 page.locator('#mii-compose-open').click()
@@ -137,10 +157,10 @@ def run():
                 expect(page.locator('#mii-full-save')).to_have_text('Save profile and model')
                 assert not errors, errors
                 assert not [u for u in requests if not u.startswith((url, 'blob:', 'data:'))]
-                (output/'manifest.json').write_text(json.dumps({'profiles': [head_a, head_b], 'reload_verified': True,
+                (output/'manifest.json').write_text(json.dumps({'profiles': [head_a, head_b, head_c], 'reload_verified': True,
                     'stale_save_rejected': True, 'native_integration_verified': False}, indent=2))
                 browser.close()
-                print('PASS: two profiles, live parts, GLB save/reopen/export, reload, stale/invalid rejection; no external requests.')
+                print('PASS: three profiles (one female), live parts, GLB save/reopen/export, reload, stale/invalid rejection; no external requests.')
         finally:
             process.terminate()
             process.wait(timeout=15)
