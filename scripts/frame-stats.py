@@ -12,6 +12,49 @@ import re
 
 FRAME = re.compile(r'^\[frame\] (\d+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)', re.M)
 SHOT = re.compile(r'saved .*frame-(\d+)\.png')
+HEAP = re.compile(r'^\[mk8:vram\] heap (\d+): (\d+) MB in (\d+) blocks, (\d+) MB used by (\d+) allocations; '
+                  r'VMA estimate (\d+) of (\d+) MB; vertex cache (\d+) MB; (\d+) live textures$')
+COMMANDS = re.compile(r'^\[mk8:vram\] command lists: (\d+) active, (\d+) retired, clock (\d+)$')
+
+
+def memory_samples(text):
+    heaps, commands = [], []
+    frame = None
+    for line in text.splitlines():
+        match = FRAME.match(line)
+        if match:
+            frame = int(match[1])
+        is_heap = line.startswith('[mk8:vram] heap ')
+        is_commands = line.startswith('[mk8:vram] command lists:')
+        if not (is_heap or is_commands):
+            continue
+        match = (HEAP if is_heap else COMMANDS).fullmatch(line)
+        if not match:
+            raise ValueError('Formato de telemetria VRAM desconhecido')
+        if frame is None:
+            raise ValueError('Telemetria VRAM sem quadro de referência; habilite MK8_FRAME_TIMES')
+        names = ('heap', 'reserved_mib', 'blocks', 'allocated_mib', 'allocations',
+                 'estimated_mib', 'budget_mib', 'vertex_mib', 'textures') if is_heap else ('active', 'retired', 'clock')
+        record = dict(zip(names, map(int, match.groups())), frame=frame)
+        (heaps if is_heap else commands).append(record)
+    return heaps, commands
+
+
+def memory_stats(text, first, last):
+    heaps, commands = memory_samples(text)
+    heaps = [s for s in heaps if first <= s['frame'] <= last]
+    commands = [s for s in commands if first <= s['frame'] <= last]
+    out = []
+    for heap in sorted({s['heap'] for s in heaps}):
+        samples = [s for s in heaps if s['heap'] == heap]
+        a, b = samples[0], samples[-1]
+        out.append(f"  heap {heap}: {len(samples)} samples, frames {a['frame']}-{b['frame']} (rounded MiB)")
+        for name, label in (('reserved_mib', 'reserved'), ('allocated_mib', 'allocated'), ('textures', 'live textures')):
+            out.append(f"    {label}: {a[name]} -> {b[name]}, peak {max(s[name] for s in samples)}")
+    if commands:
+        for name in ('active', 'retired'):
+            out.append(f"  command lists {name}: {commands[0][name]} -> {commands[-1][name]}, peak {max(s[name] for s in commands)}")
+    return out
 
 
 def percentile(values, p):
@@ -37,6 +80,7 @@ def stats(session, first, last, slowest):
         out.append('  slowest: frame total exec prefetch present other')
         for r in sorted(rows, key=lambda r: -r[1])[:slowest]:
             out.append('    ' + ' '.join(f'{v:.1f}' if isinstance(v, float) else str(v) for v in r))
+    out.extend(memory_stats(text, first, last))
     return '\n'.join(out)
 
 

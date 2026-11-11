@@ -3,6 +3,7 @@ import runpy
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -41,18 +42,20 @@ class RaceScriptTests(unittest.TestCase):
         self.assertTrue(script.endswith('2700:A:2510'))
 
     def test_capture_monitor_preserves_exit_status(self):
-        with subprocess.Popen([sys.executable, '-c', 'raise SystemExit(7)']) as child:
+        with tempfile.TemporaryDirectory() as folder, \
+                subprocess.Popen([sys.executable, '-c', 'raise SystemExit(7)']) as child:
             with patch('shutil.disk_usage', return_value=SimpleNamespace(free=8 * 1024**3)):
-                wait_capture(child, 10, 'test.log')
+                wait_capture(child, 10, str(Path(folder)/'test.log'))
             self.assertEqual(child.returncode, 7)
 
     def test_capture_monitor_stops_owned_process_on_low_disk_or_timeout(self):
         for free, timeout, reason in [(3 * 1024**3, 10, '4 GiB'), (8 * 1024**3, -1, 'timed out')]:
             with self.subTest(reason=reason):
-                with subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']) as child:
+                with tempfile.TemporaryDirectory() as folder, \
+                        subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']) as child:
                     with patch('shutil.disk_usage', return_value=SimpleNamespace(free=free)):
                         with self.assertRaisesRegex(SystemExit, reason):
-                            wait_capture(child, timeout, 'test.log')
+                            wait_capture(child, timeout, str(Path(folder)/'test.log'))
                     self.assertIsNotNone(child.poll())
 
 

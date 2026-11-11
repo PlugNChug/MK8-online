@@ -1,6 +1,7 @@
-"""Drive an experimental candidate with scripted input and isolated saves."""
+"""Captura corridas com saves isolados; --assisted usa os auxílios do jogo (Grand Prix)."""
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -8,12 +9,16 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
-from time import monotonic, sleep
+from time import monotonic, sleep, time_ns
 
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / 'local'
+sys.path.insert(0, str(ROOT / 'toolchain'))
+from build_lock import exclusive_build
+
 PERF = re.compile(r'\[vk\] t=([\d.]+) frame (\d+) ([\d.]+) fps max (\d+)ms')
 
 
@@ -23,8 +28,21 @@ CUPS = ('mushroom', 'flower', 'star', 'special', 'egg', 'crossing',
 COURSES = ('stadium', 'water-park', 'sweet-sweet-canyon')
 
 
-def race_input(mode, last_frame, course='stadium', cup=0, track=None):
+def race_input(mode, last_frame, course='stadium', cup=0, track=None,
+               assisted=False, assist_toggle=(), long_session=False):
     start = '400:A:6,520:DOWN:6,580:A:6,760:A:6'
+    if assisted:
+        # A tela de estatísticas expõe L (direção) e R (aceleração); são toggles persistidos.
+        start += ',920:A:6,1080:A:6,1240:A:6,1450:PLUS:6'
+        if 'steering' in assist_toggle:
+            start += ',1500:L:6'
+        if 'accelerate' in assist_toggle:
+            start += ',1540:R:6'
+        start += ',1660:PLUS:6,1750:A:6,1900:A:6,2050:A:6,2210:A:6,2370:A:6,2530:A:6'
+        if long_session:
+            # Confirmar resultados/próxima corrida sem reiniciar o processo nem manter A pressionado.
+            start += ''.join(f',{frame}:A:6' for frame in range(16000, last_frame, 240))
+        return start
     if mode == 'time-trial':
         track = COURSES.index(course) if track is None else track
         start += ',880:DOWN:6'
@@ -46,11 +64,33 @@ def race_input(mode, last_frame, course='stadium', cup=0, track=None):
     return start + f',2700:A:{max(last_frame - 2690, 10)}'
 
 
+def read_power_status():
+    if os.name != 'nt':
+        return None
+    class SystemPowerStatus(ctypes.Structure):
+        _fields_ = [('ac', ctypes.c_ubyte), ('flags', ctypes.c_ubyte),
+                    ('percent', ctypes.c_ubyte), ('saver', ctypes.c_ubyte),
+                    ('life', ctypes.c_uint32), ('full_life', ctypes.c_uint32)]
+    status = SystemPowerStatus()
+    if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+        return {'available': False}
+    return {'ac_line_status': status.ac, 'battery_flags': status.flags,
+            'battery_percent': status.percent, 'battery_saver': status.saver}
+
+
 def wait_capture(child, timeout, log):
     """Monitor only this test's process; the runtime parent waits for its ASLR child."""
+    log = Path(log)
     started = monotonic()
+    previous_power = None
     try:
         while child.poll() is None:
+            power = read_power_status()
+            if power is not None and power != previous_power:
+                with log.with_name('power-events.jsonl').open('a', encoding='utf-8') as stream:
+                    stream.write(json.dumps({'elapsed_seconds': round(monotonic()-started, 3),
+                                             'unix_ns': time_ns(), **power}) + '\n')
+                previous_power = power
             if shutil.disk_usage(LOCAL).free < 4 * 1024**3:
                 raise SystemExit(f'Capture stopped to preserve the 4 GiB disk reserve. See {log}')
             if monotonic() - started > timeout:
@@ -66,7 +106,35 @@ def wait_capture(child, timeout, log):
             child.wait(timeout=15)
 
 
-def run(args):
+def save_hashes(folder):
+    return {path.relative_to(folder).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(folder.rglob('*')) if path.is_file()}
+
+
+def prepare_session(source, session, cache):
+    data = session / 'data'
+    shutil.copytree(source / 'user-no-mii/save', data / 'save')
+    ini = (source / 'user-no-mii/mk8d.ini').read_text(encoding='utf-8')
+    ini = re.sub(r'^frame_gen\s*=.*$', 'frame_gen = off', ini, flags=re.M)
+    if not re.search(r'^frame_gen\s*=', ini, flags=re.M):
+        ini += '\nframe_gen = off\n'
+    (data / 'mk8d.ini').write_text(ini, encoding='utf-8')
+    (data / 'build').mkdir()
+    if cache:
+        shutil.copytree(cache, data / 'cache')
+    if (source / 'user-no-mii/fonts').is_dir():
+        shutil.copytree(source / 'user-no-mii/fonts', data / 'fonts')
+    if (source / 'mii-profile.json').is_file():
+        shutil.copyfile(source / 'mii-profile.json', session / 'mii-profile.json')
+
+
+def collect_log(log, runtime_log, started_ns):
+    # Windows pode redirecionar stderr para junto do EXE; nunca usar um log de outra execução.
+    if runtime_log.is_file() and runtime_log.stat().st_mtime_ns >= started_ns:
+        shutil.copyfile(runtime_log, log)
+
+
+def run_once(args, source, cache):
     if shutil.disk_usage(LOCAL).free < 4 * 1024**3:
         raise SystemExit('Race capture requires at least 4 GiB free on the local drive')
     candidate = json.loads((args.candidate or LOCAL / 'candidate.json').read_text(encoding='utf-8'))
@@ -79,62 +147,106 @@ def run(args):
 
     session = Path(tempfile.mkdtemp(prefix=f'race-{args.mode}-', dir=LOCAL))
     print(f'Test output: {session}', flush=True)
+    prepare_session(source, session, cache)
     data = session / 'data'
-    source = LOCAL / 'user-no-mii'
-    shutil.copytree(source / 'save', data / 'save')
-    ini = (source / 'mk8d.ini').read_text(encoding='utf-8')
-    ini = re.sub(r'^frame_gen\s*=.*$', 'frame_gen = off', ini, flags=re.M)
-    (data / 'mk8d.ini').write_text(ini, encoding='utf-8')
-    if args.cache_from:
-        shutil.copytree(args.cache_from, data / 'cache')
     profile = session / 'mii-profile.json'
-    shutil.copyfile(LOCAL / 'mii-profile.json', profile)
 
-    script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track)
+    script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track,
+                        args.assisted, args.assist_toggle, args.long_session)
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith(('MK8_', 'LARECOMP_', 'RECOMP_', 'NX_LAN_'))}
+           if not key.startswith(('MK8_', 'LARECOMP_', 'LASRECOMP_', 'RECOMP_', 'NX_LAN_'))}
     env.update(dict(args.env))
-    # The runtime writes shader sources and debug-frame pass images under build/ relative to its data root.
-    if any(key in env for key in ('LARECOMP_SAVE_MSL', 'LARECOMP_DEBUG_FRAME')):
-        (data / 'build').mkdir()
     env.update(
         MK8_EXPERIMENTAL_NO_MII='1', MK8_MII_PROFILE_PATH=str(profile),
         LARECOMP_DATA_ROOT=str(data), LARECOMP_GAME_LIB=candidate['files']['gamelib']['path'],
+        LARECOMP_AUDIO_GAIN='0',
         LARECOMP_INPUT=args.input or script,
         LARECOMP_WINDOW_SHOT=f'{args.last_frame - args.shot_step * (args.shots - 1)}:{args.last_frame}:{args.shot_step}',
         LARECOMP_SHOT_PATH=(session / 'frame-%05d.png').as_posix(),
         LARECOMP_EXIT_AFTER_SHOT='1',
     )
+    if args.assisted:
+        env.update(LARECOMP_HOST_INPUT='1600:shot:assists', LARECOMP_VK_PROF='1',
+                   MK8_FRAME_TIMES='1', MK8_TRACE_VRAM='1', MK8_DLC_ROOT='')
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
         'input': env['LARECOMP_INPUT'], 'last_frame': args.last_frame,
-        'cache_from': str(args.cache_from.resolve()) if args.cache_from else None,
+        'cache_from': str(cache.resolve()) if cache else None,
+        'assisted': args.assisted, 'assist_toggle': args.assist_toggle,
+        'long_session': args.long_session,
+        'environment': {key: value for key, value in env.items()
+                        if key.startswith(('MK8_', 'LARECOMP_'))},
     }, indent=2), encoding='utf-8')
     started = monotonic()
+    started_ns = time_ns()
     log = session / 'game.log'
-    with log.open('wb') as stream:
-        child = subprocess.Popen(
-            [candidate['executable']['path'], str(Path(candidate['data_root']) / 'extracted')],
-            cwd=data, env=env, stdin=subprocess.DEVNULL, stdout=stream,
-            stderr=subprocess.STDOUT,
-        )
-        wait_capture(child, args.timeout, log)
+    before = save_hashes(data / 'save')
+    child = None
+    try:
+        with log.open('wb') as stream:
+            child = subprocess.Popen(
+                [candidate['executable']['path'], str(Path(candidate['data_root']) / 'extracted')],
+                cwd=data, env=env, stdin=subprocess.DEVNULL, stdout=stream,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            wait_capture(child, args.timeout, log)
+    finally:
+        collect_log(log, Path(candidate['executable']['path']).with_suffix('.log'), started_ns)
+        (session / 'result.json').write_text(json.dumps({
+            'exit_code': child.returncode if child else None,
+            'elapsed_seconds': round(monotonic() - started, 3),
+            'started_unix_ns': started_ns,
+            'final_capture': (session / f'frame-{args.last_frame:05d}.png').is_file(),
+            'assists_capture': (data / 'build/assists.png').is_file(),
+            'save_changed': before != save_hashes(data / 'save'),
+            'gameplay_verified': False,
+        }, indent=2), encoding='utf-8')
     rows = PERF.findall(log.read_text(encoding='utf-8', errors='replace'))
     print(f'Exit {child.returncode}, {monotonic() - started:.1f}s', flush=True)
     for elapsed, frame, fps, peak in rows[-8:]:
         print(f'{elapsed}s | frame {frame} | {fps} FPS | max {peak} ms')
     if child.returncode or not (session / f'frame-{args.last_frame:05d}.png').is_file():
         raise SystemExit('Candidate failed to reach the final capture; inspect game.log')
+    if args.assisted and not (data / 'build/assists.png').is_file():
+        raise SystemExit('Captura dos auxílios ausente; não considerar o roteiro validado.')
+    if args.assisted and '[frame] ' not in log.read_text(encoding='utf-8', errors='replace'):
+        raise SystemExit('Log sem tempos de quadro; não considerar a coleta concluída.')
+    print('Revisar capturas: atingir o último quadro não comprova chegada nem auxílios ativos.', flush=True)
+    return session
 
 
-if __name__ == '__main__':
+def run(args):
+    source = (args.candidate or LOCAL / 'candidate.json').resolve().parent
+    cache = args.cache_from
+    # Também bloqueia uma preparação ou jogo do launcher que usa esse candidato.
+    with exclusive_build(source):
+        before = save_hashes(source / 'user-no-mii/save')
+        try:
+            for _ in range(args.repeat):
+                session = run_once(args, source, cache)
+                cache = session / 'data/cache' if (session / 'data/cache').is_dir() else None
+        finally:
+            if before != save_hashes(source / 'user-no-mii/save'):
+                raise RuntimeError('O save de origem mudou durante o teste; investigar antes de continuar.')
+
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['grand-prix', 'time-trial'])
-    parser.add_argument('--last-frame', type=int, default=3400)
-    parser.add_argument('--shots', type=int, default=2)
-    parser.add_argument('--shot-step', type=int, default=400)
-    parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--last-frame', type=int)
+    parser.add_argument('--shots', type=int)
+    parser.add_argument('--shot-step', type=int)
+    parser.add_argument('--timeout', type=int)
+    parser.add_argument('--assisted', action='store_true',
+                        help='Grand Prix sem segurar A; captura os auxílios no quadro 1600 para revisão')
+    parser.add_argument('--long-session', action='store_true',
+                        help='Confirma menus para continuar corridas/copas no mesmo processo; revisar capturas')
+    parser.add_argument('--assist-toggle', action='append', choices=['steering', 'accelerate'], default=[],
+                        help='Inverte somente o auxílio indicado na cópia do save; conferir a captura')
+    parser.add_argument('--repeat', type=int, default=1,
+                        help='Repete com saves novos da mesma origem e cache produzido pela execução anterior')
     parser.add_argument('--input', help='Override frame:button:duration input sequence')
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
@@ -143,10 +255,29 @@ if __name__ == '__main__':
     parser.add_argument('--track', type=int, choices=range(4), help='Track 0-3 of --cup (overrides --course)')
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     parser.add_argument('--candidate', type=Path, help='candidate.json of another data folder (e.g. a fresh build)')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.assisted and (args.mode != 'grand-prix' or args.input):
+        parser.error('--assisted exige grand-prix e não aceita --input')
+    if args.assist_toggle and not args.assisted:
+        parser.error('--assist-toggle exige --assisted')
+    if args.long_session and not args.assisted:
+        parser.error('--long-session exige --assisted')
+    defaults = (131100, 3000, 33, 4000) if args.long_session else (17100, 600, 8, 2000) if args.assisted else (3400, 180, 2, 400)
+    for name, default in zip(('last_frame', 'timeout', 'shots', 'shot_step'), defaults):
+        if getattr(args, name) is None:
+            setattr(args, name, default)
     if args.mode != 'time-trial' and (args.course != 'stadium' or args.cup != 'mushroom' or args.track is not None):
         parser.error('--course, --cup and --track require time-trial')
     if (args.shots < 1 or args.shot_step < 1 or args.last_frame <= args.shot_step * (args.shots - 1)
+            or args.timeout <= 0 or args.repeat < 1 or (args.assisted and args.last_frame <= 1600)
             or any(len(pair) != 2 for pair in args.env)):
         parser.error('Require positive capture frames, capture count and step, and --env NAME=VALUE')
-    run(args)
+    script = args.input or race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup),
+                                      args.track, args.assisted, args.assist_toggle, args.long_session)
+    if len(script.encode('utf-8')) >= 16384:
+        parser.error('Roteiro excede o buffer de entrada do runtime (16383 bytes); reduza a duração.')
+    return args
+
+
+if __name__ == '__main__':
+    run(parse_args())
