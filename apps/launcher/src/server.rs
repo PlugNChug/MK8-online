@@ -46,6 +46,9 @@ pub struct App {
     /// Set by a started update: the server exits after answering, so the installer can replace the launcher.
     exit_requested: bool,
     last_report: Option<String>,
+    native_job: Option<(Child, mk8_installer::mii_native::Pending)>,
+    native_state: &'static str,
+    native_detail: String,
 }
 /// The console keys beside the base package (or in its `keys` folder) or in `%USERPROFILE%\.switch`.
 fn detect_keys(config: &Config) -> Option<PathBuf> {
@@ -125,6 +128,9 @@ impl App {
             window,
             exit_requested: false,
             last_report: None,
+            native_job: None,
+            native_state: "idle",
+            native_detail: String::new(),
         }
     }
 
@@ -135,6 +141,55 @@ impl App {
             self.gateway = Some(gateway);
             self.room_menu += 1;
         }
+    }
+
+    fn poll_native(&mut self) {
+        let exit = match self.native_job.as_mut() {
+            Some((child, _)) => child.try_wait(),
+            None => return,
+        };
+        let exit = match exit {
+            Ok(Some(exit)) => exit,
+            Ok(None) => return,
+            Err(error) => {
+                self.native_detail = error.to_string();
+                return;
+            }
+        };
+        let (_, pending) = self.native_job.take().unwrap();
+        let result = if exit.success() {
+            mk8_installer::mii_native::publish(&self.local, pending)
+        } else {
+            let log = fs::read_to_string(&pending.log).unwrap_or_default();
+            let tail = log
+                .lines()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!("Falha na conversão Mii ({exit}). {tail}"))
+        };
+        match result {
+            Ok(()) => {
+                self.native_state = "done";
+                self.native_detail = "Modelo preparado para a próxima abertura do jogo.".into();
+            }
+            Err(error) => {
+                self.native_state = "failed";
+                self.native_detail = error;
+            }
+        }
+    }
+
+    fn native_status(&mut self) -> Result<Value> {
+        self.poll_native();
+        let mut value = mk8_installer::mii_native::status(&self.root, &self.local)?;
+        value["state"] = json!(self.native_state);
+        value["detail"] = json!(self.native_detail);
+        Ok(value)
     }
 
     fn store_config(&mut self, config: Config) -> Result<()> {
@@ -291,6 +346,52 @@ impl App {
                 "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
             ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
             ("GET", "/api/mii/fields") => Ok(json!(mk8_installer::mii_data::fields())),
+            ("GET", "/api/mii/native") => self.native_status(),
+            ("POST", "/api/mii/native/prepare") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let expected: Vec<u8> = serde_json::from_value(value["expected"].clone())
+                    .map_err(|_| "Reabra o editor Mii antes de preparar.")?;
+                mk8_installer::mii_native::check_profile(&self.local, &expected)?;
+                self.status();
+                self.poll_native();
+                if self.native_job.is_some()
+                    || self.game.is_some()
+                    || self.setup.running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err(
+                        "Feche o jogo e aguarde a operação atual antes de preparar o Mii.".into(),
+                    );
+                }
+                let (command, pending) =
+                    mk8_installer::mii_native::prepare(&self.root, &self.local)?;
+                let child = mk8_build_manager::supervisor::spawn(
+                    &command,
+                    &self.root,
+                    &self.local,
+                    &pending.log,
+                )?;
+                self.native_job = Some((child, pending));
+                self.native_state = "running";
+                self.native_detail = "Convertendo a cabeça para o jogo…".into();
+                self.native_status()
+            }
+            ("POST", "/api/mii/native/enabled") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let expected: Vec<u8> = serde_json::from_value(value["expected"].clone())
+                    .map_err(|_| "Reabra o editor Mii antes de ativar.")?;
+                mk8_installer::mii_native::check_profile(&self.local, &expected)?;
+                if self.native_job.is_some() {
+                    return Err("Aguarde a conversão Mii terminar.".into());
+                }
+                mk8_installer::mii_native::set_enabled(
+                    &self.local,
+                    value["enabled"].as_bool().ok_or("Opção inválida")?,
+                )?;
+                self.native_state = "idle";
+                self.native_detail.clear();
+                self.native_status()
+            }
             ("GET", "/api/mii/composer") => Ok(
                 json!({"resource":mk8_installer::mii_composer::resource_config(&self.local)?, "head":mk8_installer::mii_composer::saved(&self.local)?}),
             ),
@@ -639,6 +740,10 @@ impl App {
                 Ok(json!({"message":"Sessão encerrada."}))
             }
             ("POST", "/api/play") => {
+                self.poll_native();
+                if self.native_job.is_some() {
+                    return Err("Aguarde a conversão Mii terminar.".into());
+                }
                 self.status();
                 if self.game.is_some() {
                     return Err("O jogo já está aberto.".into());

@@ -4,6 +4,7 @@ pub mod avatar;
 pub mod mii;
 pub mod mii_composer;
 pub mod mii_data;
+pub mod mii_native;
 pub mod mii_resources;
 use std::{
     fs,
@@ -205,6 +206,10 @@ fn spawn_game(
     username: &str,
 ) -> Result<Child> {
     let mii_directory = mii_resources::launch_directory(local)?;
+    let native_head = mii_native::launch_directory(local, network.is_some())?;
+    if native_head.is_some() && mii_directory.is_some() {
+        return Err("Desative os recursos MiiModel antes de usar a cabeça convertida.".into());
+    }
     mii::read(local)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
@@ -217,6 +222,7 @@ fn spawn_game(
         .env("RECOMP_USER_NAME", username)
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
+        .env("LARECOMP_SAVE_DIR", saves.join("save"))
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
         .env(
             "SDL_VULKAN_LIBRARY",
@@ -253,6 +259,7 @@ fn spawn_game(
             .env("LARECOMP_LAN_SLOT", slot.to_string());
     }
     mii::configure(&mut cmd, local)?;
+    mii_native::configure_command(&mut cmd, native_head.as_deref())?;
     cmd.env_remove("MK8_MII_RESOURCE_DIR");
     if let Some(directory) = mii_directory {
         cmd.env("MK8_MII_RESOURCE_DIR", directory)

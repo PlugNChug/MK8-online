@@ -1,5 +1,32 @@
 # Estado técnico — 10/11/2026
 
+## Conversão e aplicação pelo launcher — fase 5, 10/11/2026
+
+O editor agora oferece **Salvar perfil e modelo → Preparar e usar no jogo**. Após a conversão terminar, **Jogar solo** aplica a cabeça do perfil selecionado na próxima abertura. **Desativar no jogo** conserva os arquivos; **Ativar no jogo** reutiliza uma conversão válida. Alterações feitas com o jogo aberto só entram na próxima abertura. A interface funciona em português e inglês.
+
+`crates/installer/src/mii_native.rs` valida o GLB salvo, CharInfo completo, BFRES original, hashes das entradas e manifesto da saída. Cada trabalho usa uma pasta privada nova em `<dados>/profiles/<id>/native/<trabalho>/`, com `conversion.log` e saída `model/romfs/Driver/MiiM.szs`. O recibo `native-head.json` do perfil só é publicado após sucesso real do processo e validação do resultado. Trocar/editar o perfil durante a conversão, partes não suportadas ou falha do conversor não ativam uma saída incorreta. A supervisão existente mantém os bloqueios de ferramentas e cancela o trabalho se o launcher encerrar; arquivos incompletos são conservados para diagnóstico.
+
+Na abertura do jogo, o installer verifica novamente identidade, integridade, localização e conteúdo exclusivo da sobreposição. Modelos ativos desatualizados/corrompidos impedem a abertura até serem preparados novamente ou desativados. Um perfil sem conversão ativa não herda a cabeça de outro. `RECOMP_MOD_DIR` é configurado somente no processo filho; uma sobreposição já definida no ambiente ou recursos MiiModel ativos causam conflito explícito. `LARECOMP_SAVE_DIR` aponta para `<dados>/user-no-mii/save`, mantendo os saves fora da pasta da sobreposição. O renderer Mii SDK continua desabilitado neste caminho.
+
+**Ferramentas locais:** nesta árvore, os padrões são `local/python/Scripts/python.exe`, Pillow em `local/mii-library-research/python-libs`, `local/mii-native-probe/MiiM.bfres` e `local/mii-native-probe/MiiHeadBuilder.exe`. O construtor precisa ter sido compilado da versão atual de `toolchain/mii_head_builder.cs`, com as quatro DLLs net48 do BfresLibrary junto ao executável, conforme fase 4. Para usar outros caminhos, criar `<dados>/mii-native-tools.json` com caminhos absolutos:
+
+```json
+{
+  "python": "D:/Ferramentas/python/python.exe",
+  "libraries": "D:/Ferramentas/python-libs",
+  "original": "D:/DadosPrivados/MiiM.bfres",
+  "builder": "D:/Ferramentas/mii/MiiHeadBuilder.exe"
+}
+```
+
+`libraries` deve conter o pacote `PIL` do Pillow. O AFL do editor continua configurado separadamente. O launcher não baixa/extrai esses recursos nem distribui corpo, GLB ou ferramentas privadas. A CLI aceita `--python-libs` para carregar o Pillow explicitamente, pois o supervisor remove variáveis Python herdadas. O BFRES original continua restrito ao SHA-256 `d2d4f0992ab12c0773e0a89add358576c2ceccff0450deb5053740f73c57568a`.
+
+**Validação:** build debug, 31 testes Rust de installer/launcher, Clippy com `-D warnings`, formatação e 18 testes Python de conversão/composição/roteiro passaram. `python scripts/test-mii-composer.py` passou novamente. `python scripts/test-mii-native-launcher.py` exercitou o launcher compilado com dados e saves isolados: botão de conversão, abertura real pelo botão Jogar solo, saída 0, recusa de modelo desatualizado, desativação, troca de perfil durante conversão e erro real de peça não suportada. A reativação do cache após falha e os controles PT/EN passaram em uma verificação complementar, sem criar outro trabalho de conversão. O roteiro público também inclui a reativação para as próximas execuções.
+
+Evidências privadas em `local/mii-native-launcher-bs25s2jb`: `prepared.png`, `frame-02000.png`, `frame-03400.png`, `frame-04800.png`, `cached-english.png`, logs e `evidence.json`. As imagens inspecionadas mostram a cabeça no menu e acompanhando o piloto na pista. Para repetir, gerar primeiro os GLBs com `scripts/test-mii-composer.py`, manter um candidato local já preparado e as dependências privadas acima; o teste nativo copia os saves para a própria pasta de teste. Nenhuma alteração guest/runtime foi necessária nesta fase.
+
+**Limites atuais:** substituição estática compartilhada de `MiiM.szs`, somente corpo masculino Normal Suit e partes aceitas pelo conversor. Outros pilotos que usem o mesmo recurso recebem a mesma cabeça. O lançamento em salas multiplayer do launcher é bloqueado enquanto a cabeça está ativa; isso não intercepta a entrada manual no Online Play dentro do jogo. Não há suporte qualificado a feminino, carecas sem malha de cabelo, peças adicionais de barba/óculos, expressões, retratos, roupas alternativas, cabeças independentes por jogador ou troca durante partida. O roteiro chega à barreira na primeira volta: não qualifica corrida completa, áudio, controle físico, reinício/save ou velocidade global do relógio. `gameplay_verified=false` e `multiplayer_verified=false` permanecem. A próxima etapa de modelos exige ampliar as peças/corpos suportados e validar cada variante antes da integração dinâmica por jogador; o modal dentro do jogo continua pendente.
+
 ## Integração experimental com Steam Lobbies e P2P Relay (`fix-multiplayer`) — 10/11/2026
 
 Implementado em `crates/session/src/steam.rs` e integrado ao launcher (`apps/launcher/src/server.rs`, `apps/launcher/src/main.rs` e interface web) um adaptador dinâmico opcional para Steamworks (`ISteamMatchmaking` + `ISteamNetworking` P2P Relay), sem distribuir binários proprietários da Valve no repositório:
@@ -37,7 +64,7 @@ local/python/Scripts/python.exe scripts/test-race.py time-trial --character mii 
 
 Antes de usar o conversor com uma versão alterada do construtor, recompilar `toolchain/mii_head_builder.cs` com o `csc.exe` do .NET Framework, referências `System.Web.Extensions`, `System.Core` e as quatro DLLs net48 do BfresLibrary privado; manter as DLLs junto ao executável. O hash do construtor executado é registrado no manifesto.
 
-**Próxima fase:** ligar a conversão e a seleção da sobreposição ao perfil escolhido no launcher, para aplicação na próxima abertura, com detecção de modelo desatualizado. Esta etapa ainda usa CLI/roteiro de desenvolvimento. A substituição é de `MiiM.szs` inteiro: todos os pilotos que compartilhem esse recurso podem receber a mesma cabeça. Feminino, carecas sem malha de cabelo, barbas/óculos com peças adicionais, expressões animadas, retratos, roupas alternativas e vários Miis simultâneos exigem trabalho separado. Não há troca de modelo durante partida nem modal dentro do renderizador.
+**Integração posterior:** a conversão e seleção da sobreposição pelo launcher foram implementadas na fase 5 acima. A substituição continua sendo de `MiiM.szs` inteiro: todos os pilotos que compartilhem esse recurso podem receber a mesma cabeça. Feminino, carecas sem malha de cabelo, barbas/óculos com peças adicionais, expressões animadas, retratos, roupas alternativas e vários Miis simultâneos exigem trabalho separado. Não há troca de modelo durante partida nem modal dentro do renderizador.
 
 ## Editor e perfis Mii — fase 3, 10/11/2026
 
