@@ -3,6 +3,7 @@
 //! `--headless` (or the older `--no-browser`) keeps only the server, for tests.
 mod console;
 mod game_session;
+mod game_settings;
 mod installer;
 mod language;
 mod relay;

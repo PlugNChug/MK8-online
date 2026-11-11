@@ -45,6 +45,7 @@ function showTab(name) {
     item.setAttribute("aria-selected", String(selected));
     $(item.dataset.tab).hidden = !selected;
   });
+  if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -56,6 +57,137 @@ document
   .forEach((el) => (el.onclick = () => showTab(el.dataset.goto)));
 
 /* ---------- Instalação: três passos ---------- */
+let settingsLoaded = false;
+let settingsDirty = false;
+let settingsBlocked = false;
+let settingsBaseline = {};
+function markSettingsDirty() {
+  settingsDirty = true;
+  $("settings-save").disabled = $("settings-fields").disabled;
+  i18n.text($("settings-pending"), "Alterações não salvas.");
+}
+async function loadGameSettings(force = false) {
+  if (settingsDirty && !force) return;
+  const data = await api("settings");
+  if (settingsDirty && !force) return;
+  if (!settingsLoaded) {
+    for (const group of data.groups) {
+      const card = document.createElement(group.binding ? "details" : "article");
+      card.className = "card settings-group";
+      const title = document.createElement(group.binding ? "summary" : "h2");
+      i18n.text(title, group.title);
+      card.append(title);
+      if (group.binding) {
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "link";
+        i18n.text(reset, "Restaurar mapeamento padrão");
+        reset.onclick = () => {
+          for (const field of group.fields) {
+            const input = document.querySelector('[data-key="' + field.key + '"]');
+            input.value = field.default;
+            input.dataset.previous = input.value;
+          }
+          markSettingsDirty();
+        };
+        card.append(reset);
+      }
+      const grid = document.createElement("div");
+      grid.className = "settings-grid";
+      for (const field of group.fields) {
+        const label = document.createElement("label");
+        const caption = document.createElement("span");
+        i18n.text(caption, field.label);
+        const input = document.createElement(field.kind === "select" ? "select" : "input");
+        input.dataset.key = field.key;
+        input.dataset.kind = field.kind;
+        input.dataset.choices = field.choices || "";
+        if (field.kind === "select") {
+          for (const [value, text] of field.options || data.choices[field.choices]) {
+            const option = document.createElement("option");
+            option.value = value;
+            if (field.choices === "keyboard" && value !== "none") option.textContent = text;
+            else i18n.text(option, text);
+            input.append(option);
+          }
+        } else if (field.kind === "bool") {
+          input.type = "checkbox";
+          label.className = "settings-check";
+        } else {
+          input.type = "number";
+          input.min = "0"; input.max = "200"; input.step = "5";
+          const hint = document.createElement("small");
+          i18n.text(hint, "Volume em porcentagem, de 0% a 200%.");
+          label.append(hint);
+        }
+        input.oninput = markSettingsDirty;
+        input.onchange = () => {
+          if (field.choices && input.value !== "none") {
+            const other = Array.from(grid.querySelectorAll("[data-key]")).find(
+              (item) => item !== input && item.value === input.value);
+            if (other) {
+              other.value = input.dataset.previous;
+              other.dataset.previous = other.value;
+            }
+          }
+          input.dataset.previous = input.value;
+          updateSettingsDependencies();
+          markSettingsDirty();
+        };
+        label.prepend(caption);
+        label.append(input);
+        grid.append(label);
+      }
+      card.append(grid);
+      $("settings-groups").append(card);
+    }
+    settingsLoaded = true;
+  }
+  settingsBaseline = data.values;
+  for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+    const value = data.values[input.dataset.key];
+    if (input.type === "checkbox") input.checked = value !== "0";
+    else {
+      if (input.tagName === "SELECT" && !Array.from(input.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value; option.textContent = value;
+        input.append(option);
+      }
+      input.value = input.dataset.kind === "volume" ? Number(value) * 100 : value;
+      input.dataset.previous = input.value;
+    }
+  }
+  settingsDirty = false;
+  updateSettingsDependencies();
+  $("settings-fields").disabled = settingsBlocked;
+  $("settings-save").disabled = true;
+  i18n.text($("settings-pending"), "");
+}
+function updateSettingsDependencies() {
+  const scaler = document.querySelector('[data-key="upscaler"]');
+  const resolution = document.querySelector('[data-key="resolution"]');
+  if (scaler && resolution) scaler.disabled = resolution.value === "match";
+}
+$("game-settings").onsubmit = (event) => {
+  event.preventDefault();
+  action(async () => {
+    const patch = {};
+    for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+      const value = input.type === "checkbox" ? input.checked ? "1" : "0"
+        : input.dataset.kind === "volume" ? String(Number(input.value) / 100) : input.value;
+      const previous = settingsBaseline[input.dataset.key];
+      if (input.dataset.kind === "volume" ? Number(value) !== Number(previous) : value !== previous)
+        patch[input.dataset.key] = value;
+    }
+    const result = await api("settings", patch);
+    await loadGameSettings(true);
+    return result;
+  });
+};
+$("settings-reload").onclick = () => action(async () => {
+  if (settingsDirty && !confirm(i18n.t("Descartar alterações não salvas?"))) return;
+  await loadGameSettings(true);
+});
 const steps = ["step-tools", "step-files", "step-build"];
 const userOpened = new Set();
 function openStep(id, open) {
@@ -207,9 +339,13 @@ function renderInstall(status) {
   const buildRunning = build.state === "running";
   const dlcRunning = status.dlc_import?.state === "running";
   const busyNow = setupRunning || buildRunning || dlcRunning || !!status.game_pid;
+  settingsBlocked = busyNow;
   const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
   $("dlc-enabled").checked = dlc.enabled;
   $("dlc-enabled").disabled = busyNow || !dlc.installed;
+  $("settings-fields").disabled = busyNow || !settingsLoaded;
+  $("settings-save").disabled = busyNow || !settingsLoaded || !settingsDirty;
+  $("settings-reload").disabled = busyNow;
   $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
   $("dlc-import").hidden = dlc.state === "ready";
   i18n.text($("dlc-import"), dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
@@ -219,6 +355,12 @@ function renderInstall(status) {
   i18n.text($("dlc-state"), dlcRunning ? "Importando…"
     : dlc.state === "invalid" ? "Requer atenção"
     : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" || dlc.state === "unsupported" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.detail || "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
   i18n.text($("dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
     : dlcRunning ? "Verificando e importando o DLC. Aguarde."
     : setupRunning || buildRunning ? "Aguarde a operação atual terminar."
@@ -512,6 +654,7 @@ async function refresh() {
       cancelled: "Cancelado",
     }[status.build.state] || status.build.state);
   renderInstall(status);
+  if (!$("settings").hidden && !settingsDirty) await loadGameSettings();
   i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."
     : "Nenhuma instalação de jogo ativada.");

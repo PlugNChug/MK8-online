@@ -26,6 +26,7 @@
         <button class="tab active" data-tab="install" aria-selected="true">Instalar</button>
         <button class="tab" data-tab="play" aria-selected="false">Jogar</button>
         <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
+        <button class="tab" data-tab="settings" aria-selected="false">Configurações</button>
         <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
       </nav>
 
@@ -168,7 +169,7 @@
               </div>
             </div>
             <div class="row">
-              <label class="dlc-toggle"><input type="checkbox" id="dlc-enabled" disabled />Ativar Booster Course Pass</label>
+              <button type="button" class="link" data-goto="settings">Configurar conteúdo adicional</button>
               <button type="button" id="dlc-import" class="ghost" disabled>Importar DLC NSP…</button>
               <button type="button" class="link" data-log="dlc-log">Ver log</button>
             </div>
@@ -179,6 +180,27 @@
           <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. Tudo é feito com os arquivos do seu console, neste computador.</p>
         </section>
 
+        <section id="settings" class="panel" hidden>
+          <div class="panel-head">
+            <div><h1>Configurações</h1><p class="muted">As mesmas opções do menu F1, compartilhadas com o jogo.</p></div>
+          </div>
+          <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
+          <form id="game-settings">
+            <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
+            <div class="row settings-actions">
+              <button type="submit" id="settings-save" class="primary" disabled>Salvar configurações</button>
+              <button type="button" id="settings-reload" class="ghost">Recarregar do jogo</button>
+              <span id="settings-pending" class="hint" role="status"></span>
+            </div>
+          </form>
+          <article class="card settings-dlc" aria-labelledby="settings-dlc-title">
+            <div class="row"><h2 id="settings-dlc-title">Conteúdo adicional</h2><span id="settings-dlc-state" class="pill">Não instalado</span></div>
+            <label class="dlc-toggle"><input type="checkbox" id="dlc-enabled" disabled />Ativar Booster Course Pass</label>
+            <p id="settings-dlc-hint" class="hint">Desativar mantém os arquivos e os saves.</p>
+            <button type="button" class="link" data-goto="install">Importar ou reparar DLC</button>
+          </article>
+          <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
+        </section>
         <!-- Jogar -->
         <section id="play" class="panel" hidden>
           <div class="panel-head">

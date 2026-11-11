@@ -96,6 +96,50 @@ class LauncherTests(unittest.TestCase):
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
+    def test_settings_tab_updates_shared_ini_and_keeps_unsaved_edits_during_polling(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("# teste\nvolume = 0.50\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("50")
+            page.locator("#settings input[data-key=volume]").fill("75")
+            page.wait_for_timeout(2300)
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#settings select[data-key=resolution]").select_option("75%")
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            page.locator("#settings select[data-key=bind_key_a]").select_option("J")
+            expect(page.locator("#settings select[data-key=bind_key_b]")).to_have_value("K")
+            page.locator("#settings select[data-key=bind_key_a]").select_option("Space")
+            page.locator("#settings-save").click()
+            expect(page.locator("#notice")).to_contain_text("Configurações salvas.")
+            self.assertIn("unknown_future = preserve", ini.read_text())
+            self.assertIn("bind_key_a = Space", ini.read_text())
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            expect(page.locator("#settings select[data-key=bind_key_a]")).to_have_value("Space")
+            ini.write_text(ini.read_text() + "show_fps = 1\n", encoding="utf-8")
+            expect(page.locator("#settings input[data-key=show_fps]")).to_be_checked(timeout=5000)
+            expect(page.locator("#settings #dlc-enabled")).to_be_visible()
+            self.assertEqual(page.locator("#install #dlc-enabled").count(), 0)
+            page.locator("#language").select_option("en")
+            expect(page.locator("#settings")).to_contain_text("Settings")
+            screenshots = ROOT / "local/screenshots"
+            screenshots.mkdir(parents=True, exist_ok=True)
+            page.locator("#settings details[open] summary").click()
+            page.screenshot(path=str(screenshots / "launcher-settings-desktop.png"), full_page=True)
+            page.set_viewport_size({"width":390, "height":844})
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            page.screenshot(path=str(screenshots / "launcher-settings-mobile.png"), full_page=True)
+            page.locator("#language").select_option("pt-BR")
+            expect(page.locator("html")).to_have_attribute("lang", "pt-BR")
+        finally:
+            page.close()
+
     def test_username_persists_without_avatar(self):
         page = self.page()
         page.get_by_role("button", name="Multijogador", exact=True).click()

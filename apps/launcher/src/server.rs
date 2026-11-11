@@ -262,7 +262,10 @@ impl App {
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
-            ("POST", "/api/dlc/toggle") | ("POST", "/api/dlc/import") => {
+            ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("POST", "/api/settings")
+            | ("POST", "/api/dlc/toggle")
+            | ("POST", "/api/dlc/import") => {
                 self.status();
                 if self.game.is_some()
                     || self.setup.running()
@@ -282,6 +285,13 @@ impl App {
                 pipeline
                     .try_lock()
                     .map_err(|_| "Já existe uma preparação usando esta pasta de dados.")?;
+                if path == "/api/settings" {
+                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    crate::game_settings::write(&self.local, &value)?;
+                    return Ok(
+                        json!({"message":"Configurações salvas. As alterações valem ao iniciar o jogo."}),
+                    );
+                }
                 let install = self
                     .installation()
                     .or_else(|| self.candidate())
@@ -891,6 +901,11 @@ mod tests {
             .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
             .unwrap_err();
         assert!(error.contains("Outra instância"), "{error}");
+        let error = app
+            .handle(&Method::Post, "/api/settings", r#"{"volume":"0.5"}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("user-no-mii/mk8d.ini").exists());
         let error = app
             .handle(
                 &Method::Post,

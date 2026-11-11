@@ -77,7 +77,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.route("**/api/status", status)
         page.route("**/api/dlc/toggle", toggle)
         page.reload()
-        page.locator('[data-tab="install"]').click()
+        page.locator('[data-tab="settings"]').click()
         expect(page.locator("#dlc-enabled")).to_be_checked()
         page.locator("#dlc-enabled").uncheck()
         expect(page.locator("#dlc-state")).to_have_text("Desativado")
@@ -90,6 +90,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.screenshot(path=str(screenshots / "dlc-launcher-desktop.png"), full_page=True)
         state["game_pid"] = 123
         expect(page.locator("#dlc-enabled")).to_be_disabled(timeout=5000)
+        expect(page.locator('#settings input[data-key="volume"]')).to_be_disabled()
         expect(page.locator("#dlc-import")).to_be_disabled()
         state["game_pid"] = None
         state["dlc_import"]["state"] = "running"
@@ -100,6 +101,7 @@ class LauncherDlcTests(unittest.TestCase):
         expect(page.locator("#dlc-detail")).to_contain_text("DLC: pacote incompatível.", timeout=5000)
         state["dlc"]["state"] = "invalid"
         state["dlc"]["installed"] = False
+        page.locator('[data-tab="install"]').click()
         expect(page.locator("#dlc-import")).to_have_text("Repair import…", timeout=5000)
         imports = []
         def import_package(route):

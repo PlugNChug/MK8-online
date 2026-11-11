@@ -1,0 +1,747 @@
+{
+  "groups": [
+    {
+      "title": "Vídeo",
+      "fields": [
+        {
+          "key": "theme",
+          "label": "Tema do menu",
+          "default": "Default",
+          "kind": "select",
+          "options": [
+            ["Default", "Padrão"],
+            ["NES", "NES"]
+          ]
+        },
+        {
+          "key": "aspect",
+          "label": "Proporção da imagem",
+          "default": "unlocked",
+          "kind": "select",
+          "options": [
+            ["unlocked", "Sem restrição"],
+            ["original", "Original 16:9"]
+          ]
+        },
+        {
+          "key": "fullscreen",
+          "label": "Tela cheia",
+          "default": "0",
+          "kind": "bool"
+        },
+        {
+          "key": "show_fps",
+          "label": "Mostrar FPS",
+          "default": "0",
+          "kind": "bool"
+        },
+        {
+          "key": "show_memory",
+          "label": "Mostrar uso de memória",
+          "default": "0",
+          "kind": "bool"
+        },
+        {
+          "key": "resolution",
+          "label": "Resolução interna",
+          "default": "match",
+          "kind": "select",
+          "options": [
+            ["25%", "25%"],
+            ["50%", "50%"],
+            ["75%", "75%"],
+            ["match", "Igual à tela"],
+            ["dynamic", "Dinâmica"],
+            ["1", "1x (1080p)"],
+            ["2", "2x"],
+            ["3", "3x"],
+            ["4", "4x"]
+          ]
+        },
+        {
+          "key": "upscaler",
+          "label": "Ampliação da imagem",
+          "default": "fsr1",
+          "kind": "select",
+          "options": [
+            ["bilinear", "Bilinear"],
+            ["fsr1", "AMD FSR 1"]
+          ]
+        },
+        {
+          "key": "antialias",
+          "label": "Suavização de bordas",
+          "default": "off",
+          "kind": "select",
+          "options": [
+            ["off", "Desativada"],
+            ["smaa", "SMAA"]
+          ]
+        },
+        {
+          "key": "frame_gen",
+          "label": "Geração de quadros",
+          "default": "off",
+          "kind": "select",
+          "options": [
+            ["off", "Desativada"],
+            ["120", "120 FPS"]
+          ]
+        },
+        {
+          "key": "skip_intro",
+          "label": "Pular introdução",
+          "default": "0",
+          "kind": "bool"
+        },
+        {
+          "key": "ahead_fast",
+          "label": "Preparar shaders na velocidade máxima",
+          "default": "0",
+          "kind": "bool"
+        }
+      ]
+    },
+    {
+      "title": "Áudio",
+      "fields": [
+        {
+          "key": "volume",
+          "label": "Volume",
+          "default": "1",
+          "kind": "volume"
+        },
+        {
+          "key": "reverb",
+          "label": "Reverberação",
+          "default": "1",
+          "kind": "bool"
+        },
+        {
+          "key": "movie_audio",
+          "label": "Áudio dos vídeos",
+          "default": "1",
+          "kind": "bool"
+        },
+        {
+          "key": "mute_in_background",
+          "label": "Silenciar em segundo plano",
+          "default": "0",
+          "kind": "bool"
+        }
+      ]
+    },
+    {
+      "title": "Controles e idioma",
+      "fields": [
+        {
+          "key": "language",
+          "label": "Idioma do jogo",
+          "default": "auto",
+          "kind": "select",
+          "options": [
+            ["auto", "Automático"],
+            ["ja", "Japonês"],
+            ["en-US", "Inglês"],
+            ["es", "Espanhol"],
+            ["fr", "Francês"],
+            ["de", "Alemão"],
+            ["it", "Italiano"],
+            ["nl", "Holandês"],
+            ["ru", "Russo"],
+            ["ko", "Coreano"],
+            ["zh-CN", "Chinês (simplificado)"],
+            ["zh-TW", "Chinês (tradicional)"]
+          ]
+        },
+        {
+          "key": "prompts",
+          "label": "Ícones dos botões",
+          "default": "auto",
+          "kind": "select",
+          "options": [
+            ["auto", "Automático"],
+            ["nintendo", "Nintendo"],
+            ["xbox", "Xbox"],
+            ["playstation", "PlayStation"]
+          ]
+        },
+        {
+          "key": "pads_from_p2",
+          "label": "Controles começam no jogador 2",
+          "default": "0",
+          "kind": "bool"
+        }
+      ]
+    },
+    {
+      "title": "Mapeamento do controle",
+      "binding": true,
+      "fields": [
+        {
+          "key": "bind_pad_a",
+          "label": "A",
+          "default": "east",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_b",
+          "label": "B",
+          "default": "south",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_x",
+          "label": "X",
+          "default": "north",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_y",
+          "label": "Y",
+          "default": "west",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_lstick",
+          "label": "Pressionar analógico esquerdo",
+          "default": "lstick",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_rstick",
+          "label": "Pressionar analógico direito",
+          "default": "rstick",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_l",
+          "label": "L",
+          "default": "lshoulder",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_r",
+          "label": "R",
+          "default": "rshoulder",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_zl",
+          "label": "ZL",
+          "default": "ltrigger",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_zr",
+          "label": "ZR",
+          "default": "rtrigger",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_plus",
+          "label": "+",
+          "default": "start",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_minus",
+          "label": "−",
+          "default": "back",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_left",
+          "label": "Direcional: esquerda",
+          "default": "dpad_left",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_up",
+          "label": "Direcional: cima",
+          "default": "dpad_up",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_right",
+          "label": "Direcional: direita",
+          "default": "dpad_right",
+          "kind": "select",
+          "choices": "controller"
+        },
+        {
+          "key": "bind_pad_down",
+          "label": "Direcional: baixo",
+          "default": "dpad_down",
+          "kind": "select",
+          "choices": "controller"
+        }
+      ]
+    },
+    {
+      "title": "Mapeamento do teclado",
+      "binding": true,
+      "fields": [
+        {
+          "key": "bind_key_a",
+          "label": "A",
+          "default": "K",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_b",
+          "label": "B",
+          "default": "J",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_x",
+          "label": "X",
+          "default": "L",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_y",
+          "label": "Y",
+          "default": "I",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_lstick",
+          "label": "Pressionar analógico esquerdo",
+          "default": "F",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_rstick",
+          "label": "Pressionar analógico direito",
+          "default": "Keypad 0",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_l",
+          "label": "L",
+          "default": "Q",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_r",
+          "label": "R",
+          "default": "E",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_zl",
+          "label": "ZL",
+          "default": "1",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_zr",
+          "label": "ZR",
+          "default": "3",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_plus",
+          "label": "+",
+          "default": "Return",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_minus",
+          "label": "−",
+          "default": "Backspace",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_left",
+          "label": "Direcional: esquerda",
+          "default": "Left",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_up",
+          "label": "Direcional: cima",
+          "default": "Up",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_right",
+          "label": "Direcional: direita",
+          "default": "Right",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_down",
+          "label": "Direcional: baixo",
+          "default": "Down",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_ls_up",
+          "label": "Analógico esquerdo: cima",
+          "default": "W",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_ls_down",
+          "label": "Analógico esquerdo: baixo",
+          "default": "S",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_ls_left",
+          "label": "Analógico esquerdo: esquerda",
+          "default": "A",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_ls_right",
+          "label": "Analógico esquerdo: direita",
+          "default": "D",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_rs_up",
+          "label": "Analógico direito: cima",
+          "default": "Keypad 8",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_rs_down",
+          "label": "Analógico direito: baixo",
+          "default": "Keypad 5",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_rs_left",
+          "label": "Analógico direito: esquerda",
+          "default": "Keypad 4",
+          "kind": "select",
+          "choices": "keyboard"
+        },
+        {
+          "key": "bind_key_rs_right",
+          "label": "Analógico direito: direita",
+          "default": "Keypad 6",
+          "kind": "select",
+          "choices": "keyboard"
+        }
+      ]
+    }
+  ],
+  "choices": {
+    "controller": [
+      ["south", "Botão inferior (Xbox A)"],
+      ["east", "Botão direito (Xbox B)"],
+      ["west", "Botão esquerdo (Xbox X)"],
+      ["north", "Botão superior (Xbox Y)"],
+      ["back", "Voltar / View"],
+      ["guide", "Home / Guide"],
+      ["start", "Iniciar / Menu"],
+      ["lstick", "Pressionar analógico esquerdo"],
+      ["rstick", "Pressionar analógico direito"],
+      ["lshoulder", "Ombro esquerdo (LB / L)"],
+      ["rshoulder", "Ombro direito (RB / R)"],
+      ["dpad_up", "Direcional: cima"],
+      ["dpad_down", "Direcional: baixo"],
+      ["dpad_left", "Direcional: esquerda"],
+      ["dpad_right", "Direcional: direita"],
+      ["misc1", "Capturar / Share"],
+      ["rpaddle1", "Pá direita 1"],
+      ["lpaddle1", "Pá esquerda 1"],
+      ["rpaddle2", "Pá direita 2"],
+      ["lpaddle2", "Pá esquerda 2"],
+      ["touchpad", "Touchpad"],
+      ["misc2", "Extra 2"],
+      ["misc3", "Extra 3"],
+      ["misc4", "Extra 4"],
+      ["misc5", "Extra 5"],
+      ["misc6", "Extra 6"],
+      ["ltrigger", "Gatilho esquerdo (LT / ZL)"],
+      ["rtrigger", "Gatilho direito (RT / ZR)"]
+    ],
+    "keyboard": [
+      ["none", "Sem tecla"],
+      ["#", "#"],
+      ["'", "'"],
+      [",", ","],
+      ["-", "-"],
+      [".", "."],
+      ["/", "/"],
+      ["0", "0"],
+      ["1", "1"],
+      ["2", "2"],
+      ["3", "3"],
+      ["4", "4"],
+      ["5", "5"],
+      ["6", "6"],
+      ["7", "7"],
+      ["8", "8"],
+      ["9", "9"],
+      [";", ";"],
+      ["=", "="],
+      ["A", "A"],
+      ["AC Back", "AC Back"],
+      ["AC Bookmarks", "AC Bookmarks"],
+      ["AC Close", "AC Close"],
+      ["AC Exit", "AC Exit"],
+      ["AC Forward", "AC Forward"],
+      ["AC Home", "AC Home"],
+      ["AC New", "AC New"],
+      ["AC Open", "AC Open"],
+      ["AC Print", "AC Print"],
+      ["AC Properties", "AC Properties"],
+      ["AC Refresh", "AC Refresh"],
+      ["AC Save", "AC Save"],
+      ["AC Search", "AC Search"],
+      ["AC Stop", "AC Stop"],
+      ["Again", "Again"],
+      ["AltErase", "AltErase"],
+      ["Application", "Application"],
+      ["B", "B"],
+      ["Backspace", "Backspace"],
+      ["C", "C"],
+      ["Call", "Call"],
+      ["Cancel", "Cancel"],
+      ["CapsLock", "CapsLock"],
+      ["ChannelDown", "ChannelDown"],
+      ["ChannelUp", "ChannelUp"],
+      ["Clear", "Clear"],
+      ["Clear / Again", "Clear / Again"],
+      ["Copy", "Copy"],
+      ["CrSel", "CrSel"],
+      ["CurrencySubUnit", "CurrencySubUnit"],
+      ["CurrencyUnit", "CurrencyUnit"],
+      ["Cut", "Cut"],
+      ["D", "D"],
+      ["DecimalSeparator", "DecimalSeparator"],
+      ["Delete", "Delete"],
+      ["Down", "Down"],
+      ["E", "E"],
+      ["Eject", "Eject"],
+      ["End", "End"],
+      ["EndCall", "EndCall"],
+      ["ExSel", "ExSel"],
+      ["Execute", "Execute"],
+      ["F", "F"],
+      ["F10", "F10"],
+      ["F12", "F12"],
+      ["F13", "F13"],
+      ["F14", "F14"],
+      ["F15", "F15"],
+      ["F16", "F16"],
+      ["F17", "F17"],
+      ["F18", "F18"],
+      ["F19", "F19"],
+      ["F2", "F2"],
+      ["F20", "F20"],
+      ["F21", "F21"],
+      ["F22", "F22"],
+      ["F23", "F23"],
+      ["F24", "F24"],
+      ["F3", "F3"],
+      ["F4", "F4"],
+      ["F5", "F5"],
+      ["F6", "F6"],
+      ["F7", "F7"],
+      ["F8", "F8"],
+      ["Find", "Find"],
+      ["Front", "Front"],
+      ["G", "G"],
+      ["H", "H"],
+      ["Help", "Help"],
+      ["Home", "Home"],
+      ["I", "I"],
+      ["Insert", "Insert"],
+      ["International 1", "International 1"],
+      ["International 2", "International 2"],
+      ["International 3", "International 3"],
+      ["International 4", "International 4"],
+      ["International 5", "International 5"],
+      ["International 6", "International 6"],
+      ["International 7", "International 7"],
+      ["International 8", "International 8"],
+      ["International 9", "International 9"],
+      ["J", "J"],
+      ["K", "K"],
+      ["Keypad !", "Keypad !"],
+      ["Keypad #", "Keypad #"],
+      ["Keypad %", "Keypad %"],
+      ["Keypad &", "Keypad &"],
+      ["Keypad &&", "Keypad &&"],
+      ["Keypad (", "Keypad ("],
+      ["Keypad )", "Keypad )"],
+      ["Keypad *", "Keypad *"],
+      ["Keypad +", "Keypad +"],
+      ["Keypad +/-", "Keypad +/-"],
+      ["Keypad ,", "Keypad ,"],
+      ["Keypad -", "Keypad -"],
+      ["Keypad .", "Keypad ."],
+      ["Keypad /", "Keypad /"],
+      ["Keypad 0", "Keypad 0"],
+      ["Keypad 00", "Keypad 00"],
+      ["Keypad 000", "Keypad 000"],
+      ["Keypad 1", "Keypad 1"],
+      ["Keypad 2", "Keypad 2"],
+      ["Keypad 3", "Keypad 3"],
+      ["Keypad 4", "Keypad 4"],
+      ["Keypad 5", "Keypad 5"],
+      ["Keypad 6", "Keypad 6"],
+      ["Keypad 7", "Keypad 7"],
+      ["Keypad 8", "Keypad 8"],
+      ["Keypad 9", "Keypad 9"],
+      ["Keypad :", "Keypad :"],
+      ["Keypad <", "Keypad <"],
+      ["Keypad =", "Keypad ="],
+      ["Keypad = (AS400)", "Keypad = (AS400)"],
+      ["Keypad >", "Keypad >"],
+      ["Keypad @", "Keypad @"],
+      ["Keypad A", "Keypad A"],
+      ["Keypad B", "Keypad B"],
+      ["Keypad Backspace", "Keypad Backspace"],
+      ["Keypad Binary", "Keypad Binary"],
+      ["Keypad C", "Keypad C"],
+      ["Keypad Clear", "Keypad Clear"],
+      ["Keypad ClearEntry", "Keypad ClearEntry"],
+      ["Keypad D", "Keypad D"],
+      ["Keypad Decimal", "Keypad Decimal"],
+      ["Keypad E", "Keypad E"],
+      ["Keypad Enter", "Keypad Enter"],
+      ["Keypad F", "Keypad F"],
+      ["Keypad Hexadecimal", "Keypad Hexadecimal"],
+      ["Keypad MemAdd", "Keypad MemAdd"],
+      ["Keypad MemClear", "Keypad MemClear"],
+      ["Keypad MemDivide", "Keypad MemDivide"],
+      ["Keypad MemMultiply", "Keypad MemMultiply"],
+      ["Keypad MemRecall", "Keypad MemRecall"],
+      ["Keypad MemStore", "Keypad MemStore"],
+      ["Keypad MemSubtract", "Keypad MemSubtract"],
+      ["Keypad Octal", "Keypad Octal"],
+      ["Keypad Space", "Keypad Space"],
+      ["Keypad Tab", "Keypad Tab"],
+      ["Keypad XOR", "Keypad XOR"],
+      ["Keypad ^", "Keypad ^"],
+      ["Keypad {", "Keypad {"],
+      ["Keypad |", "Keypad |"],
+      ["Keypad ||", "Keypad ||"],
+      ["Keypad }", "Keypad }"],
+      ["L", "L"],
+      ["Language 1", "Language 1"],
+      ["Language 2", "Language 2"],
+      ["Language 3", "Language 3"],
+      ["Language 4", "Language 4"],
+      ["Language 5", "Language 5"],
+      ["Language 6", "Language 6"],
+      ["Language 7", "Language 7"],
+      ["Language 8", "Language 8"],
+      ["Language 9", "Language 9"],
+      ["Left", "Left"],
+      ["Left Alt", "Left Alt"],
+      ["Left Ctrl", "Left Ctrl"],
+      ["Left GUI", "Left GUI"],
+      ["Left Shift", "Left Shift"],
+      ["M", "M"],
+      ["MediaFastForward", "MediaFastForward"],
+      ["MediaPause", "MediaPause"],
+      ["MediaPlay", "MediaPlay"],
+      ["MediaPlayPause", "MediaPlayPause"],
+      ["MediaRecord", "MediaRecord"],
+      ["MediaRewind", "MediaRewind"],
+      ["MediaSelect", "MediaSelect"],
+      ["MediaStop", "MediaStop"],
+      ["MediaTrackNext", "MediaTrackNext"],
+      ["MediaTrackPrevious", "MediaTrackPrevious"],
+      ["Menu", "Menu"],
+      ["ModeSwitch", "ModeSwitch"],
+      ["Mute", "Mute"],
+      ["N", "N"],
+      ["NonUSBackslash", "NonUSBackslash"],
+      ["Numlock", "Numlock"],
+      ["O", "O"],
+      ["Oper", "Oper"],
+      ["Out", "Out"],
+      ["P", "P"],
+      ["PageDown", "PageDown"],
+      ["PageUp", "PageUp"],
+      ["Paste", "Paste"],
+      ["Pause", "Pause"],
+      ["Power", "Power"],
+      ["PrintScreen", "PrintScreen"],
+      ["Prior", "Prior"],
+      ["Q", "Q"],
+      ["R", "R"],
+      ["Return", "Return"],
+      ["Right", "Right"],
+      ["Right Alt", "Right Alt"],
+      ["Right Ctrl", "Right Ctrl"],
+      ["Right GUI", "Right GUI"],
+      ["Right Shift", "Right Shift"],
+      ["S", "S"],
+      ["ScrollLock", "ScrollLock"],
+      ["Select", "Select"],
+      ["Separator", "Separator"],
+      ["Sleep", "Sleep"],
+      ["SoftLeft", "SoftLeft"],
+      ["SoftRight", "SoftRight"],
+      ["Space", "Space"],
+      ["Stop", "Stop"],
+      ["SysReq", "SysReq"],
+      ["T", "T"],
+      ["Tab", "Tab"],
+      ["ThousandsSeparator", "ThousandsSeparator"],
+      ["U", "U"],
+      ["Undo", "Undo"],
+      ["Up", "Up"],
+      ["V", "V"],
+      ["VolumeDown", "VolumeDown"],
+      ["VolumeUp", "VolumeUp"],
+      ["W", "W"],
+      ["Wake", "Wake"],
+      ["X", "X"],
+      ["Y", "Y"],
+      ["Z", "Z"],
+      ["[", "["],
+      ["\\", "\\"],
+      ["]", "]"],
+      ["`", "`"]
+    ]
+  }
+}
