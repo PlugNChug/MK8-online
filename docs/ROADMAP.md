@@ -23,12 +23,15 @@ Preparação 0.1.8 (testes): recuperação de caches, isolamento Python/pip, coo
 
 ## 2. Imagem
 
+- Corrigido nas fontes locais (11/11): acesso fora dos limites ao capturar imagem enquanto o present recria a swapchain. Reprodução nativa com página protegida falhou antes e passou depois; candidato privado concluiu 16 alternâncias de tela cheia com capturas. A instalação habitual ainda precisa recompilar o runtime. Evidências e limites em `STATUS.md`.
 - **[visível]** O halo de bloom do letreiro do estádio some em cerca de 1 a cada 4 quadros (parâmetros da cadeia secundária de bloom).
 - **[visível]** Pontos coloridos, sombras e fidelidade geral da imagem.
 - Corrigido: alternância de brilho da cena a 30 Hz (cubemap de ambiente lido num ID de textura reaproveitado).
 - Corrigido: exposição estourada (reflexo especular BC3 gerado por shader no início da corrida escrito numa view inválida; `toolchain/bc_render.py`). 7 de 7 GPs limpos.
 
 ## 3. Desempenho (prioridade atual: VRAM)
+
+- **[baseline local, 11/11]** Duas Mushroom Cups completas e parte de uma terceira no mesmo processo, em 36 min 56 s, sem crash ou crescimento descontrolado de VRAM neste caso. A janela mudou com o RDP e depois foi mantida em 640×360; não é qualificação de desempenho na resolução habitual. O reload do save copiado preservou os auxílios. O próximo diagnóstico de estabilidade é o aumento de handles Windows (1.405 → 1.913), ainda sem causa confirmada. Evidências e limites em `STATUS.md`.
 
 - **[visível]** A memória de vídeo cresce ao trocar de pista. Foram corrigidas listas de comandos que sobreviviam à finalização de seus buffers/pools; algumas imagens antigas grandes continuam pertencendo a texturas não finalizadas pelo jogo. O candidato com blocos VMA de 128 MiB percorreu quatro pistas e voltou à seleção de copas, com ~60 FPS nos trechos medidos e pico reservado de 1.648 MiB no heap 0. Falta isolar o efeito dos blocos menores e verificar estabilização repetindo copas/pistas; a memória ativa caiu no menu, mas a reserva permaneceu.
 - **[validação]** A liberação direta de imagens de pools permanece opt-in (`MK8_RELEASE_POOL_TEXTURES=1`). A possível regressão de FPS no GP de Thwomp Ruins não se repetiu no Contra o Relógio parcial, que não teve despachos de compute no trecho medido; a dependência específica ainda não foi identificada.

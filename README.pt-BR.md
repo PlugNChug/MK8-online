@@ -215,6 +215,43 @@ O perfil aceito continua restrito ao Booster Course Pass verificado (`0100152000
 
 A importação confere os hashes dos NCAs e a associação do CNMT ao jogo, usa o ticket e as chaves para descriptografar o conteúdo e verifica os arquivos extraídos. O runtime oferece o índice instalado e monta esses arquivos reais; arquivos ausentes, vazios ou alterados são recusados. O comando de runtime reaproveita a biblioteca recompilada do jogo. Ainda não há alternância durante uma sessão do jogo, remoção automática nem suporte genérico a outros pacotes ou versões. Evidências e limites ficam em [STATUS.md](docs/STATUS.md).
 
+### Testes de corrida assistida
+
+`scripts/test-race.py grand-prix --assisted` navega até a copa base sem segurar o acelerador durante a corrida. O roteiro abre as estatísticas do kart e grava `data/build/assists.png` na sessão para conferir **direção assistida** (L) e **aceleração automática** (R). Esses controles invertem uma preferência persistida: primeiro examine a captura e só então indique `--assist-toggle steering` e/ou `--assist-toggle accelerate` para os auxílios desligados. Cada execução começa de uma nova cópia do mesmo save; não aplique toggles supondo que as preferências foram alteradas pela execução anterior.
+
+Use o manifesto da instalação preparada. O exemplo abaixo primeiro captura o painel e depois executa duas corridas com aceleração automática invertida; remova essa inversão se ela já estiver ligada no save de origem:
+
+```powershell
+$dadosTeste = 'E:\MK8-TESTE'
+.\local\python\Scripts\python.exe scripts/test-race.py grand-prix --assisted --candidate "$dadosTeste\candidate.json" --last-frame 1700 --shots 1
+.\local\python\Scripts\python.exe scripts/test-race.py grand-prix --assisted --assist-toggle accelerate --candidate "$dadosTeste\candidate.json" --repeat 2 --shots 8 --shot-step 2000
+.\local\python\Scripts\python.exe scripts/frame-stats.py local/race-grand-prix-<sessão> --from 3000
+```
+
+O modo assistido usa 17.100 quadros e limite de 600 segundos por execução por padrão. Saves e INI são copiados de `user-no-mii` junto do manifesto; o perfil Mii, quando presente, também é copiado. A geração de quadros fica desligada na cópia e o DLC desativado nesta sessão. `--cache-from <pasta>` permite copiar um cache inicial; em `--repeat`, somente o cache produzido passa para a execução seguinte. As pastas de sessão ficam em `local/race-grand-prix-*`, com `run.json`, `result.json`, log e capturas. Não se apagam caches ou sessões anteriores. O bloqueio de preparação impede uso simultâneo do mesmo candidato pelo launcher; a reserva de 4 GiB é verificada antes e durante a execução.
+
+Para investigar retenção entre pistas/copas, acrescente `--long-session` a `grand-prix --assisted`. Esse modo mantém um único processo, envia A por seis quadros a cada 240 quadros a partir de 16.000 e confirma os menus seguintes. O padrão é 131.100 quadros (cerca de 36 minutos a 60 FPS, além de carregamentos), 33 capturas de 4.000 em 4.000 quadros e limite de 3.000 segundos. Use `--last-frame`, `--shots`, `--shot-step` e `--timeout` para ajustar o orçamento; roteiros que excederiam os 16.383 bytes aceitos pelo runtime são recusados. `--repeat` continua criando processos separados: não demonstra estabilização dentro de uma sessão. O orçamento não garante um número de corridas/copas; confira as pistas, voltas, resultados e retorno aos menus nas imagens.
+
+```powershell
+.\local\python\Scripts\python.exe scripts/test-race.py grand-prix --assisted --long-session --assist-toggle accelerate --candidate "$dadosTeste\candidate.json"
+```
+
+Tempos de quadro e diagnóstico de memória são habilitados no modo assistido. O coletor recupera o log recém-gravado junto do executável quando o Windows redireciona a saída; não reutiliza logs antigos. Compare primeira visita e repetição, excluindo quadros próximos às capturas. FPS médio sozinho não mede engasgos; acompanhe p95/p99 e picos, e diferencie memória ativa, reservada pela VMA e memória total do Windows.
+
+`scripts/frame-stats.py` também resume os contadores VRAM presentes no intervalo `--from`/`--to`: início, fim e pico de memória reservada/alocada por heap, texturas vivas e listas de comandos ativas/aposentadas. As amostras ficam associadas ao último quadro registrado; os valores de memória têm a precisão arredondada a MiB do log original. Reserva que permanece alta após cair a alocação não comprova vazamento. Compare a mesma pista em visitas sucessivas, mantendo cache, auxílios e build registrados. Telemetria ausente não é tratada como zero; formato inesperado ou ausência de quadro de referência interrompe a análise.
+
+No Windows, o monitor consulta a alimentação a cada 0,5 segundo e registra o estado inicial e suas mudanças em `power-events.jsonl`: horário, tempo desde o início do monitor, presença de AC, bateria e economia de energia. AC vale 0 (ausente), 1 (presente) ou 255 (desconhecido). Falha da API é registrada como indisponível; em outros sistemas essa coleta é omitida. Nenhum quadro é removido por causa desses eventos: compare-os com os engasgos antes de atribuir uma queda ao código. Isso não mede clocks nem comprova troca de GPU.
+
+As sessões do roteiro iniciam silenciadas pelo ganho de saída do runtime (`LARECOMP_AUDIO_GAIN=0`). O processamento de áudio continua ativo para os testes; o volume salvo pelo usuário não é alterado.
+
+As fontes locais corrigem o acesso fora dos limites ao capturar uma imagem enquanto o present recria a swapchain: o PNG conserva as dimensões e o formato do readback original. A correção exige recompilar o runtime; não exige regenerar o código do jogo. Reprodução nativa e limites em [STATUS.md](docs/STATUS.md).
+
+Para fidelidade visual, compare também sequências equivalentes de uma execução de referência em emulador ou console. Registre versão do jogo/emulador, modo docked/portátil, resolução, câmera e fase do efeito; quadros de mesmo número ou tempos de parede iguais não garantem cenas equivalentes. Use um perfil copiado e capturas nativas quando disponíveis. Capturar o menu não qualifica uma corrida ou a iluminação; evidências locais e limites estão em [STATUS.md](docs/STATUS.md).
+
+Em acesso remoto, automação por teclado pode perder o foco; exija uma captura nova após cada comando e recuse checkpoints antigos. O experimento privado com controle por bridge conseguiu gravar Music Park sem foco no desktop, mas usa uma build diferente da Canary original: mantenha essa distinção nos resultados. Ferramentas, perfis, chaves e imagens de referência ficam em `local/` ignorado; não são dependências do launcher nem do jogo recompilado.
+
+A saída normal e a captura final comprovam somente que o roteiro chegou ao quadro pedido. Confira visualmente os dois auxílios, a pista, as voltas e a tela de resultados; `save_changed` não prova uma corrida concluída. O roteiro depende dos menus e seleções do save MK8 4.0.1 e pode precisar de ajuste se eles diferirem. Capturas espaçadas não qualificam cintilação, áudio, controle físico ou velocidade do relógio. `gameplay_verified` permanece falso.
+
 ## Créditos e licença
 
 **MK8-online é criado e mantido por RatOne.** Os autores das dependências mantêm os créditos e a titularidade de suas contribuições. Atribuições e avisos estão em [THIRD_PARTY.md](docs/THIRD_PARTY.md) e [docs/licenses](docs/licenses).
