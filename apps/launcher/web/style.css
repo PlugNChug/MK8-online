@@ -210,7 +210,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1
 .settings-group[open] summary { margin-bottom: 1rem; }
 .dlc-card { margin-top: 1rem; }
 .dlc-card h2 { margin: 0; font-size: 1.05rem; }
-.dlc-card .path-field { margin-bottom: 0.75rem; }
+.dlc-card .files { margin-bottom: 0.75rem; }
 .dlc-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 0.6rem; }
 .dlc-toggle input { width: auto; accent-color: var(--accent); }
 
