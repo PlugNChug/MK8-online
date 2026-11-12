@@ -1,4 +1,4 @@
-"""Capturas usam as dimensões do readback mesmo quando o present recria a swapchain."""
+"""Recorte validado e metadados do readback preservados na recriação da swapchain."""
 from pathlib import Path
 import subprocess
 import sys
@@ -14,11 +14,14 @@ import capture_resize
 
 HARNESS = r'''
 #include <assert.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
 #define LOG(...) ((void)0)
+#define FATAL(...) abort()
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 typedef struct { VkBuffer buf; uint64_t off; void *ptr; } VkSpan;
@@ -59,14 +62,16 @@ static void recreate_swapchain(void) {
     g_vk.sc_format = replacement_format;
 }
 static bool recreate_surface(void) { recreate_swapchain(); return true; }
-static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
+static VkRect2D expected_rect;
+static void save_window_image(VkCommandBuffer cb, VkRect2D rect, VkSpan *out) {
     SYSTEM_INFO info;
     GetSystemInfo(&info);
     allocation = VirtualAlloc(NULL, 2*info.dwPageSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
     assert(allocation);
     DWORD old;
     assert(VirtualProtect(allocation+info.dwPageSize, info.dwPageSize, PAGE_NOACCESS, &old));
-    size_t bytes = (size_t)original.width*original.height*4;
+    expected_rect = rect;
+    size_t bytes = (size_t)rect.extent.width*rect.extent.height*4;
     assert(bytes < info.dwPageSize);
     pixels = allocation+info.dwPageSize-bytes;
     for (size_t i=0; i<bytes; i+=4) {
@@ -75,7 +80,7 @@ static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
     out->ptr = pixels;
 }
 static void vk_save_png(const char *path, const void *data, uint32_t w, uint32_t h) {
-    assert(w==original.width && h==original.height);
+    assert(w==expected_rect.extent.width && h==expected_rect.extent.height);
     assert(data==pixels);
     bool bgr = original_format==VK_FORMAT_B8G8R8A8_UNORM || original_format==VK_FORMAT_B8G8R8A8_SRGB;
     for (size_t i=0; i<(size_t)w*h*4; i+=4) {
@@ -90,7 +95,8 @@ MAIN = r'''
 int main(void) {
     VkResult results[] = {VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR, VK_ERROR_SURFACE_LOST_KHR, VK_SUCCESS};
     VkFormat formats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM};
-    for (unsigned r=0; r<4; r++) for (unsigned f=0; f<3; f++) for (unsigned grow=0; grow<2; grow++) {
+    for (unsigned r=0; r<4; r++) for (unsigned f=0; f<3; f++) for (unsigned grow=0; grow<2; grow++) for (unsigned crop=0; crop<2; crop++) {
+        _putenv_s("MK8_CAPTURE_REGION",crop ? "1,1,1,1" : "");
         original = grow ? (VkExtent2D){4,4} : (VkExtent2D){2,2};
         replacement = grow ? (VkExtent2D){2,2} : (VkExtent2D){4,4};
         original_format = formats[f];
@@ -111,6 +117,63 @@ int main(void) {
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class CaptureResizeTests(unittest.TestCase):
+    def test_capture_region_bounds_and_gpu_copy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', output)
+            text = (runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
+            start = text.index('static VkRect2D mk8_capture_rect(')
+            end = text.index('// End rendering into the window image', start)
+            source = output/'region.c'
+            source.write_text(r'''
+#include <assert.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+#define FATAL(...) exit(23)
+typedef struct { VkBuffer buf; uint64_t off; void *ptr; } VkSpan;
+static struct { VkExtent2D sc_extent; VkImage sc_images[1]; } g_vk;
+static struct { unsigned image; } cur_frame;
+static uint64_t bytes;
+static VkBufferImageCopy copied;
+static VkSpan vk_readback(uint64_t n) { bytes=n;return (VkSpan){0}; }
+static void image_barrier(VkCommandBuffer cb,VkImage image,VkImageLayout before,VkImageLayout after) {}
+static void vkCmdCopyImageToBuffer(VkCommandBuffer cb,VkImage image,VkImageLayout layout,VkBuffer buf,uint32_t count,const VkBufferImageCopy *copy) {
+ assert(count==1);copied=*copy;
+}
+''' + text[start:end] + r'''
+int main(int argc,char **argv) {
+ assert(argc==2);_putenv_s("MK8_CAPTURE_REGION",argv[1]);
+ g_vk.sc_extent=(VkExtent2D){1280,720};
+ VkRect2D rect=mk8_capture_rect(g_vk.sc_extent);VkSpan span;
+ save_window_image(VK_NULL_HANDLE,rect,&span);
+ assert(bytes==(uint64_t)rect.extent.width*rect.extent.height*4);
+ assert(copied.imageOffset.x==rect.offset.x && copied.imageOffset.y==rect.offset.y);
+ assert(copied.imageExtent.width==rect.extent.width && copied.imageExtent.height==rect.extent.height);
+ assert(copied.imageExtent.depth==1 && copied.imageOffset.z==0);
+ if(!*argv[1]) assert(!rect.offset.x && !rect.offset.y && rect.extent.width==1280 && rect.extent.height==720);
+ else { unsigned x,y,w,h;assert(sscanf(argv[1],"%u,%u,%u,%u",&x,&y,&w,&h)==4);
+  assert(rect.offset.x==x && rect.offset.y==y && rect.extent.width==w && rect.extent.height==h); }
+ return 0;
+}
+''', encoding='utf-8')
+            exe = output/'region.exe'
+            result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu',
+                                     '-O1', '-UNDEBUG', '-I'+str(DEPS/'include'), str(source),
+                                     '-o', str(exe)], capture_output=True, text=True, env=compiler_env())
+            self.assertEqual(result.returncode, 0, result.stderr[-3000:])
+            for value in ('', '0,0,1280,720', '1000,20,280,160', '1279,719,1,1'):
+                result = subprocess.run([str(exe), value], timeout=20)
+                self.assertEqual(result.returncode, 0, value)
+            for value in ('1,2,3', '0,0,0,4', '0,0,1,0', '1279,0,2,1', '0,719,1,2',
+                          '-1,0,1,1', '0,0,1,1x', '0,0,1,1,2', '4294967296,0,1,1',
+                          '99999999999999999999999999,0,1,1'):
+                result = subprocess.run([str(exe), value], timeout=20)
+                self.assertEqual(result.returncode, 23, value)
+
     def test_present_resize_keeps_readback_extent_and_format(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)
@@ -118,7 +181,7 @@ class CaptureResizeTests(unittest.TestCase):
             text = (runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
             function = text[text.index('static void frame_end('):text.index('\nvoid vk_frame_end(')]
             source = output/'capture.c'
-            source.write_text(HARNESS+function+MAIN, encoding='utf-8')
+            source.write_text(HARNESS+capture_resize.CAPTURE_RECT+function+MAIN, encoding='utf-8')
             exe = output/'capture.exe'
             result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu',
                                      '-O1', '-UNDEBUG', '-I'+str(DEPS/'include'), str(source),
