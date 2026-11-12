@@ -78,6 +78,32 @@ def prepare(runtime):
     # Sensitive NEX traffic must never be included in support logs, even with debug env flags.
     edit('net/netcfg.c', 'bool net_log_data(void) { init(); return log_data_on; }',
          'bool net_log_data(void) { init(); return backend_set != NET_BACKEND_NEXTENDO && log_data_on; }')
+    edit('net/netcfg.h',
+         'bool net_tls_pin(uint8_t out[32]);     // NET_TRUST_PINNED: the server certificate\'s SPKI SHA-256 to require',
+         'bool net_tls_pin(uint8_t out[32]);     // NET_TRUST_PINNED: the server certificate\'s SPKI SHA-256 to require\n'
+         'bool net_tls_pin_for_host(const char *host, uint8_t out[32]);')
+    edit('net/netcfg.c', 'static uint8_t pin[32];',
+         'static uint8_t pin[32], znc_pin[32];\nstatic bool have_znc_pin;')
+    edit('net/netcfg.c',
+         '        if (cfg("RECOMP_NEXTENDO_TLS_PIN", "nextendo_tls_pin", v, sizeof v) && !parse_pin(v, pin))\n'
+         '            LOG("[net] nextendo_tls_pin: 64 hex digits wanted (the SPKI SHA-256); using the built-in pin\\n");',
+         '        if (cfg("RECOMP_NEXTENDO_TLS_PIN", "nextendo_tls_pin", v, sizeof v) && !parse_pin(v, pin))\n'
+         '            LOG("[net] nextendo_tls_pin: 64 hex digits wanted (the SPKI SHA-256); using the built-in pin\\n");\n'
+         '        have_znc_pin = cfg("RECOMP_NEXTENDO_ZNC_TLS_PIN", "nextendo_znc_tls_pin", v, sizeof v) && parse_pin(v, znc_pin);')
+    edit('net/netcfg.c', '    memset(pin, 0, sizeof pin);',
+         '    memset(pin, 0, sizeof pin);\n    memset(znc_pin, 0, sizeof znc_pin);\n    have_znc_pin = false;')
+    edit('net/netcfg.c',
+         'bool net_tls_pin(uint8_t out[32]) {\n    init();\n    if (trust != NET_TRUST_PINNED) return false;\n    memcpy(out, pin, 32);\n    return true;\n}',
+         'bool net_tls_pin(uint8_t out[32]) {\n    init();\n    if (trust != NET_TRUST_PINNED) return false;\n    memcpy(out, pin, 32);\n    return true;\n}\n'
+         'bool net_tls_pin_for_host(const char *host, uint8_t out[32]) {\n    init();\n    if (trust != NET_TRUST_PINNED) return false;\n'
+         '    if (have_znc_pin && host && !strcmp(host, "api-lp1.znc.srv.nintendo.net")) {\n        memcpy(out, znc_pin, 32);\n        return true;\n    }\n'
+         '    memcpy(out, pin, 32);\n    return true;\n}')
+    edit('services/ssl.c',
+         '        if (!net_tls_pin(pin)) { LOG("[ssl] %s: no certificate pin: refused\\n", c->sni); return false; }',
+         '        if (!net_tls_pin_for_host(c->sni, pin)) { LOG("[ssl] %s: no certificate pin: refused\\n", c->sni); return false; }')
+    edit('services/ssl.c',
+         '    if (net_tls_trust() == NET_TRUST_PINNED && (!net_tls_pin(pin) || !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), pin))) {',
+         '    if (net_tls_trust() == NET_TRUST_PINNED && (!net_tls_pin_for_host(c->sni, pin) || !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), pin))) {')
     region('net/netcfg.c', '#define OPTS(nextendo_available)', '    static NetBackendOption signed_out[]', '''#define OPTS(available) { \\
         {NET_BACKEND_OURS, "ours", "Offline", "MK8 Online Play is disabled. Launcher LAN rooms use a separate transport.", true}, \\
         {NET_BACKEND_LOCAL_NEX, "local-nex", "Local test server", "Developer NEX server on the local network.", false}, \\

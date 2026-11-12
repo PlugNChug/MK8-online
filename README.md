@@ -163,7 +163,12 @@ The daemon supports up to 16 rooms, with one host and up to 11 guests each. Room
 
 </details>
 
-### Steam rooms (experimental, `fix-multiplayer`)
+### Steam rooms and P2P single room codes (experimental, `fix-multiplayer`)
+
+The `fix-multiplayer` branch includes two zero-VPN options side by side for testing before choosing the default path:
+
+- **Option 1 — Single reusable P2P room code (`MK8P-…`) + automatic STUN NAT traversal:** creating a room queries public STUN servers (`stun.cloudflare.com:3478`, `stun.l.google.com:19302`) on the host's UDP socket to discover the external `IP:port`, maintain the outbound NAT mapping, and generate a single reusable `MK8P-…` room code containing both public and LAN candidate endpoints. Up to 11 friends can paste that same `MK8P-…` code under **Join** (or click a room found via **Find rooms** on the same network) without asking the host to generate individual `mk8://` invitations for each player.
+- **Steam option — Steamworks Lobbies + Steam P2P Relay (`MK8S-…`):**
 
 When `steam_api64.dll` is detected locally (from `MK8_STEAM_DLL`, `<data-dir>/steam_api64.dll`, or a local Steam game installation) and the Steam client is running, **Multiplayer → Create Steam room** creates a Steamworks lobby (`ISteamMatchmaking`) and routes all MK8 LAN traffic over `ISteamNetworking` P2P Relay (SDR) without VPN or firewall port forwarding:
 

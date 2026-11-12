@@ -50,7 +50,8 @@ def run(args):
     print(f'Test output: {session}', flush=True)
     (session/'run.json').write_text(json.dumps({
         'candidate': json.loads((local/'candidate.json').read_text())['identity'],
-        'relay': args.relay, 'host_input': args.host_input, 'guest_input': args.guest_input,
+        'relay': args.relay, 'p2p': args.p2p,
+        'host_input': args.host_input, 'guest_input': args.guest_input,
         'shots': args.shots, 'options': args.env,
         'mii_resources': str(args.mii_resources) if args.mii_resources else None,
         'profiles': [str(p) if p else None for p in (args.host_profile, args.guest_profile)],
@@ -77,6 +78,8 @@ def run(args):
             folder.mkdir()
             for name in ('candidate.json', 'config.json'):
                 shutil.copyfile(local/name, folder/name)
+            if args.mii_profile:
+                shutil.copyfile(args.mii_profile, folder/'mii-profile.json')
             saves = folder/'user-no-mii'
             shutil.copytree(local/'user-no-mii/save', saves/'save')
             shutil.copyfile(local/'user-no-mii/mk8d.ini', saves/'mk8d.ini')
@@ -111,6 +114,11 @@ def run(args):
                 api(url, token, 'mii/resources', {'directory': str(args.mii_resources), 'enabled': True})
         if args.relay:
             invite = api(*clients[0], 'session/host-internet', {})['code']
+        elif args.p2p:
+            api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
+            invite = api(*clients[0], 'status')['session']['room_code']
+            if not invite or not invite.startswith('MK8P-'):
+                raise RuntimeError(f'Expected MK8P- room code, got {invite!r}')
         else:
             api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
             invite = api(*clients[0], 'session/invite', {})['invite']
@@ -162,10 +170,12 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', action='store_true', help='Local relay through the internet-code path')
+    parser.add_argument('--p2p', action='store_true', help='Single reusable P2P room code (MK8P-...) path')
     parser.add_argument('--host-input', required=True)
     parser.add_argument('--guest-input', required=True)
     parser.add_argument('--shots', default='1200:2400:400')
     parser.add_argument('--cache-from', type=Path)
+    parser.add_argument('--mii-profile', type=Path, help='Optional mii-profile.json to copy into each instance')
     parser.add_argument('--timeout', type=int, default=240)
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     parser.add_argument('--mii-resources', type=Path, help='MiiModel-layout folder; enables the original Mii renderer')

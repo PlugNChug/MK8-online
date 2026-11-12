@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 from time import monotonic, sleep
+import webbrowser
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,11 +95,28 @@ def profile_environment(profile):
     return env
 
 
-def wait_capture(child, timeout, log):
+def wait_capture(child, timeout, log, nextendo=False):
     """Monitor only this test's process; the runtime parent waits for its ASLR child."""
     started = monotonic()
+    opened_oauth = False
+    signed_in = False
     try:
         while child.poll() is None:
+            if nextendo and log.is_file():
+                text = log.read_text(encoding='utf-8', errors='replace')
+                if not opened_oauth:
+                    for line in text.splitlines():
+                        if line.startswith('https://nextendo.network/oauth/authorize?'):
+                            opened_oauth = True
+                            print(f'Nextendo OAuth URL: {line}', flush=True)
+                            try:
+                                webbrowser.open(line)
+                            except Exception:
+                                pass
+                            break
+                if not signed_in and '[nextendo] sign-in ok' in text:
+                    signed_in = True
+                    print('Nextendo sign-in ok! Booting MK8 Online Play...', flush=True)
             if shutil.disk_usage(LOCAL).free < 4 * 1024**3:
                 raise SystemExit(f'Capture stopped to preserve the 4 GiB disk reserve. See {log}')
             if monotonic() - started > timeout:
@@ -176,7 +194,7 @@ def run(args):
             cwd=data, env=env, stdin=subprocess.DEVNULL, stdout=stream,
             stderr=subprocess.STDOUT,
         )
-        wait_capture(child, args.timeout, log)
+        wait_capture(child, args.timeout, log, args.nextendo)
     rows = PERF.findall(log.read_text(encoding='utf-8', errors='replace'))
     print(f'Exit {child.returncode}, {monotonic() - started:.1f}s', flush=True)
     for elapsed, frame, fps, peak in rows[-8:]:
