@@ -210,6 +210,8 @@ def prepare_host_sources(source, output):
     prepare_packed_formats(runtime)
     from capture_resize import prepare as prepare_capture_resize
     prepare_capture_resize(runtime)
+    from thread_resources import prepare as prepare_thread_resources
+    prepare_thread_resources(runtime)
     from render_scale import prepare as prepare_render_scale
     prepare_render_scale(runtime)
     from texture_pool import prepare as prepare_texture_pool
