@@ -269,8 +269,10 @@ fn spawn_game(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // The independent supervisor has no console for the runtime to inherit.
-        cmd.creation_flags(0x08000000);
+        // DETACHED_PROCESS: no console at all. CREATE_NO_WINDOW gave the runtime a hidden console of its own, and
+        // the runtime (platform/windows.c log_to_file_without_console) then sent stdout/stderr to mk8drecomp.log
+        // beside the exe instead of game.log: every session's game.log, and the logs in Support reports, were empty.
+        cmd.creation_flags(0x0000_0008);
     }
     cmd.spawn().map_err(|e| format!("Falha ao abrir jogo: {e}"))
 }
