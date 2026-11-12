@@ -244,6 +244,8 @@ def prepare_host_sources(source, output):
     prepare_save_file_close(runtime)
     from vram_trace import prepare as prepare_vram_trace
     prepare_vram_trace(runtime)
+    from reboot_lifetime import prepare as prepare_reboot_lifetime
+    prepare_reboot_lifetime(runtime)
     from dlc import prepare as prepare_dlc
     prepare_dlc(runtime)
     device = runtime/'nvn/vulkan/device.c'
