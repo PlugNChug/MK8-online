@@ -36,6 +36,8 @@ For diagnostics without game/firmware data, run `local/python/Scripts/python.exe
 
 ## On the starting grid
 
+**Multiplayer (12/11/2026):** the Multiplayer tab now offers Steam rooms only, joined as your Mii. Create a room, invite Steam friends from the list (or accept their invite in the Launcher or in Steam chat), and the game opens by itself. An experimental automatic entry then takes each player into the LAN room inside the game: the host creates it, and a guest joins once the host's room is announced. Character and rules stay yours. Keep Steam and the Launcher open; the Launcher shows on Steam as Spacewar (AppID 480). The guest side over Steam and two-PC races are still untested. See [status](docs/STATUS.md).
+
 **Mii parts, phase 1:** local AFL extraction produced 585 nonempty meshes and 247 textures with a hashed inventory. `toolchain/mii_library.py` reproduces this using a separately obtained, verified extractor/resource. These private assets are not bundled with the launcher; the composer below uses FFL to select and position the parts.
 
 **Phase 2:** the isolated local composer builds distinct heads from CharInfo using FFL.js, including normals/materials, bounded hair editing and GLB export. Browser tests reopen both exports and compare their pixels to the preview; see [status](docs/STATUS.md).

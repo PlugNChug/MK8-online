@@ -211,69 +211,53 @@
           <div class="panel-head">
             <div>
               <h1>Multijogador</h1>
-              <p id="network-mode" class="muted">Teste de transporte disponível sem o jogo.</p>
+              <p class="muted">Salas com amigos pela Steam: sem VPN e sem abrir portas.</p>
             </div>
             <span id="network-state" class="pill">Desconectado</span>
           </div>
 
-          <form id="name-form" class="card inline">
-            <label>Nome de usuário<input id="username" maxlength="24" required /></label>
-            <button class="ghost">Salvar nome</button>
-          </form>
+          <div class="card mp-player">
+            <canvas id="mp-mii" width="84" height="84" aria-hidden="true"></canvas>
+            <div>
+              <p id="mp-mii-text">Carregando seu Mii…</p>
+              <button id="mp-mii-edit" type="button" class="ghost" data-goto="miis">Criar Mii agora</button>
+            </div>
+          </div>
+          <p id="steam-state" class="hint" role="status"></p>
 
           <div class="grid2">
             <div class="card">
-              <h2>Criar sala</h2>
-              <div class="row">
-                <button id="host" class="primary">Criar sala na rede local</button>
-                <button id="host-steam" class="ghost">Criar sala via Steam</button>
-                <button id="host-internet" class="ghost" disabled>Criar sala pela internet</button>
-              </div>
-              <p id="steam-note" class="hint"></p>
-              <p id="internet-note" class="hint"></p>
-              <div id="room-code-box" hidden>
-                <label>Código da sala<input id="room-code" readonly /></label>
+              <h2>Sua sala</h2>
+              <button id="steam-host" type="button" class="primary">Criar sala</button>
+              <div id="steam-room" hidden>
+                <p id="peers">Sem participantes conectados.</p>
                 <div class="row">
-                  <button id="copy-room-code" class="ghost">Copiar código</button>
-                  <button id="steam-invite" class="ghost" hidden>Convidar amigos na Steam</button>
+                  <button id="steam-overlay" type="button" class="ghost">Convidar pela Steam</button>
+                  <button id="leave" type="button" class="ghost">Encerrar sala</button>
                 </div>
               </div>
-              <button id="invite" class="ghost" disabled>Novo convite</button>
-              <div id="invite-output" hidden>
-                <label>Seu convite<textarea id="invite-text" rows="2" readonly></textarea></label>
-                <button id="copy" class="ghost">Copiar de novo</button>
-              </div>
-              <details id="invite-advanced">
-                <summary>Endereço alternativo (VPN ou porta redirecionada)</summary>
-                <p class="hint">Somente o anfitrião: informe seu IP no Radmin VPN seguido de :47820 antes de gerar um novo convite. O convidado apenas cola o convite em Entrar.</p>
-                <label>IP e porta acessíveis pelo convidado<input id="endpoint" placeholder="192.168.1.10:47820" spellcheck="false" /></label>
-              </details>
             </div>
-
             <div class="card">
-              <h2>Entrar</h2>
-              <label>Código ou convite do anfitrião<textarea id="invite-input" rows="3" placeholder="MK8-… ou mk8://…" spellcheck="false"></textarea></label>
-              <div class="row">
-                <button id="join" class="primary">Entrar na sala</button>
-                <button id="scan-rooms" class="ghost">Buscar salas</button>
-              </div>
-              <ul id="rooms"></ul>
+              <h2>Convites e salas de amigos</h2>
+              <ul id="steam-invites" class="mp-list"></ul>
+              <ul id="steam-rooms" class="mp-list"></ul>
+              <p id="steam-empty" class="hint">Nenhum convite nem sala de amigo aberta agora.</p>
             </div>
           </div>
 
-          <div class="card statusbar">
-            <p id="peers">Sem participantes conectados.</p>
-            <button id="leave" class="ghost" disabled>Encerrar sessão</button>
+          <div class="card">
+            <div class="row mp-friends-head"><h2>Amigos da Steam</h2><input id="friend-filter" aria-label="Procurar amigo" placeholder="Procurar amigo" /></div>
+            <ul id="steam-friends" class="mp-list mp-friends"></ul>
           </div>
 
           <details class="drawer">
-            <summary>Como testar em duas máquinas</summary>
+            <summary>Como funciona</summary>
             <ol class="howto">
-              <li>Cada PC instala o Launcher e prepara o jogo com os próprios arquivos (mesma versão 4.0.1).</li>
-              <li>Na mesma rede ou VPN: permita <b>UDP 47820</b> no firewall do anfitrião. No Radmin, os dois PCs devem estar na mesma rede VPN; o anfitrião gera o convite com seu IP VPN no endereço alternativo.</li>
-              <li>O anfitrião cria a sala e envia um convite individual a cada amigo (vale por quatro horas).</li>
-              <li>Wireless Play não é o modo LAN e não está implementado nesta recomp. A conexão do launcher não confirma entrada no lobby.</li>
-              <li>Depois de conectar, todos usam <b>Jogar na sala</b>. No menu do jogo, segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião escolhe Create Room e os convidados entram pelo Lobby.</li>
+              <li>Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.</li>
+              <li>Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como "Spacewar", o aplicativo de testes da Steam.</li>
+              <li>O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.</li>
+              <li>O amigo aceita: no Launcher (Aceitar), no chat da Steam ou em Entrar na sala do amigo. O jogo dele abre e entra na sala sozinho.</li>
+              <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
             </ol>
           </details>

@@ -1,5 +1,93 @@
 # Estado técnico — 11/11/2026
 
+## Multijogador só pela Steam, com o Mii e entrada automática na sala — 12/11/2026
+
+**Aba Multijogador:** só oferece salas pela Steam. Saíram da tela:
+
+- criar sala na rede local, pela internet ou com código P2P;
+- convites `mk8://`, campo de código, busca de salas e endereço alternativo;
+- o campo "Nome de usuário".
+
+Essas APIs continuam no servidor (`scripts/test-multiplayer.py` e os testes usam). A tela mostra:
+
+- o Mii ativo ("Você entra nas salas como …", com **Trocar Mii**/**Criar Mii agora**, que leva a Perfil Mii);
+- **Criar sala**;
+- convites recebidos (**Aceitar**/**Recusar**) e salas abertas de amigos (**Entrar**);
+- a lista de amigos online da Steam, com **Convidar** quando a sala é sua;
+- **Convidar pela Steam** (overlay) e **Encerrar sala**.
+
+**Mii e nome:** criar ou entrar em sala (`/api/steam/host`, `/api/steam/join`, `/api/session/host-steam`) exige um Mii salvo. O nome do Mii passa a ser o nome da conta no jogo (`RECOMP_USER_NAME`, `username.json`), o que aparece na lista de salas e no lobby.
+
+**Steam (`crates/session/src/steam.rs`):**
+
+- Novas funções:
+  - lista de amigos (`GetFriendCount/ByIndex/PersonaName/PersonaState/GamePlayed/RichPresence`);
+  - `InviteUserToLobby`.
+- A sala do anfitrião publica a rich presence `mk8_room=1`. Um amigo aparece em "salas de amigos" quando está no mesmo AppID, em um lobby e com essa marca.
+- **Callbacks** registrados com `SteamAPI_RegisterCallback`, com objeto `CCallbackBase` montado em Rust (vtable na ordem do MSVC):
+  - `GameLobbyJoinRequested_t` (333): convite aceito no chat ou no overlay da Steam;
+  - `GameRichPresenceJoinRequested_t` (337): "Entrar no jogo" pela lista de amigos;
+  - `LobbyInvite_t` (503): convite recebido, mostrado no launcher;
+  - `P2PSessionRequest_t` (1202): aceita a sessão P2P do convidado. O código antigo só aceitava depois de ler um pacote, e um pacote de sessão não aceita não chega a ser lido;
+  - `LobbyEnter_t` (504): diagnóstico de que os callbacks chegam.
+- `SteamAPI_RunCallbacks` passa a ser chamado sob uma trava (salas e uma thread de despacho a cada 100 ms).
+- Depois do primeiro uso da Steam no PC (`local/steam-enabled`), o launcher reconecta sozinho ao abrir, para receber convites.
+
+**Fluxo:**
+
+1. Ao criar ou entrar na sala, o launcher abre o jogo sozinho quando o transporte confirma a conexão.
+2. Quem aceita um convite pela Steam com o launcher aberto entra direto: o launcher vem à frente, entra na sala e abre o jogo.
+3. Erros desse caminho aparecem como aviso (`steam_error`).
+
+**Entrada automática dentro do jogo (experimental):** `runtime/mk8/net/auto_lan.inc`, aplicado por `toolchain/auto_lan.py`.
+
+- Liga com `MK8_AUTO_LAN=host|guest`, que o launcher define só para salas Steam (`game_session::Request.auto_lan`), ou com `1` (o slot 0 hospeda).
+- Aperta os botões pela entrada do próprio jogo (`g_test_buttons`, somada à do jogador). Espera **marcos observados**, e não quadros fixos:
+  - o vídeo do menu (`MovieMenu.mp4`) abrir;
+  - a rede virtual (`vlan`) subir, o que mostra que o jogo entrou no Lobby LAN.
+- Sequência: título → menu → L+R+analógico → Lobby.
+- **Anfitrião:** aperta **Create Room** e transmite pela `vlan`, uma vez por segundo, um aviso numa porta que o jogo não usa (47999). O `vlan.c` consome esse aviso e nunca o entrega ao jogo.
+- **Convidado:** só desce até a sala e aperta A **depois de receber o aviso**. Sem ele, nunca aperta A (numa lista vazia, A criaria uma sala).
+- Qualquer espera esgotada encerra a sequência e o jogador continua à mão. Personagem e regras ficam com o jogador.
+- Uma primeira tentativa usou "primeiro pacote unicast" como sinal de sala. O pacote chegou antes de a sala existir, então ela foi descartada.
+
+**Evidência:**
+
+- **Steam ao vivo, neste PC (conta do usuário):**
+  - a Steam conectou pelo `steam_api64.dll` de outro jogo instalado e listou 89 amigos;
+  - sala só para amigos criada e transporte do anfitrião conectado;
+  - `LobbyEnter_t` entregue (`callbacks=true`), o que prova o mecanismo de callbacks;
+  - sem Mii, a sala é recusada; com Mii, o nome vira o do Mii;
+  - nenhum convite foi enviado.
+- **Duas instâncias reais do jogo no mesmo PC** (transporte local; `scripts/test-multiplayer.py --env MK8_AUTO_LAN=1`):
+  - `local/multiplayer-rf8o8bsu` (primeiro sinal) e `local/multiplayer-perc57wm` (aviso da sala);
+  - os dois chegaram sozinhos ao Lobby LAN, e o anfitrião criou a sala e foi para a garagem;
+  - o convidado recebeu o aviso, viu "Host 1/12", entrou e ficou na escolha de personagem dentro da sala (capturas 1800 e 2400 inspecionadas);
+  - o "communication error" final é o anfitrião encerrando no fim do roteiro.
+
+**Não validado:**
+
+- o lado do convidado pela Steam (outra conta: `JoinLobby`, troca `MK8J`/`MK8I`, túnel P2P e o aceite pelo chat);
+- o overlay da Steam sobre a janela do launcher;
+- PCs mais lentos (os intervalos entre marcos são fixos);
+- saves com outro estado de menu;
+- corrida inteira entre duas máquinas.
+
+**Limites:**
+
+- Não há instalador público com `steam_api64.dll`: o launcher procura uma cópia no PC (variável, pasta de dados, pasta do launcher ou `steamapps/common`).
+- O launcher aparece como "Spacewar" (AppID 480).
+- Quem não estiver com o launcher aberto, ao aceitar um convite, vê a Steam tentar abrir o Spacewar.
+- `gameplay_verified=false` e `multiplayer_verified=false`.
+
+**Validação:**
+
+- Formatação, Clippy `-D warnings` e todos os testes Rust, incluindo `steam_callbacks_become_join_and_invite_events` (eventos e ABI de `FriendGameInfo_t`/`CCallbackBase`).
+- `tests/test_launcher_e2e.py`, `tests/test_launcher_languages.py` e `tests/test_mii_launcher.py`: 18 passaram e 1 pulou (relay não configurado). Os testes de transporte usam a API; a tela nova é verificada (sem Mii, recusa; com Mii, nome; só Steam).
+- `tests/test_runtime_stalls.py` confere o patch da entrada automática na cópia preparada.
+- `scripts/test-mii-composer.py`.
+- Correção encontrada pelos testes: o criador não lia o corpo das respostas de erro, e a requisição ficava aberta no navegador.
+
 ## Criador de Mii no launcher (tela Perfil Mii) — 12/11/2026
 
 A tela **Perfil Mii** foi refeita como **criador**. Saíram:

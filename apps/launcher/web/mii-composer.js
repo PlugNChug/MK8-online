@@ -111,7 +111,7 @@ async function loadFFL(){
   if(fflLoading)return fflLoading;
   fflLoading=(async()=>{
     const response=await fetch('/api/mii/composer/resource',{headers:{'X-MK8-Token':token}});
-    if(!response.ok){el('mii-library').hidden=false;return false;}
+    if(!response.ok){await response.text();el('mii-library').hidden=false;return false;}  // (read: an unread body stays in flight)
     status('Carregando peças do Mii…');
     ffl=await FFL.initWithResource(response,ModuleFFL({locateFile:n=>'/vendor/ffl/'+n}));
     ffl.module._FFLSetLinearGammaMode(1);
@@ -334,4 +334,12 @@ setInterval(async()=>{
   try{const r=await api('mii/menu');if(r.menu!==menu){menu=r.menu;window.showTab?.('miis');}}catch(_){}
 },2000);
 window.addEventListener('languagechange',()=>openTab(tab));
+// The active Mii's face, for the Multiplayer tab.
+window.miiIcon=async canvas=>{
+  try{
+    if(!data||creating||!(await loadFFL()))return;
+    const icon=thumbnail(39,data[39],'head');
+    if(icon){const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(icon,0,0,canvas.width,canvas.height);}
+  }catch(_){}
+};
 window.addEventListener('beforeunload',()=>{head?.dispose();stage?.renderer.dispose();thumbs?.dispose();});

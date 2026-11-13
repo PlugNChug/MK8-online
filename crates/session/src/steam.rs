@@ -30,6 +30,12 @@ const EP2P_SEND_RELIABLE: c_int = 2;
 const P2P_CHANNEL_CONTROL: c_int = 0;
 const P2P_CHANNEL_DATA: c_int = 1;
 const DEFAULT_APP_ID: &str = "480";
+// Callbacks delivered through SteamAPI_RegisterCallback (steam_api.h k_i* values).
+const GAME_LOBBY_JOIN_REQUESTED: c_int = 333; // invite accepted in the Steam client
+const GAME_RICH_PRESENCE_JOIN_REQUESTED: c_int = 337; // "Join game" on a friend
+const LOBBY_INVITE: c_int = 503; // a friend invited us
+const P2P_SESSION_REQUEST: c_int = 1202;
+const FRIEND_FLAG_IMMEDIATE: c_int = 4;
 
 #[repr(C, packed(8))]
 #[derive(Clone, Copy, Default)]
@@ -76,6 +82,172 @@ struct Api {
     is_call_completed: unsafe extern "C" fn(*mut c_void, u64, *mut bool) -> bool,
     get_call_result:
         unsafe extern "C" fn(*mut c_void, u64, *mut c_void, c_int, c_int, *mut bool) -> bool,
+    friend_count: unsafe extern "C" fn(*mut c_void, c_int) -> c_int,
+    friend_by_index: unsafe extern "C" fn(*mut c_void, c_int, c_int) -> u64,
+    friend_name: unsafe extern "C" fn(*mut c_void, u64) -> *const c_char,
+    friend_state: unsafe extern "C" fn(*mut c_void, u64) -> c_int,
+    friend_game: unsafe extern "C" fn(*mut c_void, u64, *mut FriendGame) -> bool,
+    friend_rich_presence: unsafe extern "C" fn(*mut c_void, u64, *const c_char) -> *const c_char,
+    invite_to_lobby: unsafe extern "C" fn(*mut c_void, u64, u64) -> bool,
+    register_callback: unsafe extern "C" fn(*mut Callback, c_int),
+}
+
+/// FriendGameInfo_t (pack 8): the game a friend is in and the lobby they are in, if any.
+#[repr(C)]
+#[derive(Default)]
+struct FriendGame {
+    game_id: u64,
+    ip: u32,
+    game_port: u16,
+    query_port: u16,
+    lobby: u64,
+}
+
+/// CCallbackBase as steam_api.h lays it out: vtable, flags (u8), callback id. On Windows (MSVC) the vtable holds
+/// Run(void*, bool, SteamAPICall_t) before Run(void*), then GetCallbackSizeBytes (Steamworks.NET uses the same order).
+#[repr(C)]
+struct CallbackVTable {
+    run_call_result: unsafe extern "C" fn(*mut Callback, *mut c_void, bool, u64),
+    run: unsafe extern "C" fn(*mut Callback, *mut c_void),
+    size: unsafe extern "C" fn(*mut Callback) -> c_int,
+}
+
+#[repr(C)]
+struct Callback {
+    vtable: *const CallbackVTable,
+    flags: u8,
+    id: c_int,
+}
+
+// Steam keeps these pointers; the table is immutable.
+unsafe impl Sync for CallbackVTable {}
+
+/// What the Steam client told this launcher, for the server to act on.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SteamEvent {
+    /// The player accepted an invite (Steam chat/overlay) or chose "Join game" on a friend: enter that lobby.
+    Join { lobby: u64 },
+    /// A friend invited the player; shown in the launcher until accepted.
+    Invited { lobby: u64, friend: u64 },
+}
+
+static EVENTS: Mutex<Vec<SteamEvent>> = Mutex::new(Vec::new());
+// The last lobby this launcher entered, as LobbyEnter_t reported it: proof that registered callbacks are delivered.
+static ENTERED_LOBBY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// True once Steam has delivered a registered callback to this process (creating or entering a room does).
+pub fn callbacks_delivered() -> bool {
+    ENTERED_LOBBY.load(Ordering::Relaxed) != 0
+}
+// SteamAPI_RunCallbacks dispatches on the calling thread; the rooms' workers and the idle pump take turns.
+static PUMP: Mutex<()> = Mutex::new(());
+
+fn callback_size(id: c_int) -> c_int {
+    match id {
+        GAME_LOBBY_JOIN_REQUESTED => 16,
+        GAME_RICH_PRESENCE_JOIN_REQUESTED => 8 + 256,
+        LOBBY_INVITE => 24,
+        LOBBY_ENTER_CALLBACK => 24,
+        _ => 8,
+    }
+}
+
+/// Reads one delivered callback (`param`: its `callback_size(id)` bytes).
+fn parse_callback(id: c_int, param: &[u8]) -> Option<SteamEvent> {
+    let u64_at = |at: usize| {
+        param
+            .get(at..at + 8)
+            .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+    };
+    match id {
+        GAME_LOBBY_JOIN_REQUESTED => Some(SteamEvent::Join {
+            lobby: u64_at(0).filter(|&l| l != 0)?,
+        }),
+        GAME_RICH_PRESENCE_JOIN_REQUESTED => {
+            let text = param.get(8..)?;
+            let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+            let connect = std::str::from_utf8(&text[..end]).ok()?;
+            let lobby = connect
+                .trim()
+                .strip_prefix("+connect_lobby")?
+                .trim()
+                .parse()
+                .ok()
+                .filter(|&l| l != 0)?;
+            Some(SteamEvent::Join { lobby })
+        }
+        LOBBY_INVITE => Some(SteamEvent::Invited {
+            friend: u64_at(0)?,
+            lobby: u64_at(8).filter(|&l| l != 0)?,
+        }),
+        _ => None,
+    }
+}
+
+unsafe extern "C" fn callback_run(this: *mut Callback, param: *mut c_void) {
+    if this.is_null() || param.is_null() {
+        return;
+    }
+    let id = (*this).id;
+    let bytes = std::slice::from_raw_parts(param.cast::<u8>(), callback_size(id) as usize);
+    if id == P2P_SESSION_REQUEST {
+        // A lobby member opening a P2P session with us: accept it (the rooms read packets per channel).
+        let remote = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+        // (try_lock: this runs inside SteamAPI_RunCallbacks, possibly while ensure_api holds the lock)
+        let api = STEAM_API.try_lock().ok().and_then(|g| g.clone());
+        if let Some(api) = api {
+            let net = (api.steam_networking)();
+            if !net.is_null() && remote != 0 {
+                (api.accept_p2p)(net, remote);
+            }
+        }
+    } else if id == LOBBY_ENTER_CALLBACK {
+        let lobby = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+        ENTERED_LOBBY.store(lobby, Ordering::Relaxed);
+    } else if let Some(event) = parse_callback(id, bytes) {
+        if let Ok(mut events) = EVENTS.lock() {
+            if events.len() < 32 && !events.contains(&event) {
+                events.push(event);
+            }
+        }
+    }
+}
+
+unsafe extern "C" fn callback_run_result(
+    this: *mut Callback,
+    param: *mut c_void,
+    _failed: bool,
+    _call: u64,
+) {
+    callback_run(this, param);
+}
+
+unsafe extern "C" fn callback_size_bytes(this: *mut Callback) -> c_int {
+    if this.is_null() {
+        0
+    } else {
+        callback_size((*this).id)
+    }
+}
+
+static CALLBACK_VTABLE: CallbackVTable = CallbackVTable {
+    run_call_result: callback_run_result,
+    run: callback_run,
+    size: callback_size_bytes,
+};
+
+/// Steam events received since the last call.
+pub fn take_events() -> Vec<SteamEvent> {
+    EVENTS
+        .lock()
+        .map(|mut e| std::mem::take(&mut *e))
+        .unwrap_or_default()
+}
+
+fn pump(api: &Api) {
+    let _turn = PUMP.lock();
+    unsafe { (api.run_callbacks)() };
 }
 
 #[cfg(windows)]
@@ -266,6 +438,20 @@ impl Api {
                 read_p2p: load_symbol(handle, c"SteamAPI_ISteamNetworking_ReadP2PPacket")?,
                 is_call_completed: load_symbol(handle, c"SteamAPI_ISteamUtils_IsAPICallCompleted")?,
                 get_call_result: load_symbol(handle, c"SteamAPI_ISteamUtils_GetAPICallResult")?,
+                friend_count: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendCount")?,
+                friend_by_index: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendByIndex")?,
+                friend_name: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendPersonaName")?,
+                friend_state: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendPersonaState")?,
+                friend_game: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendGamePlayed")?,
+                friend_rich_presence: load_symbol(
+                    handle,
+                    c"SteamAPI_ISteamFriends_GetFriendRichPresence",
+                )?,
+                invite_to_lobby: load_symbol(
+                    handle,
+                    c"SteamAPI_ISteamMatchmaking_InviteUserToLobby",
+                )?,
+                register_callback: load_symbol(handle, c"SteamAPI_RegisterCallback")?,
             })
         }
         #[cfg(not(windows))]
@@ -285,7 +471,7 @@ impl Api {
         }
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
-            unsafe { (self.run_callbacks)() };
+            pump(self);
             let mut failed = false;
             if unsafe { (self.is_call_completed)(utils, call, &mut failed) } {
                 if failed {
@@ -335,9 +521,105 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
     if !net.is_null() {
         unsafe { (api.allow_p2p_relay)(net, true) };
     }
+    for id in [
+        GAME_LOBBY_JOIN_REQUESTED,
+        GAME_RICH_PRESENCE_JOIN_REQUESTED,
+        LOBBY_INVITE,
+        P2P_SESSION_REQUEST,
+        LOBBY_ENTER_CALLBACK,
+    ] {
+        // Registered once for the life of the process (Steam keeps the pointer).
+        let callback = Box::leak(Box::new(Callback {
+            vtable: &CALLBACK_VTABLE,
+            flags: 0,
+            id,
+        }));
+        unsafe { (api.register_callback)(callback, id) };
+    }
     let arc = Arc::new(api);
     *guard = Some(arc.clone());
+    // Invites and join requests also arrive while no room is open: keep dispatching.
+    let pumped = arc.clone();
+    thread::spawn(move || loop {
+        pump(&pumped);
+        thread::sleep(Duration::from_millis(100));
+    });
     Ok(arc)
+}
+
+/// A Steam friend as the Multiplayer tab lists them.
+#[derive(Serialize)]
+pub struct Friend {
+    pub id: String,
+    pub name: String,
+    pub online: bool,
+    /// The friend's open MK8-online room (the Steam lobby they are in, marked by our rich presence), if any.
+    pub room: Option<String>,
+}
+
+/// Connects to the Steam client (once) and lists the player's friends, open MK8-online rooms first.
+pub fn friends(local: &Path) -> Result<Vec<Friend>> {
+    let api = ensure_api(local)?;
+    let friends = unsafe { (api.steam_friends)() };
+    if friends.is_null() {
+        return Err("ISteamFriends indisponível.".into());
+    }
+    let app: u64 = std::env::var("SteamAppId")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(480);
+    let count = unsafe { (api.friend_count)(friends, FRIEND_FLAG_IMMEDIATE) }.clamp(0, 500);
+    let key = CString::new("mk8_room").unwrap();
+    let mut list = Vec::new();
+    for i in 0..count {
+        let id = unsafe { (api.friend_by_index)(friends, i, FRIEND_FLAG_IMMEDIATE) };
+        if id == 0 {
+            continue;
+        }
+        let name_ptr = unsafe { (api.friend_name)(friends, id) };
+        let name = if name_ptr.is_null() {
+            id.to_string()
+        } else {
+            unsafe { CStr::from_ptr(name_ptr) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        let online = unsafe { (api.friend_state)(friends, id) } != 0;
+        let mut game = FriendGame::default();
+        let playing = unsafe { (api.friend_game)(friends, id, &mut game) };
+        let marked = {
+            let value = unsafe { (api.friend_rich_presence)(friends, id, key.as_ptr()) };
+            !value.is_null() && unsafe { CStr::from_ptr(value) }.to_bytes() == b"1"
+        };
+        // The game id's low 24 bits are the app id.
+        let room = (playing && game.game_id & 0xff_ffff == app && game.lobby != 0 && marked)
+            .then(|| game.lobby.to_string());
+        list.push(Friend {
+            id: id.to_string(),
+            name,
+            online,
+            room,
+        });
+    }
+    list.sort_by(|a, b| {
+        (b.room.is_some(), b.online)
+            .cmp(&(a.room.is_some(), a.online))
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(list)
+}
+
+/// Sends a Steam lobby invite to a friend (it appears in their Steam chat, and in their launcher).
+pub fn invite(local: &Path, lobby: u64, friend: u64) -> Result<()> {
+    let api = ensure_api(local)?;
+    let mm = unsafe { (api.steam_matchmaking)() };
+    if mm.is_null() || lobby == 0 || friend == 0 {
+        return Err("Sala Steam indisponível para convite.".into());
+    }
+    if !unsafe { (api.invite_to_lobby)(mm, lobby, friend) } {
+        return Err("A Steam recusou o convite.".into());
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -405,7 +687,7 @@ impl P2PBackend for LiveSteamBackend {
     }
 
     fn tick(&self) {
-        unsafe { (self.api.run_callbacks)() };
+        pump(&self.api);
     }
 
     fn send(&self, remote: u64, channel: i32, data: &[u8], reliable: bool) -> bool {
@@ -522,9 +804,12 @@ impl SteamRoom {
             let v_connect = CString::new(format!("+connect_lobby {}", created.lobby_id)).unwrap();
             let k_status = CString::new("status").unwrap();
             let v_status = CString::new("Jogando Mario Kart 8 Deluxe (Sala Steam)").unwrap();
+            let k_room = CString::new("mk8_room").unwrap();
+            let v_room = CString::new("1").unwrap();
             unsafe {
                 (api.set_rich_presence)(friends, k_connect.as_ptr(), v_connect.as_ptr());
                 (api.set_rich_presence)(friends, k_status.as_ptr(), v_status.as_ptr());
+                (api.set_rich_presence)(friends, k_room.as_ptr(), v_room.as_ptr());
             }
         }
         Ok((room, host, invite))
@@ -819,6 +1104,48 @@ mod tests {
             buf[..data.len()].copy_from_slice(&data);
             Some((data.len(), from))
         }
+    }
+
+    #[test]
+    fn steam_callbacks_become_join_and_invite_events() {
+        let mut join = vec![0u8; 16];
+        join[..8].copy_from_slice(&109775241012345678u64.to_le_bytes());
+        assert_eq!(
+            parse_callback(GAME_LOBBY_JOIN_REQUESTED, &join),
+            Some(SteamEvent::Join {
+                lobby: 109775241012345678
+            })
+        );
+        assert_eq!(parse_callback(GAME_LOBBY_JOIN_REQUESTED, &[0u8; 16]), None);
+        let mut presence = vec![0u8; 8 + 256];
+        let connect = b"+connect_lobby 10977524101234";
+        presence[8..8 + connect.len()].copy_from_slice(connect);
+        assert_eq!(
+            parse_callback(GAME_RICH_PRESENCE_JOIN_REQUESTED, &presence),
+            Some(SteamEvent::Join {
+                lobby: 10977524101234
+            })
+        );
+        presence[8..8 + 6].copy_from_slice(b"+other");
+        assert_eq!(
+            parse_callback(GAME_RICH_PRESENCE_JOIN_REQUESTED, &presence),
+            None
+        );
+        let mut invite = vec![0u8; 24];
+        invite[..8].copy_from_slice(&76561198000000001u64.to_le_bytes());
+        invite[8..16].copy_from_slice(&42u64.to_le_bytes());
+        assert_eq!(
+            parse_callback(LOBBY_INVITE, &invite),
+            Some(SteamEvent::Invited {
+                lobby: 42,
+                friend: 76561198000000001
+            })
+        );
+        // ABI of the structures Steam reads or fills.
+        assert_eq!(std::mem::size_of::<FriendGame>(), 24);
+        assert_eq!(std::mem::offset_of!(FriendGame, lobby), 16);
+        assert_eq!(std::mem::offset_of!(Callback, flags), 8);
+        assert_eq!(std::mem::offset_of!(Callback, id), 12);
     }
 
     #[test]

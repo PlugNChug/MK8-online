@@ -239,3 +239,14 @@ footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1
 .mii-range { display:grid; grid-template-columns:2.4rem 1fr 2.4rem; gap:.5rem; align-items:center; }
 .mii-range input { width:100%; }
 @media(max-width:850px) { .mii-creator { grid-template-columns:1fr; } .mii-stage { position:static; } }
+/* Multiplayer (Steam) */
+.mp-player { display:flex; align-items:center; gap:1rem; }
+#mp-mii { width:84px; height:84px; border-radius:50%; background:var(--surface-2); flex:none; }
+.mp-player p { margin:0 0 .4rem; }
+.mp-list { list-style:none; padding:0; margin:.4rem 0; display:flex; flex-direction:column; gap:.35rem; }
+.mp-list li { display:flex; align-items:center; gap:.5rem; padding:.4rem .6rem; border:1px solid var(--line); border-radius:10px; }
+.mp-list li span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mp-friends { max-height:340px; overflow:auto; }
+.mp-friends-head { align-items:center; }
+.mp-friends-head h2 { margin:0 auto 0 0; }
+.mp-friends-head input { max-width:14rem; }

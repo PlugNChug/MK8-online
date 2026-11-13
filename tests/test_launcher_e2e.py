@@ -96,19 +96,32 @@ class LauncherTests(unittest.TestCase):
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
-    def test_username_persists_without_avatar(self):
+    def test_multiplayer_uses_the_mii_and_only_steam_rooms(self):
         page = self.page()
-        page.get_by_role("button", name="Multijogador", exact=True).click()
-        page.get_by_label("Nome de usuário", exact=True).fill("João")
-        page.get_by_role("button", name="Salvar nome", exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("Nome salvo")
-        page.reload()
-        page.get_by_role("button", name="Multijogador", exact=True).click()
-        expect(page.get_by_label("Nome de usuário", exact=True)).to_have_value("João")
-        self.assertEqual(json.loads((Path(self.temporary.name)/'0'/'username.json').read_text(encoding='utf-8')), "João")
         token = page.locator('meta[name="mk8-token"]').get_attribute('content')
-        response = page.request.get(self.urls[0]+"/api/mii", headers={"X-MK8-Token":token})
-        self.assertTrue(response.json()['ok'])
+        api = lambda path, body=None: (page.request.get(self.urls[0]+"/api/"+path, headers={"X-MK8-Token":token}) if body is None
+                                       else page.request.post(self.urls[0]+"/api/"+path, headers={"X-MK8-Token":token}, data=json.dumps(body))).json()
+        page.get_by_role("button", name="Multijogador", exact=True).click()
+        # Only Steam rooms are offered; the other transports stay for scripts behind the API.
+        for removed in ("#host", "#host-internet", "#invite-input", "#scan-rooms", "#username", "#invite", "#endpoint"):
+            expect(page.locator(removed)).to_have_count(0)
+        expect(page.get_by_role("button", name="Criar sala", exact=True)).to_be_visible()
+        # Without a Mii the tab asks for one, and rooms are refused.
+        expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
+        refused = api("steam/host", {})
+        self.assertFalse(refused["ok"])
+        self.assertIn("Crie seu Mii", refused["error"])
+        self.assertIn("Crie seu Mii", api("steam/join", {"lobby": "123"})["error"])
+        self.assertFalse(api("steam/join", {"lobby": "12a"})["ok"])
+        page.get_by_role("button", name="Criar Mii agora", exact=True).click()
+        expect(page.locator("#miis")).to_be_visible()
+        page.locator("#mii-name").fill("João")
+        page.locator("#mii-save").click()
+        expect(page.locator("#mii-saved .mii-saved-item")).to_have_text(["João"])
+        page.get_by_role("button", name="Multijogador", exact=True).click()
+        expect(page.locator("#mp-mii-text")).to_have_text("Você entra nas salas como João.")
+        expect(page.get_by_role("button", name="Trocar Mii", exact=True)).to_be_visible()
+        self.assertTrue(api("mii")["ok"])
         page.close()
 
     def test_01_preparation_missing_files_and_disabled_play(self):
@@ -165,64 +178,44 @@ class LauncherTests(unittest.TestCase):
         page.close()
 
     def test_03_two_launcher_sessions_and_invite_rejection(self):
-        host=self.page();client=self.page(1)
-        for page in (host,client):page.get_by_role("button",name="Multijogador",exact=True).click()
-        client.locator("#invite-input").fill("mk8://invalid")
-        client.get_by_role("button",name="Entrar na sala",exact=True).click()
-        expect(client.get_by_role("status")).to_contain_text("Convite inválido")
-        host.route("**/api/session/host", lambda route: route.continue_(post_data=json.dumps({"bind": "127.0.0.1:0"})))
-        host.get_by_role("button",name="Criar sala na rede local",exact=True).click()
-        expect(host.locator("#network-state")).to_have_text("Transporte conectado",timeout=10000)
-        expect(host.locator("#peers")).to_contain_text("Aguardando convidados")
-        p2p_code = host.locator("#room-code").input_value()
-        self.assertTrue(p2p_code.startswith("MK8P-"))
-        client.locator("#invite-input").fill(p2p_code)
-        client.get_by_role("button",name="Entrar na sala",exact=True).click()
-        expect(client.locator("#network-state")).to_have_text("Transporte conectado",timeout=10000)
-        client.get_by_role("button",name="Encerrar sessão",exact=True).click()
-        expect(client.locator("#network-state")).to_have_text("Desconectado")
-        token=host.locator('meta[name="mk8-token"]').get_attribute('content')
-        state=host.request.get(self.urls[0]+"/api/status",headers={"X-MK8-Token":token}).json()["data"]
-        endpoint=state["session"]["relay"]
-        expect(host.locator("#endpoint")).to_be_hidden()
-        host.get_by_role("button",name="Novo convite",exact=True).click()
-        expect(host.locator("#invite-text")).not_to_have_value("")
-        host.locator("#invite-advanced summary").click()
-        host.locator("#endpoint").fill(endpoint)
-        expect(host.locator("#invite-output")).to_be_hidden()
-        host.locator("#invite-advanced summary").click()
-        host.get_by_role("button",name="Novo convite",exact=True).click()
-        expect(host.locator("#invite-output")).to_be_visible()
+        # The LAN/P2P transports have no buttons any more; scripts/test-multiplayer.py drives them through the API.
+        tokens = [self.page(i) for i in (0, 1)]
+        host, client = tokens
+        def api(page, index, path, body=None):
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            headers = {"X-MK8-Token": token}
+            response = (page.request.get(self.urls[index]+"/api/"+path, headers=headers) if body is None
+                        else page.request.post(self.urls[index]+"/api/"+path, headers=headers, data=json.dumps(body)))
+            return response.json()
+        def connected(page, index):
+            for _ in range(100):
+                if api(page, index, "status")["data"]["session"]["connected"]:
+                    return True
+                page.wait_for_timeout(100)
+            return False
+        self.assertIn("Convite inválido", api(client, 1, "session/join", {"invite": "mk8://invalid"})["error"])
+        self.assertTrue(api(host, 0, "session/host", {"bind": "127.0.0.1:0"})["ok"])
+        self.assertTrue(connected(host, 0))
+        session = api(host, 0, "status")["data"]["session"]
+        self.assertTrue(session["room_code"].startswith("MK8P-"))
+        self.assertTrue(api(client, 1, "session/join", {"invite": session["room_code"]})["ok"])
+        self.assertTrue(connected(client, 1))
+        self.assertTrue(api(client, 1, "session/stop", {})["ok"])
+        invite = api(host, 0, "session/invite", {"endpoint": session["relay"]})["data"]["invite"]
         import base64
-        invitation = host.locator("#invite-text").input_value()
-        encoded = invitation.removeprefix("mk8://")
+        encoded = invite.removeprefix("mk8://")
         payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
-        self.assertEqual(payload["endpoint"], endpoint)
-        expect(host.get_by_role("button", name="Criar sala via Steam", exact=True)).to_be_disabled()
-        client.locator("#invite-input").fill("MK8S-invalid")
-        client.get_by_role("button",name="Entrar na sala",exact=True).click()
-        expect(client.get_by_role("status")).to_have_class(re.compile(r"\berror\b"))
-        client.locator("#invite-input").fill(invitation)
-        client.get_by_role("button",name="Entrar na sala",exact=True).click()
-        expect(client.locator("#network-state")).to_have_text("Transporte conectado",timeout=10000)
-        expect(host.locator("#peers")).to_contain_text("1 convidado(s)",timeout=10000)
-        expect(client.locator("#notice")).to_contain_text("Convite aceito pelo transporte")
-        expect(client.locator("#endpoint")).to_be_disabled()
-        expect(client.locator("#network-mode")).to_contain_text("sem jogo")
+        self.assertEqual(payload["endpoint"], session["relay"])
+        self.assertFalse(api(client, 1, "session/join", {"invite": "MK8S-invalid"})["ok"])
+        self.assertTrue(api(client, 1, "session/join", {"invite": invite})["ok"])
+        self.assertTrue(connected(client, 1))
+        # The tab shows the room in progress (the host's own transport is not a guest).
+        host.get_by_role("button", name="Multijogador", exact=True).click()
+        expect(host.locator("#steam-room")).to_be_visible(timeout=10000)
+        expect(host.locator("#network-state")).to_have_text("Na sala", timeout=10000)
         host.screenshot(path=str(ROOT/"local/screenshots/launcher-session.png"),full_page=True)
-        client.get_by_role("button",name="Encerrar sessão",exact=True).click()
-        host.locator("#invite-advanced summary").click()
-        host.locator("#endpoint").fill("127.0.0.1:9")
-        host.get_by_role("button",name="Novo convite",exact=True).click()
-        expect(host.locator("#invite-output")).to_be_visible()
-        client.locator("#invite-input").fill(host.locator("#invite-text").input_value())
-        client.get_by_role("button",name="Entrar na sala",exact=True).click()
-        expect(client.locator("#peers")).to_have_text("Aguardando confirmação do anfitrião.")
-        client.evaluate("pendingConnectionSince = Date.now() - 21000")
-        expect(client.locator("#peers")).to_contain_text("Sem resposta do anfitrião")
-        for page in (client,host):
-            page.get_by_role("button",name="Encerrar sessão",exact=True).click()
-            expect(page.locator("#network-state")).to_have_text("Desconectado")
+        for page, index in ((client, 1), (host, 0)):
+            self.assertTrue(api(page, index, "session/stop", {})["ok"])
             page.close()
 
     @unittest.skipUnless(os.environ.get("MK8_TEST_RELAY_EXE"), "Relay binary not configured")
@@ -230,19 +223,13 @@ class LauncherTests(unittest.TestCase):
         host, guest = self.page(), self.page(1)
         for page in (host, guest):
             page.get_by_role("button", name="Multijogador", exact=True).click()
-        host.get_by_role("button", name="Criar sala pela internet").click()
-        expect(host.locator("#network-state")).to_have_text("Transporte conectado", timeout=10000)
-        code = host.locator("#room-code").input_value()
-        host.get_by_label("Idioma", exact=True).select_option("en")
-        expect(host.locator("#network-state")).to_have_text("Transport connected", timeout=10000)
-        self.assertEqual(host.locator("#room-code").input_value(), code)
-        host.get_by_label("Language", exact=True).select_option("pt-BR")
-        expect(host.locator("html")).to_have_attribute("lang", "pt-BR")
+        host_token = host.locator('meta[name="mk8-token"]').get_attribute("content")
+        code = host.request.post(self.urls[0]+"/api/session/host-internet", headers={"X-MK8-Token":host_token}, data="{}").json()["data"]["code"]
         self.assertRegex(code, r"^MK8-[A-Za-z0-9_-]{22}$")
         self.assertFalse(host.request.post(self.relay_url+"/v1/close", data={"code":code, "owner":"invalid"}).json()["ok"])
         self.assertFalse(guest.request.post(self.relay_url+"/v1/join", data={"code":code, "identity":"wrong"}).json()["ok"])
-        guest.locator("#invite-input").fill(code)
-        guest.get_by_role("button", name="Entrar na sala", exact=True).click()
+        guest_token = guest.locator('meta[name="mk8-token"]').get_attribute("content")
+        self.assertTrue(guest.request.post(self.urls[1]+"/api/session/join", headers={"X-MK8-Token":guest_token}, data=json.dumps({"invite":code})).json()["ok"])
         expect(guest.locator("#network-state")).to_have_text("Transporte conectado", timeout=10000)
 
         def bridge(page, index):
@@ -264,15 +251,13 @@ class LauncherTests(unittest.TestCase):
                 data = b"MMKDVL1"+bytes([10,13,37,status["slot"]+1,0,1,255,255,255,255,0,2])+b"internet-fixture"
                 src.sendto(data, addr)
                 self.assertEqual(dst.recv(256), data)
-        for page in (host, guest):
-            page.get_by_role("button", name="Encerrar sessão", exact=True).click()
-            expect(page.locator("#network-state")).to_have_text("Desconectado")
+        for page, index in ((host, 0), (guest, 1)):
+            token = page.locator('meta[name="mk8-token"]').get_attribute("content")
+            self.assertTrue(page.request.post(self.urls[index]+"/api/session/stop", headers={"X-MK8-Token":token}, data="{}").json()["ok"])
         self.assertFalse(guest.request.post(self.relay_url+"/v1/join", data={"code":code, "identity":"transport-fixture-v1"}).json()["ok"])
-        host.get_by_role("button", name="Criar sala pela internet").click()
-        expect(host.locator("#network-state")).to_have_text("Transporte conectado", timeout=10000)
-        self.assertNotEqual(host.locator("#room-code").input_value(), code)
-        host.get_by_role("button", name="Encerrar sessão", exact=True).click()
-        expect(host.locator("#network-state")).to_have_text("Desconectado")
+        again = host.request.post(self.urls[0]+"/api/session/host-internet", headers={"X-MK8-Token":host_token}, data="{}").json()["data"]["code"]
+        self.assertNotEqual(again, code)
+        self.assertTrue(host.request.post(self.urls[0]+"/api/session/stop", headers={"X-MK8-Token":host_token}, data="{}").json()["ok"])
         host.close()
         guest.close()
 

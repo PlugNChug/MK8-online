@@ -12,6 +12,9 @@ pub struct Request {
     pub network: Option<(String, u8)>,
     pub username: String,
     pub candidate: bool,
+    /// "host" or "guest": the runtime enters the LAN room by itself (MK8_AUTO_LAN, runtime/mk8/net/auto_lan.c).
+    #[serde(default)]
+    pub auto_lan: Option<String>,
 }
 
 pub fn spawn(request: &Request) -> Result<Child> {
@@ -30,6 +33,11 @@ pub fn run() -> Result<i32> {
     let signal = request.local.join("open-rooms");
     if signal.exists() {
         std::fs::remove_file(signal).map_err(|e| e.to_string())?;
+    }
+    // (inherited by the game the launch below starts; never left over from the launcher's own environment)
+    match request.auto_lan.as_deref() {
+        Some(role @ ("host" | "guest")) => std::env::set_var("MK8_AUTO_LAN", role),
+        _ => std::env::remove_var("MK8_AUTO_LAN"),
     }
     let launch = if request.candidate {
         mk8_installer::launch_candidate
