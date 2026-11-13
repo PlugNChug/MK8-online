@@ -54,6 +54,8 @@ This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources throug
 
 These are observed milestones, not a percentage-complete estimate. `gameplay_verified` and `multiplayer_verified` stay `false` until full qualification passes.
 
+MKTV thumbnail readback now copies the rendered GPU image when recording a replay. Existing replay files can already contain corrupted thumbnail JPEGs; this change preserves those files and applies to newly recorded thumbnails.
+
 ## What this project does
 
 The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.

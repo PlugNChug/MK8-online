@@ -271,6 +271,8 @@ def prepare_host_sources(source, output):
     prepare_dlc(runtime)
     from graphics_incident import prepare as prepare_graphics_incident
     prepare_graphics_incident(runtime)
+    from texture_readback import prepare as prepare_texture_readback
+    prepare_texture_readback(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

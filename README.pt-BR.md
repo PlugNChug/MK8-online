@@ -58,6 +58,8 @@ Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
 
 São marcos observados, não um percentual de conclusão. `gameplay_verified` e `multiplayer_verified` continuam `false` até a qualificação completa.
 
+A leitura de miniaturas do MKTV agora copia a imagem renderizada pela GPU ao gravar um replay. Arquivos existentes já podem conter JPEGs corrompidos; a mudança preserva esses arquivos e vale para miniaturas gravadas depois dela.
+
 ## O que este projeto faz
 
 O pipeline traduz o executável AArch64 do jogo para C e o compila para Windows x64. Um runtime C/C++ fornece gráficos, áudio, entrada e serviços de sistema; o launcher em Rust/Tauri cuida da preparação, builds, atualizações, Miis e salas.

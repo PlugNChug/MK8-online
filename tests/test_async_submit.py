@@ -22,6 +22,8 @@ class AsyncSubmitTests(unittest.TestCase):
             objects = (runtime/'nvn/objects.c').read_text(encoding='utf-8')
             start = objects.index('// MK8 (toolchain/async_submit.py): submissions, presents')
             queue = objects[start:objects.index('void renderer_wait_seq(uint64_t seq);', start)]
+            readback = objects[objects.index('static void mk8_readback_sync('):
+                               objects.index('NVN(nvnTextureReadTexels) {')]
             source = out/'queue.c'
             source.write_text(r'''
 #include <pthread.h>
@@ -41,6 +43,18 @@ static int norder;
 static volatile LONG gate = 1;  /* the translator stalls in a present while 0 */
 static uint64_t seq;
 static unsigned releases;
+static DWORD main_thread;
+static NvnTexture *read_texture;
+static unsigned read_refs;
+void mk8_texture_readback(NvnTexture *t, const NvnTextureView *view, const int32_t *region,
+                          uint64_t destination, int64_t row, int64_t image) {
+    const char *enabled = getenv("MK8_ASYNC_SUBMIT");
+    bool async = !enabled || atoi(enabled) != 0;
+    if ((GetCurrentThreadId() != main_thread) != async || t != read_texture || read_refs != (unsigned)async ||
+        !view || !region || row != 24 || image != 72) abort();
+    *(uint32_t *)(uintptr_t)destination = 0x1234;
+    order[norder++] = 'T';
+}
 int mk8_textures_release_range(uint64_t lo, uint64_t hi, uint64_t *bytes) {
     if (lo != 0x1000 || hi != 0x2000) abort();
     *bytes = 4096; releases++; order[norder++] = 'R'; return 1;
@@ -51,13 +65,13 @@ static int drains, translator_marked;  // (toolchain/texture_release_thread.py)
 void mk8_texture_translator_thread(void) { translator_marked++; }
 void mk8_textures_drain(void) { drains++; }
 void mk8_descriptors_drain(void) {}
-NvnTexture *mk8_texture_retain(NvnTexture *t) { if (t) abort(); return t; }
-void mk8_texture_release(NvnTexture *t) { if (t) abort(); }
+NvnTexture *mk8_texture_retain(NvnTexture *t) { if (t) { if (t != read_texture) abort(); read_refs++; } return t; }
+void mk8_texture_release(NvnTexture *t) { if (t) { if (t != read_texture || !read_refs) abort(); read_refs--; } }
 void renderer_prefetch_verify(void) {}
 uint64_t renderer_fence_seq(void) { return seq; }
 void renderer_submit(void) {}
 static void mk8_present_now(NvnTexture *t) { (void)t; while (!gate) Sleep(1); order[norder++] = 'P'; }
-''' + queue.replace('static void mk8_present_now(NvnTexture *t);  // (below, with nvnQueuePresentTexture)\n', '') + r'''
+''' + queue.replace('static void mk8_present_now(NvnTexture *t);  // (below, with nvnQueuePresentTexture)\n', '') + readback + r'''
 static _Alignas(8) uint8_t list_a[1024], list_b[1024], list_c[1024];
 static uint8_t *put(uint8_t *p, uint32_t op, uint64_t x0, uint64_t x1, uint64_t tag) {
     CmdRec *r = (CmdRec *)p;
@@ -66,13 +80,20 @@ static uint8_t *put(uint8_t *p, uint32_t op, uint64_t x0, uint64_t x1, uint64_t 
     return p + r->size;
 }
 int main(int argc, char **argv) {
+    main_thread = GetCurrentThreadId();
+    uint32_t pixels = 0;
+    NvnTexture texture = {0}; read_texture = &texture;
+    NvnTextureView view = {0};
+    int32_t region[6] = {0,0,0,4,3,1};
     if (argc > 1) {
         if (!strcmp(argv[1], "overflow")) { mk8_pool_released(UINT64_MAX, 2); return 99; }
         mk8_pool_released(0x1000, 0);  // zero-sized pool does nothing
         mk8_pool_released(0x1000, 0x1000);
         const char *enabled = getenv("MK8_RELEASE_POOL_TEXTURES");
         unsigned expected = enabled && atoi(enabled) != 0 && !getenv("MK8_KEEP_POOL_TEXTURES");
-        return releases == expected ? 0 : 98;
+        if (releases != expected) return 98;
+        mk8_readback_sync(&texture, &view, region, (uintptr_t)&pixels, 24, 72);
+        return pixels == 0x1234 && !read_refs ? 0 : 97;
     }
     /* list a: a fence for sync 1, then a call into list c, which jumps to b's fence for sync 2 */
     uint8_t *p = put(list_a, CMD_FENCE_SYNC, 0, 1, 0);
@@ -105,7 +126,8 @@ int main(int argc, char **argv) {
     mk8_q_wait(syncs[2].mk8_ticket);
     if (syncs[2].seq != 3) return 6;
     mk8_q_drain();
-    return norder == 5 && !memcmp(order, "PabRb", 5) && releases == 1 && mk8_q_presents == 0 ? 0 : 7;
+    mk8_readback_sync(&texture, &view, region, (uintptr_t)&pixels, 24, 72);
+    return pixels == 0x1234 && !read_refs && norder == 6 && !memcmp(order, "PabRbT", 6) && releases == 1 && mk8_q_presents == 0 ? 0 : 7;
 }
 ''', encoding='utf-8')
             exe = out/'queue.exe'
