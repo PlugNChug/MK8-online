@@ -158,6 +158,8 @@ CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-r
 
 ## Compilar e contribuir
 
+**Entrada experimental Settings:** após uma build completa do jogo na `experiment/main-menu-settings`, defina `$env:MK8_SETTINGS_EXPERIMENT='1'` antes de iniciar o launcher nessa sessão PowerShell. O botão do Booster Course Pass vira uma engrenagem Settings e abre as configurações existentes pela navegação normal de teclado/controle do jogo. F1 continua disponível. O primeiro protótipo reutiliza esse botão; ainda não adiciona um oitavo nem substitui o visual da tela de configurações. Remova a variável e reinicie para recuperar o botão original. O hook guest exige uma build completa inicial; `--runtime-only` sozinho não o instala. A arte usa posições de um protótipo 16:9; outras proporções e toque não foram qualificados.
+
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
 
 ```powershell

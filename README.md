@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+**Experimental Settings entry:** after a full game build from `experiment/main-menu-settings`, set `$env:MK8_SETTINGS_EXPERIMENT='1'` before starting the launcher in that PowerShell session. The Booster Course Pass tile becomes a Settings gear and opens the existing settings screen through the game's normal keyboard/controller navigation. F1 remains available. This first prototype reuses that tile; it does not add an eighth button or replace the settings screen's design yet. Unset the variable and restart to restore the original tile. The guest hook needs a full build once; `--runtime-only` alone cannot install it. Artwork positioning is a 16:9 prototype; other aspect ratios and touch are unqualified.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell
