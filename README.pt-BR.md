@@ -201,3 +201,5 @@ O código do projeto é licenciado sob **[GPL-3.0-or-later](LICENSE)**. As depen
 A licença não concede direitos sobre o código, os recursos ou as marcas da Nintendo.
 
 Projeto comunitário independente, sem afiliação nem endosso da Nintendo ou da Valve. Mario Kart e nomes relacionados pertencem aos respectivos donos.
+
+A renderização condicional aguarda reports de oclusão pendentes nos dois operandos antes de comparar as contagens reais. Corrige desaparecimentos transitórios nos previews, preservando resultados legítimos de objetos ocultos. A preparação aplica o patch; é necessário reconstruir o jogo/runtime.
