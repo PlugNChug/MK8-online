@@ -2,6 +2,8 @@
 
 ## Fechamento da release pública 0.2.0 — 13/11/2026
 
+**Publicada:** [v0.2.0 no GitHub](https://github.com/Vnnc1/MK8-online/releases/tag/v0.2.0), marcada como Latest, com setup, SHA-256 e os dois anexos FFmpeg. A `fix-chore` foi integrada à `master` por fast-forward e ambas foram enviadas. O download público completo do setup foi conferido contra o SHA-256 local e o digest do GitHub. A consulta anônima à API de releases retornou limite de requisições neste IP durante a verificação final; a página Latest e os downloads públicos funcionaram. Isso não foi contado como validação do botão de atualização contra a release publicada.
+
 A 0.2.0 reúne as alterações da `fix-chore` para a `master`: criador Mii com miniaturas e corpo do jogo, preparação dos recursos para o renderer Mii original, salas/convites Steam e entrada automática experimental no lobby, além das correções de logs, caminhos Windows e gerenciamento de recursos gráficos documentadas abaixo. Notas bilíngues e título ficam em `docs/releases/0.2.0.md`; os dois READMEs descrevem os mesmos requisitos e limites. **Multiplayer Steam continua experimental, sem corrida entre dois PCs qualificada.**
 
 O pacote foi recompilado pelos scripts de distribuição, incluindo o host nativo. Os scripts agora resolvem a pasta de build por `cargo metadata`, respeitando o disco configurado; o workflow usa o título das notas e o CI também cobre a branch `master`. O link gerado para o status aponta para a tag correta. Um ajuste posterior somente nos workflows instala as dependências Python fixadas e verificadas por hash antes dos testes/empacotamento em runners novos; não modifica o setup validado da tag.
