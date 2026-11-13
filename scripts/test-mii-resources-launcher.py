@@ -47,7 +47,7 @@ def run(profile):
             page = browser.new_page(viewport={'width': 1400, 'height': 1200})
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
-            page.goto(url, wait_until='networkidle')
+            page.goto(url, wait_until='load')
             token = page.locator('meta[name="mk8-token"]').get_attribute('content')
 
             def api(path, body=None, code=200):
@@ -58,14 +58,17 @@ def run(profile):
                 return value.get('data') if code == 200 else value['error']
 
             page.locator('[data-tab="miis"]').click()
-            page.get_by_text('Modelos dentro do jogo — experimental').click()
-            # Without a configured AFL the button reports the requirement and enables nothing.
-            page.locator('#mii-resources-generate').click()
-            expect(page.locator('#mii-resources-status')).to_contain_text('AFL')
+            # Without the parts library the creator asks for it once, and nothing is enabled for the game.
+            expect(page.locator('#mii-library')).to_be_visible()
             assert api('mii/resources') is None
-            api('mii/composer/resource', {'path': str(AFL)})
-            page.locator('#mii-resources-generate').click()
-            expect(page.locator('#mii-resources-status')).to_contain_text('ativados', timeout=120000)
+            if api('mii')['active'] is None:
+                page.locator('#mii-name').fill('Teste')
+                page.locator('#mii-save').click()
+                expect(page.locator('#mii-saved .mii-saved-item')).to_have_count(1)
+            # Choosing the library prepares the game's Mii resources automatically.
+            page.locator('#mii-library-path').fill(str(AFL))
+            page.locator('#mii-library-load').click()
+            expect(page.locator('#mii-status')).to_have_text('Mii pronto para o jogo.', timeout=180000)
             resources = api('mii/resources')
             assert resources['enabled'] and len(resources['files']) == 6
             generated = Path(resources['directory'].removeprefix('\\\\?\\'))
@@ -94,8 +97,7 @@ def run(profile):
                 assert (local/name).is_file(), name
             # The launcher's game.log stays empty for the re-executed runtime; captures are the evidence.
             # A second generation creates another folder and never overwrites the active one.
-            page.locator('[data-tab="miis"]').click()
-            page.locator('#mii-resources-generate').click()
+            api('mii/resources/generate', {})
             deadline = time.monotonic()+120
             while api('mii/resources/job')['state'] == 'running':
                 assert time.monotonic() < deadline, 'Second generation timed out'

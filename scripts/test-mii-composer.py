@@ -1,5 +1,4 @@
-"""Real launcher + browser composition test, with isolated disposable profiles."""
-import hashlib
+"""Mii creator with the real launcher, browser, private parts library and prepared game; disposable profiles."""
 import json
 from pathlib import Path
 import shutil
@@ -24,6 +23,9 @@ def run():
     output.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='mk8-composer-') as folder:
         local = Path(folder).resolve()
+        candidate = ROOT/'local/candidate.json'  # the prepared game provides the body (read in place)
+        assert candidate.is_file(), 'Prepared game required'
+        shutil.copyfile(candidate, local/'candidate.json')
         assert local.parent == Path(tempfile.gettempdir()).resolve()
         log = (local / 'test-launcher.log').open('w')
         process = subprocess.Popen([str(executable), '--headless', '--data-dir', str(local)],
@@ -42,7 +44,7 @@ def run():
                 page.on('pageerror', lambda e: errors.append(str(e)))
                 page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and '400' not in m.text else None)
                 page.on('request', lambda r: requests.append(r.url))
-                page.goto(url, wait_until='networkidle')
+                page.goto(url, wait_until='load')
                 token = page.locator('meta[name="mk8-token"]').get_attribute('content')
 
                 def api(path, body=None, code=200):
@@ -52,115 +54,60 @@ def run():
                     value = response.json()
                     return value.get('data') if code == 200 else value
 
-                assert page.request.get(url+'/api/mii/composer/resource').status == 403
                 page.locator('[data-tab="miis"]').click()
+                # The parts library is chosen once; then the head is drawn on MK8's own body.
+                expect(page.locator('#mii-library')).to_be_visible()
+                page.locator('#mii-library-path').fill(str(RESOURCE))
+                page.locator('#mii-library-load').click()
+                expect(page.locator('#mii-library')).to_be_hidden(timeout=30000)
+                expect(page.locator('#mii-stage')).to_have_attribute('data-body', 'MaleBody', timeout=30000)
                 page.locator('#mii-name').fill('Editor A')
-                page.locator('#mii-form button[type=submit]').click()
-                expect(page.locator('#mii-full-fields input[data-offset]')).to_have_count(49)
-                first = api('mii')['active']
-                expect(page.locator('#mii-composer')).to_be_visible()  # a new profile continues into the creator
-                expect(page.locator('#mii-compose-status')).to_contain_text('Selecione o arquivo AFL')
-                page.locator('#mii-compose-path').fill(str(RESOURCE))
-                page.locator('#mii-compose-resource').click()
-                expect(page.locator('#mii-compose-canvas')).to_have_attribute('data-rendered', 'true', timeout=30000)
-                hair = page.locator('#mii-full-fields input[data-offset="49"]')
-                hair.fill('132')
-                expect(page.locator('#mii-compose-status')).to_contain_text('Valor fora do intervalo')
-                hair.fill('24')
-                page.locator('#mii-full-fields input[data-offset="46"]').fill('2')
-                expect(page.locator('#mii-compose-status')).to_contain_text('Prévia atualizada')
-                page.locator('#mii-full-save').click()
-                expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
-                before = api('mii/export')['data']
-                head_a = api('mii/composer')['head']
-                assert before[49] == 24 and before[46] == 2
-                assert head_a['charinfo'] == before and not head_a['native_integration_verified']
-                page.locator('#mii-compose-canvas').screenshot(path=str(output/'profile-A.png'))
-                page.screenshot(path=str(output/'editor.png'))
-                page.locator('#mii-compose-reopen').click()
-                expect(page.locator('#mii-compose-status')).to_have_text('Modelo salvo reaberto.')
-                page.locator('#mii-compose-canvas').screenshot(path=str(output/'saved-A.png'))
-                with page.expect_download() as download:
-                    page.locator('#mii-compose-export').click()
-                download.value.save_as(output/'profile-A.glb')
-                glb = (output/'profile-A.glb').read_bytes()
-                assert hashlib.sha256(glb).hexdigest() == head_a['sha256']
-                page.locator('#mii-compose-close').click()
-                page.locator('#mii-new').click()
-                page.locator('#mii-name').fill('Editor B')
-                page.locator('#mii-form button[type=submit]').click()
-                expect(page.locator('#mii-full-fields input[data-offset]')).to_have_count(49)
-                expect(page.locator('#mii-composer')).to_be_visible()
-                expect(page.locator('#mii-compose-reopen')).to_be_disabled()
-                hair.fill('33')
-                page.locator('#mii-full-fields input[data-offset="45"]').fill('4')
-                page.locator('#mii-full-save').click()
-                expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
-                head_b = api('mii/composer')['head']
-                assert head_b['sha256'] != head_a['sha256']
-                page.locator('#mii-compose-canvas').screenshot(path=str(output/'profile-B.png'))
-                with page.expect_download() as download_b:
-                    page.locator('#mii-compose-export').click()
-                download_b.value.save_as(output/'profile-B.glb')
-                # A delayed save for A must not overwrite the newly selected B.
-                api('mii/composer/save', {'expected': before, 'data': before, 'glb': list(glb)}, 400)
-                assert api('mii/composer')['head'] == head_b
-                page.locator('#mii-compose-close').click()
-                first_id = bytes(first['id']).hex()
-                page.locator('#mii-profiles').select_option(first_id)
-                page.locator('#mii-select').click()
-                expect(page.locator('#mii-name')).to_have_value('Editor A')
-                page.reload(wait_until='networkidle')
+                page.locator('#mii-save').click()
+                expect(page.locator('#mii-stage')).to_have_attribute('data-head', 'true', timeout=30000)
+                # Every hairstyle is a button showing this Mii with that hairstyle.
+                page.locator('#mii-tabs [data-part="hair"]').click()
+                expect(page.locator('#mii-options')).to_have_attribute('data-thumbnails', 'ready', timeout=120000)
+                expect(page.locator('#mii-options .mii-choice[data-offset="49"] canvas')).to_have_count(132)
+                page.locator('#mii-options .mii-choice[data-offset="49"][data-value="24"]').click()
+                page.locator('#mii-tabs [data-part="eyes"]').click()
+                expect(page.locator('#mii-options .mii-choice[data-offset="52"] canvas').first).to_be_visible(timeout=60000)
+                page.locator('#mii-options .mii-choice[data-offset="52"][data-value="10"]').click()
+                page.locator('#mii-options').screenshot(path=str(output/'creator-eyes.png'))
+                page.locator('#mii-tabs [data-part="body"]').click()
+                expect(page.locator('#mii-options .mii-swatch[data-offset="39"]')).to_have_count(12)
+                assert 'rgb' in page.locator('#mii-options .mii-swatch[data-offset="39"]').first.evaluate('b => getComputedStyle(b).backgroundColor')
+                page.locator('#mii-options .mii-choice[data-offset="40"][data-value="1"]').click()
+                expect(page.locator('#mii-stage')).to_have_attribute('data-body', 'FemaleBody')
+                page.locator('#mii-options input[data-offset="41"]').fill('127')
+                page.locator('#mii-options .mii-swatch[data-offset="39"][data-value="5"]').click()
+                page.wait_for_timeout(500)
+                page.locator('#mii-stage').screenshot(path=str(output/'creator-body.png'))
+                page.screenshot(path=str(output/'creator.png'))
+                page.locator('#mii-save').click()
+                expect(page.locator('#mii-status')).to_contain_text('Mii salvo')
+                # Creating the Mii (with the library chosen) prepared the game's Mii resources in the background.
+                deadline = time.monotonic()+180
+                while api('mii/resources/job')['state'] == 'running':
+                    assert time.monotonic() < deadline, 'Mii resources timed out'
+                    page.wait_for_timeout(500)
+                assert api('mii/resources/job')['state'] == 'done', api('mii/resources/job')
+                data = api('mii/export')['data']
+                assert (data[49], data[52], data[40], data[41], data[39]) == (24, 10, 1, 127, 5), data[39:53]
+                assert api('mii/resources')['enabled']
+                # The body is the game's own: GLB from the prepared game, refused for anything but the verified file.
+                body = page.request.get(url+'/api/mii/body', headers={'X-MK8-Token': token})
+                assert body.status == 200 and body.body()[:4] == b'glTF'
+                assert page.request.get(url+'/api/mii/body').status == 403
+                page.reload(wait_until='load')
                 page.locator('[data-tab="miis"]').click()
-                page.locator('#mii-compose-open').click()
-                expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
-                expect(hair).to_have_value('24')
-                assert api('mii/composer')['head'] == head_a
-                # Invalid GLB and changed resource preserve existing profile and model.
-                api('mii/composer/save', {'expected': before, 'data': before, 'glb': [0]*32}, 400)
-                invalid = local/'invalid.dat'
-                invalid.write_bytes(b'not AFL')
-                api('mii/composer/resource', {'path': str(invalid)}, 400)
-                assert api('mii/export')['data'] == before
-                assert api('mii/composer')['head'] == head_a
-                page.locator('#mii-compose-close').click()
-                page.locator('#mii-color').fill('7')
-                page.locator('#mii-form button[type=submit]').click()
-                expect(page.locator('#mii-full-fields input[data-offset="39"]')).to_have_value('7')
-                assert api('mii/composer')['head'] is None, 'Changed profile must invalidate its head'
-                assert (local/'profiles'/first_id/f"assembled-{head_a['sha256']}.glb").read_bytes() == glb
-                assert len(api('mii')['profiles']) == 2
-                # Female profile: CharInfo gender (offset 40) selects the MiiF body for native conversion.
-                page.locator('#mii-new').click()
-                page.locator('#mii-name').fill('Editor C')
-                page.locator('#mii-form button[type=submit]').click()
-                expect(page.locator('#mii-full-fields input[data-offset]')).to_have_count(49)
-                expect(page.locator('#mii-composer')).to_be_visible()
-                expect(page.locator('#mii-compose-reopen')).to_be_disabled()
-                page.locator('#mii-full-fields input[data-offset="40"]').fill('1')
-                hair.fill('12')
-                page.locator('#mii-full-fields input[data-offset="46"]').fill('1')
-                expect(page.locator('#mii-compose-status')).to_contain_text('Prévia atualizada')
-                page.locator('#mii-full-save').click()
-                expect(page.locator('#mii-compose-reopen')).to_be_enabled(timeout=30000)
-                head_c = api('mii/composer')['head']
-                assert head_c['charinfo'][40] == 1 and head_c['sha256'] not in (head_a['sha256'], head_b['sha256'])
-                page.locator('#mii-compose-canvas').screenshot(path=str(output/'profile-C.png'))
-                with page.expect_download() as download_c:
-                    page.locator('#mii-compose-export').click()
-                download_c.value.save_as(output/'profile-C.glb')
-                page.locator('#mii-compose-close').click()
-                page.locator('#language').select_option('en')
-                expect(page.locator('#mii-compose-open')).to_have_text('Edit Mii in 3D')
-                page.locator('#mii-compose-open').click()
-                expect(page.locator('#mii-compose-status')).to_contain_text('Preview updated')
-                expect(page.locator('#mii-full-save')).to_have_text('Save profile and model')
+                expect(page.locator('#mii-stage')).to_have_attribute('data-body', 'FemaleBody', timeout=30000)
+                expect(page.locator('#mii-name')).to_have_value('Editor A')
                 assert not errors, errors
                 assert not [u for u in requests if not u.startswith((url, 'blob:', 'data:'))]
-                (output/'manifest.json').write_text(json.dumps({'profiles': [head_a, head_b, head_c], 'reload_verified': True,
-                    'stale_save_rejected': True, 'native_integration_verified': False}, indent=2))
+                (output/'creator.json').write_text(json.dumps({'charinfo': data, 'body': 'FemaleBody',
+                    'resources_enabled': True, 'native_integration_verified': False}, indent=2))
                 browser.close()
-                print('PASS: three profiles (one female), live parts, GLB save/reopen/export, reload, stale/invalid rejection; no external requests.')
+                print('PASS: library once, drawn options, MK8 body by gender/height/color, save, game resources, reload; no external requests.')
         finally:
             process.terminate()
             process.wait(timeout=15)

@@ -48,7 +48,7 @@ def run(source):
             page = browser.new_page(viewport={'width': 1400, 'height': 1200})
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
-            page.goto(url, wait_until='networkidle')
+            page.goto(url, wait_until='load')
             token = page.locator('meta[name="mk8-token"]').get_attribute('content')
 
             def api(path, body=None, code=200):
@@ -71,16 +71,11 @@ def run(source):
             api('mii/composer/resource', {'path': str(ROOT/'local/mii-library-research/AFLResHigh_2_3.dat')})
             api('mii/import', data)
             api('mii/composer/save', {'expected': data, 'data': data, 'glb': list(glb)})
-            page.reload(wait_until='networkidle')
-            page.locator('[data-tab="miis"]').click()
-            page.locator('#mii-compose-open').click()
-            expect(page.locator('#mii-native-prepare')).to_be_enabled(timeout=30000)
-            page.locator('#mii-native-prepare').click()
+            # The static head conversion has no button in the Mii creator any more; it is driven through its API.
+            api('mii/native/prepare', {'expected': data})
             info = conversion('done')
             assert info['ready'] and info['enabled']
-            print('UI conversion completed.', flush=True)
-            expect(page.locator('#mii-native-status')).to_contain_text('próxima abertura')
-            page.screenshot(path=str(local/'prepared.png'))
+            print('Conversion completed.', flush=True)
             profile_dir = local/'profiles'/bytes(data[:16]).hex()
             receipt = json.loads((profile_dir/'native-head.json').read_text())
             assert receipt['glb_sha256'] == hashlib.sha256(glb).hexdigest()
@@ -89,7 +84,6 @@ def run(source):
             assert overlay.samefile(next(profile_dir.glob('native/*/model/romfs/Driver/MiiM.szs')))
             manifest = json.loads((overlay.parents[2]/'manifest.json').read_text())
             assert manifest['body'] == ('MiiF' if data[40] else 'MiiM') and manifest['overlay_file'] == 'MiiM.szs'
-            page.locator('#mii-compose-close').click()
             page.locator('[data-tab="play"]').click()
             expect(page.locator('#play-solo')).to_be_enabled(timeout=30000)
             with page.expect_response(lambda r: r.url.endswith('/api/play'), timeout=60000) as started:
@@ -118,12 +112,7 @@ def run(source):
             assert stale['enabled'] and not stale['ready']
             assert 'desatualizado' in api('play', {'online': False}, 400)
             assert api('status')['game_pid'] is None
-            page.reload(wait_until='networkidle')
-            page.locator('[data-tab="miis"]').click()
-            page.locator('#mii-compose-open').click()
-            expect(page.locator('#mii-native-disable')).to_be_enabled()
-            page.locator('#mii-native-disable').click()
-            expect(page.locator('#mii-native-disable')).to_be_disabled()
+            api('mii/native/enabled', {'expected': changed, 'enabled': False})
             assert not api('mii/native')['enabled']
             # A different active profile while conversion runs must never be auto-enabled.
             api('mii/data', data)
@@ -145,23 +134,20 @@ def run(source):
             # Restore the valid saved head and reactivate its cached native asset without another conversion.
             api('mii/composer/save', {'expected': data, 'data': data, 'glb': list(glb)})
             jobs_before = set((profile_dir/'native').iterdir())
-            page.reload(wait_until='networkidle')
-            page.locator('[data-tab="miis"]').click()
-            page.locator('#mii-compose-open').click()
-            expect(page.locator('#mii-native-prepare')).to_have_text('Ativar no jogo')
-            page.locator('#mii-native-prepare').click()
-            expect(page.locator('#mii-native-status')).to_contain_text('próxima abertura')
+            ready = api('mii/native')
+            assert ready['ready'] and not ready['enabled']
+            api('mii/native/enabled', {'expected': data, 'enabled': True})
             assert api('mii/native')['enabled']
-            page.locator('#mii-native-disable').click()
-            expect(page.locator('#mii-native-status')).to_have_text('Uso no jogo desativado.')
+            api('mii/native/enabled', {'expected': data, 'enabled': False})
+            assert not api('mii/native')['enabled']
             assert set((profile_dir/'native').iterdir()) == jobs_before
             assert not errors, errors
-            (local/'evidence.json').write_text(json.dumps({'source_glb': source.name, 'body': manifest['body'], 'launcher_ui_conversion': True, 'launcher_game_exit': 0,
+            (local/'evidence.json').write_text(json.dumps({'source_glb': source.name, 'body': manifest['body'], 'launcher_api_conversion': True, 'launcher_game_exit': 0,
                 'profile_id': bytes(data[:16]).hex(), 'native_receipt': receipt, 'stale_launch_rejected': True,
                 'profile_switch_rejected': True, 'converter_failure_reported': True, 'cached_reactivation': True, 'gameplay_verified': False,
                 'multiplayer_verified': False}, indent=2))
             browser.close()
-            print('PASS: UI conversion, actual launcher game start, stale refusal, disable, profile-switch and process-failure guards.', flush=True)
+            print('PASS: API conversion, actual launcher game start, stale refusal, disable, profile-switch and process-failure guards.', flush=True)
     finally:
         if game_pid:
             subprocess.run(['taskkill', '/PID', str(game_pid), '/T', '/F'], capture_output=True, check=False)

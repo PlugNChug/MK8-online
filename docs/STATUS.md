@@ -1,45 +1,73 @@
 # Estado técnico — 11/11/2026
 
-## Fluxo de criação do Mii no launcher e no jogo — 12/11/2026
+## Criador de Mii no launcher (tela Perfil Mii) — 12/11/2026
 
-**Launcher:** o fluxo de criação começa pelo nome. Em **Perfil Mii**, **Novo perfil**, o usuário informa o nome e usa **Criar e avançar**, que abre direto o criador (o mesmo modal do editor 3D). Os 49 campos CharInfo ficam agrupados por parte, cada um com controle deslizante e campo numérico:
+A tela **Perfil Mii** foi refeita como **criador**. Saíram:
 
-- Corpo: tipo, altura, porte e cor favorita;
-- Rosto;
-- Cabelo;
-- Olhos;
-- Sobrancelhas;
-- Nariz;
-- Boca;
-- Barba e bigode;
-- Óculos;
-- Pinta;
-- Avançado.
+- a prévia procedural aproximada;
+- os formulários antigos;
+- importar/exportar `.charinfo`;
+- o inspetor de GLB;
+- o modal 3D;
+- os cartões "Modelos dentro do jogo" e "Cabeça no jogo".
 
-A barra de partes rola só o painel de campos. Sem o AFL, os campos continuam salvando o perfil (`mii/data`); a prévia com peças reais exige a biblioteca local. Persistência e identidade não mudaram: `local/mii-profile.json` e `local/profiles/<id>/`, além dos saves em `user-no-mii`. O perfil ativo chega ao jogo na abertura por `MK8_MII_CHARINFO`. Interface em PT/EN.
+As APIs desses recursos continuam no servidor. Ficaram na tela:
 
-**Jogo → launcher:** o botão **Perfil Mii** do menu F1 do runtime e o applet de editor Mii do jogo sinalizam `open-miis`. O launcher agora mostra a aba e abre o mesmo criador. Se não houver perfil, o launcher foca o nome para criar um. As alterações continuam valendo na próxima abertura do jogo.
+- a lista de Miis salvos e **+ Novo Mii**;
+- o palco 3D (**Corpo inteiro**/**Rosto**), com nome e **Salvar Mii**;
+- as abas Corpo, Rosto, Cabelo, Olhos, Sobrancelhas, Nariz, Boca, Barba, Óculos e Pinta.
 
-O applet não foi chamado pelo jogo em nenhum log desta base. O MK8 não oferece um criador próprio dentro do jogo; por isso o criador é o do launcher. O caminho legado sem launcher, que pede só o nome pelo teclado do runtime, foi mantido.
+**Como as opções aparecem:**
 
-**Lobby com Mii padrão — hipótese descartada:** o `IProfile::Get` da conta preenche `UserData.miiID` com zeros. Por isso foi testado um patch que gravava ali o CreateId do perfil. Resultado, com teste nativo e duas instâncias LAN com perfis A/C e recursos gerados (`local/multiplayer-hfnd4lil`): o MK8 **não chama** `IProfile::Get` com buffer nesse fluxo, e a garagem continuou com os dois Miis padrão. O patch foi removido e o runtime foi recompilado sem ele.
+- Cada estilo e cada cor é um **botão com a miniatura do próprio Mii com aquela opção**, desenhada pelo FFL a partir da biblioteca AFL local. Há enquadramentos próprios para cabeça, rosto, olhos, nariz e boca, e a opção atual fica marcada.
+- Tom de pele e cor favorita usam as cores do próprio FFL (`FFLGetFacelineColor`/`FFLGetFavoriteColor`).
+- Tipo e inverter usam botões de texto.
+- Tamanhos e posições usam controle deslizante com −/+.
+- Os limites vêm de `/api/mii/fields`. Campos administrativos (região da fonte, tipo, região de origem) são preservados sem aparecer.
 
-Rastreamento com `MK8_TRACE_MII=1` (`local/multiplayer-r4oj5h08`):
+**Fluxo:**
 
-- `Get` com sources 1 e 2 (perfil e seis padrões) na inicialização;
-- 13 chamadas `BuildRandom` (cmd 6) logo depois;
+1. O usuário nomeia o Mii e usa **Criar Mii**. O perfil é criado em `local/mii-profile.json` e `local/profiles/<id>/`.
+2. A tela abre a aba Rosto. As edições ficam pendentes até **Salvar Mii** (`/api/mii/data`, que também grava o nome).
+3. Trocar de Mii com alterações pendentes pede confirmação.
+4. A biblioteca AFL é pedida uma única vez, com seletor nativo de arquivos `.dat`. Sem ela, as opções aparecem numeradas e continuam funcionando.
+
+**Corpo:** é o do próprio MK8, `romfs/UI3D/MiiBodyMiddle/MiiBodyMiddle.bfres` (o corpo das salas e do MKTV, com MaleBody e FemaleBody). `crates/installer/src/mii_body.rs` o lê **no lugar**, a partir do jogo preparado, por `GET /api/mii/body`, e devolve um GLB em memória; nada derivado é gravado.
+
+- Só o arquivo verificado é aceito (SHA-256 `d7bc2730…7d93208`, BFRES 0.5.0.3).
+- São conferidos deslocamentos, quantidades, formatos de atributo (posição float, normal 10:10:10:2, UV 16:16), índices, o esqueleto e a textura `Mii_Alb` (BC3 sRGB 384², com deswizzle Tegra e decodificação BC3 próprios).
+- O esqueleto precisa ter escala 1 e rotação nula em todos os ossos; o cachecol rígido é posicionado pelo osso `chest`.
+- Na prévia, o tipo escolhe o corpo, e altura/porte aplicam a escala do SDK (`getBodyScale` do FFL, a mesma fórmula de `nn::mii`).
+- O traje é tingido com a cor favorita, como no jogo, e a cabeça FFL é presa ao osso `head` (escala 0,1).
+- O corpo aparece em pose de referência (braços abertos), porque a prévia não aplica animação.
+
+**Ida para o jogo:**
+
+- Ao criar/salvar um Mii, ou ao escolher a biblioteca, o launcher gera e ativa sozinho os recursos MiiModel (`mii_resources`), se ainda não estiverem ativos.
+- Antes disso, desativa a cabeça estática convertida (fase 4–6), que conflita com o renderer original.
+- O perfil ativo continua indo ao jogo na abertura por `MK8_MII_CHARINFO`.
+- **Perfil Mii** no menu F1 do runtime (e o applet de editor Mii) traz esta tela à frente.
+
+**Lobby com Mii padrão — hipótese descartada:** com teste nativo e duas instâncias LAN (`local/multiplayer-hfnd4lil`), um patch que gravava o CreateId do perfil em `UserData.miiID` (`IProfile::Get`) não teve efeito: o MK8 não chama `IProfile::Get` com buffer nesse fluxo. O patch foi removido e o runtime recompilado sem ele.
+
+Com `MK8_TRACE_MII=1` (`local/multiplayer-r4oj5h08`) aparecem:
+
+- `Get` com fontes 1 e 2 na inicialização;
+- **13 `BuildRandom`** (cmd 6);
 - `IsFullDatabase` repetidas.
 
-O `BuildRandom` do upstream devolve sempre o mesmo Mii padrão. As 13 chamadas coincidem com as 12+1 instâncias Mii da interface de salas. A próxima investigação é identificar no código guest quem consome esses 13 resultados e de onde vem o Mii do próprio jogador na sala. Um `BuildRandom` que devolvesse o perfil seria um resultado fictício e não foi feito.
+O `BuildRandom` do upstream devolve sempre o mesmo Mii padrão, e as 13 chamadas coincidem com as 12+1 instâncias Mii da interface de salas. O próximo passo é localizar no código guest o consumidor desses resultados. Devolver o perfil em `BuildRandom` seria um resultado fictício e não foi feito.
 
 **Validação:**
 
-- `tests/test_mii_launcher.py`: criar, avançar, ver as 11 partes, mudar a boca pelo controle deslizante e o resto do roteiro anterior;
-- `scripts/test-mii-composer.py`: três perfis, um feminino; o criador abre após criar;
-- `tests/test_launcher_languages.py`;
-- todos com o launcher compilado (debug e release).
+- Formatação e Clippy do workspace com `-D warnings`.
+- Todos os testes Rust, com três novos em `mii_body`: decodificação BC3/normal/deswizzle/PNG, recusa de arquivo diferente, e leitura do arquivo verificado quando presente (contagens 808/678/175, osso `head` e textura).
+- `tests/test_mii_launcher.py`, reescrito: sem biblioteca e sem jogo, cria, recusa nome vazio, edita rosto/corpo/boca pelos botões, salva, cria segundo Mii, alterna, confirma descarte, recarrega, largura de 780 px e inglês.
+- `tests/test_launcher_languages.py`.
+- `scripts/test-mii-composer.py`, reescrito: com biblioteca e jogo preparado, desenha as 132 miniaturas de penteado, troca olhos, corpo feminino, altura 127 e cor 5; salva, gera recursos, confere o GLB do corpo e a recusa sem token, recarrega e não faz requisições externas. Capturas em `local/mii-composer-check/creator*.png`, inspecionadas.
+- `scripts/test-mii-native-launcher.py` e `scripts/test-mii-resources-launcher.py` passaram a usar a API ou o novo fluxo no lugar dos botões removidos.
 
-Capturas do criador com peças reais foram inspecionadas, incluindo a largura de 700 px. Nenhuma mudança Rust nem no runtime permaneceu. `gameplay_verified=false` e `multiplayer_verified=false`.
+`gameplay_verified=false` e `multiplayer_verified=false`.
 
 ## `fix-multiplayer` integrada à `fix-chore` — 12/11/2026
 

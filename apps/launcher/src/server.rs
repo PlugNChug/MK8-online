@@ -996,6 +996,14 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
             },
             &["keys"][..],
         )),
+        Some("afl") => Some((
+            if english {
+                "Mii parts library"
+            } else {
+                "Biblioteca de peças Mii"
+            },
+            &["dat"][..],
+        )),
         _ => None,
     };
     let title = value["title"]
@@ -1091,15 +1099,6 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 req,
                 200,
                 include_str!("../web/app.js").into(),
-                "text/javascript; charset=utf-8",
-            );
-            continue;
-        }
-        if method == Method::Get && path == "/mii.js" {
-            response(
-                req,
-                200,
-                include_str!("../web/mii.js").into(),
                 "text/javascript; charset=utf-8",
             );
             continue;
@@ -1239,10 +1238,18 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
         if method == Method::Get
             && matches!(
                 path.as_str(),
-                "/api/mii/composer/resource" | "/api/mii/composer/model"
+                "/api/mii/composer/resource" | "/api/mii/composer/model" | "/api/mii/body"
             )
         {
-            let result = if path.ends_with("resource") {
+            let result = if path == "/api/mii/body" {
+                // The game's own body, read from the prepared game (never copied out of it).
+                app.installation()
+                    .or_else(|| app.candidate())
+                    .ok_or_else(|| "Prepare o jogo para ver o corpo do Mii.".to_string())
+                    .and_then(|install| {
+                        mk8_installer::mii_body::glb(&install.data_root.join("extracted"))
+                    })
+            } else if path.ends_with("resource") {
                 mk8_installer::mii_composer::resource(&app.local)
             } else {
                 mk8_installer::mii_composer::saved_bytes(&app.local)

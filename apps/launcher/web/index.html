@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="/style.css" />
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
-    <script src="/mii.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -156,63 +155,29 @@
         </section>
 
         <section id="miis" class="panel" hidden>
-          <h1>Perfil Mii</h1>
-          <p class="muted">Crie, edite ou importe um Mii do Switch. Alterações entram em vigor na próxima abertura do jogo. Os saves continuam compartilhados entre perfis.</p>
-          <div class="card">
-            <label>Perfis salvos<select id="mii-profiles"><option value="">Novo perfil</option></select></label>
-            <div class="row"><button id="mii-select">Usar perfil selecionado</button><button id="mii-new">Novo perfil</button></div>
+          <div class="mii-head-row">
+            <h1>Mii</h1>
+            <div id="mii-saved" class="mii-saved" role="list" aria-label="Seus Miis"></div>
+            <button id="mii-new" type="button">+ Novo Mii</button>
           </div>
-          <div class="mii-layout">
-            <div class="card">
-              <canvas id="mii-canvas" width="420" height="420" aria-label="Prévia 3D aproximada do perfil"></canvas>
-              <p id="mii-preview-status" class="fine" role="status"></p>
-              <p><a href="/mii-model.html" target="_blank" rel="noopener">Inspecionar GLB exportado</a></p>
-              <p class="fine">Prévia procedural aproximada. O MK8 usa seus próprios modelos com os recursos MiiModel; detalhes importados podem diferir desta prévia.</p>
-              <label>Rotação<input id="mii-rotation" type="range" min="-180" max="180" value="0" /></label>
-            </div>
-            <form id="mii-form" class="card">
-              <label>Nome do Mii<input id="mii-name" maxlength="10" required value="Player" /></label>
-              <div id="mii-fields" class="mii-fields"></div>
-              <div class="row"><button type="submit" id="mii-submit" class="primary">Salvar Mii</button><button type="button" id="mii-export">Exportar .charinfo</button></div>
-              <label>Importar Mii do Switch (.charinfo)<input id="mii-import" type="file" accept=".charinfo,.ufsd" /></label>
-              <p id="mii-identity" class="fine"></p>
-              <button id="mii-compose-open" type="button">Editar Mii 3D</button>
-            </form>
+          <div id="mii-library" class="card mii-library" hidden>
+            <p>Para desenhar o rosto, escolha uma vez a biblioteca de peças <b>AFLResHigh_2_3.dat</b> (fica só neste PC).</p>
+            <div class="row"><input id="mii-library-path" spellcheck="false" aria-label="Biblioteca de peças" placeholder="C:\…\AFLResHigh_2_3.dat" /><button id="mii-library-browse" type="button">Procurar</button><button id="mii-library-load" type="button" class="primary">Usar</button></div>
           </div>
-          <dialog id="mii-composer" aria-labelledby="mii-composer-title">
-            <div class="row"><h2 id="mii-composer-title">Editor Mii 3D</h2><button id="mii-compose-close" type="button">Fechar</button></div>
-            <p>Salve o perfil e o modelo, depois prepare a cabeça para usá-la na próxima abertura do jogo.</p>
-            <details id="mii-compose-resource-panel"><summary>Biblioteca local de peças</summary>
-              <label>Arquivo AFLResHigh_2_3.dat<input id="mii-compose-path" spellcheck="false" placeholder="C:\…\AFLResHigh_2_3.dat"></label>
-              <button id="mii-compose-resource" type="button">Carregar biblioteca</button>
-            </details>
-            <p id="mii-compose-status" role="status">Selecione a biblioteca local.</p>
-            <div class="mii-compose-layout">
-              <div><canvas id="mii-compose-canvas" width="520" height="520" aria-label="Cabeça Mii montada"></canvas>
-                <p>Arraste para girar. Use a roda do mouse para aproximar.</p>
-                <div class="row"><button id="mii-compose-reopen" type="button" disabled>Ver modelo salvo</button><button id="mii-compose-export" type="button" disabled>Exportar GLB salvo</button></div>
-              </div>
-              <div><nav id="mii-full-nav" class="mii-nav" aria-label="Partes do Mii"></nav><div id="mii-full-fields" class="mii-fields"></div><button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button></div>
+          <div class="mii-creator">
+            <div class="mii-stage card">
+              <canvas id="mii-stage" width="560" height="640" aria-label="Mii com corpo"></canvas>
+              <div class="mii-view row"><button type="button" data-view="body" aria-pressed="true">Corpo inteiro</button><button type="button" data-view="face" aria-pressed="false">Rosto</button></div>
+              <label class="mii-name">Nome<input id="mii-name" maxlength="10" required /></label>
+              <button id="mii-save" type="button" class="primary">Salvar Mii</button>
+              <p id="mii-status" class="fine" role="status"></p>
             </div>
-            <div class="card">
-              <h3>Cabeça no jogo · experimental</h3>
-              <p>Compatível com o Mii Normal Suit masculino e feminino. Outros pilotos do mesmo corpo que usem esse recurso recebem a mesma cabeça. Não use em multiplayer.</p>
-              <div class="row"><button id="mii-native-prepare" type="button" disabled>Preparar e usar no jogo</button><button id="mii-native-disable" type="button" disabled>Desativar no jogo</button></div>
-              <p id="mii-native-status" role="status"></p>
+            <div class="mii-panel card">
+              <nav id="mii-tabs" class="mii-tabs" role="tablist" aria-label="Partes do Mii"></nav>
+              <div id="mii-options" class="mii-options" role="tabpanel"></div>
             </div>
-            <p class="fine">Composição por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>. Recurso AFL mantido localmente.</p>
-          </dialog>
-          <details class="card">
-            <summary>Modelos dentro do jogo — experimental</summary>
-            <p>Use a pasta extraída do título MiiModel 0100000000000802 do seu console, contendo ShapeMid/High e NXTextureLow/MidLinear/SRGB. Não use um arquivo GLB nesta opção.</p>
-            <label>Pasta MiiModel<input id="mii-resource-dir" spellcheck="false" /></label>
-            <label><input id="mii-render-enabled" type="checkbox" /> Ativar modelos reais na próxima abertura (ainda não qualificado)</label>
-            <button id="mii-resources-save">Salvar recursos Mii</button>
-            <p>Sem o título do console, gere os recursos a partir da biblioteca local AFL configurada no editor Mii. O jogo passa a desenhar rostos, retratos e corpos Mii pelo renderer original. Os arquivos ficam somente nesta pasta de dados.</p>
-            <button id="mii-resources-generate" type="button">Gerar a partir da biblioteca local</button>
-            <p id="mii-resources-status" role="status"></p>
-            <p class="fine">Sem os recursos, o modo sem modelos continua disponível. Esta opção não conecta ao Nextendo.</p>
-          </details>
+          </div>
+          <p class="fine">Rosto desenhado por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>, com a biblioteca AFL local. Corpo lido do jogo preparado neste PC; nada é copiado.</p>
         </section>
 
         <!-- Jogar -->
