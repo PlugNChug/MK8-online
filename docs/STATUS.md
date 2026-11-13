@@ -1,5 +1,11 @@
 # Estado técnico — 13/11/2026
 
+## PRs focadas para upstream — 13/11/2026
+
+`fix-chore` upstream **`15d1106`** contém o merge **`b444188`** da PR #12, incluindo #9; `master` continua em `e554c7b`. As PRs antigas seguem abertas contra master e não foram alteradas. Preparação local de atualização DLC cancelada após essa confirmação, merge abortado e workspace restaurado à integração sem alterações em dados privados.
+
+PRs novas contra **fix-chore**, independentes: [#18 — reports de oclusão antes da comparação](https://github.com/Vnnc1/MK8-online/pull/18), branch `fix/conditional-occlusion-sync`, commit **`6763eb8`**; [#19 — rampa inicial de voz](https://github.com/Vnnc1/MK8-online/pull/19), branch `fix/audio-voice-start-ramp`, commit **`8e002c6`**. **11 testes nativos/Python aprovados em cada branch**, zero skips. Não incluem recorder ou outros patches de estabilidade. Evidência manual anterior da integração é identificada separadamente; não houve build/reteste de corrida/áudio nas branches isoladas. `gameplay_verified=false`. O conector GitHub recusou criação com 403; publicação concluída usando a autenticação normal já configurada do Git, sem imprimir/persistir credenciais. A integração de trabalho mantém seus patches e não recebeu automaticamente as novas mudanças de VRAM/matchmaking do fix-chore.
+
 ## Mii creator: corpo sem rosto antes de criar perfil
 
 Inspeção da sessão local confirmou biblioteca AFL carregada, sem erro de renderização, mas **nenhum Mii ativo**. Nesse estado `data=null` e o editor mostra apenas o corpo até informar nome e clicar Create Mii. Havia perda da orientação: `loadFFL` apagava a mensagem após carregar a biblioteca. Fonte corrigido para preservar a instrução de criação; navegador com a biblioteca local e JS atualizado confirmou a mensagem. Nenhum perfil criado/editado nesta inspeção. A correção de texto está nos fontes para o próximo rebuild do launcher; a janela existente foi preservada. Não foi repetida a criação de um perfil real do usuário.
