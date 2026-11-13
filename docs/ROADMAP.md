@@ -8,6 +8,8 @@ Preparação 0.1.7: Python 3.12 x64 privado baixado automaticamente, com reparo 
 
 Preparação 0.1.8 (testes): recuperação de caches, isolamento Python/pip, coordenação de processos e tratamento de arquivos bloqueados/unidades indisponíveis. Carregador Vulkan incluído. Resta validar em máquinas dos relatos e com antivírus/dispositivos reais; não altera a qualificação de gameplay.
 
+Republicação 0.2.0: setup aprovado pelo usuário em 13/11, com download verificado da biblioteca Mii, preparação Python sem PowerShell e conclusão da conversão Mii acompanhada na tela Jogar. GameSir pelo receptor USB confirmado com a Steam conectada após desativar Entrada Steam para Spacewar e reiniciar jogo e launcher. Acompanhar outros controles e instalações; isso não qualifica uma corrida multiplayer.
+
 ## 1. Multijogador
 
 - **[validação — 0.2.0]** A interface pública usa salas Steam, convites de amigos e entrada automática experimental no lobby LAN. Anfitrião Steam e dois jogos com transporte local no mesmo PC foram exercitados. Falta confirmar o convidado por outra conta/PC e corridas inteiras entre duas máquinas; AppID 480 e `steam_api64.dll` local continuam requisitos. LAN/relay/P2P abaixo permanecem caminhos de desenvolvimento pela API.
@@ -49,7 +51,7 @@ Preparação 0.1.8 (testes): recuperação de caches, isolamento Python/pip, coo
 ## 4. Qualificação da corrida
 
 - **[validação]** Áudio, controle físico, reinício/save, relógio e imagem verificados juntos numa corrida inteira.
-- **[validação — 0.2.0]** Criador Mii com miniaturas, prévia do corpo do jogo e preparação de recursos para o renderer original: retratos, Mii Suits, piloto e minimapa observados localmente. Falta qualificar todas as peças, o lobby LAN, comparação com recursos de console e corrida completa; a biblioteca AFL é fornecida pelo usuário.
+- **[validação — 0.2.0]** Criador Mii com miniaturas, prévia do corpo do jogo e preparação de recursos para o renderer original: retratos, Mii Suits, piloto e minimapa observados localmente. Falta qualificar todas as peças, o lobby LAN, comparação com recursos de console e corrida completa; a biblioteca AFL é baixada do Internet Archive com hashes verificados ou selecionada localmente pelo usuário, sem ser incluída no GitHub/instalador.
 
 ## 5. Launcher e distribuição
 

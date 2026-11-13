@@ -19,6 +19,7 @@ function notice(text, error = false) {
   const popup = $("notice-popup");
   popup.getAnimations().forEach((animation) => animation.cancel());
   popup.hidden = !text;
+  $("notice").dataset.message = text;
   i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
   popup.classList.toggle("error", error);
@@ -57,6 +58,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
+  window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -722,8 +724,19 @@ async function refresh() {
       : status.candidate
         ? "Build experimental disponível para teste."
         : "Prepare o jogo para habilitar a execução.");
+  const miiJobs = Object.values(status.mii_preparation || {});
+  const miiBusy = miiJobs.some(job => job.state === "running");
+  const miiFailure = miiJobs.find(job => job.state === "failed");
+  const miiDone = miiJobs.some(job => job.state === "done");
+  const miiText = miiBusy ? "Preparando os modelos Mii. Jogar será liberado ao concluir."
+    : miiFailure ? miiFailure.detail : miiDone ? "Modelos Mii prontos. Você já pode jogar." : "";
+  $("mii-preparation-state").hidden = !miiText;
+  i18n.text($("mii-preparation-state"), miiText);
+  if (!miiBusy && $("notice").dataset.message === "Aguarde a conversão Mii terminar.") {
+    notice(miiText, !!miiFailure);
+  }
   $("play-solo").disabled =
-    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || status.dlc_import?.state === "running";
+    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || status.dlc_import?.state === "running" || miiBusy;
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;

@@ -282,6 +282,30 @@ el('mii-name').oninput=()=>{if(!creating){dirty=true;status('Alterações não s
 for(const b of document.querySelectorAll('.mii-view [data-view]'))b.onclick=()=>stage&&frame(b.dataset.view);
 
 // ---- parts library (once) and the game's Mii resources ------------------------------------------------------
+let libraryAttempted=false,libraryDownloading=false,creatorReady=false;
+async function downloadLibrary(){
+  if(libraryDownloading||ffl)return;
+  libraryDownloading=true;el('mii-library').hidden=false;el('mii-library-download').disabled=true;
+  i18n.text(el('mii-library-status'),'Baixando biblioteca do Internet Archive…');
+  try{
+    let job=await api('mii/composer/download',{});
+    while(job.state==='running'){
+      await new Promise(r=>setTimeout(r,700));
+      job=await api('mii/composer/download');
+    }
+    if(job.state!=='done')throw new Error(job.detail||'Não foi possível baixar a biblioteca Mii.');
+    if(!(await loadFFL()))throw new Error('Não foi possível carregar a biblioteca Mii.');
+    openTab(tab);scheduleStage();prepareForGame();
+  }catch(e){i18n.text(el('mii-library-status'),e.message);}
+  finally{libraryDownloading=false;el('mii-library-download').disabled=false;}
+}
+async function autoLibrary(){
+  if(!creatorReady||el('miis').hidden||libraryAttempted||ffl)return;
+  libraryAttempted=true;
+  await downloadLibrary();
+}
+el('mii-library-download').onclick=downloadLibrary;
+window.addEventListener('launchertabchange',autoLibrary);
 el('mii-library-browse').onclick=async()=>{
   try{
     const r=await api('browse',{kind:'afl',language:i18n.language,title:i18n.t('Biblioteca de peças'),current:el('mii-library-path').value.trim()});
@@ -298,10 +322,10 @@ el('mii-library-load').onclick=async()=>{
 let preparing=false;
 async function prepareForGame(){
   if(preparing||!ffl||!active)return;
+  preparing=true;
   try{
     const resources=await api('mii/resources');
     if(resources?.enabled)return;
-    preparing=true;
     const native=await api('mii/native');
     if(native.enabled)await api('mii/native/enabled',{expected:Array.from(data),enabled:false});
     await api('mii/resources/generate',{});
@@ -327,6 +351,7 @@ for(const [key,label] of TABS){
     const ready=await loadFFL();
     loadBodies();
     if(ready){openTab(tab);scheduleStage();}
+    creatorReady=true;autoLibrary();
   }catch(e){status(e.message);}
 })();
 // The game's Mii editor (its applet, or Perfil Mii in the F1 menu) opens this screen.

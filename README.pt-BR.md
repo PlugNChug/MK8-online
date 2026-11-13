@@ -73,7 +73,7 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 - Seu próprio jogo base, a **atualização 4.0.1** e o `prod.keys` do seu console, ou uma pasta do jogo já extraída e suportada.
 - Cerca de **28 GiB livres** para extração e preparação (incluindo 4 GiB de reserva de segurança), além de espaço para ferramentas e caches. SSD recomendado.
 - Internet para o primeiro download das ferramentas (cerca de 0,4 GiB) e para atualizações.
-- **Para Miis:** a biblioteca de peças `AFLResHigh_2_3.dat`, do seu próprio software. Ela não é distribuída, e o launcher confere o hash. Sem ela, as opções do Mii funcionam como botões numerados, mas os rostos não são desenhados.
+- **Para Miis:** ao abrir o criador, o launcher baixa `AFLResHigh_2_3.dat` de uma cópia do antigo CDN Miitomo no Internet Archive. Confere tamanho e SHA-256 do ZIP e da biblioteca, depois guarda o arquivo na pasta de dados para uso offline. O arquivo não acompanha o GitHub nem o instalador. Se o arquivo online estiver indisponível, tente novamente ou selecione uma cópia local compatível; sem a biblioteca, as opções ficam numeradas e os rostos não são desenhados.
 - **Para multijogador:** o cliente da **Steam** aberto e logado, e qualquer jogo da Steam instalado que traga `steam_api64.dll` (ou uma cópia desse arquivo na pasta de dados do launcher). Nenhum arquivo da Valve é distribuído.
 
 ### Instalar e jogar
@@ -82,6 +82,8 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 2. Abra **Instalar**. Conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo** (o launcher encontra as chaves junto do jogo, ou selecione as suas).
 3. Rode a etapa **Build do jogo**. Depois de atualizar de uma versão anterior, rode de novo: o jogo é recompilado com o runtime novo.
 4. Escolha **Jogar solo**.
+
+A etapa **Ferramentas** do launcher prepara o Python privado diretamente, sem PowerShell ou carregamento de ZIP pelo .NET. O CPython vem do pacote oficial NuGet fixado; o arquivo e as dependências são conferidos por hash. Ambientes interrompidos são preservados antes do reparo. Mantenha a proteção do antivírus ativa.
 
 Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`): use **Já tenho o jogo extraído numa pasta**. O perfil ativo é o 4.0.1 AArch64; outras versões, DLC e importação de XCI/XCZ não foram validadas.
 
@@ -95,9 +97,11 @@ O setup inclui o runtime host pré-compilado e um FFmpeg mínimo para vídeos; o
 
 ### Crie seu Mii
 
-1. Abra **Perfil Mii**. Na primeira vez, escolha o `AFLResHigh_2_3.dat` (**Procurar** e depois **Usar**).
+1. Abra **Perfil Mii** e aguarde o primeiro download da biblioteca. A origem Internet Archive aparece no criador. Para escolher um arquivo existente, abra **Usar um arquivo local**, depois **Procurar** e **Usar**. Uma biblioteca válida já configurada é reutilizada automaticamente.
 2. Digite um nome e toque em **Criar Mii**. Passe pelas abas e toque na opção que quiser: cada botão mostra seu Mii com aquela opção. Em **Corpo** ficam tipo, altura, porte e cor favorita, e a prévia mostra o corpo inteiro (ou só o rosto).
 3. Toque em **Salvar Mii**. Na primeira vez o launcher prepara os modelos Mii do jogo; o jogo usa seu Mii na próxima vez que abrir.
+
+**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Se um controle XInput deixar de responder com a Steam conectada, abra **Steam → Biblioteca → Spacewar → Propriedades → Controle**, selecione **Desativar a Entrada Steam** somente para esse jogo e feche e reabra o MK8 e o Launcher. A Steam continua conectada para amigos e salas. Esvaziar apenas os filtros SDL herdados não resolve o remapeamento forçado pela Entrada Steam. O GameSir T4n Lite pelo receptor USB foi confirmado funcionando no menu após esse ajuste, com a API Steam conectada.
 
 Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente.
 

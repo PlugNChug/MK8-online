@@ -93,6 +93,8 @@ class LauncherTests(unittest.TestCase):
 
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
+        page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
+            'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste offline.'}}))
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
@@ -585,6 +587,45 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#prepare-state')).to_have_text('Atualizar')
         expect(page.locator('#build-done')).to_be_hidden()
         self.assertFalse(errors);page.close()
+
+    def test_mii_preparation_releases_play_and_clears_only_its_stale_notice(self):
+        page=self.page()
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+        state={'state':'running','detail':'Preparando recursos'}
+        def status(route):
+            data=dict(real,candidate=True,game_pid=None)
+            data['session']=dict(real['session'],connected=True)
+            data['mii_preparation']={'resources':dict(state),'native':{'state':'idle','detail':''}}
+            route.fulfill(json={'ok':True,'data':data})
+        page.route('**/api/status',status)
+        page.reload();page.locator('[data-tab="play"]').click()
+        expect(page.locator('#mii-preparation-state')).to_contain_text('Preparando os modelos Mii')
+        expect(page.locator('#play-solo')).to_be_disabled()
+        expect(page.locator('#play-online')).to_be_disabled()
+        page.evaluate("notice('Aguarde a conversão Mii terminar.', true)")
+        state.update(state='done',detail='Pronto')
+        expect(page.locator('#play-solo')).to_be_enabled(timeout=5000)
+        expect(page.locator('#play-online')).to_be_enabled()
+        expect(page.locator('#notice')).to_have_text('Modelos Mii prontos. Você já pode jogar.')
+        expect(page.locator('#notice')).not_to_have_class(re.compile(r'error'))
+        page.evaluate("notice('Outro erro importante', true)")
+        page.evaluate('refresh()')
+        expect(page.locator('#notice')).to_have_text('Outro erro importante')
+        state.update(state='running')
+        page.evaluate('refresh()')
+        expect(page.locator('#play-solo')).to_be_disabled()
+        page.evaluate("notice('Aguarde a conversão Mii terminar.', true)")
+        state.update(state='failed',detail='Falha de teste na conversão')
+        page.evaluate('refresh()')
+        expect(page.locator('#mii-preparation-state')).to_have_text('Falha de teste na conversão')
+        expect(page.locator('#notice')).to_have_text('Falha de teste na conversão')
+        state.update(state='done',detail='Pronto')
+        page.locator('#language').select_option('en')
+        page.evaluate('refresh()')
+        expect(page.locator('#mii-preparation-state')).to_have_text('Mii models are ready. You can play now.')
+        page.locator('#language').select_option('pt-BR')
+        page.close()
 
     def test_12_support_report_and_updates(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))

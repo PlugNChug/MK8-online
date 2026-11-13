@@ -31,20 +31,13 @@ fn local_python(root: &Path) -> PathBuf {
 }
 
 /// The same three commands documented in the README, in order.
-pub fn steps(root: &Path) -> Vec<Step> {
+pub fn steps(root: &Path) -> Result<Vec<Step>, String> {
     let scripts = root.join("scripts");
-    vec![
+    Ok(vec![
         Step::new(
             "Ambiente Python local e pacotes verificados",
-            "powershell.exe",
-            &[
-                &"-NoProfile",
-                &"-NonInteractive",
-                &"-ExecutionPolicy",
-                &"Bypass",
-                &"-File",
-                &scripts.join("setup-tools.ps1"),
-            ],
+            std::env::current_exe().map_err(|e| e.to_string())?,
+            &[&"--setup-python", &root],
         ),
         Step::new(
             "Compilador Zig fixado",
@@ -56,7 +49,7 @@ pub fn steps(root: &Path) -> Vec<Step> {
             local_python(root),
             &[&"-u", &scripts.join("setup-runtime-deps.py")],
         ),
-    ]
+    ])
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -108,7 +101,7 @@ impl Default for Setup {
 
 impl Setup {
     pub fn start_guarded(&mut self, root: &Path, local: &Path) -> Result<(), String> {
-        self.start_steps_guarded(root, local, steps(root), &local.join("setup.log"))
+        self.start_steps_guarded(root, local, steps(root)?, &local.join("setup.log"))
     }
 
     pub fn start_dlc(
@@ -563,13 +556,8 @@ mod tests {
                 vec![
                     Step::new(
                         "espera",
-                        "powershell.exe",
-                        &[
-                            &"-NoProfile",
-                            &"-NonInteractive",
-                            &"-Command",
-                            &"Start-Sleep -Seconds 60",
-                        ],
+                        "cmd.exe",
+                        &[&"/D", &"/C", &"ping -n 61 127.0.0.1 >nul"],
                     ),
                     cmd("nao-executar", 0),
                 ],

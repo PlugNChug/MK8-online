@@ -34,6 +34,8 @@ class MiiLauncherTests(unittest.TestCase):
                     try:
                         page=browser.new_page(locale='pt-BR',viewport={'width':1280,'height':900})
                         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                        page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
+                            'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste offline.'}}))
                         page.goto(url);page.get_by_role('button',name='Perfil Mii',exact=True).click()
                         token=page.locator('meta[name="mk8-token"]').get_attribute('content')
                         def export():
@@ -42,6 +44,8 @@ class MiiLauncherTests(unittest.TestCase):
                         expect(page.locator('#mii-save')).to_have_text('Criar Mii', timeout=30000)
                         expect(page.locator('#mii-tabs button')).to_have_text(PARTS)
                         expect(page.locator('#mii-library')).to_be_visible()
+                        expect(page.locator('#mii-library-status')).to_have_text('Download indisponível no teste offline.')
+                        expect(page.locator('#mii-library-download')).to_be_enabled()
                         expect(page.locator('#mii-save')).to_have_text('Criar Mii')
                         expect(page.locator('#mii-options')).to_contain_text('Dê um nome ao Mii')
                         for old in ('#mii-canvas','#mii-form','#mii-import','#mii-export','#mii-composer','#mii-resource-dir'):

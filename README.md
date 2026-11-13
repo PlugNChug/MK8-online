@@ -40,7 +40,7 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 
 Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Portuguese).
 
-This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. F7 also traces the exact visibility-counter operands, report writes, and observed submission progress. A targeted fix resolves pending reports for either counter before conditional rendering reads them, addressing the premature comparisons captured in Electrodrome. Four captured 100cc preview retests across Electrodrome, 3DS DK Jungle and N64 Rainbow Road showed no racer flicker, with resolved values preceding all 7,745 captured visibility comparisons, including tests after a fresh launch. The user also reports no recurrence of disappearing buildings or other course objects during testing so far. A new-voice volume-ramp correction passed the Electrodrome popping reproducer in a listening retest; broader audio qualification remains open. Build and test evidence is recorded in the technical status.
+This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources through upstream commit `e554c7b` with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. F7 also traces the exact visibility-counter operands, report writes, and observed submission progress. A targeted fix resolves pending reports for either counter before conditional rendering reads them, addressing the premature comparisons captured in Electrodrome. Four captured 100cc preview retests across Electrodrome, 3DS DK Jungle and N64 Rainbow Road showed no racer flicker, with resolved values preceding all 7,745 captured visibility comparisons, including tests after a fresh launch. The user also reports no recurrence of disappearing buildings or other course objects during testing so far. A new-voice volume-ramp correction passed the Electrodrome popping reproducer in a listening retest; broader audio qualification remains open. Build and test evidence is recorded in the technical status.
 
 ## Where it stands
 
@@ -69,7 +69,7 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 - Your own base game, **4.0.1 update** and `prod.keys` from your console, or a supported extracted game folder.
 - About **28 GiB free** for extraction and preparation (including a 4 GiB safety reserve), plus room for tools and caches. An SSD is recommended.
 - Internet for the first tool download (about 0.4 GiB) and for updates.
-- **For Miis:** the Mii parts library `AFLResHigh_2_3.dat`, from your own software. It is not distributed, and the Launcher checks its hash. Without it, Mii options still work as numbered buttons, but faces are not drawn.
+- **For Miis:** opening the creator downloads `AFLResHigh_2_3.dat` from an Internet Archive copy of the former Miitomo CDN. The Launcher verifies the ZIP and library by size and SHA-256, then caches the file privately for offline use. It is not bundled in GitHub or the installer. If the archive is unavailable, retry or select a compatible local file; without the library, options remain numbered and faces are not drawn.
 - **For multiplayer:** the **Steam** client, signed in, and any Steam game installed that ships `steam_api64.dll` (or a copy of that file in the Launcher's data folder). No Valve file is bundled.
 
 ### Install and play
@@ -79,6 +79,8 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
 
+The Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
+
 An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other versions, DLC and XCI/XCZ import are not validated.
 
 Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalling. To use another drive with the portable launcher: `.\Launcher.exe --data-dir E:\MK8-Local`, and keep using the same folder.
@@ -87,9 +89,11 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 
 ### Create your Mii
 
-1. Open **Mii profile**. The first time, choose `AFLResHigh_2_3.dat` (**Browse**, then **Use**).
+1. Open **Mii profile** and wait for the first library download. Its Internet Archive origin is shown in the creator. To use an existing file, expand **Use a local file**, then **Browse** and **Use**. A valid configured library is reused automatically.
 2. Type a name and choose **Create Mii**. Then go through the tabs and tap the option you like: each button shows your Mii with that option. **Body** has type, height, build and favorite color, and the preview shows the whole body (or just the face).
 3. Choose **Save Mii**. The Launcher prepares the in-game Mii models the first time; the game uses your Mii the next time it opens.
+
+**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. If an XInput controller stops responding while Steam is connected, open **Steam → Library → Spacewar → Properties → Controller**, select **Disable Steam Input** for that game, then close and reopen both MK8 and the Launcher. Steam remains connected for friends and rooms. Clearing Steam's inherited SDL device filters alone does not resolve forced Steam Input remapping. A GameSir T4n Lite through its USB receiver was confirmed working in the menu after this adjustment, with the Steam API connected.
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 
@@ -143,6 +147,14 @@ Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the im
 ```
 
 It downloads the pinned upstream sources, verifies their hashes, builds the launcher and opens it. To package the portable launcher: `python scripts/package-launcher.py` (output: `target/portable/Launcher.exe`). Release steps are in [RELEASING.md](docs/RELEASING.md).
+
+The launcher and game runtime are separate builds. This source launcher uses the prepared game in this checkout's `local/candidate.json`; rebuilding the launcher keeps that runtime. The visibility/audio fixes live in `toolchain`, and preparation reapplies them to the build copy, so they also survive later game builds from this branch. They are active without `MK8_GFX_DIAGNOSTICS`; that switch only enables evidence capture. A downloaded upstream release is a separate build and does not include these local fixes.
+
+After changing runtime sources, update the existing prepared runtime without rebuilding the guest game code:
+
+```powershell
+.\local\python\Scripts\python.exe toolchain/build.py --config local/config.json --local local --runtime-only
+```
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter, the Nextendo prototype) are documented in the [technical status](docs/STATUS.md).
 

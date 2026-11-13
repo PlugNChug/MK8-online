@@ -55,6 +55,7 @@ pub struct App {
     resources_job: Option<(Child, mk8_installer::mii_resources::Generation)>,
     resources_state: &'static str,
     resources_detail: String,
+    mii_download: crate::mii_download::Download,
     /// Steam lobby invites received from friends (lobby, friend), until accepted or the room is gone.
     steam_invites: Vec<(u64, u64)>,
     /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
@@ -173,6 +174,7 @@ impl App {
             resources_job: None,
             resources_state: "idle",
             resources_detail: String::new(),
+            mii_download: Default::default(),
             steam_invites: Vec::new(),
             pending_play: None,
             steam_error: None,
@@ -503,6 +505,12 @@ impl App {
     }
     fn status(&mut self) -> Value {
         self.dlc_import.poll();
+        self.poll_native();
+        self.poll_resources();
+        let mii_preparation = json!({
+            "native": {"state": self.native_state, "detail": self.native_detail},
+            "resources": {"state": self.resources_state, "detail": self.resources_detail}
+        });
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
             self.game_exit = Some(exit.to_string());
             self.game = None;
@@ -591,7 +599,7 @@ impl App {
             .map(|room| room.code.clone())
             .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
             .or(p2p_code);
-        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        json!({"mii_preparation":mii_preparation,"dlc":dlc,"dlc_import":self.dlc_import.status(),"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
@@ -732,6 +740,8 @@ impl App {
                 self.native_detail.clear();
                 self.native_status()
             }
+            ("GET", "/api/mii/composer/download") => Ok(self.mii_download.status(&self.local)),
+            ("POST", "/api/mii/composer/download") => self.mii_download.start(&self.local),
             ("GET", "/api/mii/composer") => Ok(
                 json!({"resource":mk8_installer::mii_composer::resource_config(&self.local)?, "head":mk8_installer::mii_composer::saved(&self.local)?}),
             ),

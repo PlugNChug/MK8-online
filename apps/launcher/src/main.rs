@@ -6,6 +6,8 @@ mod game_session;
 mod game_settings;
 mod installer;
 mod language;
+mod mii_download;
+mod python_setup;
 mod relay;
 mod report;
 mod server;
@@ -66,6 +68,17 @@ pub(crate) fn fatal(message: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--setup-python") {
+        let result = args
+            .get(2)
+            .ok_or_else(|| "Raiz das ferramentas ausente".to_string())
+            .and_then(|root| python_setup::install(Path::new(root)));
+        if let Err(error) = result {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.get(1).is_some_and(|arg| arg == "--check-vulkan") {
         let result = args
             .get(2)

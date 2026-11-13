@@ -647,6 +647,7 @@
   "Amigos da Steam": "Steam friends",
   "Procurar amigo": "Search friend",
   "Como funciona": "How it works",
+  "Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.": "Controller not responding with Steam open? In Steam → Library → Spacewar → Properties → Controller, choose Disable Steam Input. Then close and reopen the game and the Launcher. Keep Steam open for friends and rooms.",
   "Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.": "Each person installs the Launcher, prepares the game from their own files (version 4.0.1) and creates their Mii in Mii profile.",
   "Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como \"Spacewar\", o aplicativo de testes da Steam.": "Both open Steam and keep the Launcher open on this tab. Steam shows the Launcher as \"Spacewar\", Steam's test app.",
   "O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.": "The host chooses Create room, then Invite next to a friend (or Invite through Steam). The host's game opens and creates the LAN room by itself.",
@@ -677,5 +678,19 @@
   "Convite enviado pela Steam.": "Invite sent through Steam.",
   "Crie sua sala antes de convidar.": "Create your room before inviting.",
   "Feche o jogo e encerre a sala atual antes de entrar em outra.": "Close the game and the current room before joining another.",
-  "A Steam recusou o convite.": "Steam refused the invite."
+  "A Steam recusou o convite.": "Steam refused the invite.",
+  "A biblioteca de peças é baixada do Internet Archive, a partir de uma cópia do antigo download do Miitomo, e fica só neste PC.": "The parts library is downloaded from the Internet Archive, from a copy of the old Miitomo download, and stays on this PC.",
+  "Tentar download novamente": "Retry download",
+  "Usar um arquivo local": "Use a local file",
+  "Baixando biblioteca do Internet Archive…": "Downloading the library from the Internet Archive…",
+  "Não foi possível baixar a biblioteca Mii.": "Could not download the Mii library.",
+  "Não foi possível carregar a biblioteca Mii.": "Could not load the Mii library.",
+  "Fonte do download das peças: Internet Archive, cópia do antigo CDN Miitomo.": "Parts download source: Internet Archive, a copy of the old Miitomo CDN.",
+  "Não foi possível baixar do Internet Archive. Tente novamente ou selecione um arquivo local.": "Could not download from the Internet Archive. Retry or select a local file.",
+  "O download da biblioteca foi interrompido.": "The library download was interrupted.",
+  "O download não corresponde à biblioteca Mii verificada.": "The download does not match the verified Mii library.",
+  "Não foi possível extrair a biblioteca Mii.": "Could not extract the Mii library.",
+  "Mantenha pelo menos 4 GiB livres para baixar a biblioteca Mii.": "Keep at least 4 GiB free to download the Mii library.",
+  "Preparando os modelos Mii. Jogar será liberado ao concluir.": "Preparing Mii models. Play will be available when finished.",
+  "Modelos Mii prontos. Você já pode jogar.": "Mii models are ready. You can play now."
 }

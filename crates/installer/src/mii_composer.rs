@@ -35,12 +35,20 @@ fn checked_resource(path: &Path) -> Result<Vec<u8>> {
         );
     }
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
-    if digest(&bytes) != RESOURCE_SHA256 {
+    validate_resource(&bytes)?;
+    Ok(bytes)
+}
+
+pub fn validate_resource(bytes: &[u8]) -> Result<()> {
+    if bytes.len() != 4_579_008 {
+        return Err("Tamanho inesperado da biblioteca Mii.".into());
+    }
+    if digest(bytes) != RESOURCE_SHA256 {
         return Err(
             "AFL alterado ou incompatível; o hash não corresponde à biblioteca verificada.".into(),
         );
     }
-    Ok(bytes)
+    Ok(())
 }
 
 pub fn configure(local: &Path, path: &Path) -> Result<Resource> {
