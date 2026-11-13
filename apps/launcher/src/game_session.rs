@@ -31,6 +31,11 @@ pub fn run() -> Result<i32> {
     }
     crate::vulkan::check(&request.install, &request.local)?;
     crate::fonts::configure(&request.local)?;
+
+    std::env::set_var(
+        "MK8_MANUAL_VIEWER",
+        std::env::current_exe().map_err(|e| e.to_string())?,
+    );
     let signal = request.local.join("open-rooms");
     if signal.exists() {
         std::fs::remove_file(signal).map_err(|e| e.to_string())?;

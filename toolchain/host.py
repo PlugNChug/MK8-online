@@ -159,6 +159,8 @@ def prepare_host_sources(source, output):
     # dlc.prepare owns system-archive routing, including the optional MiiModel directory.
     am = runtime/'services/am.c'
     am.write_text(adapt_mii_applet(am.read_text(encoding='utf-8')), encoding='utf-8')
+    from manual_applet import prepare as prepare_manual_applet
+    prepare_manual_applet(runtime)
     movie = runtime/'hle/movie.c'
     text = movie.read_text(encoding='utf-8')
     constructor = 'HLE_FUNC("_ZN5movie9ExtractorC1ENS_13ContainerTypeE", movie_extractor_ctor) {'

@@ -146,6 +146,8 @@ Em **Configurações → Fontes do jogo**, **Importar pasta de fontes** copia fo
 
 Com homebrew já funcionando: baixe o `.nro` dos [releases do SharedFontDumper](https://github.com/simontime/SharedFontDumper/releases), coloque em `switch/` no SD e abra pelo Homebrew Menu. **A** extrai TTFs individuais; **+** sai após concluir. Copie a pasta `fonts` do SD para o PC e importe-a. Os controles/nomes estão no [fonte](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c). A compatibilidade desta ferramenta antiga com firmware/homebrew atuais não foi testada aqui. `shared_font.bin` e arquivos de firmware não são aceitos.
 
+O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Controls. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
+
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
 
 ```powershell

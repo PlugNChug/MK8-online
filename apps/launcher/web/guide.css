@@ -1,0 +1,6 @@
+main { width: 100%; max-width: 900px; margin: auto; }
+.card { margin: 1rem 0; }
+dl { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: .65rem 1rem; }
+dt { font-weight: bold; }
+dd { margin: 0; }
+form { position: sticky; bottom: 0; padding: 1rem 0; background: var(--bg); }
