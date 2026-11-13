@@ -29,6 +29,10 @@ fn main() {
         fs::write(std::path::Path::new(&args[2]).join("leaf.pid"), std::process::id().to_string()).unwrap();
         loop { thread::sleep(Duration::from_millis(50)); }
     }
+    // These inherited Steam filters must not hide the native runtime's controls.
+    assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES").unwrap(), "");
+    assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT").unwrap(), "");
+    assert_eq!(env::var("SDL_GAMECONTROLLERCONFIG").unwrap(), "authored-custom-mapping");
     fs::write("game.pid", std::process::id().to_string()).unwrap();
     while !std::path::Path::new("finish").exists() { thread::sleep(Duration::from_millis(50)); }
     fs::write("completed-save.bin", b"saved normally").unwrap();
@@ -97,8 +101,11 @@ class LifetimeTests(unittest.TestCase):
     def launcher(self, data):
         marker = data/'launcher.json'
         marker.unlink(missing_ok=True)
+        env = dict(os.environ, SDL_GAMECONTROLLER_IGNORE_DEVICES='0x045e/0x028e',
+                   SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT='0xffff/0xffff',
+                   SDL_GAMECONTROLLERCONFIG='authored-custom-mapping')
         process = subprocess.Popen([str(EXE), '--headless', '--data-dir', str(data)], stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL)
+                                   stderr=subprocess.DEVNULL, env=env)
         self.addCleanup(lambda: (process.terminate(), process.wait(timeout=10)) if process.poll() is None else None)
         def ready_url():
             try:

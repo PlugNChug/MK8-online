@@ -219,6 +219,11 @@ fn spawn_game(
     let mut cmd = Command::new(&install.executable.path);
     // The runtime uses LARECOMP_DATA_ROOT as cwd; keep saves out of versioned builds.
     cmd.current_dir(&saves)
+        // Steam's launcher-side SDK installs SDL device exclusion lists for Steam Input.
+        // The separate MK8 runtime reads native SDL controllers and does not initialize
+        // Steam Input, so those lists can hide its physical XInput controller entirely.
+        .env("SDL_GAMECONTROLLER_IGNORE_DEVICES", "")
+        .env("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT", "")
         .env("MK8_EXPERIMENTAL_NO_MII", "1")
         .env("RECOMP_USER_NAME", username)
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))

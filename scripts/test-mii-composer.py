@@ -44,6 +44,8 @@ def run():
                 page.on('pageerror', lambda e: errors.append(str(e)))
                 page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and '400' not in m.text else None)
                 page.on('request', lambda r: requests.append(r.url))
+                page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
+                    'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste manual.'}}))
                 page.goto(url, wait_until='load')
                 token = page.locator('meta[name="mk8-token"]').get_attribute('content')
 
@@ -57,6 +59,7 @@ def run():
                 page.locator('[data-tab="miis"]').click()
                 # The parts library is chosen once; then the head is drawn on MK8's own body.
                 expect(page.locator('#mii-library')).to_be_visible()
+                page.locator('#mii-library summary').click()
                 page.locator('#mii-library-path').fill(str(RESOURCE))
                 page.locator('#mii-library-load').click()
                 expect(page.locator('#mii-library')).to_be_hidden(timeout=30000)
@@ -87,10 +90,10 @@ def run():
                 expect(page.locator('#mii-status')).to_contain_text('Mii salvo')
                 # Creating the Mii (with the library chosen) prepared the game's Mii resources in the background.
                 deadline = time.monotonic()+180
-                while api('mii/resources/job')['state'] == 'running':
+                while api('status')['mii_preparation']['resources']['state'] == 'running':
                     assert time.monotonic() < deadline, 'Mii resources timed out'
                     page.wait_for_timeout(500)
-                assert api('mii/resources/job')['state'] == 'done', api('mii/resources/job')
+                assert api('status')['mii_preparation']['resources']['state'] == 'done'
                 data = api('mii/export')['data']
                 assert (data[49], data[52], data[40], data[41], data[39]) == (24, 10, 1, 127, 5), data[39:53]
                 assert api('mii/resources')['enabled']

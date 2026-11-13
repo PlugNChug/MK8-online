@@ -31,20 +31,13 @@ fn local_python(root: &Path) -> PathBuf {
 }
 
 /// The same three commands documented in the README, in order.
-pub fn steps(root: &Path) -> Vec<Step> {
+pub fn steps(root: &Path) -> Result<Vec<Step>, String> {
     let scripts = root.join("scripts");
-    vec![
+    Ok(vec![
         Step::new(
             "Ambiente Python local e pacotes verificados",
-            "powershell.exe",
-            &[
-                &"-NoProfile",
-                &"-NonInteractive",
-                &"-ExecutionPolicy",
-                &"Bypass",
-                &"-File",
-                &scripts.join("setup-tools.ps1"),
-            ],
+            std::env::current_exe().map_err(|e| e.to_string())?,
+            &[&"--setup-python", &root],
         ),
         Step::new(
             "Compilador Zig fixado",
@@ -56,7 +49,7 @@ pub fn steps(root: &Path) -> Vec<Step> {
             local_python(root),
             &[&"-u", &scripts.join("setup-runtime-deps.py")],
         ),
-    ]
+    ])
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -114,7 +107,7 @@ impl Setup {
         let guards = mk8_build_manager::acquire_operation(root, local)?;
         self.supervised = Some((root.into(), local.into()));
         self.guards = guards;
-        let result = self.start(steps(root), &local.join("setup.log"));
+        let result = steps(root).and_then(|steps| self.start(steps, &local.join("setup.log")));
         if result.is_err() {
             self.guards.clear();
         }
@@ -525,13 +518,8 @@ mod tests {
                 vec![
                     Step::new(
                         "espera",
-                        "powershell.exe",
-                        &[
-                            &"-NoProfile",
-                            &"-NonInteractive",
-                            &"-Command",
-                            &"Start-Sleep -Seconds 60",
-                        ],
+                        "cmd.exe",
+                        &[&"/D", &"/C", &"ping -n 61 127.0.0.1 >nul"],
                     ),
                     cmd("nao-executar", 0),
                 ],
