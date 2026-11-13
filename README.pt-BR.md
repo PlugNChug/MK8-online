@@ -136,6 +136,12 @@ Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [i
 
 ## Compilar e contribuir
 
+No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
+
+Em **Configurações → Fontes do jogo**, **Importar pasta de fontes** copia fontes do seu próprio Switch. Requer `FontStandard.ttf` ou `nintendo_udsg-r_std_003.ttf/.bfttf`; fontes regionais/de botões são opcionais. Nomes do SharedFontDumper são normalizados automaticamente. Limites TrueType e hashes são conferidos; isso não autentica a origem Nintendo. **Padrão do sistema** desativa sem apagar; **Fontes do console importadas** reativa. Vale no próximo início, sem nova build do jogo após instalar o launcher/runtime com este suporte. Pastas legadas e overrides `LARECOMP_FONT` continuam suportados.
+
+Com homebrew já funcionando: baixe o `.nro` dos [releases do SharedFontDumper](https://github.com/simontime/SharedFontDumper/releases), coloque em `switch/` no SD e abra pelo Homebrew Menu. **A** extrai TTFs individuais; **+** sai após concluir. Copie a pasta `fonts` do SD para o PC e importe-a. Os controles/nomes estão no [fonte](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c). A compatibilidade desta ferramenta antiga com firmware/homebrew atuais não foi testada aqui. `shared_font.bin` e arquivos de firmware não são aceitos.
+
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
 
 ```powershell

@@ -98,11 +98,15 @@ def prepare_host_sources(source, output):
     symbol = '_ZN2nn2pl13GetSharedFontEPiPNS0_14SharedFontDataEiNS_8settings12LanguageCodeE'
     if symbol in text:
         raise ValueError('Shared font HLE now exists upstream; review MK8 adapter')
-    # MK8's font rasterizer rejected the Yu Gothic TTC fallback in the boot test.
+    # Segoe UI preserves dialog text proportions; Yu Gothic TTC failed the boot test.
     old = '"C:/Windows/Fonts/YuGothR.ttc",'
     if text.count(old) != 1:
         raise ValueError('Font fallback list changed upstream')
-    text = text.replace(old, '"C:/Windows/Fonts/arial.ttf", '+old)
+    text = text.replace(old, '"C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf", '+old)
+    boundary = '    FILE *f = fopen(path, "rb");'
+    if text.count(boundary) != 1:
+        raise ValueError('Shared font file boundary changed upstream')
+    text = text.replace(boundary, (ROOT/'runtime/mk8/services/font_path.inc').read_text(encoding='utf-8')+'\n'+boundary)
     fonts.write_text(text+'\n'+(ROOT/'runtime/mk8/services/shared_font.inc').read_text(encoding='utf-8'), encoding='utf-8')
     touch = runtime/'hle/touch.c'
     text = touch.read_text(encoding='utf-8')

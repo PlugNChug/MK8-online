@@ -633,7 +633,9 @@ impl App {
                 ))
             }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/fonts") => crate::fonts::status(&self.local),
             ("POST", "/api/settings")
+            | ("POST", "/api/fonts")
             | ("POST", "/api/dlc/toggle")
             | ("POST", "/api/dlc/import") => {
                 self.status();
@@ -655,6 +657,22 @@ impl App {
                 pipeline
                     .try_lock()
                     .map_err(|_| "Já existe uma preparação usando esta pasta de dados.")?;
+                if path == "/api/fonts" {
+                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    let result = if let Some(directory) = value["directory"].as_str() {
+                        crate::fonts::import(&self.local, Path::new(directory))?
+                    } else {
+                        crate::fonts::select(
+                            &self.local,
+                            value["enabled"]
+                                .as_bool()
+                                .ok_or("Preferência de fontes inválida.")?,
+                        )?
+                    };
+                    return Ok(
+                        json!({"fonts":result,"message":"Fontes salvas. As alterações valem ao iniciar o jogo."}),
+                    );
+                }
                 if path == "/api/settings" {
                     let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     crate::game_settings::write(&self.local, &value)?;
@@ -1673,6 +1691,11 @@ mod tests {
             .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
             .unwrap_err();
         assert!(error.contains("Outra instância"), "{error}");
+        let error = app
+            .handle(&Method::Post, "/api/fonts", r#"{"enabled":false}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("font-library.json").exists());
         let error = app
             .handle(&Method::Post, "/api/settings", r#"{"volume":"0.5"}"#)
             .unwrap_err();

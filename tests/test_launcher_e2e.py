@@ -91,6 +91,61 @@ class LauncherTests(unittest.TestCase):
         finally:
             process.terminate(); process.wait(timeout=10)
 
+    def test_console_font_import_and_system_default_persist_without_touching_saves(self):
+        source=Path(self.temporary.name)/'font-source'
+        source.mkdir()
+        raw=bytearray(12+7*16+7*4)
+        raw[:4]=b'\x00\x01\x00\x00'
+        struct.pack_into('>H',raw,4,7)
+        for i,tag in enumerate((b'cmap',b'glyf',b'head',b'hhea',b'hmtx',b'loca',b'maxp')):
+            struct.pack_into('>4sIII',raw,12+i*16,tag,0,12+7*16+i*4,4)
+        (source/'FontStandard.ttf').write_bytes(raw)
+        local=Path(self.temporary.name)/'0'
+        save=local/'user-no-mii/save/font-test-marker'
+        save.parent.mkdir(parents=True,exist_ok=True)
+        save.write_bytes(b'keep-save')
+        page=self.page()
+        try:
+            page.locator('#language').select_option('en')
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('#font-mode')).to_have_value('system')
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
+            page.locator('#font-folder').fill(str(source))
+            page.locator('#font-import').click()
+            expect(page.locator('#font-mode')).to_have_value('console')
+            expect(page.locator('#font-status')).to_have_text('Imported fonts available.')
+            imported=json.loads((local/'font-library.json').read_text())
+            destination=Path(imported['files'][0]['path'])
+            self.assertEqual(destination.read_bytes(),raw)
+            (source/'FontStandard.ttf').write_bytes(b'broken')
+            page.locator('#font-import').click()
+            expect(page.locator('#notice-popup')).to_have_class('error')
+            self.assertEqual(json.loads((local/'font-library.json').read_text()),imported)
+            page.locator('#font-mode').select_option('system')
+            page.wait_for_function('() => !busy')
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('#font-mode')).to_have_value('system')
+            self.assertTrue(destination.is_file())
+            page.locator('#font-mode').select_option('console')
+            page.wait_for_function('() => !busy')
+            self.assertTrue(json.loads((local/'font-library.json').read_text())['enabled'])
+            self.assertEqual(save.read_bytes(),b'keep-save')
+            token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+            state=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+            state['game_pid']=123
+            page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':state}))
+            page.evaluate('refresh()')
+            expect(page.locator('#font-mode')).to_be_disabled()
+            expect(page.locator('#font-import')).to_be_disabled()
+            page.unroute('**/api/status')
+            page.locator('#language').select_option('pt-BR')
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('Padrão do sistema')
+            page.screenshot(path=str(ROOT/'local/graphics-diagnostics-work/font-import-ui.png'),full_page=True)
+        finally:
+            page.locator('#language').select_option('pt-BR')
+            page.close()
+
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
         page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
@@ -693,6 +748,10 @@ class LauncherTests(unittest.TestCase):
             expect(page.locator('[data-browse="base_package"]')).to_have_attribute('aria-label', 'Choose base game')
             page.get_by_role('button',name='Play',exact=True).click()
             expect(page.get_by_role('heading',name='Play',exact=True)).to_be_visible()
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('#font-mode')).to_be_enabled()
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
+            expect(page.locator('[data-browse="font-folder"]')).to_be_visible()
             # The window refuses to navigate away from the local launcher.
             page.evaluate("location.href='https://example.invalid/'")
             time.sleep(1.5)

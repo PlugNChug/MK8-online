@@ -224,6 +224,16 @@
             <div><h1>Configurações</h1><p class="muted">As mesmas opções do menu F1, compartilhadas com o jogo.</p></div>
           </div>
           <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
+          <article class="card" aria-labelledby="font-title">
+            <h2 id="font-title">Fontes do jogo</h2>
+            <fieldset id="font-fields" disabled>
+              <div class="settings-grid"><label>Fonte<select id="font-mode"><option value="system">Padrão do sistema</option><option value="console" disabled>Fontes do console importadas</option></select></label></div>
+              <p id="font-status" class="hint" role="status"></p>
+              <label>Pasta das fontes<div class="row"><input id="font-folder" spellcheck="false" /><button type="button" class="ghost" data-browse="font-folder" data-kind="folder" aria-label="Escolher pasta das fontes" hidden>Escolher</button></div></label>
+              <button id="font-import" type="button" class="ghost">Importar pasta de fontes</button>
+            </fieldset>
+            <p class="hint">Use fontes extraídas do seu console. A importação guarda uma cópia privada. Padrão do sistema mantém as fontes importadas para usar depois. As alterações valem ao iniciar o jogo.</p>
+          </article>
           <form id="game-settings">
             <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
             <div class="row settings-actions">

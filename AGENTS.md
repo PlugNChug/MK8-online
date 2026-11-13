@@ -2,6 +2,8 @@
 
 Leia `README.md` e `docs/STATUS.md`. Esses arquivos são a documentação operacional; atualize-os quando o estado mudar. Não crie um relatório novo para cada tentativa.
 
+- Novas branches de trabalho devem partir do `fix-chore` atualizado de `Vnnc1/MK8-online` e tê-lo como base de integração/PR, salvo instrução explícita diferente. Não abra PR sem solicitação.
+
 - Faça a menor mudança completa. Preserve a separação entre launcher, pipeline, runtime e dados privados; não crie pacotes para funcionalidades hipotéticas.
 - Adaptações próprias ficam em `runtime/mk8` e `toolchain`. Não edite `upstream` nem código gerado diretamente: a preparação verifica hashes e aplica mudanças à cópia de build.
 - Mudanças de ABI/estrutura exigem recompilar seus consumidores. Hooks de guest devem validar versão/hash e rejeitar limites inesperados. Nunca retornar sucesso fictício para passar de uma falha.

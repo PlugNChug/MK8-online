@@ -1,5 +1,10 @@
 # Dependências e atribuições
 
+## Importação de fontes do console — 13/11/2026
+
+Consultados README, releases e [source/main.c do SharedFontDumper](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c), de simontime: nomes `FontStandard.ttf`, `FontNintendoExtended.ttf` e fontes regionais, extração com A e saída com +. Não houve cópia de código nem distribuição da ferramenta/fontes. A decodificação BFTTF segue o formato já implementado no loader upstream fixado. Importador e seletor são próprios; fontes/dumps permanecem privados, validação estrutural não autentica origem Nintendo. Compatibilidade da ferramenta com firmware atual e renderização de fontes autênticas aguardam evidência do usuário.
+
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.

@@ -14,6 +14,96 @@ from native import DEFAULT_COMPILER
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class HostLayoutTests(unittest.TestCase):
+    def test_shared_font_directory_selection_and_system_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', output)
+            text = (runtime/'hle/pl.c').read_text(encoding='utf-8')
+            start = text.index('static uint8_t *read_file(')
+            reader = text[start:text.index('// .bfttf', start)]
+            (output/'test.ttf').write_bytes(b'private-font-fixture')
+            program = output/'font-path.c'
+            program.write_text(r'''
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+''' + reader + r'''
+int main(int argc,char **argv) {
+    assert(argc==2);
+    _putenv_s("MK8_FONT_MODE","console"); _putenv_s("MK8_FONT_DIR",argv[1]);
+    size_t n=0; uint8_t *p=read_file("fonts/test.ttf",&n);
+    assert(p && n==20 && !memcmp(p,"private-font-fixture",20)); free(p);
+    char extended[4096]; snprintf(extended,sizeof extended,"\\\\?\\%s",argv[1]);
+    _putenv_s("MK8_FONT_DIR",extended);
+    p=read_file("fonts/test.ttf",&n); assert(p && n==20); free(p);
+    _putenv_s("MK8_FONT_MODE","system");
+    assert(!read_file("fonts/test.ttf",&n));
+    char absolute[4096]; snprintf(absolute,sizeof absolute,"%s/test.ttf",argv[1]);
+    p=read_file(absolute,&n); assert(p && n==20); free(p); // explicit override preserved
+    char huge[5000]; memset(huge,'a',4999);huge[4999]=0;
+    _putenv_s("MK8_FONT_MODE","console"); _putenv_s("MK8_FONT_DIR",huge);
+    assert(!read_file("fonts/test.ttf",&n));
+}
+''', encoding='utf-8')
+            exe=output/'font-path.exe'
+            env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
+            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O2','-UNDEBUG',str(program),'-o',str(exe)],env=env,check=True)
+            subprocess.run([str(exe),str(output)],check=True,timeout=30)
+
+    def test_shared_font_preference_preserves_overrides_and_has_windows_fallbacks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', output)
+            text = (runtime/'hle/pl.c').read_text(encoding='utf-8')
+            start = text.index('static void load_fonts(void)')
+            loader = text[start:text.index('static const Font *font_for(', start)]
+            program = output/'font-preference.c'
+            program.write_text(r'''
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+typedef struct { uint64_t addr, size; } Font;
+static Font fonts[6];
+static unsigned char font_tried[6];
+static int g_fonts_loaded, calls;
+static const char *override, *available[4], *selected;
+static const char *fake_getenv(const char *name) { assert(!strcmp(name,"LARECOMP_FONT")); return override; }
+#define getenv fake_getenv
+#define FATAL(...) abort()
+static int load_one(const char *path, Font *font) {
+    calls++;
+    for (int i=0;i<4;i++) if (available[i] && !strcmp(path,available[i])) {
+        font->addr=1; selected=path; return 1;
+    }
+    return 0;
+}
+static void load_dump_font(unsigned type) { assert(type==5); }
+''' + loader + r'''
+static void check(const char *expected) {
+    memset(fonts,0,sizeof fonts); g_fonts_loaded=0; calls=0; selected=NULL;
+    load_fonts(); assert(selected && !strcmp(selected,expected) && font_tried[0]);
+    int previous=calls; load_fonts(); assert(calls==previous);
+}
+int main(void) {
+    available[0]="C:/Windows/Fonts/segoeui.ttf";
+    available[1]="C:/Windows/Fonts/arial.ttf";
+    check(available[0]);
+    available[0]=NULL; check(available[1]);
+    available[0]="fonts/nintendo_udsg-r_std_003.bfttf"; check(available[0]);
+    available[2]=override="custom.ttf"; check(override);
+    override="missing.ttf"; check(available[0]);
+    available[0]="fonts/nintendo_udsg-r_std_003.ttf"; check(available[0]);
+}
+''', encoding='utf-8')
+            exe = output/'font-preference.exe'
+            env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG',
+                            str(program), '-o', str(exe)], env=env, check=True)
+            subprocess.run([str(exe)], check=True, timeout=30)
+
     def test_windows_thread_name_notification_is_continuable(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)

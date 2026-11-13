@@ -126,6 +126,12 @@ In **Support → Create report**, create a diagnostic ZIP and attach it to an [i
 
 ## Build and contribute
 
+On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
+
+In **Settings → Game fonts**, use **Import Font Folder** to copy fonts dumped from your own Switch. Requires `FontStandard.ttf` or `nintendo_udsg-r_std_003.ttf/.bfttf`; regional/button fonts are optional. SharedFontDumper filenames are normalized automatically. The launcher checks TrueType table bounds and verifies hashes before launch; this does not authenticate Nintendo provenance. **System Default** disables imported fonts without deleting them; **Imported Console Fonts** re-enables them. Changes take effect next launch, without another game rebuild after installing the launcher/runtime with this support. Legacy folders and explicit `LARECOMP_FONT` overrides remain supported.
+
+With homebrew already working: get the `.nro` from [SharedFontDumper releases](https://github.com/simontime/SharedFontDumper/releases), place it under `switch/` on the SD card, and launch it from the Homebrew Menu. Press **A** for individual TTF files; **+** exits after completion. Copy the SD's `fonts` folder to your PC and import it. The [tool source](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c) documents these controls and filenames. This older tool's compatibility with current firmware/homebrew has not been tested here. Combined `shared_font.bin` dumps and firmware archives are not accepted.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell

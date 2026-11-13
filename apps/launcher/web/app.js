@@ -59,6 +59,7 @@ function showTab(name) {
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
   if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
+  if (name === "settings") loadFontSettings().catch((error) => notice(error.message, true));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -75,7 +76,31 @@ let settingsDirty = false;
 let settingsBlocked = false;
 let settingsSaving = false;
 let settingsBaseline = {};
+let fontsLoaded = false;
+let fontsSaving = false;
+async function loadFontSettings() {
+  const data = await api("fonts");
+  i18n.text($("font-mode").querySelector('[value="system"]'), "Padrão do sistema");
+  i18n.text($("font-mode").querySelector('[value="console"]'), "Fontes do console importadas");
+  $("font-mode").querySelector('[value="console"]').disabled = !data.imported;
+  $("font-mode").value = data.enabled ? "console" : "system";
+  i18n.text($("font-status"), data.imported ? "Fontes importadas disponíveis." : "Nenhuma fonte do console importada.");
+  fontsLoaded = true;
+  updateSettingsLock();
+}
+async function saveFonts(body) {
+  fontsSaving = true;
+  updateSettingsLock();
+  try { return await api("fonts", body); }
+  finally {
+    try { await loadFontSettings(); }
+    finally { fontsSaving = false; updateSettingsLock(); }
+  }
+}
+$("font-import").onclick = () => action(() => saveFonts({directory: $("font-folder").value.trim()}));
+$("font-mode").onchange = () => action(() => saveFonts({enabled: $("font-mode").value === "console"}));
 function updateSettingsLock() {
+  $("font-fields").disabled = settingsBlocked || fontsSaving || !fontsLoaded;
   const locked = settingsBlocked || settingsSaving;
   $("settings-fields").disabled = locked || !settingsLoaded;
   $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty;
@@ -288,6 +313,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       });
       if (!result.path) return { message: "Nenhum arquivo selecionado." };
       input.value = result.path;
+      if (input.id === "font-folder") return { message: "Pasta selecionada." };
       if (input.id === "game-folder") return selectGameFolder();
       if (input.id.startsWith("dlc-")) {
         await refreshDlcFiles();
