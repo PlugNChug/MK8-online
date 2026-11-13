@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Atualização da base MK8-online — 13/11/2026
+
+Integrada a republicação de RatOne/[Vnnc1/MK8-online até `e554c7ba01eb25a823fdc7953d973d8dbeb2a9ad`](https://github.com/Vnnc1/MK8-online/commit/e554c7ba01eb25a823fdc7953d973d8dbeb2a9ad), incluindo setup nativo Python, download Mii e separação dos filtros de controle. Merge local `4286500`, preservando os patches próprios de gráficos/áudio e as adaptações DLC. Avisos de licença e referências upstream mantidos; validações desse checkout estão em `STATUS.md`, separadas dos resultados publicados pelo projeto de origem.
+
 ## Áudio — volume inicial de vozes, 12/11/2026
 
 Referências de comportamento do renderer Ryujinx, consultadas no histórico publicado, sem incorporar código C# ou dependência nova:
