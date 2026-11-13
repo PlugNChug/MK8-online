@@ -121,7 +121,7 @@ async function loadFFL(){
     thumbScene=new THREE.Scene();
     thumbScene.add(new THREE.HemisphereLight(0xffffff,0x6a7480,2.2));
     const sun=new THREE.DirectionalLight(0xffffff,1.6);sun.position.set(60,140,120);thumbScene.add(sun);
-    el('mii-library').hidden=true;status('');
+    el('mii-library').hidden=true;status(creating?'Dê um nome ao Mii e toque em Criar Mii para começar.':'');
     return true;
   })();
   try{return await fflLoading;}catch(e){status(e.message);el('mii-library').hidden=false;return false;}finally{fflLoading=null;}

@@ -1258,7 +1258,10 @@ pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
 fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
     let mut res = Response::from_data(bytes).with_status_code(code);
     for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
-    let _ = req.respond(res);
+    // A browser that stops reading a download must not stall the API event loop.
+    std::thread::spawn(move || {
+        let _ = req.respond(res);
+    });
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
 /// answering status requests while the dialog is open.
@@ -1614,6 +1617,54 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stalled_download_does_not_block_other_requests() {
+        use std::{io::Write, net::TcpStream};
+        let server = Server::http(("127.0.0.1", 0)).unwrap();
+        let address = server.server_addr().to_string();
+        let worker = std::thread::spawn(move || {
+            let download = server.recv().unwrap();
+            binary_response(
+                download,
+                200,
+                vec![0; 8 * 1024 * 1024],
+                "application/octet-stream",
+            );
+            let status = server.recv().unwrap();
+            response(status, 200, "still responsive".into(), "text/plain");
+        });
+        let mut download = TcpStream::connect(&address).unwrap();
+        write!(
+            download,
+            "GET /download HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        // Read only the headers, leaving a real response larger than the socket buffers stalled.
+        download
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut headers = Vec::new();
+        while !headers.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            download.read_exact(&mut byte).unwrap();
+            headers.push(byte[0]);
+        }
+        let mut status = TcpStream::connect(&address).unwrap();
+        status
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        write!(
+            status,
+            "GET /status HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut answer = String::new();
+        let result = status.read_to_string(&mut answer);
+        drop(download);
+        worker.join().unwrap();
+        result.unwrap();
+        assert!(answer.ends_with("still responsive"), "{answer}");
+    }
     #[test]
     fn dlc_file_readiness_uses_real_files_and_the_importers_key_selection() {
         let root = std::env::temp_dir().join(format!("mk8-dlc-fields-{}", std::process::id()));

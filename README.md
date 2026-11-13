@@ -150,6 +150,8 @@ It downloads the pinned upstream sources, verifies their hashes, builds the laun
 
 The launcher and game runtime are separate builds. This source launcher uses the prepared game in this checkout's `local/candidate.json`; rebuilding the launcher keeps that runtime. The visibility/audio fixes live in `toolchain`, and preparation reapplies them to the build copy, so they also survive later game builds from this branch. They are active without `MK8_GFX_DIAGNOSTICS`; that switch only enables evidence capture. A downloaded upstream release is a separate build and does not include these local fixes.
 
+The rebuild prompt compares the last launcher-managed build's version marker. A command-line runtime refresh does not advance that marker; **Update build** reuses completed stages and records the current launcher version after success.
+
 After changing runtime sources, update the existing prepared runtime without rebuilding the guest game code:
 
 ```powershell

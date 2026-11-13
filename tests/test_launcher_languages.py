@@ -215,6 +215,9 @@ class LanguageTests(unittest.TestCase):
         status["candidate_stale"] = True
         page.evaluate("refresh()")
         expect(rebuild).to_have_text("Update build")
+        rebuild.click()
+        page.wait_for_function("!busy")
+        self.assertEqual([body for path, body in requests if path == "/api/prepare"], [{}, {}])
         status.update(candidate=False, candidate_stale=False)
         page.evaluate("refresh()")
         expect(rebuild).to_have_text("Start build")
