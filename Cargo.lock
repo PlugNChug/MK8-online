@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-build-manager"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "mk8-manifest",
  "serde",
@@ -1925,7 +1925,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-installer"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "mk8-manifest",
  "rand",
@@ -1936,7 +1936,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-manifest"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1945,7 +1945,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-online"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "mk8-build-manager",
  "mk8-installer",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-session"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "mk8-manifest",
@@ -1976,7 +1976,7 @@ dependencies = [
 
 [[package]]
 name = "mk8-transport"
-version = "0.1.9-test.1"
+version = "0.2.0"
 dependencies = [
  "chacha20poly1305",
  "rand",

@@ -40,10 +40,15 @@ jobs:
         with:
           name: setup
           path: target/dist/*
+      - name: Release title
+        id: title
+        shell: pwsh
+        run: '"text=" + (Get-Content target/dist/release-title.txt -Raw).Trim() | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8'
       - name: Publish
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.title.outputs.text }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: target/dist/release-notes.md
           files: |

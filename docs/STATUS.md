@@ -1,4 +1,23 @@
-# Estado técnico — 11/11/2026
+# Estado técnico — 13/11/2026
+
+## Fechamento da release pública 0.2.0 — 13/11/2026
+
+A 0.2.0 reúne as alterações da `fix-chore` para a `master`: criador Mii com miniaturas e corpo do jogo, preparação dos recursos para o renderer Mii original, salas/convites Steam e entrada automática experimental no lobby, além das correções de logs, caminhos Windows e gerenciamento de recursos gráficos documentadas abaixo. Notas bilíngues e título ficam em `docs/releases/0.2.0.md`; os dois READMEs descrevem os mesmos requisitos e limites. **Multiplayer Steam continua experimental, sem corrida entre dois PCs qualificada.**
+
+O pacote foi recompilado pelos scripts de distribuição, incluindo o host nativo. Os scripts agora resolvem a pasta de build por `cargo metadata`, respeitando o disco configurado; o workflow usa o título das notas e o CI também cobre a branch `master`. O link gerado para o status aponta para a tag correta.
+
+**Validação desta release:**
+
+- `cargo fmt --all -- --check`, Clippy de todo o workspace com `-D warnings` e 57 testes Rust passaram.
+- 23 testes de pipeline, runtime e reutilização de host/FFmpeg passaram com o Python privado e suas dependências. A primeira execução com o Python do sistema não tinha `lz4`/`zstandard`; isso não foi tratado como teste aprovado.
+- 19 testes de navegador passaram contra o executável **empacotado**, incluindo relay habilitado, tráfego UDP bidirecional, idiomas, interface Steam e criação/edição/persistência de Miis. Foi corrigida uma expectativa antiga de texto do teste de relay (`Na sala`); o teste do criador aguarda sua inicialização antes de verificar os controles.
+- O roteiro de composição também passou com o launcher empacotado, AFL/jogo privados e Python local configurado na sessão isolada: 132 miniaturas de cabelo, olhos, corpos masculino/feminino, altura/cor, salvamento, geração real dos seis recursos Mii e recarga, sem requisições externas. A captura `local/mii-composer-check/creator.png` foi inspecionada. Sem o Python de ferramentas preparado, a geração é recusada; esse pré-requisito foi fornecido para o teste, sem incluir recursos privados na distribuição.
+- O setup real percorreu suas telas, instalou, abriu o launcher 0.2.0 e desinstalou em uma pasta isolada. A atualização silenciosa **0.1.8 → 0.2.0** preservou pastas, idioma, configuração e save de teste. O registro HKCU e os atalhos da instalação anterior foram restaurados e conferidos.
+- A auditoria conferiu 934 arquivos do payload, os fontes atuais e hashes do host/FFmpeg. Não encontrou recursos de jogo, chaves ou caminhos pessoais no pacote verificado. Os 23 arquivos pessoais de configuração/perfis/saves acompanhados permaneceram iguais.
+
+Setup: `MK8-online-0.2.0-setup.exe`, 57.900.544 bytes, SHA-256 `52ee5d1b34c80a0e2908ba815707d8130092ed186a4fa830f6053eed293e154f`. A distribuição acompanha `.sha256`, `ffmpeg-9.0.2.tar.xz` e `build-ffmpeg.sh`; nenhuma biblioteca AFL ou DLL da Steam é distribuída. Evidências privadas em `local/release-0.2.0-*.log`, `local/release-artifacts-0.2.0.json`, `local/release-validation-0.2.0-final` e `local/release-upgrade-0.2.0`.
+
+Esta validação de distribuição não repetiu a qualificação completa de gameplay nem comprovou o convidado Steam em outra máquina. As evidências de jogo abaixo mantêm seu escopo original; `gameplay_verified=false` e `multiplayer_verified=false` permanecem. Após atualizar, preparar o jogo novamente com o runtime novo.
 
 ## Multijogador só pela Steam, com o Mii e entrada automática na sala — 12/11/2026
 

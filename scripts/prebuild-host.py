@@ -13,7 +13,11 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'toolchain'))
-WORK = ROOT / 'target/prebuilt-host'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from cargo_target import target_dir  # noqa: E402
+
+TARGET = target_dir()
+WORK = TARGET / 'prebuilt-host'
 PROFILE = ROOT / 'games/mk8d/profiles/4.0.1.json'
 
 
@@ -21,7 +25,7 @@ def main():
     os.environ['MK8_HOST_FROM_SOURCE'] = '1'
     from host import HOST_FILES, PREBUILT, build_host
     if WORK.exists():
-        if WORK.is_symlink() or WORK.is_junction() or not WORK.resolve().is_relative_to((ROOT / 'target').resolve()):
+        if WORK.is_symlink() or WORK.is_junction() or not WORK.resolve().is_relative_to(TARGET.resolve()):
             raise ValueError(f'Pasta de trabalho inesperada: {WORK}')
         shutil.rmtree(WORK)
     WORK.mkdir(parents=True)

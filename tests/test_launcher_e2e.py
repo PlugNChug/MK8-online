@@ -230,7 +230,7 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(guest.request.post(self.relay_url+"/v1/join", data={"code":code, "identity":"wrong"}).json()["ok"])
         guest_token = guest.locator('meta[name="mk8-token"]').get_attribute("content")
         self.assertTrue(guest.request.post(self.urls[1]+"/api/session/join", headers={"X-MK8-Token":guest_token}, data=json.dumps({"invite":code})).json()["ok"])
-        expect(guest.locator("#network-state")).to_have_text("Transporte conectado", timeout=10000)
+        expect(guest.locator("#network-state")).to_have_text("Na sala", timeout=10000)
 
         def bridge(page, index):
             token = page.locator('meta[name="mk8-token"]').get_attribute("content")

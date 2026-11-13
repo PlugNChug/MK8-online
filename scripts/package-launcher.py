@@ -8,10 +8,13 @@ import subprocess
 import sys
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
+from cargo_target import target_dir
+
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "target/portable"
+TARGET = target_dir()
+OUTPUT = TARGET / "portable"
 # (its own target folder: the packaged build embeds the payload, unlike target/release used in development)
-BUILD = ROOT / "target/package"
+BUILD = TARGET / "package"
 MANIFEST = ROOT / "upstream/manifests/smm2recomp.json"
 SOURCE_EXTENSIONS = {".c", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
 

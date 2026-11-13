@@ -39,6 +39,7 @@ class MiiLauncherTests(unittest.TestCase):
                         def export():
                             return page.request.get(url+'/api/mii/export',headers={'X-MK8-Token':token}).json()['data']['data']
                         # Only creation is on the screen: no profile yet, the library is asked for once, no game body.
+                        expect(page.locator('#mii-save')).to_have_text('Criar Mii', timeout=30000)
                         expect(page.locator('#mii-tabs button')).to_have_text(PARTS)
                         expect(page.locator('#mii-library')).to_be_visible()
                         expect(page.locator('#mii-save')).to_have_text('Criar Mii')
