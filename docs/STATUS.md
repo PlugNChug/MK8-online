@@ -1,5 +1,12 @@
 # Estado técnico — 13/11/2026
 
+## Rampa inicial das vozes de áudio — 13/11/2026
+
+Validação desta branch: **11 testes nativos/Python aprovados**, zero skips: sete do mixer e quatro de hot paths. Não foi refeita uma build do jogo nem reteste auditivo nesta separação de PR.
+
+Patch focado sobre fix-chore `15d1106`: na criação/reutilização de uma voz, inicializa prev_volume em 0.f em vez do volume atual. A rampa já existente cobre o primeiro bloco (240 amostras/48 kHz, 5 ms); decoder, resampling, ganho global e buffers SDL permanecem iguais. Testes nativos usam mixer/decoder preparados com PCM/ADPCM sintéticos, vozes novas/reutilizadas, estéreo, splitter, chegada tardia de buffers, pitches 1/1.498, loop contínuo, volume constante e mute. Evidência auditiva anterior é da branch integrada: usuário confirmou o reproducer em Electrodrome corrigido; não equivale a qualificação desta branch isolada. `gameplay_verified=false`.
+
+
 ## Salas da Steam exigem o mesmo estado de DLC — 13/11/2026
 
 O anfitrião publica `mk8_dlc` (`1` com o Booster Course Pass instalado e ativado; `0` sem ele) nos dados do lobby, ao lado de `mk8_code`. O estado é o mesmo que o jogo recebe na abertura (`dlc::launch_root`). Ao entrar, `SteamRoom::join_live` lê a chave **antes de abrir o transporte** e recusa estados diferentes com uma mensagem acionável ("Importe e ative o DLC…" / "Desative o DLC…"), saindo do lobby da Steam. Lobby sem a chave, de launcher sem suporte a DLC, conta como sem DLC; valor desconhecido é recusado. A decisão fica em `steam::check_dlc` (teste `dlc_state_must_match_the_host_lobby`: quatro combinações, anfitrião antigo e valor inválido). A entrada automática por `+connect_lobby` agora mostra o erro em vez de ignorá-lo silenciosamente. O cartão de DLC em **Configurações** informa a regra; textos em PT/EN. Validação: formatação, Clippy, 66 testes Rust, e2e (21), idiomas (3) e DLC no launcher (4). **Sem prova com duas contas Steam reais.** Salas P2P (`MK8P-…`), convites e relay continuam sem essa verificação; hoje são usados apenas por scripts/API, pois a interface oferece só salas da Steam.
