@@ -1,5 +1,17 @@
 # Dependências e atribuições
 
+## Controles nativos e Steam — 13/11/2026
+
+A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.
+
+## Preparação nativa do Python — 13/11/2026
+
+`apps/launcher/src/python_setup.rs` substitui a chamada PowerShell da etapa Ferramentas. Mantém o CPython 3.12.10 x64 oficial do NuGet e seu SHA-256 já documentados abaixo (14.515.433 bytes); extrai o pacote completo, incluindo licenças, com o tar do Windows após verificar o hash. Cria o venv e instala somente wheels com hashes fixados, pelo próprio Python. Não adiciona biblioteca externa nem altera configurações do antivírus. A enumeração de processos usa as [APIs Tool Help do Windows](https://learn.microsoft.com/en-us/windows/win32/toolhelp/tool-help-functions) para recusar reparo de ambientes em uso. Os scripts PowerShell de desenvolvimento permanecem separados; o launcher não os chama nessa etapa.
+
+## Download da biblioteca Mii — 13/11/2026
+
+O criador baixa diretamente a [cópia arquivada do CDN Miitomo](https://web.archive.org/web/20180502054513id_/http://download-cdn.miitomo.com/native/20180125111639/android/v2/asset_model_character_mii_AFLResHigh_2_3_dat.zip), indicada pelo [FFL-Testing](https://github.com/ariankordi/FFL-Testing#running). A interface identifica o Internet Archive; não é o servidor original ativo. ZIP: 4.393.464 bytes, SHA-256 `42c106511e8d520583dd4f43360386aa77a5080e4ca8574e7e3d2288e2786d43`. Após conferir o ZIP, extrai somente `asset/model/character/mii/AFLResHigh_2_3.dat` e confere novamente tamanho e hash da biblioteca documentados abaixo. HTTPS via curl e extração via tar do Windows; nenhuma dependência nova nem execução de código baixado. O arquivo permanece em `mii-library/` na pasta privada de dados, fora do repositório e instalador. Disponibilidade no arquivo não altera a licença dos recursos. O download pode falhar; seleção local continua disponível.
+
 ## Automação da conversão no launcher — fase 5, 10/11/2026
 
 O módulo Rust `crates/installer/src/mii_native.rs` e sua integração ao servidor são adaptações próprias; reutilizam o conversor Python/C# e a supervisão de processos existentes. Não foi adicionada dependência externa. A interface de composição mantém seu aviso AGPL-3.0-or-later e os avisos FFL.js/Three.js abaixo. Python/Pillow, BfresLibrary e DLLs continuam locais, com suas licenças preservadas; nenhum desses binários, AFL, corpo original ou modelo derivado foi incorporado ao instalador nesta fase. Os manifestos privados registram os hashes utilizados e `STATUS.md` documenta a evidência desta build.

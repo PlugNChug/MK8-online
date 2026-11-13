@@ -161,8 +161,10 @@
             <button id="mii-new" type="button">+ Novo Mii</button>
           </div>
           <div id="mii-library" class="card mii-library" hidden>
-            <p>Para desenhar o rosto, escolha uma vez a biblioteca de peças <b>AFLResHigh_2_3.dat</b> (fica só neste PC).</p>
-            <div class="row"><input id="mii-library-path" spellcheck="false" aria-label="Biblioteca de peças" placeholder="C:\…\AFLResHigh_2_3.dat" /><button id="mii-library-browse" type="button">Procurar</button><button id="mii-library-load" type="button" class="primary">Usar</button></div>
+            <p>A biblioteca de peças é baixada do Internet Archive, a partir de uma cópia do antigo download do Miitomo, e fica só neste PC.</p>
+            <p id="mii-library-status" role="status" aria-live="polite"></p>
+            <button id="mii-library-download" type="button" class="primary">Tentar download novamente</button>
+            <details><summary>Usar um arquivo local</summary><div class="row"><input id="mii-library-path" spellcheck="false" aria-label="Biblioteca de peças" placeholder="C:\…\AFLResHigh_2_3.dat" /><button id="mii-library-browse" type="button">Procurar</button><button id="mii-library-load" type="button">Usar</button></div></details>
           </div>
           <div class="mii-creator">
             <div class="mii-stage card">
@@ -178,6 +180,7 @@
             </div>
           </div>
           <p class="fine">Rosto desenhado por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>, com a biblioteca AFL local. Corpo lido do jogo preparado neste PC; nada é copiado.</p>
+          <p class="fine">Fonte do download das peças: Internet Archive, cópia do antigo CDN Miitomo.</p>
         </section>
 
         <!-- Jogar -->
@@ -193,6 +196,7 @@
             <span class="big-eight" aria-hidden="true">8</span>
             <div class="hero-body">
               <p id="game-state">Prepare o jogo para habilitar a execução.</p>
+              <p id="mii-preparation-state" role="status" aria-live="polite" hidden></p>
               <div class="cta">
                 <button id="play-solo" class="primary big" disabled>Jogar solo</button>
                 <button id="play-online" class="ghost big" disabled>Jogar na sala</button>
@@ -258,6 +262,7 @@
               <li>O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.</li>
               <li>O amigo aceita: no Launcher (Aceitar), no chat da Steam ou em Entrar na sala do amigo. O jogo dele abre e entra na sala sozinho.</li>
               <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
+              <li>Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
             </ol>
           </details>

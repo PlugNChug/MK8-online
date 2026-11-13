@@ -55,7 +55,7 @@ pub fn newer(candidate: &str, current: &str) -> bool {
     }
 }
 
-fn curl() -> Command {
+pub(crate) fn curl() -> Command {
     let mut cmd = Command::new("curl");
     #[cfg(windows)]
     {

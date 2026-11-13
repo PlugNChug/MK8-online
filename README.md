@@ -67,7 +67,7 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 - Your own base game, **4.0.1 update** and `prod.keys` from your console, or a supported extracted game folder.
 - About **28 GiB free** for extraction and preparation (including a 4 GiB safety reserve), plus room for tools and caches. An SSD is recommended.
 - Internet for the first tool download (about 0.4 GiB) and for updates.
-- **For Miis:** the Mii parts library `AFLResHigh_2_3.dat`, from your own software. It is not distributed, and the Launcher checks its hash. Without it, Mii options still work as numbered buttons, but faces are not drawn.
+- **For Miis:** opening the creator downloads `AFLResHigh_2_3.dat` from an Internet Archive copy of the former Miitomo CDN. The Launcher verifies the ZIP and library by size and SHA-256, then caches the file privately for offline use. It is not bundled in GitHub or the installer. If the archive is unavailable, retry or select a compatible local file; without the library, options remain numbered and faces are not drawn.
 - **For multiplayer:** the **Steam** client, signed in, and any Steam game installed that ships `steam_api64.dll` (or a copy of that file in the Launcher's data folder). No Valve file is bundled.
 
 ### Install and play
@@ -77,6 +77,8 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
 
+The Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
+
 An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other versions, DLC and XCI/XCZ import are not validated.
 
 Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalling. To use another drive with the portable launcher: `.\Launcher.exe --data-dir E:\MK8-Local`, and keep using the same folder.
@@ -85,9 +87,11 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 
 ### Create your Mii
 
-1. Open **Mii profile**. The first time, choose `AFLResHigh_2_3.dat` (**Browse**, then **Use**).
+1. Open **Mii profile** and wait for the first library download. Its Internet Archive origin is shown in the creator. To use an existing file, expand **Use a local file**, then **Browse** and **Use**. A valid configured library is reused automatically.
 2. Type a name and choose **Create Mii**. Then go through the tabs and tap the option you like: each button shows your Mii with that option. **Body** has type, height, build and favorite color, and the preview shows the whole body (or just the face).
 3. Choose **Save Mii**. The Launcher prepares the in-game Mii models the first time; the game uses your Mii the next time it opens.
+
+**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. If an XInput controller stops responding while Steam is connected, open **Steam → Library → Spacewar → Properties → Controller**, select **Disable Steam Input** for that game, then close and reopen both MK8 and the Launcher. Steam remains connected for friends and rooms. Clearing Steam's inherited SDL device filters alone does not resolve forced Steam Input remapping. A GameSir T4n Lite through its USB receiver was confirmed working in the menu after this adjustment, with the Steam API connected.
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 

@@ -16,6 +16,7 @@ async function api(path, body) {
   return value.data;
 }
 function notice(text, error = false) {
+  $("notice").dataset.message = text;
   i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
 }
@@ -45,6 +46,7 @@ function showTab(name) {
     item.setAttribute("aria-selected", String(selected));
     $(item.dataset.tab).hidden = !selected;
   });
+  window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -481,8 +483,19 @@ async function refresh() {
       : status.candidate
         ? "Build experimental disponível para teste."
         : "Prepare o jogo para habilitar a execução.");
+  const miiJobs = Object.values(status.mii_preparation || {});
+  const miiBusy = miiJobs.some(job => job.state === "running");
+  const miiFailure = miiJobs.find(job => job.state === "failed");
+  const miiDone = miiJobs.some(job => job.state === "done");
+  const miiText = miiBusy ? "Preparando os modelos Mii. Jogar será liberado ao concluir."
+    : miiFailure ? miiFailure.detail : miiDone ? "Modelos Mii prontos. Você já pode jogar." : "";
+  $("mii-preparation-state").hidden = !miiText;
+  i18n.text($("mii-preparation-state"), miiText);
+  if (!miiBusy && $("notice").dataset.message === "Aguarde a conversão Mii terminar.") {
+    notice(miiText, !!miiFailure);
+  }
   $("play-solo").disabled =
-    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running";
+    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy;
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
