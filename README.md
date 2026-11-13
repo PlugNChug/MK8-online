@@ -165,6 +165,12 @@ Current priorities are repeated-cup VRAM stability, shader/frame-time consistenc
 
 **Testes automatizados de corrida:** [roteiro assistido e coleta de evidências](README.pt-BR.md#testes-de-corrida-assistida).
 
+Course-specific visual checks support assisted Grand Prix cup selection, verified DLC cups, `--intro` to preserve the race flyover, and `--manual` for real keyboard/controller input. Reproduction commands and capture limits are in the linked guide; course observations and the unconfirmed sound-effect onset crackle are tracked in [technical status](docs/STATUS.md).
+
+Use `--audio` for audible test output and `--frame-gen saved` to preserve the copied frame-generation setting when matching normal play. Personal settings remain untouched.
+
+Source-built runtimes also support opt-in graphics incident recording: enable `MK8_GFX_DIAGNOSTICS=1` before starting the game and press **F8** during play. It saves recent shader/pipeline skip events, fullscreen requests/applications, swapchain generations, render-scale changes, and one screenshot in `graphics-incidents/<ID>/` under the game's working directory. First/latest transition checkpoints remain available after the rolling history expires. For a transient preview defect, press **F7 as the racers enter view**: it collects the next 60 frames as thumbnails with draw/conditional-render records, then saves automatically. This explicit capture window affects timing; it cannot recover earlier images. Existing screenshot requests take priority. Use `--fullscreen off` or `--fullscreen on` in the race harness to control only the copied session's startup setting. See the [copied-save commands, F7 output, and evidence limits](README.pt-BR.md#diagnóstico-gráfico-manual). Detailed attachment/viewport/scissor command state is collected only during F7 windows.
+
 Development needs Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 for the importer. Disk-type detection is optional: Windows storage drivers may report an unknown type, including on CI virtual disks. Start from the repository root:
 
 ```powershell

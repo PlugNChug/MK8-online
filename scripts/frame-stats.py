@@ -2,7 +2,7 @@
 
     python scripts/frame-stats.py local/race-grand-prix-xxxx [--from 3600 --to 15000] [...more sessions]
 
-Frames within 3 of a window capture (frame-NNNNN.png) are left out: a capture stalls its frame on purpose.
+Frames within 3 of a window or incident capture are left out: readback stalls its frame on purpose.
 Reports the mean FPS, percentiles and how many frames missed the 60 Hz budget, plus the slowest frames split
 into backend execution, shader prefetch, presentation and the rest (as the runtime logs them).
 """
@@ -12,6 +12,8 @@ import re
 
 FRAME = re.compile(r'^\[frame\] (\d+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)', re.M)
 SHOT = re.compile(r'saved .*frame-(\d+)\.png')
+INCIDENT_CAPTURE = re.compile(r'\[gfx-incident\] capture host frame (\d+)')
+PREVIEW_CAPTURE = re.compile(r'\[gfx-preview\] (start|end) host frame (\d+)')
 HEAP = re.compile(r'^\[mk8:vram\] heap (\d+): (\d+) MB in (\d+) blocks, (\d+) MB used by (\d+) allocations; '
                   r'VMA estimate (\d+) of (\d+) MB; vertex cache (\d+) MB; (\d+) live textures$')
 COMMANDS = re.compile(r'^\[mk8:vram\] command lists: (\d+) active, (\d+) retired, clock (\d+)$')
@@ -65,10 +67,24 @@ def percentile(values, p):
 def stats(session, first, last, slowest):
     log = Path(session) / 'game.log' if Path(session).is_dir() else Path(session)
     text = log.read_text(encoding='utf-8', errors='replace')
-    shots = {int(n) for n in SHOT.findall(text)}
+    shots = {int(n) for n in SHOT.findall(text)} | {int(n) for n in INCIDENT_CAPTURE.findall(text)}
     near = {f + d for f in shots for d in range(-3, 4)}
     rows = [(int(m[0]), *map(float, m[1:])) for m in FRAME.findall(text)]
-    rows = [r for r in rows if first <= r[0] <= last and r[0] not in near]
+    preview_ranges=[]
+    preview_start=None
+    for state, value in PREVIEW_CAPTURE.findall(text):
+        frame=int(value)
+        if state=='start':
+            preview_start=frame
+        elif preview_start is not None:
+            if frame<preview_start:
+                raise ValueError('Intervalo de captura preview inválido')
+            preview_ranges.append((preview_start-3,frame+3))
+            preview_start=None
+    if preview_start is not None and rows:
+        preview_ranges.append((preview_start-3,rows[-1][0]+3))
+    rows = [r for r in rows if first <= r[0] <= last and r[0] not in near
+            and not any(a<=r[0]<=b for a,b in preview_ranges)]
     if not rows:
         return f'{log}: no [frame] lines in {first}-{last} (run with LARECOMP_VK_PROF=1 MK8_FRAME_TIMES=1)'
     total = [r[1] for r in rows]

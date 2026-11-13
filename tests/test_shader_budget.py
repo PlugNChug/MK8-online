@@ -50,6 +50,8 @@ static uint64_t SDL_GetTicksNS(void) {
 static uint64_t frame_no;
 uint64_t vk_frame_counter(void) { return frame_no; }
 static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
+/* The recorder observes waits without changing budget decisions. */
+static bool mk8_gfx_enabled(void) { const char *e=getenv("TEST_GFX"); return e && !strcmp(e,"1"); }
 ''' + budget + r'''
 int main(int argc, char **argv) {
     (void)argv;
@@ -103,8 +105,9 @@ int main(int argc, char **argv) {
                                     str(source), str(runtime/'nvn/buildsync.c'), '-o', str(exe)],
                                    env=env, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr[-3000:])
-            subprocess.run([str(exe)], check=True, timeout=30,
-                           env=dict(os.environ, MK8_SHADER_WAIT_MS='8'))
+            for diagnostics in ('0', '1'):
+                subprocess.run([str(exe)], check=True, timeout=30,
+                               env=dict(os.environ, MK8_SHADER_WAIT_MS='8', TEST_GFX=diagnostics))
             subprocess.run([str(exe), 'off'], check=True, timeout=30, env=dict(os.environ, MK8_SHADER_WAIT_MS='-1'))
             unset = {k: v for k, v in os.environ.items() if k != 'MK8_SHADER_WAIT_MS'}
             subprocess.run([str(exe), 'default'], check=True, timeout=30, env=unset)

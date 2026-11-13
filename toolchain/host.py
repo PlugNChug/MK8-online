@@ -248,6 +248,8 @@ def prepare_host_sources(source, output):
     prepare_reboot_lifetime(runtime)
     from dlc import prepare as prepare_dlc
     prepare_dlc(runtime)
+    from graphics_incident import prepare as prepare_graphics_incident
+    prepare_graphics_incident(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

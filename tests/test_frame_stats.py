@@ -1,6 +1,7 @@
 """Analisa contadores de memória com quadros conhecidos e logs autorais."""
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,25 @@ spec.loader.exec_module(stats)
 
 
 class MemoryStatsTests(unittest.TestCase):
+    def test_preview_window_is_excluded_even_without_completed_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log=Path(folder)/'game.log'
+            text=''.join(f'[frame] {i} {100 if 97<=i<=163 else 16} 3 1 1 11\n' for i in range(90,171))
+            log.write_text(text+'[gfx-preview] start host frame 100\n[gfx-preview] end host frame 160\n[gfx-incident] capture failed\n')
+            result=stats.stats(log,90,170,0)
+            self.assertIn('14 frames',result); self.assertIn('max 16.00 ms',result)
+            log.write_text(text+'[gfx-preview] start host frame 100\n')
+            self.assertIn('7 frames',stats.stats(log,90,170,0))
+
+    def test_incident_capture_disturbance_is_excluded_even_if_writing_failed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log=Path(folder)/'game.log'
+            text=''.join(f'[frame] {i} {200 if 97 <= i <= 103 else 16} 3 1 1 11\n' for i in range(90,111))
+            log.write_text(text+'[gfx-incident] capture host frame 100\n[gfx-incident] capture failed\n')
+            result=stats.stats(log,90,110,0)
+            self.assertIn('14 frames',result)
+            self.assertIn('max 16.00 ms',result)
+
     def test_memory_is_aligned_to_frames_and_keeps_heaps_separate(self):
         text = '''[frame] 100 16 3 1 1 11
 [mk8:vram] heap 0: 512 MB in 4 blocks, 300 MB used by 80 allocations; VMA estimate 512 of 4096 MB; vertex cache 12 MB; 50 live textures

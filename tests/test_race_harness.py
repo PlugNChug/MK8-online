@@ -16,6 +16,143 @@ spec.loader.exec_module(race)
 
 
 class RaceHarnessTests(unittest.TestCase):
+    def test_saved_frame_generation_can_be_reproduced_without_changing_source(self):
+        args = race.parse_args(['time-trial', '--frame-gen', 'saved', '--audio'])
+        self.assertTrue(args.audio)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'user-no-mii/save').mkdir(parents=True)
+            (root/'user-no-mii/save/data').write_bytes(b'original')
+            ini = 'frame_gen = 120\nvolume = 0.35\nresolution = match\n'
+            (root/'user-no-mii/mk8d.ini').write_text(ini)
+            race.prepare_session(root, root/'saved', None, args.frame_gen)
+            race.prepare_session(root, root/'control', None)
+            self.assertEqual((root/'saved/data/mk8d.ini').read_text(), ini)
+            self.assertIn('frame_gen = off', (root/'control/data/mk8d.ini').read_text())
+            self.assertEqual((root/'user-no-mii/mk8d.ini').read_text(), ini)
+            self.assertEqual((root/'user-no-mii/save/data').read_bytes(), b'original')
+
+    def test_manual_handover_enables_real_input_without_host_pad_override(self):
+        args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3', '--manual'])
+        self.assertTrue(args.manual)
+        env = {'LARECOMP_INPUT': '10:A:6'}
+        race.manual_input_environment(env)
+        self.assertEqual(env, {'LARECOMP_INPUT': '10:A:6', 'LARECOMP_NO_USER_INPUT': '0'})
+        for name in ('LARECOMP_HOST_INPUT', 'LARECOMP_BIND_TEST'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'controle físico'):
+                race.manual_input_environment({name: ''})
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                race.parse_args(['time-trial', '--manual', '--env', name+'='])
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            race.parse_args(['grand-prix', '--assisted', '--manual'])
+
+    def test_manual_dlc_launch_passes_controller_through_and_keeps_saves_isolated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'user-no-mii/save').mkdir(parents=True)
+            (root/'user-no-mii/save/original').write_bytes(b'untouched')
+            original_ini = 'frame_gen = off\nvolume = 0.35\n'
+            (root/'user-no-mii/mk8d.ini').write_text(original_ini)
+            exe, dlc = root/'synthetic.exe', root/'dlc/installed.bin'
+            exe.write_bytes(b'author-created test input; never executed')
+            dlc.parent.mkdir()
+            dlc.write_bytes(b'synthetic DLC receipt')
+            def record(path):
+                return {'path': str(path), 'sha256': race.hashlib.sha256(path.read_bytes()).hexdigest()}
+            manifest = root/'candidate.json'
+            manifest.write_text(json.dumps({'identity': 'synthetic', 'executable': record(exe),
+                'files': {'gamelib': record(exe), 'dlc-manifest': record(dlc)}, 'data_root': str(root/'game')}))
+            args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3', '--manual',
+                                    '--candidate', str(manifest), '--last-frame', '6500'])
+            child = Mock(returncode=0)
+            def completed(*_):
+                session = Path(launch.call_args.kwargs['env']['LARECOMP_DATA_ROOT']).parent
+                (session/'frame-06500.png').write_bytes(b'synthetic capture')
+            for audible in (False, True):
+                with self.subTest(audio=audible), patch.object(race, 'LOCAL', root), \
+                        patch.object(race.subprocess, 'Popen', return_value=child) as launch, \
+                        patch.object(race, 'wait_capture', side_effect=completed):
+                    if audible:
+                        args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3', '--manual',
+                                                '--audio', '--candidate', str(manifest), '--last-frame', '6500'])
+                    session = race.run_once(args, root, None)
+                env = launch.call_args.kwargs['env']
+                self.assertEqual(env['LARECOMP_NO_USER_INPUT'], '0')
+                self.assertNotIn('LARECOMP_HOST_INPUT', env)
+                self.assertNotIn('LARECOMP_BIND_TEST', env)
+                self.assertEqual(env['MK8_DLC_ROOT'], str(dlc.parent))
+                self.assertEqual(env['LARECOMP_AUDIO_GAIN'], '1' if audible else '0')
+                self.assertEqual((root/'user-no-mii/save/original').read_bytes(), b'untouched')
+                self.assertNotEqual(env['LARECOMP_DATA_ROOT'], str(root/'user-no-mii'))
+                self.assertEqual((root/'user-no-mii/mk8d.ini').read_text(), original_ini)
+                self.assertIn('volume = 0.35', (session/'data/mk8d.ini').read_text())
+                recorded = json.loads((session/'run.json').read_text())
+                self.assertTrue(recorded['manual'])
+                self.assertEqual(recorded['audio'], audible)
+
+    def test_london_flyover_preserves_intro_and_selects_dlc_after_menu_opens(self):
+        args = race.parse_args(['grand-prix', '--assisted', '--cup', 'rock', '--intro'])
+        events = [part.split(':') for part in race.race_input(
+            args.mode, args.last_frame, cup=race.CUPS.index(args.cup),
+            assisted=True, intro=True).split(',')]
+        self.assertEqual((args.last_frame, args.shots, args.shot_step), (5000, 13, 150))
+        self.assertIn(['2200', 'R', '6'], events)
+        self.assertEqual([b for f, b, _ in events if 2250 <= int(f) < 2500], ['RIGHT'] * 4)
+        self.assertIn(['2500', 'A', '6'], events)
+        self.assertIn(['2650', 'A', '6'], events)
+        self.assertFalse(any(b == 'A' and int(f) > 2650 for f, b, _ in events))
+
+    def test_moo_meadows_cup_is_selected_after_kart_parts(self):
+        args = race.parse_args(['grand-prix', '--assisted', '--cup', 'shell'])
+        events = [part.split(':') for part in race.race_input(
+            args.mode, args.last_frame, cup=race.CUPS.index(args.cup), assisted=True).split(',')]
+        moves = [(int(f), b) for f, b, _ in events if b in ('RIGHT', 'DOWN') and int(f) > 760]
+        self.assertEqual(moves, [(2300, 'DOWN')])
+        self.assertIn(['2500', 'A', '6'], events)
+
+    def test_coconut_mall_selects_dlc_before_fourth_track(self):
+        args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3'])
+        events = [part.split(':') for part in race.race_input(
+            args.mode, 6500, cup=race.CUPS.index(args.cup), track=args.track).split(',')]
+        self.assertIn(['1800', 'R', '6'], events)
+        self.assertIn(['2000', 'A', '6'], events)
+        self.assertEqual([int(f) for f, b, _ in events if b == 'RIGHT'], [2100, 2130, 2160])
+        self.assertIn(['2300', 'A', '6'], events)
+        self.assertEqual(events[-1], ['2900', 'A', '3610'])
+
+    def test_intro_rejects_routes_that_would_skip_or_replace_it(self):
+        for argv in (['time-trial', '--intro'], ['grand-prix', '--intro'],
+                     ['grand-prix', '--assisted', '--intro', '--long-session'],
+                     ['grand-prix', '--assisted', '--track', '1']):
+            with self.subTest(argv=argv), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                race.parse_args(argv)
+
+    def test_dlc_course_requires_candidate_manifest_and_uses_its_location(self):
+        args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3'])
+        with self.assertRaisesRegex(ValueError, 'DLC'):
+            race.session_dlc_root(args, {'files': {}})
+        manifest = ROOT/'local/isolated-dlc/installed.bin'
+        candidate = {'files': {'dlc-manifest': {'path': str(manifest)}}}
+        self.assertEqual(race.session_dlc_root(args, candidate), str(manifest.parent))
+        self.assertEqual(race.session_dlc_root(race.parse_args(['grand-prix', '--assisted']), candidate), '')
+        self.assertIsNone(race.session_dlc_root(race.parse_args(['time-trial']), candidate))
+
+    def test_missing_dlc_stops_before_session_creation_or_game_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe = root/'synthetic.exe'
+            exe.write_bytes(b'author-created test input; never executed')
+            manifest = root/'candidate.json'
+            manifest.write_text(json.dumps({'executable': {'path': str(exe),
+                'sha256': race.hashlib.sha256(exe.read_bytes()).hexdigest()}, 'files': {}}))
+            args = race.parse_args(['time-trial', '--cup', 'golden-dash', '--track', '3',
+                                    '--candidate', str(manifest)])
+            with patch.object(race.tempfile, 'mkdtemp') as create, patch.object(race.subprocess, 'Popen') as launch:
+                with self.assertRaisesRegex(ValueError, 'DLC'):
+                    race.run_once(args, root, None)
+                create.assert_not_called()
+                launch.assert_not_called()
+
     def test_assisted_input_releases_accelerator_and_captures_assists(self):
         script = race.race_input('grand-prix', 17100, assisted=True,
                                  assist_toggle=['accelerate'])
@@ -98,6 +235,43 @@ class RaceHarnessTests(unittest.TestCase):
             race.prepare_session(source, second, None)
             self.assertIn('frame_gen = off', (second/'data/mk8d.ini').read_text())
             self.assertFalse((second/'mii-profile.json').exists())
+
+    def test_fullscreen_policy_changes_only_the_copied_ini(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            source=root/'source'
+            (source/'user-no-mii/save').mkdir(parents=True)
+            (source/'user-no-mii/save/test.dat').write_bytes(b'original')
+            ini='volume = 0.7\nframe_gen = 120\nfullscreen = 1\nunknown = keep\n'
+            (source/'user-no-mii/mk8d.ini').write_text(ini)
+            for policy,value in (('saved','1'),('on','1'),('off','0')):
+                session=root/policy
+                session.mkdir()
+                race.prepare_session(source,session,None,'saved',policy)
+                actual=(session/'data/mk8d.ini').read_text()
+                self.assertIn('fullscreen = '+value,actual)
+                self.assertIn('frame_gen = 120',actual)
+                self.assertIn('unknown = keep',actual)
+                self.assertEqual((source/'user-no-mii/mk8d.ini').read_text(),ini)
+                self.assertEqual((source/'user-no-mii/save/test.dat').read_bytes(),b'original')
+            args=race.parse_args(['time-trial','--fullscreen','off'])
+            self.assertEqual(args.fullscreen,'off')
+            self.assertEqual(race.parse_args(['time-trial']).fullscreen,'saved')
+
+    def test_fullscreen_missing_setting_and_invalid_policy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            source=root/'source'
+            (source/'user-no-mii/save').mkdir(parents=True)
+            (source/'user-no-mii/mk8d.ini').write_text('volume = 0.7\n')
+            for policy,value in (('on','1'),('off','0')):
+                session=root/policy
+                session.mkdir()
+                race.prepare_session(source,session,None,'saved',policy)
+                self.assertIn('fullscreen = '+value,(session/'data/mk8d.ini').read_text())
+            with self.assertRaisesRegex(ValueError,'tela cheia'):
+                race.prepare_session(source,root/'invalid',None,'saved','invalid')
+            self.assertFalse((root/'invalid').exists())
 
     def test_repeat_forwards_only_cache_and_stops_on_failure(self):
         with tempfile.TemporaryDirectory() as folder:

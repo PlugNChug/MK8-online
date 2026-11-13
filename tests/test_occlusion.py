@@ -41,6 +41,10 @@ void VKAPI_CALL vkCmdResetQueryPool(VkCommandBuffer cb, VkQueryPool pool, uint32
 }
 static uint64_t plat_now_ns(void) { return 1000; }
 static uint64_t ns_to_gpu_ticks(uint64_t ns) { return ns; }
+static uint64_t trace_count,trace_seq,trace_samples;
+static void mk8_gfx_occlusion_result(uint64_t seq,uint64_t report,uint64_t value,bool available) {
+    trace_count++; trace_seq=seq; trace_samples=value;
+}
 VkResult VKAPI_CALL vkGetQueryPoolResults(VkDevice d, VkQueryPool pool, uint32_t first, uint32_t n, size_t size, void *data,
                                           VkDeviceSize stride, VkQueryResultFlags flags) {
     (void)d; (void)first; (void)size; (void)stride; (void)flags;
@@ -81,6 +85,7 @@ int main(void) {
     s2->rep_out[1] = NULL; s2->rep_after[1] = 1;  /* ordered reset */
     s2->rep_out[2] = a[1]; s2->rep_after[2] = 2;
     mk8_oq_resolve_done(100);
+    if (trace_count!=7 || trace_seq!=100 || trace_samples!=6) return 8;
     return a[0][0] == 127 && a[1][0] == 6 && mk8_samples_total == 6 ? 0 : 5;
 }
 ''', encoding='utf-8')
