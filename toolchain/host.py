@@ -253,6 +253,8 @@ def prepare_host_sources(source, output):
     prepare_vram_trace(runtime)
     from auto_lan import prepare as prepare_auto_lan
     prepare_auto_lan(runtime)
+    from dlc import prepare as prepare_dlc
+    prepare_dlc(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

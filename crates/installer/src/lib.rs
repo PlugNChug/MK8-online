@@ -1,4 +1,5 @@
 use mk8_manifest::{verify, Config, Installation, Result};
+pub mod dlc;
 use serde::Serialize;
 pub mod avatar;
 pub mod mii;
@@ -212,6 +213,7 @@ fn spawn_game(
         return Err("Desative os recursos MiiModel antes de usar a cabeça convertida.".into());
     }
     mii::read(local)?;
+    let dlc_root = dlc::launch_root(local, install)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     rotate_game_log(local)?;
@@ -238,6 +240,10 @@ fn spawn_game(
                 .parent()
                 .ok_or("Pasta do runtime ausente")?
                 .join("vulkan-1.dll"),
+        )
+        .env(
+            "MK8_DLC_ROOT",
+            dlc_root.as_deref().unwrap_or_else(|| Path::new("")),
         )
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
@@ -327,6 +333,7 @@ mod tests {
             data_root: root.clone(),
             shader_root: root.clone(),
             gameplay_verified: false,
+            dlc_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

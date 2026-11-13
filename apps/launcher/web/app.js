@@ -17,9 +17,20 @@ async function api(path, body) {
 }
 function notice(text, error = false) {
   $("notice").dataset.message = text;
+  const popup = $("notice-popup");
+  popup.getAnimations().forEach((animation) => animation.cancel());
+  popup.hidden = !text;
   i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
+  popup.classList.toggle("error", error);
+  if (text && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    popup.animate([
+      { opacity: 0, transform: "translate(-50%, -24px)" },
+      { opacity: 1, transform: "translate(-50%, 0)" },
+    ], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
 }
+$("notice-close").onclick = () => notice("");
 async function action(fn) {
   if (busy) return;
   busy = true;
@@ -47,6 +58,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
+  if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -58,6 +70,150 @@ document
   .forEach((el) => (el.onclick = () => showTab(el.dataset.goto)));
 
 /* ---------- Instalação: três passos ---------- */
+let settingsLoaded = false;
+let settingsDirty = false;
+let settingsBlocked = false;
+let settingsSaving = false;
+let settingsBaseline = {};
+function updateSettingsLock() {
+  const locked = settingsBlocked || settingsSaving;
+  $("settings-fields").disabled = locked || !settingsLoaded;
+  $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty;
+  $("settings-reload").disabled = locked;
+}
+function markSettingsDirty() {
+  settingsDirty = true;
+  updateSettingsLock();
+  i18n.text($("settings-pending"), "Alterações não salvas.");
+}
+async function loadGameSettings(force = false) {
+  if ((settingsDirty || settingsSaving) && !force) return;
+  const data = await api("settings");
+  if ((settingsDirty || settingsSaving) && !force) return;
+  if (!settingsLoaded) {
+    for (const group of data.groups) {
+      const card = document.createElement(group.binding ? "details" : "article");
+      card.className = "card settings-group";
+      const title = document.createElement(group.binding ? "summary" : "h2");
+      i18n.text(title, group.title);
+      card.append(title);
+      if (group.binding) {
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "link";
+        i18n.text(reset, "Restaurar mapeamento padrão");
+        reset.onclick = () => {
+          for (const field of group.fields) {
+            const input = document.querySelector('[data-key="' + field.key + '"]');
+            input.value = field.default;
+            input.dataset.previous = input.value;
+          }
+          markSettingsDirty();
+        };
+        card.append(reset);
+      }
+      const grid = document.createElement("div");
+      grid.className = "settings-grid";
+      for (const field of group.fields) {
+        const label = document.createElement("label");
+        const caption = document.createElement("span");
+        i18n.text(caption, field.label);
+        const input = document.createElement(field.kind === "select" ? "select" : "input");
+        input.dataset.key = field.key;
+        input.dataset.kind = field.kind;
+        input.dataset.choices = field.choices || "";
+        if (field.kind === "select") {
+          for (const [value, text] of field.options || data.choices[field.choices]) {
+            const option = document.createElement("option");
+            option.value = value;
+            if (field.choices === "keyboard" && value !== "none") option.textContent = text;
+            else i18n.text(option, text);
+            input.append(option);
+          }
+        } else if (field.kind === "bool") {
+          input.type = "checkbox";
+          label.className = "settings-check";
+        } else {
+          input.type = "number";
+          input.min = "0"; input.max = "200"; input.step = "5";
+          const hint = document.createElement("small");
+          i18n.text(hint, "Volume em porcentagem, de 0% a 200%.");
+          label.append(hint);
+        }
+        input.oninput = markSettingsDirty;
+        input.onchange = () => {
+          if (field.choices && input.value !== "none") {
+            const other = Array.from(grid.querySelectorAll("[data-key]")).find(
+              (item) => item !== input && item.value === input.value);
+            if (other) {
+              other.value = input.dataset.previous;
+              other.dataset.previous = other.value;
+            }
+          }
+          input.dataset.previous = input.value;
+          updateSettingsDependencies();
+          markSettingsDirty();
+        };
+        label.prepend(caption);
+        label.append(input);
+        grid.append(label);
+      }
+      card.append(grid);
+      $("settings-groups").append(card);
+    }
+    settingsLoaded = true;
+  }
+  settingsBaseline = data.values;
+  for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+    const value = data.values[input.dataset.key];
+    if (input.type === "checkbox") input.checked = value !== "0";
+    else {
+      if (input.tagName === "SELECT" && !Array.from(input.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value; option.textContent = value;
+        input.append(option);
+      }
+      input.value = input.dataset.kind === "volume" ? Number(value) * 100 : value;
+      input.dataset.previous = input.value;
+    }
+  }
+  settingsDirty = false;
+  updateSettingsDependencies();
+  updateSettingsLock();
+  i18n.text($("settings-pending"), "");
+}
+function updateSettingsDependencies() {
+  const scaler = document.querySelector('[data-key="upscaler"]');
+  const resolution = document.querySelector('[data-key="resolution"]');
+  if (scaler && resolution) scaler.disabled = resolution.value === "match";
+}
+$("game-settings").onsubmit = (event) => {
+  event.preventDefault();
+  action(async () => {
+    const patch = {};
+    for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+      const value = input.type === "checkbox" ? input.checked ? "1" : "0"
+        : input.dataset.kind === "volume" ? String(Number(input.value) / 100) : input.value;
+      const previous = settingsBaseline[input.dataset.key];
+      if (input.dataset.kind === "volume" ? Number(value) !== Number(previous) : value !== previous)
+        patch[input.dataset.key] = value;
+    }
+    settingsSaving = true;
+    updateSettingsLock();
+    try {
+      const result = await api("settings", patch);
+      await loadGameSettings(true);
+      return result;
+    } finally {
+      settingsSaving = false;
+      updateSettingsLock();
+    }
+  });
+};
+$("settings-reload").onclick = () => action(async () => {
+  if (settingsDirty && !confirm(i18n.t("Descartar alterações não salvas?"))) return;
+  await loadGameSettings(true);
+});
 const steps = ["step-tools", "step-files", "step-build"];
 const userOpened = new Set();
 function openStep(id, open) {
@@ -133,6 +289,10 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       if (!result.path) return { message: "Nenhum arquivo selecionado." };
       input.value = result.path;
       if (input.id === "game-folder") return selectGameFolder();
+      if (input.id.startsWith("dlc-")) {
+        await refreshDlcFiles();
+        return { message: "Arquivo selecionado." };
+      }
       await api("config", config());
       return { message: "Arquivo selecionado." };
     });
@@ -164,6 +324,48 @@ $("cancel").onclick = () =>
     return api("build/cancel", {});
   });
 $("go-play").onclick = () => showTab("play");
+let dlcReplace = false;
+let lastDlcImport = "idle";
+let dlcFilesVersion = 0;
+let dlcFilesTimer;
+async function refreshDlcFiles() {
+  const version = ++dlcFilesVersion;
+  const packagePath = $("dlc-package").value.trim();
+  const keys = $("dlc-keys").value.trim();
+  const files = await api("dlc/files", { package: packagePath, keys });
+  if (version !== dlcFilesVersion || packagePath !== $("dlc-package").value.trim()
+      || keys !== $("dlc-keys").value.trim()) return;
+  $("tile-dlc-package").dataset.ok = String(files.package_ok);
+  $("tile-dlc-keys").dataset.ok = String(files.keys_ok);
+  i18n.text($("dlc-keys-hint"), files.keys_ok && files.keys_detected
+    ? "Encontrado automaticamente: " + files.keys : "Chaves do seu console para importar o DLC");
+}
+for (const id of ["dlc-package", "dlc-keys"]) {
+  $(id).addEventListener("input", () => {
+    ++dlcFilesVersion;
+    $("tile-dlc-package").dataset.ok = "false";
+    $("tile-dlc-keys").dataset.ok = "false";
+    clearTimeout(dlcFilesTimer);
+    dlcFilesTimer = setTimeout(() => refreshDlcFiles().catch((error) => notice(error.message, true)), 200);
+  });
+}
+$("dlc-change").onclick = () => action(async () => {
+  dlcReplace = true;
+});
+$("dlc-import").onclick = () => action(async () => {
+  const result = await api("dlc/import", {
+    package: $("dlc-package").value.trim(), keys: $("dlc-keys").value.trim(), reinstall: dlcReplace,
+  });
+  lastDlcImport = "running";
+  return result;
+});
+$("dlc-enabled").onchange = () => action(async () => {
+  try {
+    return await api("dlc/toggle", { enabled: $("dlc-enabled").checked });
+  } finally {
+    await refresh();
+  }
+});
 
 // Progress of the running build: smoothed estimate from the recent rate and the average rate so far.
 let samples = [];
@@ -196,7 +398,41 @@ function renderInstall(status) {
   const files = status.files;
   const setupRunning = setup.state === "running";
   const buildRunning = build.state === "running";
-  const busyNow = setupRunning || buildRunning || !!status.game_pid;
+  const dlcRunning = status.dlc_import?.state === "running";
+  const busyNow = setupRunning || buildRunning || dlcRunning || !!status.game_pid;
+  settingsBlocked = busyNow;
+  const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
+  if (lastDlcImport === "running" && status.dlc_import?.state === "done") dlcReplace = false;
+  lastDlcImport = status.dlc_import?.state || "idle";
+  $("dlc-enabled").checked = dlc.enabled;
+  $("dlc-enabled").disabled = busyNow || !dlc.installed;
+  updateSettingsLock();
+  $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
+  $("dlc-import").hidden = dlc.state === "ready" && !dlcReplace;
+  $("dlc-change").hidden = dlc.state !== "ready" || dlcReplace;
+  $("dlc-change").disabled = busyNow;
+  i18n.text($("dlc-import"), dlc.state === "ready" ? "Reinstalar DLC…"
+    : dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
+  $("dlc-files").hidden = dlc.state === "ready" && !dlcReplace;
+  for (const id of ["dlc-package", "dlc-keys"]) $(id).disabled = busyNow;
+  document.querySelectorAll("[data-browse]").forEach((button) => (button.disabled = busyNow));
+  i18n.text($("dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" || dlc.state === "unsupported" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.detail || "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
+  i18n.text($("dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlcRunning ? "Verificando e importando o DLC. Aguarde."
+    : setupRunning || buildRunning ? "Aguarde a operação atual terminar."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.state === "unprepared" ? "Prepare o jogo antes de importar DLC."
+    : "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
+  i18n.text($("dlc-detail"), status.dlc_import?.state === "failed" ? status.dlc_import.detail : dlc.detail || "");
+  $("dlc-detail").classList.toggle("error", status.dlc_import?.state === "failed" || dlc.state === "invalid");
   lastBuild = build;
   document
     .querySelectorAll("[data-browse]")
@@ -271,17 +507,20 @@ function renderInstall(status) {
 
   // 3. Build
   // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
-  const stale = !!status.candidate_stale && build.state !== "running";
+  const dlcUpgrade = status.candidate && dlc.state === "unsupported";
+  const stale = (!!status.candidate_stale || dlcUpgrade) && build.state !== "running";
   const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
-    i18n.text($("build-stale"), "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+    i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." : "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
       " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
       ": o que já foi feito é reaproveitado e leva poucos minutos.");
   $("build-idle").hidden = buildRunning || done;
   $("build-live").hidden = !buildRunning && !(build.state === "failed" && build.started_ms);
   $("build-done").hidden = !done || buildRunning;
-  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build");
+  $("build-actions").hidden = buildRunning;
+  $("go-play").hidden = !done;
+  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : done ? "Recompilar jogo" : "Iniciar build");
   $("build").disabled = busyNow;
   $("cancel").disabled = !buildRunning;
   $("cancel").hidden = !buildRunning;
@@ -473,6 +712,8 @@ async function refresh() {
       cancelled: "Cancelado",
     }[status.build.state] || status.build.state);
   renderInstall(status);
+  if (!$("dlc-files").hidden) await refreshDlcFiles();
+  if (!$("settings").hidden && !settingsDirty) await loadGameSettings();
   i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."
     : "Nenhuma instalação de jogo ativada.");
@@ -495,7 +736,7 @@ async function refresh() {
     notice(miiText, !!miiFailure);
   }
   $("play-solo").disabled =
-    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy;
+    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
@@ -535,6 +776,10 @@ async function refresh() {
   if (status.setup.state !== "idle") {
     const setupLog = await api("setup/log");
     $("setup-log").textContent = setupLog.text || status.setup.detail;
+  }
+  if (status.dlc_import && status.dlc_import.state !== "idle") {
+    const log = await api("dlc/log");
+    $("dlc-log").textContent = log.text || status.dlc_import.detail;
   }
   return status;
 }

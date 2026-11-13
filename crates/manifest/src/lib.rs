@@ -44,6 +44,8 @@ pub struct Installation {
     pub data_root: PathBuf,
     pub shader_root: PathBuf,
     pub gameplay_verified: bool,
+    #[serde(default)]
+    pub dlc_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

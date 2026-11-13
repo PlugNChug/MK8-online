@@ -98,6 +98,179 @@ class LauncherTests(unittest.TestCase):
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
         return page
 
+    def test_notices_are_fixed_dismissible_and_respect_reduced_motion(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('[data-key="volume"]')).to_be_enabled()
+            page.evaluate("notice('Aviso de teste')")
+            popup = page.locator("#notice-popup")
+            close = page.locator("#notice-close")
+            expect(popup).to_be_visible()
+            expect(page.locator("#notice")).to_have_text("Aviso de teste")
+            page.wait_for_timeout(260)
+            top = popup.bounding_box()["y"]
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            self.assertAlmostEqual(popup.bounding_box()["y"], top, delta=1)
+            self.assertGreater(page.evaluate("window.scrollY"), 0)
+            close.click()
+            expect(popup).to_be_hidden()
+            expect(page.locator("#notice")).to_have_text("")
+            page.emulate_media(reduced_motion="reduce")
+            page.evaluate("notice('Falha de teste', true)")
+            expect(popup).to_be_visible()
+            self.assertEqual(popup.evaluate("el => el.getAnimations().length"), 0)
+            expect(page.locator("#notice")).to_have_class("error")
+            close.focus()
+            page.keyboard.press("Enter")
+            expect(popup).to_be_hidden()
+            page.set_viewport_size({"width":390, "height":844})
+            page.evaluate("notice('Mensagem longa: ' + 'arquivo/'.repeat(50))")
+            expect(popup).to_be_visible()
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            box = popup.bounding_box()
+            self.assertGreaterEqual(box["x"], 0)
+            self.assertLessEqual(box["x"] + box["width"], 390)
+            page.locator("#language").select_option("en")
+            expect(close).to_have_attribute("aria-label", "Close notification")
+            close.click()
+            page.locator("#language").select_option("pt-BR")
+            expect(popup).to_be_hidden()
+        finally:
+            page.close()
+
+    def test_settings_save_locks_edits_through_delayed_response_and_reload(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\nshow_fps = 0\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        phase, held_post, held_get = ["post"], [], []
+        def delay(route):
+            if phase[0] == "post" and route.request.method == "POST":
+                held_post.append((route, route.fetch()))
+            elif phase[0] == "reload" and route.request.method == "GET":
+                held_get.append((route, route.fetch()))
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            fps = page.locator('[data-key="show_fps"]')
+            expect(volume).to_be_enabled()
+            volume.fill("70")
+            page.route("**/api/settings", delay)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-save")).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held_post), 1)
+            phase[0] = "reload"
+            held_post[0][0].fulfill(response=held_post[0][1])
+            page.wait_for_timeout(2300)
+            self.assertEqual(len(held_get), 1)
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            phase[0] = "pass"
+            held_get[0][0].fulfill(response=held_get[0][1])
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(fps).not_to_be_checked()
+            fps.check()
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+            self.assertIn("show_fps = 1", ini.read_text())
+            self.assertIn("unknown_future = preserve", ini.read_text())
+        finally:
+            page.close()
+
+    def test_settings_save_failure_unlocks_form_and_keeps_edits_for_retry(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\n", encoding="utf-8")
+        page = self.page()
+        held = []
+        def fail(route):
+            if route.request.method == "POST":
+                held.append(route)
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            expect(volume).to_be_enabled()
+            volume.fill("70")
+            page.route("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held), 1)
+            held[0].fulfill(status=500, json={"ok":False, "error":"Falha simulada ao salvar."})
+            expect(page.locator("#notice")).to_contain_text("Falha simulada ao salvar.")
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(page.locator("#settings-save")).to_be_enabled()
+            expect(page.locator("#settings-reload")).to_be_enabled()
+            expect(page.locator("#settings-pending")).to_have_text("Alterações não salvas.")
+            self.assertEqual(ini.read_text(), "volume = 1\n")
+            page.unroute("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+        finally:
+            page.close()
+
+    def test_settings_tab_updates_shared_ini_and_keeps_unsaved_edits_during_polling(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("# teste\nvolume = 0.50\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("50")
+            page.locator("#settings input[data-key=volume]").fill("75")
+            page.wait_for_timeout(2300)
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#settings select[data-key=resolution]").select_option("75%")
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            page.locator("#settings select[data-key=bind_key_a]").select_option("J")
+            expect(page.locator("#settings select[data-key=bind_key_b]")).to_have_value("K")
+            page.locator("#settings select[data-key=bind_key_a]").select_option("Space")
+            page.locator("#settings-save").click()
+            expect(page.locator("#notice")).to_contain_text("Configurações salvas.")
+            self.assertIn("unknown_future = preserve", ini.read_text())
+            self.assertIn("bind_key_a = Space", ini.read_text())
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            expect(page.locator("#settings select[data-key=bind_key_a]")).to_have_value("Space")
+            ini.write_text(ini.read_text() + "show_fps = 1\n", encoding="utf-8")
+            expect(page.locator("#settings input[data-key=show_fps]")).to_be_checked(timeout=5000)
+            expect(page.locator("#settings #dlc-enabled")).to_be_visible()
+            self.assertEqual(page.locator("#install #dlc-enabled").count(), 0)
+            page.locator("#language").select_option("en")
+            expect(page.locator("#settings")).to_contain_text("Settings")
+            screenshots = ROOT / "local/screenshots"
+            screenshots.mkdir(parents=True, exist_ok=True)
+            page.locator("#settings details[open] summary").click()
+            page.screenshot(path=str(screenshots / "launcher-settings-desktop.png"), full_page=True)
+            page.set_viewport_size({"width":390, "height":844})
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            page.screenshot(path=str(screenshots / "launcher-settings-mobile.png"), full_page=True)
+            page.locator("#language").select_option("pt-BR")
+            expect(page.locator("html")).to_have_attribute("lang", "pt-BR")
+        finally:
+            page.close()
+
     def test_multiplayer_uses_the_mii_and_only_steam_rooms(self):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute('content')
