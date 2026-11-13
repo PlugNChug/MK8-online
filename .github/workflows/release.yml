@@ -34,7 +34,9 @@ jobs:
       - name: Upstream sources
         run: python scripts/fetch-upstream.py
       - name: Python tool dependencies
-        run: python -m pip --isolated install --only-binary=:all: --require-hashes -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
+        run: >-
+          python -m pip --isolated install --only-binary=:all: --require-hashes
+          -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
       - name: Build setup
         shell: pwsh
         run: |
