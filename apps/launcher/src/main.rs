@@ -6,6 +6,7 @@ mod game_session;
 mod game_settings;
 mod installer;
 mod language;
+mod manual;
 mod mii_download;
 mod python_setup;
 mod relay;
@@ -68,6 +69,13 @@ pub(crate) fn fatal(message: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--how-to-play") {
+        if let Err(error) = manual::run() {
+            fatal(&error.to_string());
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.get(1).is_some_and(|arg| arg == "--setup-python") {
         let result = args
             .get(2)

@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell

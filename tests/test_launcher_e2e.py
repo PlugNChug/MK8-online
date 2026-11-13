@@ -91,6 +91,37 @@ class LauncherTests(unittest.TestCase):
         finally:
             process.terminate(); process.wait(timeout=10)
 
+    @unittest.skipUnless(os.name=='nt','Native WebView2 required')
+    def test_local_manual_window_content_origin_and_close(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
+        env=dict(os.environ,WEBVIEW2_USER_DATA_FOLDER=str(Path(self.temporary.name)/'manual-webview'),
+                 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=f'--remote-debugging-port={port} --remote-allow-origins=http://127.0.0.1:{port}')
+        process=subprocess.Popen([os.environ.get('MK8_LAUNCHER_EXE',str(ROOT/'target/release/Launcher.exe')),'--how-to-play'],env=env)
+        try:
+            deadline=time.monotonic()+40
+            while True:
+                try:
+                    browser=self.pw.chromium.connect_over_cdp(f'http://127.0.0.1:{port}',timeout=1000);break
+                except Exception:
+                    self.assertIsNone(process.poll());self.assertLess(time.monotonic(),deadline);time.sleep(.2)
+            page=browser.contexts[0].pages[0]
+            errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+            expect(page.get_by_role('heading',name='How to Play',exact=True)).to_be_visible()
+            expect(page.get_by_role('heading',name='Basic controls')).to_be_visible()
+            close=page.locator('form').get_attribute('action')
+            origin=page.url.rstrip('/')
+            self.assertEqual(page.request.post(origin+close,headers={'Origin':'https://example.invalid'}).status,403)
+            self.assertIsNone(process.poll())
+            for width in (900,390):
+                page.set_viewport_size({'width':width,'height':780})
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+            page.get_by_role('button',name='Back to game').click(no_wait_after=True)
+            self.assertEqual(process.wait(timeout=10),0)
+            self.assertFalse(errors,errors)
+        finally:
+            if process.poll() is None:process.terminate();process.wait(timeout=10)
+
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
         page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
