@@ -255,6 +255,8 @@ def prepare_host_sources(source, output):
     prepare_auto_lan(runtime)
     from dlc import prepare as prepare_dlc
     prepare_dlc(runtime)
+    from shared_vram import prepare as prepare_shared_vram
+    prepare_shared_vram(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
