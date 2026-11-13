@@ -36,6 +36,29 @@ const GAME_RICH_PRESENCE_JOIN_REQUESTED: c_int = 337; // "Join game" on a friend
 const LOBBY_INVITE: c_int = 503; // a friend invited us
 const P2P_SESSION_REQUEST: c_int = 1202;
 const FRIEND_FLAG_IMMEDIATE: c_int = 4;
+/// Lobby data key with the host's effective Booster Course Pass state ("1" installed and enabled).
+pub const DLC_KEY: &str = "mk8_dlc";
+
+/// Players must share the same DLC state: otherwise the vote can offer tracks one game lacks.
+/// A lobby without the key comes from a launcher without DLC support, so its host has none.
+pub fn check_dlc(host: Option<&str>, local: bool) -> Result<()> {
+    let host = match host {
+        None | Some("") | Some("0") => false,
+        Some("1") => true,
+        Some(_) => return Err("Sala da Steam com estado de DLC inválido.".into()),
+    };
+    match (host, local) {
+        (true, false) => Err(
+            "A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar."
+                .into(),
+        ),
+        (false, true) => Err(
+            "A sala não usa o Booster Course Pass. Desative o DLC em Configurações para entrar."
+                .into(),
+        ),
+        _ => Ok(()),
+    }
+}
 
 #[repr(C, packed(8))]
 #[derive(Clone, Copy, Default)]
@@ -772,7 +795,12 @@ pub struct SteamRoom {
 }
 
 impl SteamRoom {
-    pub fn host_live(local: &Path, identity: &str, name: &str) -> Result<(Self, Host, Invite)> {
+    pub fn host_live(
+        local: &Path,
+        identity: &str,
+        name: &str,
+        dlc: bool,
+    ) -> Result<(Self, Host, Invite)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
         if mm.is_null() {
@@ -794,9 +822,12 @@ impl SteamRoom {
         let val_code = CString::new(room.code.as_str()).unwrap();
         let key_id = CString::new("mk8_identity").unwrap();
         let val_id = CString::new(identity).unwrap();
+        let key_dlc = CString::new(DLC_KEY).unwrap();
+        let val_dlc = CString::new(if dlc { "1" } else { "0" }).unwrap();
         unsafe {
             (api.set_lobby_data)(mm, created.lobby_id, key_code.as_ptr(), val_code.as_ptr());
             (api.set_lobby_data)(mm, created.lobby_id, key_id.as_ptr(), val_id.as_ptr());
+            (api.set_lobby_data)(mm, created.lobby_id, key_dlc.as_ptr(), val_dlc.as_ptr());
         }
         let friends = unsafe { (api.steam_friends)() };
         if !friends.is_null() {
@@ -923,7 +954,12 @@ impl SteamRoom {
         ))
     }
 
-    pub fn join_live(local: &Path, input: &str, identity: &str) -> Result<(Self, Gateway)> {
+    pub fn join_live(
+        local: &Path,
+        input: &str,
+        identity: &str,
+        dlc: bool,
+    ) -> Result<(Self, Gateway)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
         if mm.is_null() {
@@ -955,6 +991,15 @@ impl SteamRoom {
         } else {
             return Err("Informe um código MK8S-… ou ID de lobby da Steam.".into());
         };
+        // Compare DLC before opening the transport; leave the Steam lobby on a mismatch.
+        let key = CString::new(DLC_KEY).unwrap();
+        let ptr = unsafe { (api.get_lobby_data)(mm, code.lobby, key.as_ptr()) };
+        let host_dlc =
+            (!ptr.is_null()).then(|| unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() });
+        if let Err(error) = check_dlc(host_dlc.as_deref(), dlc) {
+            unsafe { (api.leave_lobby)(mm, code.lobby) };
+            return Err(error);
+        }
         let backend = Arc::new(LiveSteamBackend { api });
         Self::join_with_backend(backend, code, identity)
     }
@@ -1061,6 +1106,23 @@ impl Drop for SteamRoom {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+
+    #[test]
+    fn dlc_state_must_match_the_host_lobby() {
+        // Same state on both sides is allowed, with or without the Booster Course Pass.
+        assert!(check_dlc(Some("1"), true).is_ok());
+        assert!(check_dlc(Some("0"), false).is_ok());
+        // A lobby without the key comes from a launcher without DLC support.
+        assert!(check_dlc(None, false).is_ok());
+        assert!(check_dlc(Some(""), false).is_ok());
+        let missing = check_dlc(Some("1"), false).unwrap_err();
+        assert!(missing.contains("Importe e ative"), "{missing}");
+        let extra = check_dlc(Some("0"), true).unwrap_err();
+        assert!(extra.contains("Desative"), "{extra}");
+        assert!(check_dlc(None, true).is_err());
+        assert!(check_dlc(Some("yes"), true).is_err());
+        assert!(check_dlc(Some("yes"), false).is_err());
+    }
 
     type PacketQueue = HashMap<(u64, i32), VecDeque<(u64, Vec<u8>)>>;
 

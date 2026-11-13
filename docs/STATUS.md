@@ -1,5 +1,9 @@
 # Estado técnico — 13/11/2026
 
+## Salas da Steam exigem o mesmo estado de DLC — 13/11/2026
+
+O anfitrião publica `mk8_dlc` (`1` com o Booster Course Pass instalado e ativado; `0` sem ele) nos dados do lobby, ao lado de `mk8_code`. O estado é o mesmo que o jogo recebe na abertura (`dlc::launch_root`). Ao entrar, `SteamRoom::join_live` lê a chave **antes de abrir o transporte** e recusa estados diferentes com uma mensagem acionável ("Importe e ative o DLC…" / "Desative o DLC…"), saindo do lobby da Steam. Lobby sem a chave, de launcher sem suporte a DLC, conta como sem DLC; valor desconhecido é recusado. A decisão fica em `steam::check_dlc` (teste `dlc_state_must_match_the_host_lobby`: quatro combinações, anfitrião antigo e valor inválido). A entrada automática por `+connect_lobby` agora mostra o erro em vez de ignorá-lo silenciosamente. O cartão de DLC em **Configurações** informa a regra; textos em PT/EN. Validação: formatação, Clippy, 66 testes Rust, e2e (21), idiomas (3) e DLC no launcher (4). **Sem prova com duas contas Steam reais.** Salas P2P (`MK8P-…`), convites e relay continuam sem essa verificação; hoje são usados apenas por scripts/API, pois a interface oferece só salas da Steam.
+
 ## Crash da 0.2.0 em GPU integrada AMD (relatório `mk8-report-1794582637`) — 13/11/2026
 
 O relatório (launcher 0.2.0, Windows build 26300, "AMD Radeon(TM) Graphics" integrada, 1920×1080, `resolution = match`) traz quatro execuções seguidas. Todas terminaram entre 60 e 115 s de jogo com `VK_ERROR_OUT_OF_DEVICE_MEMORY` (-2): duas em `textures.c:366`, depois que a nova tentativa em memória do host e a reserva RGBA8 também falharam (alvos 1496×841 e 1890×1063), e duas em `exec.c:2300` (`snapshot_image`). Com o `FATAL`, o processo sai com `0xc0000409`. A falha é de memória da GPU, não do launcher nem do DLC.

@@ -692,5 +692,9 @@
   "Pá direita 2": "Right paddle 2",
   "Pá esquerda 2": "Left paddle 2",
   "Gatilho esquerdo (LT / ZL)": "Left trigger (LT / ZL)",
-  "Gatilho direito (RT / ZR)": "Right trigger (RT / ZR)"
+  "Gatilho direito (RT / ZR)": "Right trigger (RT / ZR)",
+  "Nas salas da Steam, todos precisam do mesmo estado: com o DLC ativado ou todos sem ele.": "In Steam rooms, everyone needs the same state: all with the DLC enabled or all without it.",
+  "A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar.": "This room uses the Booster Course Pass. Import and enable the DLC in Settings to join.",
+  "A sala não usa o Booster Course Pass. Desative o DLC em Configurações para entrar.": "This room does not use the Booster Course Pass. Disable the DLC in Settings to join.",
+  "Sala da Steam com estado de DLC inválido.": "Steam room with an invalid DLC state."
 }

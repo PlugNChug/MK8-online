@@ -202,13 +202,25 @@ impl App {
             || self.game.is_some()
     }
 
+    /// Same Booster Course Pass state the game receives at launch (installed and enabled).
+    fn dlc_active(&self) -> Result<bool> {
+        match self.installation().or_else(|| self.candidate()) {
+            Some(install) => Ok(mk8_installer::dlc::launch_root(&self.local, &install)?.is_some()),
+            None => Ok(false),
+        }
+    }
+
     fn steam_host(&mut self) -> Result<Value> {
         if self.session_busy() {
             return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
         }
         self.mii_name()?;
-        let (room, host, invite) =
-            SteamRoom::host_live(&self.local, &self.identity(), &self.username)?;
+        let (room, host, invite) = SteamRoom::host_live(
+            &self.local,
+            &self.identity(),
+            &self.username,
+            self.dlc_active()?,
+        )?;
         let gateway = Gateway::start(invite)?;
         let code = room.code.clone();
         let lobby_id = room.lobby_id.to_string();
@@ -229,7 +241,8 @@ impl App {
         }
         self.mii_name()?;
         let identity = self.identity();
-        let (room, gateway) = SteamRoom::join_live(&self.local, lobby, &identity)?;
+        let (room, gateway) =
+            SteamRoom::join_live(&self.local, lobby, &identity, self.dlc_active()?)?;
         self.steam_invites
             .retain(|(l, _)| l.to_string() != lobby.trim());
         self.steam_room = Some(room);
@@ -332,10 +345,17 @@ impl App {
 
     pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
         let identity = self.identity();
-        if let Ok((room, gateway)) = SteamRoom::join_live(&self.local, lobby_id, &identity) {
-            self.steam_room = Some(room);
-            self.gateway = Some(gateway);
-            self.room_menu += 1;
+        let joined = self
+            .dlc_active()
+            .and_then(|dlc| SteamRoom::join_live(&self.local, lobby_id, &identity, dlc));
+        match joined {
+            Ok((room, gateway)) => {
+                self.steam_room = Some(room);
+                self.gateway = Some(gateway);
+                self.room_menu += 1;
+            }
+            // A DLC mismatch or an unavailable lobby must be visible, not silently skipped.
+            Err(error) => self.steam_error = Some(error),
         }
     }
 
@@ -1145,7 +1165,8 @@ impl App {
                     .trim();
                 let identity = self.identity();
                 if text.starts_with("MK8S-") || text.starts_with("steam://") {
-                    let (room, gateway) = SteamRoom::join_live(&self.local, text, &identity)?;
+                    let (room, gateway) =
+                        SteamRoom::join_live(&self.local, text, &identity, self.dlc_active()?)?;
                     self.steam_room = Some(room);
                     self.gateway = Some(gateway);
                     return Ok(
