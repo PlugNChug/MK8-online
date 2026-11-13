@@ -142,6 +142,8 @@ Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [i
 
 ## Compilar e contribuir
 
+**Entrada experimental Settings:** após uma build completa do jogo na `experiment/main-menu-settings`, defina `$env:MK8_SETTINGS_EXPERIMENT='1'` antes de iniciar o launcher nessa sessão PowerShell. O botão do Booster Course Pass vira uma engrenagem Settings e abre as configurações existentes pela navegação normal de teclado/controle do jogo. F1 continua disponível. O primeiro protótipo reutiliza esse botão; ainda não adiciona um oitavo nem substitui o visual da tela de configurações. Remova a variável e reinicie para recuperar o botão original. O hook guest exige uma build completa inicial; `--runtime-only` sozinho não o instala. A arte usa posições de um protótipo 16:9; outras proporções e toque não foram qualificados.
+
 No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
 
 Em **Configurações → Fontes do jogo**, **Importar pasta de fontes** copia fontes do seu próprio Switch. Requer `FontStandard.ttf` ou `nintendo_udsg-r_std_003.ttf/.bfttf`; fontes regionais/de botões são opcionais. Nomes do SharedFontDumper são normalizados automaticamente. Limites TrueType e hashes são conferidos; isso não autentica a origem Nintendo. **Padrão do sistema** desativa sem apagar; **Fontes do console importadas** reativa. Vale no próximo início, sem nova build do jogo após instalar o launcher/runtime com este suporte. Pastas legadas e overrides `LARECOMP_FONT` continuam suportados.

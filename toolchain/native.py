@@ -191,7 +191,10 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     def compile_one(pair):
         src, obj = pair
         from experimental import patch_no_mii_unit
+        original = src
         src = patch_no_mii_unit(src, output)
+        from settings_menu import patch_guest
+        src = patch_guest(src, original, output)
         obj.parent.mkdir(parents=True, exist_ok=True)
         stamp = obj.with_suffix('.json')
         key = {'source': digest(src), 'environment': identity, 'flags': flags}

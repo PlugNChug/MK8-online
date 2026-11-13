@@ -130,6 +130,8 @@ In **Support → Create report**, create a diagnostic ZIP and attach it to an [i
 
 ## Build and contribute
 
+**Experimental Settings entry:** after a full game build from `experiment/main-menu-settings`, set `$env:MK8_SETTINGS_EXPERIMENT='1'` before starting the launcher in that PowerShell session. The Booster Course Pass tile becomes a Settings gear and opens the existing settings screen through the game's normal keyboard/controller navigation. F1 remains available. This first prototype reuses that tile; it does not add an eighth button or replace the settings screen's design yet. Unset the variable and restart to restore the original tile. The guest hook needs a full build once; `--runtime-only` alone cannot install it. Artwork positioning is a 16:9 prototype; other aspect ratios and touch are unqualified.
+
 **Testes automatizados de corrida:** [roteiro assistido e coleta de evidências](README.pt-BR.md#testes-de-corrida-assistida).
 
 Course-specific visual checks support assisted Grand Prix cup selection, verified DLC cups, `--intro` to preserve the race flyover, and `--manual` for real keyboard/controller input. Reproduction commands and capture limits are in the linked guide; course observations and the Electrodrome anti-gravity road audio reproducer are tracked in [technical status](docs/STATUS.md). The earlier mixer recording reproduced the popping for the user; the listening retest after correcting new-voice volume initialization sounded fixed, with the same road-effect variant confirmed active in the trace.

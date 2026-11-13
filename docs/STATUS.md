@@ -1,5 +1,23 @@
 # Estado técnico — 13/11/2026
 
+## Experimento Settings na integração local — 13/11/2026
+
+O primeiro marco de `experiment/main-menu-settings` (`756f150`, base upstream fix-chore `15d1106`) também está em `integrate/vnnc1-0.2.0`, preservando os fixes anteriores de áudio, visibilidade, fontes, Info e MKTV. Build completa concluída: **218 unidades do runtime, consumidores guest religados e 108 executáveis/DLLs conferidos**. Candidato `48d1fa2cd8f0bf0b9e2914e07760c715815c7f42b2689d081d7894c58b84a731`; **47 testes nativos/Python** passaram na integração, sem skips. Fontes Rust e interface web não mudaram.
+
+Smoke integrado `race-time-trial-q1v7t19x`, janela com fullscreen off e saves copiados: duas aberturas por A filtrado no botão nativo, fechamento por B do controle (evento SDL sintético) e Escape, navegação posterior para Labo e saída 0. Capturas revisadas; legenda de Labo permanece legível sem o rótulo Settings sobreposto. Uma execução anterior (`race-time-trial-_p9qoocj`) parou com `VK_ERROR_OUT_OF_DATE_KHR` repetido perto do frame 1374, antes da ativação de Settings; o reteste fresco passou sem mudança no código. A causa do erro de swapchain não foi isolada nem declarada resolvida. Fullscreen/resize e hardware de controle físico permanecem sem nova qualificação.
+
+O runtime preparado nesta pasta inclui o experimento, **desligado por padrão**. Pode ser testado definindo `MK8_SETTINGS_EXPERIMENT=1` antes de abrir o launcher da integração; sem a variável a ação original permanece. Próximos marcos são o redesenho da tela interna e um slot nativo próprio; não tratar a engrenagem provisória sobre o slot Booster Course Pass como a feature final. Sem PR ou push novo e sem qualificação completa de gameplay.
+
+## Experimento de entrada Settings no menu principal — 13/11/2026
+
+Branch `experiment/main-menu-settings` criada do `fix-chore` upstream atualizado (`15d1106`). Primeiro marco: navegação nativa até uma entrada Settings que abre as configurações existentes e retorna sem bloquear o menu. É opt-in por `MK8_SETTINGS_EXPERIMENT=1`, com arte própria de engrenagem sobre o botão Booster Course Pass; o slot é reutilizado provisoriamente, sem alterar arquivos do jogo ou criar um oitavo botão. A tela interna continua sendo o overlay existente; redesenho completo e animações ficam para a próxima etapa. F1 permanece disponível.
+
+`toolchain/settings_menu.py` confere o SHA-256 da unidade guest 4.0.1 `main_114.c` e observa o callback nativo do menu em `0x70004d92e8`. Foco no ID 105 arma um filtro de Confirm no Npad do jogador 1. O filtro consome A antes da confirmação nativa e envia apenas um pedido atômico à thread de render, que abre a UI existente. Os eventos originais continuam para o jogo; a UI não chama Vulkan nem funções guest dentro do callback. Consumir a confirmação já emitida deixava o botão travado; tentativas de reinicializar a página foram removidas. Foco/visibilidade são desarmados ao sair do menu e no reset do runtime. O rótulo é desenhado só com foco, para preservar legendas dos outros botões.
+
+Validação: **41 testes nativos/Python** passaram (experimento, adaptações guest, compilação/cache, layout e host pré-compilado). O teste próprio usa callback sintético e código nativo real para verificar opt-in, foco, consumo exclusivo de A, outros botões, memória preservada, ponteiros/limites, pedido único e reset. Build completa concluiu, recompilando unidades guest afetadas e religando seus consumidores; atualização final de runtime com **215 unidades e 108 executáveis/DLLs** conferidos. Não houve mudança em Rust ou na interface web do launcher.
+
+Smokes com saves copiados: `race-time-trial-3c6bluq3` abriu/fechou duas vezes, registrou duas confirmações filtradas e depois moveu foco para Labo, saída 0; capturas revisadas. `race-time-trial-05rmryj4` entrou em Single Player sem engrenagem sobreposta e voltou ao menu com ela, saída 0. `race-time-trial-z1ewb1i1`, flag 0, abriu a promoção Booster Course Pass original e voltou ao menu, saída 0. Sem alteração dos saves de origem. Arte posicionada para 16:9 e teste a 1280×720; ultrawide, toque, outros idiomas, multiplayer e qualificação completa de gameplay não foram verificados. `gameplay_verified=false`. Branch mantida localmente, sem PR.
+
 ## Integração local dos dois fixes de menu — 13/11/2026
 
 As branches focadas `fix/main-menu-manual` (`051c060`) e `fix/mktv-replay-thumbnails` (`db740ae`) partem de `fix-chore` upstream `15d1106`. A branch local `fix-chore` acompanha a cópia desse ponto no fork. As duas alterações foram copiadas para `integrate/vnnc1-0.2.0`, preservando as adaptações anteriores de visibilidade, áudio e importação de fontes; não houve merge geral das mudanças divergentes do upstream nem abertura de PR.
