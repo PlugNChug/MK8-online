@@ -273,6 +273,8 @@ def prepare_host_sources(source, output):
     prepare_texture_retire(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
+    from texture_readback import prepare as prepare_texture_readback
+    prepare_texture_readback(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
