@@ -30,6 +30,7 @@ class OcclusionTests(unittest.TestCase):
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <vulkan/vulkan.h>
 #define SUBS 8
 static struct { VkDevice dev; } g_vk;
@@ -42,12 +43,22 @@ void VKAPI_CALL vkCmdResetQueryPool(VkCommandBuffer cb, VkQueryPool pool, uint32
 static uint64_t plat_now_ns(void) { return 1000; }
 static uint64_t ns_to_gpu_ticks(uint64_t ns) { return ns; }
 static uint64_t trace_count,trace_seq,trace_samples;
+static unsigned counter_writes,counter_resets,query_reads;
+static bool query_ok=true,last_available;
+static void mk8_gfx_counter_write(uint64_t seq,uint64_t report,uint64_t value,uint64_t base,uint64_t sum,
+                                  unsigned index,unsigned after,unsigned queries,bool available) {
+    if (value!=base+sum || after>queries || !report) abort();
+    counter_writes++; last_available=available;
+}
+static void mk8_gfx_counter_reset(uint64_t seq,unsigned index,uint64_t base,uint64_t sum) { counter_resets++; }
 static void mk8_gfx_occlusion_result(uint64_t seq,uint64_t report,uint64_t value,bool available) {
     trace_count++; trace_seq=seq; trace_samples=value;
 }
 VkResult VKAPI_CALL vkGetQueryPoolResults(VkDevice d, VkQueryPool pool, uint32_t first, uint32_t n, size_t size, void *data,
                                           VkDeviceSize stride, VkQueryResultFlags flags) {
     (void)d; (void)first; (void)size; (void)stride; (void)flags;
+    query_reads++;
+    if (!query_ok) return VK_NOT_READY;
     memcpy(data, results[(uintptr_t)pool - 1], n * 8);
     return VK_SUCCESS;
 }
@@ -85,8 +96,13 @@ int main(void) {
     s2->rep_out[1] = NULL; s2->rep_after[1] = 1;  /* ordered reset */
     s2->rep_out[2] = a[1]; s2->rep_after[2] = 2;
     mk8_oq_resolve_done(100);
-    if (trace_count!=7 || trace_seq!=100 || trace_samples!=6) return 8;
-    return a[0][0] == 127 && a[1][0] == 6 && mk8_samples_total == 6 ? 0 : 5;
+    if (trace_count!=7 || trace_seq!=100 || trace_samples!=6 || counter_writes!=7 || counter_resets!=1) return 8;
+    if (a[0][0] != 127 || a[1][0] != 6 || mk8_samples_total != 6 || query_reads!=3) return 5;
+    query_ok=false; s2->seq=101; s2->n=2; s2->nrep=2;
+    s2->rep_out[0]=a[2]; s2->rep_after[0]=1; s2->rep_out[1]=b[0]; s2->rep_after[1]=2;
+    mk8_oq_resolve_done(101);
+    return query_reads==4 && counter_writes==9 && !last_available &&
+        a[2][0]==6 && b[0][0]==6 && mk8_samples_total==6 ? 0 : 9;
 }
 ''', encoding='utf-8')
             exe = out/'occl.exe'

@@ -1,4 +1,4 @@
-// Opt-in graphics evidence. No guest data, renderer pointers, or per-draw I/O.
+// Opt-in graphics evidence. No guest buffer dumps, renderer pointers, or per-draw I/O.
 #include "incident.h"
 #include <stdatomic.h>
 #include <stdio.h>
@@ -320,17 +320,17 @@ void mk8_gfx_end(void) {
         "Fullscreen source: 1 F11, 2 other shortcut, 3 menu checkbox. Apply records SDL return and instantaneous flags/size; completion may be asynchronous.\n"
         "Swapchain generations count successful creations, even at the same extent. Render-scale events contain the assigned scale.\n"
         "Transition checkpoints retain first/latest by kind outside the rolling window; they are not a continuous history.\n"
-        "F7 collects a bounded 60-frame preview: up to 320x180 thumbnails and 1024 command records/frame in memory, then writes files.\n"
+        "F7 collects a bounded 60-frame preview: up to 320x180 thumbnails and 1536 command records/frame in memory, then writes files.\n"
         "Preview readbacks disturb timing; missing images and truncated draws are explicit. F8 can end a preview early.\n"
         "vk_calls counts recorded Vulkan draw calls, not GPU completion or visible pixels. render_off bypasses the ordinary skipped-draw counter.\n"
         "Depth-state bits: bit 0 test, bit 1 write, compare function in bits 8..15. Viewport/scissor are command state; pass extent is at emission.\n"
         "Geometry/report tokens are numeric same-run hashes, not mesh identities; no vertex/index buffers are dumped.\n"
         "Occlusion reports include submission, availability and cumulative value at resolution. They use sampled host frames, not GPU frame IDs.\n"
-        "Review screenshots before sharing; no automatic upload.\n");
+        "F7 counters.jsonl records exact compare operands and post-operation queue/write/reset observations.\nObserved completed submission is a lower bound from existing completion observations, not a poll at comparison time.\nIDs order observer reservations, not GPU execution or atomic guest writes; null values and missing records are explicit.\nReview screenshots before sharing; no automatic upload.\n");
     if (!close_artifact(f, path, "summary.txt")) goto failed;
     f=open_artifact("manifest.json", path);
     if (!f) goto failed;
-    fprintf(f, "{\"schema\":3,\"complete\":true,\"gameplay_verified\":false,\"executable_sha256\":\"%s\","
+    fprintf(f, "{\"schema\":4,\"complete\":true,\"gameplay_verified\":false,\"executable_sha256\":\"%s\","
         "\"source_commit\":\"%s\",\"source_branch\":\"%s\",\"source_dirty\":%s,"
         "\"request_ns\":%llu,\"capture_start_ns\":%llu,\"capture_end_ns\":%llu,\"host_frame\":%llu,"
         "\"swapchain_width\":%u,\"swapchain_height\":%u,\"vk_format\":%u,\"driver_version\":%u,\"vendor_id\":%u,\"device_id\":%u,\"framegen_enabled\":%s,"

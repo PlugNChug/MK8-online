@@ -174,6 +174,12 @@ typedef struct { uint32_t op; uint64_t x[8]; } CmdRec;
 static __thread const char *wait_why;
 static int flushes, written_after_flush;
 static uint64_t report[2];
+static uint64_t vk_frame_counter(void) { return 1; }
+static uint64_t vk_pending_seq(void) { return 2; }
+static void mk8_gfx_counter_value(uint64_t frame,uint64_t submission,uint64_t address,uint64_t value) {
+    if (frame==2 && submission==2 && address==(uintptr_t)report && value==8 &&
+        report[0]==8 && report[1]==1000 && flushes==1) written_after_flush++;
+}
 static void mk8_cw_clear(void);
 static void mk8_cw_flush(const char *why) { (void)why; flushes++; mk8_cw_clear(); }
 static uint64_t plat_now_ns(void) { return 1000; }
@@ -192,7 +198,7 @@ int main(void) {
     mk8_cw_mark(HEAP_BASE + 0x1000, 0x100);  /* a dispatch still running */
     r.x[0] = 8;
     run(&r);
-    if (flushes != 1 || report[0] != 8 || mk8_cw_any || mk8_cw_reports != 1) return 2;
+    if (flushes != 1 || report[0] != 8 || mk8_cw_any || mk8_cw_reports != 1 || written_after_flush!=1) return 2;
     return 0;
 }
 ''', encoding='utf-8')

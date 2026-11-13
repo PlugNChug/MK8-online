@@ -51,17 +51,55 @@ def edits():
             ('        if (!use_index) vkCmdDraw(cb, count, run_n[ri], first, base_inst + run_at[ri]);',
              '        mk8_gfx_preview_emit(pass_w, pass_h);\n'
              '        if (!use_index) vkCmdDraw(cb, count, run_n[ri], first, base_inst + run_at[ri]);',1),
+            ('                bool eq = q ? q[0] == q[2] : true;',
+             '''                // Read exactly the original two scalar operands, once; trace the values actually compared.
+                uint64_t mk8_a = q ? q[0] : 0, mk8_b = q ? q[2] : 0;
+                bool eq = q ? mk8_a == mk8_b : true;''',1),
             ('                st.render_off = r->x[0] == 0 ? !eq : eq;',
              '                st.render_off = r->x[0] == 0 ? !eq : eq;\n'
-             '                if (mk8_gfx_preview_active()) mk8_gfx_preview_condition(r->x[0], true, eq, mk8_gfx_token(r->x[1]));',1),
+             '''                if (mk8_gfx_preview_active()) {
+                    uint64_t id = mk8_gfx_counter_compare(vk_frame_counter()+1, vk_pending_seq(), r->x[0], r->x[1],
+                        q != NULL, mk8_a, mk8_b, eq, st.render_off);
+                    mk8_gfx_preview_condition(r->x[0], true, eq, mk8_gfx_token(r->x[1]), id);
+                }''',1),
             ('                st.render_off = !r->x[0];',
              '                st.render_off = !r->x[0];\n'
-             '                if (mk8_gfx_preview_active()) mk8_gfx_preview_condition(r->x[0], false, false, 0);',1),
+             '                if (mk8_gfx_preview_active()) mk8_gfx_preview_condition(r->x[0], false, false, 0, 0);',1),
+            ('static void cq_resolve_done(uint64_t done) {  // every slot whose submission is done\n',
+             'static void cq_resolve_done(uint64_t done) {  // every slot whose submission is done\n'
+             '    mk8_gfx_counter_complete(done); // reuse the completion already observed; no new query or wait\n',1),
+            ('        VK_CHECK(sr);',
+             '        VK_CHECK(sr);\n        mk8_gfx_counter_submit(vk_frame_counter()+1, submit_seq+1);',1),
+            ('                        o->rep_after[o->nrep++] = o->n;',
+             '''                        o->rep_after[o->nrep++] = o->n;
+                        mk8_gfx_counter_queue(vk_frame_counter()+1, o->seq, reset_samples ? 0 : (uint64_t)(uintptr_t)out,
+                            o->nrep-1, o->n, o->n, true, reset_samples);''',1),
+            ('                    }\n                    pthread_mutex_unlock(&cq_lock);\n                }\n                break;  // (upstream\'s CPU-time write below is for the other counters)',
+             '''                    } else {
+                        mk8_gfx_counter_queue(vk_frame_counter()+1, o->seq, reset_samples ? 0 : (uint64_t)(uintptr_t)out,
+                            o->nrep, o->n, o->n, false, reset_samples);
+                    }
+                    pthread_mutex_unlock(&cq_lock);
+                }
+                break;  // (upstream's CPU-time write below is for the other counters)''',1),
             ('        if (o->rep_out[k]) { o->rep_out[k][0] = base + sum; o->rep_out[k][1] = ns_to_gpu_ticks(plat_now_ns()); }',
              '''        if (o->rep_out[k]) {
             o->rep_out[k][0] = base + sum; o->rep_out[k][1] = ns_to_gpu_ticks(plat_now_ns());
+            mk8_gfx_counter_write(o->seq, (uint64_t)(uintptr_t)o->rep_out[k], base + sum, base, sum,
+                k, o->rep_after[k], o->n, ok);
             mk8_gfx_occlusion_result(o->seq, (uint64_t)(uintptr_t)o->rep_out[k], base + sum, ok);
         }''',1),
+            ('        else { base = 0; sum = 0; }  // ResetCounter at this point in GPU order.',
+             '''        else {
+            uint64_t old_base = base, old_sum = sum;
+            base = 0; sum = 0;
+            mk8_gfx_counter_reset(o->seq, k, old_base, old_sum);
+        }  // ResetCounter at this point in GPU order.''',1),
+            ('            if (out) { out[0] = (uint32_t)r->x[0]; out[1] = ns_to_gpu_ticks(plat_now_ns()); }',
+             '''            if (out) {
+                out[0] = (uint32_t)r->x[0]; out[1] = ns_to_gpu_ticks(plat_now_ns());
+                mk8_gfx_counter_value(vk_frame_counter()+1, vk_pending_seq(), (uint64_t)(uintptr_t)out, (uint32_t)r->x[0]);
+            }''',1),
             ('static double mk8_shader_budget_ms(void) {', SKIP_HELPER+'static double mk8_shader_budget_ms(void) {', 1),
             ('    spent += (SDL_GetTicksNS() - t0) / 1e6;',
              '    if (mk8_gfx_enabled()) { mk8_gfx_budget_miss |= !ok; mk8_gfx_remaining = budget - spent; }\n'

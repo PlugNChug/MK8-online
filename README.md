@@ -40,7 +40,7 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 
 Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Portuguese).
 
-This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. It is a local integration build; the captured preview flicker remains under investigation. Build and test evidence is recorded in the technical status.
+This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. F7 also traces the exact visibility-counter operands, report writes, and observed submission progress. It is a local integration build; the captured preview flicker remains under investigation. Build and test evidence is recorded in the technical status.
 
 ## Where it stands
 

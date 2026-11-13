@@ -9,6 +9,7 @@ extern "C" {
 typedef void (*Mk8GfxPngWriter)(const char *,const uint8_t *,uint32_t,uint32_t);
 typedef struct {
     uint64_t frame,vs,fs,geometry_token,condition_token,condition_mode;
+    uint64_t condition_id;
     uint32_t count,mode,indexed,render_off,cull,depth_state;
     uint32_t color_w,color_h,depth_w,depth_h,pass_w,pass_h;
     float viewport[4];
@@ -21,7 +22,18 @@ void mk8_gfx_preview_draw(const Mk8PreviewDraw *draw);
 void mk8_gfx_preview_draw_end(void);
 void mk8_gfx_preview_emit(unsigned w,unsigned h);
 void mk8_gfx_preview_skip(unsigned line);
-void mk8_gfx_preview_condition(uint64_t mode,bool conditional,bool equal,uint64_t token);
+void mk8_gfx_preview_condition(uint64_t mode,bool conditional,bool equal,uint64_t token,uint64_t condition_id);
+// Scalar observations only. No guest reads, query polling or GPU waits in these observers.
+uint64_t mk8_gfx_counter_compare(uint64_t frame,uint64_t submission,uint64_t mode,uint64_t report,
+                                bool has_values,uint64_t a,uint64_t b,bool equal,bool render_off);
+void mk8_gfx_counter_queue(uint64_t frame,uint64_t submission,uint64_t report,unsigned index,
+                          unsigned after,unsigned queries,bool accepted,bool reset);
+void mk8_gfx_counter_write(uint64_t submission,uint64_t report,uint64_t value,uint64_t base,uint64_t sum,
+                          unsigned index,unsigned after,unsigned queries,bool available);
+void mk8_gfx_counter_reset(uint64_t submission,unsigned index,uint64_t base,uint64_t sum);
+void mk8_gfx_counter_complete(uint64_t done);
+void mk8_gfx_counter_submit(uint64_t frame,uint64_t submission);
+void mk8_gfx_counter_value(uint64_t frame,uint64_t submission,uint64_t report,uint64_t value);
 bool mk8_gfx_preview_present(uint64_t frame,bool busy,bool report_requested,unsigned w,unsigned h,char *path,unsigned capacity);
 bool mk8_gfx_preview_image(const char *path,const uint8_t *rgba,unsigned w,unsigned h);
 void mk8_gfx_preview_frame_done(void);

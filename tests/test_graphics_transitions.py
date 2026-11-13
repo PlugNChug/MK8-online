@@ -183,7 +183,7 @@ extern "C" int window_reported(void) { return reported; }
         folder=self.run_case('transitions')
         path=next(folder.glob('graphics-incidents/*/manifest.json'))
         manifest=json.loads(path.read_text())
-        self.assertEqual(manifest['schema'],3)
+        self.assertEqual(manifest['schema'],4)
         checkpoints=manifest['transition_checkpoints']
         self.assertEqual(len(checkpoints),8)
         kinds={kind:[e for e in checkpoints if e['kind']==kind]
