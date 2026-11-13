@@ -1,6 +1,11 @@
 use mk8_build_manager::Manager;
 use mk8_manifest::{load, save, Config, Installation, Result};
-use mk8_session::{discover, Gateway, Host, Invite, DISCOVERY_PORT};
+use mk8_session::{
+    discover,
+    p2p::{self, RoomTicket},
+    steam::{self, SteamEvent, SteamRoom},
+    Gateway, Host, Invite, DISCOVERY_PORT,
+};
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -9,6 +14,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     sync::{Arc, OnceLock},
+    time::{Duration, Instant},
 };
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -31,16 +37,32 @@ pub struct App {
     tools: Vec<Value>,
     host: Option<Host>,
     internet_room: Option<InternetRoom>,
+    steam_room: Option<SteamRoom>,
     gateway: Option<Gateway>,
     game: Option<Child>,
     game_exit: Option<String>,
     username: String,
     prepare_after_setup: bool,
     room_menu: u64,
+    mii_menu: u64,
     window: Option<DialogParent>,
     /// Set by a started update: the server exits after answering, so the installer can replace the launcher.
     exit_requested: bool,
     last_report: Option<String>,
+    native_job: Option<(Child, mk8_installer::mii_native::Pending)>,
+    native_state: &'static str,
+    native_detail: String,
+    resources_job: Option<(Child, mk8_installer::mii_resources::Generation)>,
+    resources_state: &'static str,
+    resources_detail: String,
+    /// Steam lobby invites received from friends (lobby, friend), until accepted or the room is gone.
+    steam_invites: Vec<(u64, u64)>,
+    /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
+    pending_play: Option<&'static str>,
+    /// The last Steam failure that happened outside a request (an accepted invite that could not be joined).
+    steam_error: Option<String>,
+    /// Steam was used before on this PC: connect again at start, so invites reach the launcher.
+    steam_retry: Option<Instant>,
 }
 /// The console keys beside the base package (or in its `keys` folder) or in `%USERPROFILE%\.switch`.
 fn detect_keys(config: &Config) -> Option<PathBuf> {
@@ -134,16 +156,278 @@ impl App {
             tools,
             host: None,
             internet_room: None,
+            steam_room: None,
             gateway: None,
             game: None,
             game_exit: None,
             username,
             prepare_after_setup: false,
             room_menu: 0,
+            mii_menu: 0,
             window,
             exit_requested: false,
             last_report: None,
+            native_job: None,
+            native_state: "idle",
+            native_detail: String::new(),
+            resources_job: None,
+            resources_state: "idle",
+            resources_detail: String::new(),
+            steam_invites: Vec::new(),
+            pending_play: None,
+            steam_error: None,
+            steam_retry: None,
         }
+    }
+
+    /// Rooms are entered as the player's Mii: its name is the name other players see.
+    fn mii_name(&mut self) -> Result<String> {
+        let profile = mk8_installer::mii::read(&self.local)?
+            .ok_or("Crie seu Mii em Perfil Mii antes de abrir ou entrar em uma sala.")?;
+        let name = profile.appearance.name;
+        if valid_username(&name) && name != self.username {
+            save(&self.local.join("username.json"), &name)?;
+            self.username = name.clone();
+        }
+        Ok(name)
+    }
+
+    fn session_busy(&self) -> bool {
+        self.gateway.is_some()
+            || self.host.is_some()
+            || self.internet_room.is_some()
+            || self.steam_room.is_some()
+            || self.game.is_some()
+    }
+
+    fn steam_host(&mut self) -> Result<Value> {
+        if self.session_busy() {
+            return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
+        }
+        self.mii_name()?;
+        let (room, host, invite) =
+            SteamRoom::host_live(&self.local, &self.identity(), &self.username)?;
+        let gateway = Gateway::start(invite)?;
+        let code = room.code.clone();
+        let lobby_id = room.lobby_id.to_string();
+        self.gateway = Some(gateway);
+        self.host = Some(host);
+        self.steam_room = Some(room);
+        self.pending_play = Some("host");
+        self.steam_error = None;
+        let _ = fs::write(self.local.join("steam-enabled"), b"1");
+        Ok(
+            json!({"code":code,"lobby_id":lobby_id,"message":"Sala criada! Convide seus amigos da Steam. O jogo abre sozinho na sala."}),
+        )
+    }
+
+    fn steam_join(&mut self, lobby: &str) -> Result<()> {
+        if self.session_busy() {
+            return Err("Feche o jogo e encerre a sala atual antes de entrar em outra.".into());
+        }
+        self.mii_name()?;
+        let identity = self.identity();
+        let (room, gateway) = SteamRoom::join_live(&self.local, lobby, &identity)?;
+        self.steam_invites
+            .retain(|(l, _)| l.to_string() != lobby.trim());
+        self.steam_room = Some(room);
+        self.gateway = Some(gateway);
+        self.pending_play = Some("guest");
+        self.steam_error = None;
+        let _ = fs::write(self.local.join("steam-enabled"), b"1");
+        Ok(())
+    }
+
+    /// Accepted invites, friends' join requests and received invites, from the Steam client.
+    fn poll_steam(&mut self) {
+        if self.local.join("steam-enabled").is_file()
+            && !steam::probe_status(&self.local).ready
+            && self
+                .steam_retry
+                .is_none_or(|at| at.elapsed() > Duration::from_secs(30))
+        {
+            self.steam_retry = Some(Instant::now());
+            let _ = steam::friends(&self.local);
+        }
+        for event in steam::take_events() {
+            match event {
+                SteamEvent::Join { lobby } => {
+                    match self.steam_join(&lobby.to_string()) {
+                        Ok(()) => self.room_menu += 1,
+                        Err(error) => self.steam_error = Some(error),
+                    }
+                    if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
+                SteamEvent::Invited { lobby, friend } => {
+                    if !self.steam_invites.contains(&(lobby, friend)) {
+                        self.steam_invites.push((lobby, friend));
+                        self.steam_invites.truncate(8);
+                    }
+                }
+            }
+        }
+        if let Some(role) = self.pending_play {
+            if self.game.is_some() {
+                self.pending_play = None;
+            } else if self.gateway.as_ref().is_some_and(|g| g.connected()) {
+                self.pending_play = None;
+                if let Err(error) = self.start_game(true, Some(role)) {
+                    self.steam_error = Some(error);
+                }
+            }
+        }
+    }
+
+    /// Starts the game (in the connected room when `online`); `auto_lan` makes it enter the LAN room by itself.
+    fn start_game(&mut self, online: bool, auto_lan: Option<&str>) -> Result<u32> {
+        self.poll_native();
+        self.poll_resources();
+        if self.native_job.is_some() || self.resources_job.is_some() {
+            return Err("Aguarde a conversão Mii terminar.".into());
+        }
+        if self.game.is_some() {
+            return Err("O jogo já está aberto.".into());
+        }
+        if self.setup.running() || self.build.poll().state == "running" {
+            return Err("Aguarde a preparação.".into());
+        }
+        let install = self.installation();
+        let net = if online {
+            let gateway = self.gateway.as_ref().ok_or("Crie ou entre em uma sala")?;
+            if !gateway.connected() {
+                return Err("Anfitrião ainda não confirmou a conexão".into());
+            }
+            gateway.reset_game();
+            Some((gateway.local_addr.to_string(), gateway.slot))
+        } else {
+            None
+        };
+        console::ensure_hidden();
+        let candidate = install.is_none();
+        let install = match install {
+            Some(install) => install,
+            None => load(&self.local.join("candidate.json"))?,
+        };
+        let child = crate::game_session::spawn(&crate::game_session::Request {
+            root: self.root.clone(),
+            local: self.local.clone(),
+            install,
+            network: net,
+            username: self.username.clone(),
+            candidate,
+            auto_lan: auto_lan.map(str::to_owned),
+        })?;
+        let pid = child.id();
+        self.game_exit = None;
+        self.game = Some(child);
+        Ok(pid)
+    }
+
+    pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
+        let identity = self.identity();
+        if let Ok((room, gateway)) = SteamRoom::join_live(&self.local, lobby_id, &identity) {
+            self.steam_room = Some(room);
+            self.gateway = Some(gateway);
+            self.room_menu += 1;
+        }
+    }
+
+    fn poll_resources(&mut self) {
+        let exit = match self.resources_job.as_mut() {
+            Some((child, _)) => child.try_wait(),
+            None => return,
+        };
+        let exit = match exit {
+            Ok(Some(exit)) => exit,
+            Ok(None) => return,
+            Err(error) => {
+                self.resources_detail = error.to_string();
+                return;
+            }
+        };
+        let (_, generation) = self.resources_job.take().unwrap();
+        let result = if exit.success() {
+            mk8_installer::mii_resources::finish(&self.local, &generation).map(|_| ())
+        } else {
+            let log = fs::read_to_string(&generation.log).unwrap_or_default();
+            let tail = log.lines().rev().take(3).collect::<Vec<_>>();
+            Err(format!(
+                "Falha ao gerar recursos Mii ({exit}). {}",
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            ))
+        };
+        match result {
+            Ok(()) => {
+                self.resources_state = "done";
+                self.resources_detail =
+                    "Recursos Mii gerados e ativados para a próxima abertura do jogo.".into();
+            }
+            Err(error) => {
+                self.resources_state = "failed";
+                self.resources_detail = error;
+            }
+        }
+    }
+
+    fn resources_status(&mut self) -> Result<Value> {
+        self.poll_resources();
+        Ok(
+            json!({"state":self.resources_state, "detail":self.resources_detail,
+            "resources":mk8_installer::mii_resources::read(&self.local)?}),
+        )
+    }
+
+    fn poll_native(&mut self) {
+        let exit = match self.native_job.as_mut() {
+            Some((child, _)) => child.try_wait(),
+            None => return,
+        };
+        let exit = match exit {
+            Ok(Some(exit)) => exit,
+            Ok(None) => return,
+            Err(error) => {
+                self.native_detail = error.to_string();
+                return;
+            }
+        };
+        let (_, pending) = self.native_job.take().unwrap();
+        let result = if exit.success() {
+            mk8_installer::mii_native::publish(&self.local, pending)
+        } else {
+            let log = fs::read_to_string(&pending.log).unwrap_or_default();
+            let tail = log
+                .lines()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!("Falha na conversão Mii ({exit}). {tail}"))
+        };
+        match result {
+            Ok(()) => {
+                self.native_state = "done";
+                self.native_detail = "Modelo preparado para a próxima abertura do jogo.".into();
+            }
+            Err(error) => {
+                self.native_state = "failed";
+                self.native_detail = error;
+            }
+        }
+    }
+
+    fn native_status(&mut self) -> Result<Value> {
+        self.poll_native();
+        let mut value = mk8_installer::mii_native::status(&self.root, &self.local)?;
+        value["state"] = json!(self.native_state);
+        value["detail"] = json!(self.native_detail);
+        Ok(value)
     }
 
     fn store_config(&mut self, config: Config) -> Result<()> {
@@ -226,12 +510,23 @@ impl App {
                 // A crash leaves its report ready to send, before the next launch rotates the log.
                 let summary =
                     json!({"game_exit": exit.to_string(), "build": self.build.poll().state});
-                self.last_report = report::create(&self.local, "game-exit", summary)
+                let install = self.installation().or_else(|| self.candidate());
+                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+                self.last_report = report::create(&self.local, runtime, "game-exit", summary)
                     .ok()
                     .map(|p| p.display().to_string());
             }
         }
+        self.poll_steam();
         let signal = self.local.join("open-rooms");
+        if self.game.is_some() && fs::remove_file(self.local.join("open-miis")).is_ok() {
+            self.mii_menu += 1;
+            if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }
         if self.game.is_some() && fs::remove_file(signal).is_ok() {
             self.room_menu += 1;
             if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
@@ -282,7 +577,21 @@ impl App {
                 .to_string_lossy()
                 .into_owned();
         }
-        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":self.internet_room.as_ref().map(|room|&room.code),"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        let steam_status = steam::probe_status(&self.local);
+        let p2p_code = self.host.as_ref().and_then(|host| {
+            if self.internet_room.is_some() || self.steam_room.is_some() {
+                None
+            } else {
+                host.room_ticket(None).ok().map(|t| t.encode())
+            }
+        });
+        let room_code = self
+            .internet_room
+            .as_ref()
+            .map(|room| room.code.clone())
+            .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
+            .or(p2p_code);
+        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         match (method.as_str(), path) {
@@ -373,6 +682,149 @@ impl App {
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
+            ("GET", "/api/mii") => Ok(json!({"active":mk8_installer::mii::read(&self.local)?,
+                "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
+            ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
+            ("GET", "/api/mii/fields") => Ok(json!(mk8_installer::mii_data::fields())),
+            ("GET", "/api/mii/native") => self.native_status(),
+            ("POST", "/api/mii/native/prepare") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let expected: Vec<u8> = serde_json::from_value(value["expected"].clone())
+                    .map_err(|_| "Reabra o editor Mii antes de preparar.")?;
+                mk8_installer::mii_native::check_profile(&self.local, &expected)?;
+                self.status();
+                self.poll_native();
+                if self.native_job.is_some()
+                    || self.game.is_some()
+                    || self.setup.running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err(
+                        "Feche o jogo e aguarde a operação atual antes de preparar o Mii.".into(),
+                    );
+                }
+                let (command, pending) =
+                    mk8_installer::mii_native::prepare(&self.root, &self.local)?;
+                let child = mk8_build_manager::supervisor::spawn(
+                    &command,
+                    &self.root,
+                    &self.local,
+                    &pending.log,
+                )?;
+                self.native_job = Some((child, pending));
+                self.native_state = "running";
+                self.native_detail = "Convertendo a cabeça para o jogo…".into();
+                self.native_status()
+            }
+            ("POST", "/api/mii/native/enabled") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let expected: Vec<u8> = serde_json::from_value(value["expected"].clone())
+                    .map_err(|_| "Reabra o editor Mii antes de ativar.")?;
+                mk8_installer::mii_native::check_profile(&self.local, &expected)?;
+                if self.native_job.is_some() {
+                    return Err("Aguarde a conversão Mii terminar.".into());
+                }
+                mk8_installer::mii_native::set_enabled(
+                    &self.local,
+                    value["enabled"].as_bool().ok_or("Opção inválida")?,
+                )?;
+                self.native_state = "idle";
+                self.native_detail.clear();
+                self.native_status()
+            }
+            ("GET", "/api/mii/composer") => Ok(
+                json!({"resource":mk8_installer::mii_composer::resource_config(&self.local)?, "head":mk8_installer::mii_composer::saved(&self.local)?}),
+            ),
+            ("POST", "/api/mii/composer/resource") => {
+                let value: mk8_installer::mii_composer::Resource =
+                    serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_composer::configure(
+                    &self.local,
+                    &value.path
+                )?))
+            }
+            ("POST", "/api/mii/composer/save") => {
+                let value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_composer::store(
+                    &self.local,
+                    value
+                )?))
+            }
+            ("POST", "/api/mii/data") => {
+                let data: Vec<u8> = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::update_data(&self.local, &data)?))
+            }
+            ("GET", "/api/mii/export") => {
+                let profile = mk8_installer::mii::read(&self.local)?
+                    .ok_or("Crie ou importe um Mii primeiro.")?;
+                Ok(json!({"data":profile.data()?}))
+            }
+            ("GET", "/api/mii/resources") => {
+                Ok(json!(mk8_installer::mii_resources::read(&self.local)?))
+            }
+            ("GET", "/api/mii/resources/job") => self.resources_status(),
+            ("POST", "/api/mii/resources/generate") => {
+                self.status();
+                self.poll_resources();
+                self.poll_native();
+                if self.resources_job.is_some()
+                    || self.native_job.is_some()
+                    || self.game.is_some()
+                    || self.setup.running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err(
+                        "Feche o jogo e aguarde a operação atual antes de gerar os recursos Mii."
+                            .into(),
+                    );
+                }
+                let (command, generation) =
+                    mk8_installer::mii_resources::generate(&self.root, &self.local)?;
+                let child = mk8_build_manager::supervisor::spawn(
+                    &command,
+                    &self.root,
+                    &self.local,
+                    &generation.log,
+                )?;
+                self.resources_job = Some((child, generation));
+                self.resources_state = "running";
+                self.resources_detail = "Gerando recursos Mii a partir da biblioteca local…".into();
+                self.resources_status()
+            }
+            ("POST", "/api/mii/resources") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii_resources::configure(
+                    &self.local,
+                    Path::new(value["directory"].as_str().unwrap_or("")),
+                    value["enabled"].as_bool().unwrap_or(false)
+                )?))
+            }
+            ("POST", "/api/mii/preview") => {
+                let face = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::avatar::head(&face)?))
+            }
+            ("POST", "/api/mii/save" | "/api/mii/create") => {
+                let appearance = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let profile = if path.ends_with("create") {
+                    mk8_installer::mii::create(&self.local, appearance)?
+                } else {
+                    mk8_installer::mii::store(&self.local, appearance)?
+                };
+                Ok(
+                    json!({"profile":profile,"message":"Perfil salvo. Alterações serão usadas na próxima abertura do jogo."}),
+                )
+            }
+            ("POST", "/api/mii/select") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::select(
+                    &self.local,
+                    value["id"].as_str().unwrap_or("")
+                )?))
+            }
+            ("POST", "/api/mii/import") => {
+                let data: Vec<u8> = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(json!(mk8_installer::mii::import(&self.local, &data)?))
+            }
             ("POST", "/api/language") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 Ok(json!(crate::language::write(&self.local, &value)?))
@@ -550,24 +1002,107 @@ impl App {
                 if self.gateway.is_some()
                     || self.host.is_some()
                     || self.internet_room.is_some()
+                    || self.steam_room.is_some()
                     || self.game.is_some()
                 {
                     return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
                 }
-                let (room, invite) = InternetRoom::create(&self.identity())?;
-                let gateway = match Gateway::start(invite) {
-                    Ok(gateway) => gateway,
-                    Err(error) => {
-                        let _ = room.close();
-                        return Err(error);
-                    }
-                };
-                let code = room.code.clone();
+                if relay::url().is_some() {
+                    let (room, invite) = InternetRoom::create(&self.identity())?;
+                    let gateway = match Gateway::start(invite) {
+                        Ok(gateway) => gateway,
+                        Err(error) => {
+                            let _ = room.close();
+                            return Err(error);
+                        }
+                    };
+                    let code = room.code.clone();
+                    self.gateway = Some(gateway);
+                    self.internet_room = Some(room);
+                    return Ok(
+                        json!({"code":code,"message":"Sala criada no relay. Aguarde a confirmação da conexão."}),
+                    );
+                }
+                let default = format!("0.0.0.0:{DISCOVERY_PORT}");
+                let bind = default.parse::<SocketAddr>().map_err(|e| e.to_string())?;
+                let host = Host::start_named(bind, &self.identity(), &self.username, true)
+                    .or_else(|_| {
+                        Host::start_named(
+                            "0.0.0.0:0".parse().unwrap(),
+                            &self.identity(),
+                            &self.username,
+                            true,
+                        )
+                    })?;
+                let local = SocketAddr::new("127.0.0.1".parse().unwrap(), host.address.port());
+                let gateway = Gateway::start(host.invite(local)?)?;
+                let code = host.room_ticket(None)?.encode();
                 self.gateway = Some(gateway);
-                self.internet_room = Some(room);
+                self.host = Some(host);
                 Ok(
-                    json!({"code":code,"message":"Sala criada no relay. Aguarde a confirmação da conexão."}),
+                    json!({"code":code,"message":"Sala P2P criada! Código único copiado — envie aos seus amigos."}),
                 )
+            }
+            ("POST", "/api/session/host-steam" | "/api/steam/host") => self.steam_host(),
+            ("GET", "/api/steam/friends") => {
+                let friends = steam::friends(&self.local)?;
+                let _ = fs::write(self.local.join("steam-enabled"), b"1");
+                let name = |id: u64| {
+                    friends
+                        .iter()
+                        .find(|f| f.id == id.to_string())
+                        .map(|f| f.name.clone())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                let invites: Vec<Value> = self
+                    .steam_invites
+                    .iter()
+                    .map(
+                        |(lobby, friend)| json!({"lobby":lobby.to_string(),"friend":name(*friend)}),
+                    )
+                    .collect();
+                Ok(
+                    json!({"persona":steam::probe_status(&self.local).persona,"friends":friends,"invites":invites,"room":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"callbacks":steam::callbacks_delivered()}),
+                )
+            }
+            ("POST", "/api/steam/invite") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let room = self
+                    .steam_room
+                    .as_ref()
+                    .filter(|_| self.host.is_some())
+                    .ok_or("Crie sua sala antes de convidar.")?;
+                let friend = value["friend"]
+                    .as_str()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .ok_or("Amigo inválido.")?;
+                steam::invite(&self.local, room.lobby_id, friend)?;
+                Ok(json!({"message":"Convite enviado pela Steam."}))
+            }
+            ("POST", "/api/steam/join") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let lobby = value["lobby"].as_str().ok_or("Sala inválida.")?.to_owned();
+                if lobby.is_empty() || !lobby.chars().all(|c| c.is_ascii_digit()) {
+                    return Err("Sala inválida.".into());
+                }
+                self.steam_join(&lobby)?;
+                Ok(
+                    json!({"message":"Conectado à sala do seu amigo. O jogo abre sozinho e entra na sala."}),
+                )
+            }
+            ("POST", "/api/steam/dismiss") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let lobby = value["lobby"].as_str().unwrap_or("");
+                self.steam_invites.retain(|(l, _)| l.to_string() != lobby);
+                Ok(json!({}))
+            }
+            ("POST", "/api/session/steam-overlay-invite") => {
+                let room = self
+                    .steam_room
+                    .as_ref()
+                    .ok_or("Crie ou entre em uma sala Steam primeiro.")?;
+                room.open_invite_overlay()?;
+                Ok(json!({"message":"Lista de convites da Steam solicitada (Shift+Tab)."}))
             }
             ("POST", "/api/session/invite") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -579,12 +1114,17 @@ impl App {
                     )?,
                 };
                 let invite = host.invite(endpoint)?;
+                let code = host.room_ticket(Some(endpoint)).ok().map(|t| t.encode());
                 Ok(
-                    json!({"invite":invite.encode(),"message":"Convite individual criado. Válido por quatro horas; não publique."}),
+                    json!({"invite":invite.encode(),"code":code,"message":"Convite individual criado. Válido por quatro horas; não publique."}),
                 )
             }
             ("POST", "/api/session/join") => {
-                if self.gateway.is_some() || self.host.is_some() || self.game.is_some() {
+                if self.gateway.is_some()
+                    || self.host.is_some()
+                    || self.steam_room.is_some()
+                    || self.game.is_some()
+                {
                     return Err("Encerre a sessão atual antes de entrar em outra.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -593,6 +1133,22 @@ impl App {
                     .ok_or("Convite ou código ausente")?
                     .trim();
                 let identity = self.identity();
+                if text.starts_with("MK8S-") || text.starts_with("steam://") {
+                    let (room, gateway) = SteamRoom::join_live(&self.local, text, &identity)?;
+                    self.steam_room = Some(room);
+                    self.gateway = Some(gateway);
+                    return Ok(
+                        json!({"message":"Conectado via Steam Relay! Use Jogar na sala para entrar no lobby."}),
+                    );
+                }
+                if text.starts_with("MK8P-") {
+                    let ticket = RoomTicket::decode(text)?;
+                    let gateway = p2p::join_with_ticket(&ticket, &identity)?;
+                    self.gateway = Some(gateway);
+                    return Ok(
+                        json!({"message":"Conectando pelo código único da sala. Aguarde confirmação do transporte."}),
+                    );
+                }
                 let invite = if text.starts_with("MK8-") {
                     InternetRoom::join(text, &identity)?
                 } else {
@@ -607,6 +1163,8 @@ impl App {
                 }
                 self.gateway = None;
                 self.host = None;
+                self.steam_room = None;
+                self.pending_play = None;
                 if let Some(room) = self.internet_room.take() {
                     room.close().map_err(|_| {
                         "Sessão local encerrada. O relay não confirmou o fechamento da sala."
@@ -626,42 +1184,16 @@ impl App {
                     return Err("Aguarde a preparação.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
-                let online = value["online"].as_bool().unwrap_or(false);
-                let install = self.installation();
-                let net = if online {
-                    let gateway = self.gateway.as_ref().ok_or("Crie ou entre em uma sala")?;
-                    if !gateway.connected() {
-                        return Err("Anfitrião ainda não confirmou a conexão".into());
-                    }
-                    gateway.reset_game();
-                    Some((gateway.local_addr.to_string(), gateway.slot))
-                } else {
-                    None
-                };
-                console::ensure_hidden();
-                let candidate = install.is_none();
-                let install = match install {
-                    Some(install) => install,
-                    None => load(&self.local.join("candidate.json"))?,
-                };
-                let child = crate::game_session::spawn(&crate::game_session::Request {
-                    root: self.root.clone(),
-                    local: self.local.clone(),
-                    install,
-                    network: net,
-                    username: self.username.clone(),
-                    candidate,
-                })?;
-                let pid = child.id();
-                self.game_exit = None;
-                self.game = Some(child);
+                let pid = self.start_game(value["online"].as_bool().unwrap_or(false), None)?;
                 Ok(
                     json!({"message":format!("Processo iniciado ({pid}). Corrida ainda não verificada.")}),
                 )
             }
             ("POST", "/api/report") => {
                 let summary = self.status();
-                let path = report::create(&self.local, "manual", summary)?;
+                let install = self.installation().or_else(|| self.candidate());
+                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+                let path = report::create(&self.local, runtime, "manual", summary)?;
                 self.last_report = Some(path.display().to_string());
                 Ok(
                     json!({"path":path,"message":"Relatório de logs criado. Envie o arquivo .zip junto com a descrição do problema."}),
@@ -711,8 +1243,11 @@ impl App {
 }
 
 pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
-    let mut res = Response::from_string(text).with_status_code(code);
-    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
+    binary_response(req, code, text.into_bytes(), mime);
+}
+fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
+    let mut res = Response::from_data(bytes).with_status_code(code);
+    for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
     let _ = req.respond(res);
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
@@ -746,6 +1281,14 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
                 "Chaves do console"
             },
             &["keys"][..],
+        )),
+        Some("afl") => Some((
+            if english {
+                "Mii parts library"
+            } else {
+                "Biblioteca de peças Mii"
+            },
+            &["dat"][..],
         )),
         _ => None,
     };
@@ -846,6 +1389,111 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
+        if method == Method::Get && path == "/vendor/ffl/ffl-emscripten.wasm" {
+            binary_response(
+                req,
+                200,
+                include_bytes!("../web/vendor/ffl/ffl-emscripten.wasm").to_vec(),
+                "application/wasm",
+            );
+            continue;
+        }
+        if method == Method::Get {
+            let model_asset = match path.as_str() {
+                "/mii-composer.js" => Some((
+                    include_str!("../web/mii-composer.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/GLTFExporter.js" => Some((
+                    include_str!("../web/vendor/three/GLTFExporter.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/ffl.js" => Some((
+                    include_str!("../web/vendor/ffl/ffl.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/ffl-emscripten.cjs" => Some((
+                    include_str!("../web/vendor/ffl/ffl-emscripten.cjs"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/helpers/GeometryConverter.js" => Some((
+                    include_str!("../web/vendor/ffl/helpers/GeometryConverter.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/materials/FFLShaderMaterial.js" => Some((
+                    include_str!("../web/vendor/ffl/materials/FFLShaderMaterial.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/ffl/LICENSE" => Some((
+                    include_str!("../web/vendor/ffl/LICENSE"),
+                    "text/plain; charset=utf-8",
+                )),
+                "/vendor/ffl/README.md" => Some((
+                    include_str!("../web/vendor/ffl/README.md"),
+                    "text/plain; charset=utf-8",
+                )),
+                "/vendor/ffl/manifest.json" => Some((
+                    include_str!("../web/vendor/ffl/manifest.json"),
+                    "text/plain; charset=utf-8",
+                )),
+                "/mii-model.html" => Some((
+                    include_str!("../web/mii-model.html"),
+                    "text/html; charset=utf-8",
+                )),
+                "/mii-model.css" => Some((
+                    include_str!("../web/mii-model.css"),
+                    "text/css; charset=utf-8",
+                )),
+                "/mii-model.js" => Some((
+                    include_str!("../web/mii-model.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/mii-glb.js" => Some((
+                    include_str!("../web/mii-glb.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/three.module.js" => Some((
+                    include_str!("../web/vendor/three/three.module.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/three.core.js" => Some((
+                    include_str!("../web/vendor/three/three.core.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/GLTFLoader.js" => Some((
+                    include_str!("../web/vendor/three/GLTFLoader.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/BufferGeometryUtils.js" => Some((
+                    include_str!("../web/vendor/three/BufferGeometryUtils.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/OrbitControls.js" => Some((
+                    include_str!("../web/vendor/three/OrbitControls.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/SkeletonUtils.js" => Some((
+                    include_str!("../web/vendor/three/SkeletonUtils.js"),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/vendor/three/LICENSE.txt" => Some((
+                    include_str!("../web/vendor/three/LICENSE.txt"),
+                    "text/plain; charset=utf-8",
+                )),
+                _ => None,
+            };
+            if let Some((source, mime)) = model_asset {
+                response(
+                    req,
+                    200,
+                    source
+                        .replace("__LANGUAGE__", &crate::language::read(&app.local))
+                        .replace("from 'three'", "from '/vendor/three/three.module.js'"),
+                    mime,
+                );
+                continue;
+            }
+        }
         if method == Method::Get && path == "/style.css" {
             response(
                 req,
@@ -873,17 +1521,52 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
-        if req.body_length().is_some_and(|n| n > 32768) {
+        if method == Method::Get
+            && matches!(
+                path.as_str(),
+                "/api/mii/composer/resource" | "/api/mii/composer/model" | "/api/mii/body"
+            )
+        {
+            let result = if path == "/api/mii/body" {
+                // The game's own body, read from the prepared game (never copied out of it).
+                app.installation()
+                    .or_else(|| app.candidate())
+                    .ok_or_else(|| "Prepare o jogo para ver o corpo do Mii.".to_string())
+                    .and_then(|install| {
+                        mk8_installer::mii_body::glb(&install.data_root.join("extracted"))
+                    })
+            } else if path.ends_with("resource") {
+                mk8_installer::mii_composer::resource(&app.local)
+            } else {
+                mk8_installer::mii_composer::saved_bytes(&app.local)
+            };
+            match result {
+                Ok(bytes) => binary_response(req, 200, bytes, "application/octet-stream"),
+                Err(error) => response(
+                    req,
+                    400,
+                    json!({"ok":false,"error":error}).to_string(),
+                    "application/json",
+                ),
+            }
+            continue;
+        }
+        let limit = if path == "/api/mii/composer/save" {
+            9 * 1024 * 1024
+        } else {
+            32768
+        };
+        if req.body_length().is_some_and(|n| n > limit) {
             response(req, 413, "{}".into(), "application/json");
             continue;
         }
         let mut body = String::new();
         if req
             .as_reader()
-            .take(32769)
+            .take((limit + 1) as u64)
             .read_to_string(&mut body)
             .is_err()
-            || body.len() > 32768
+            || body.len() > limit
         {
             response(req, 400, "{}".into(), "application/json");
             continue;

@@ -19,10 +19,15 @@ import shutil
 import subprocess
 import sys
 
+from cargo_target import target_dir
+
 ROOT = Path(__file__).resolve().parents[1]
 CARGO = ROOT / "Cargo.toml"
 TAURI = ROOT / "apps/launcher/tauri.conf.json"
-DIST = ROOT / "target/dist"
+TARGET = target_dir()
+DIST = TARGET / "dist"
+# Hand-written notes for a version (first line: "# <release title>"), published above the generated part.
+NOTES = ROOT / "docs/releases"
 VERSION = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$")
 
 
@@ -62,7 +67,7 @@ def build(args):
         raise SystemExit(f"A tag {args.tag} não corresponde à versão v{version}")
     if not os.environ.get("MK8_UPDATE_REPO"):
         print("Aviso: MK8_UPDATE_REPO não definido; esta build não oferecerá atualizações.", flush=True)
-    launcher = ROOT / "target/portable/Launcher.exe"
+    launcher = TARGET / "portable/Launcher.exe"
     if not args.skip_package:
         subprocess.run([sys.executable, ROOT / "scripts/package-launcher.py"], cwd=ROOT, check=True)
     if not launcher.is_file():
@@ -74,19 +79,28 @@ def build(args):
     digest = sha256(setup)
     (DIST / f"{setup.name}.sha256").write_text(f"{digest}  {setup.name}\n", encoding="ascii")
     # LGPL: the setup carries FFmpeg DLLs built by scripts/build-ffmpeg.sh, so its source goes with the release.
-    ffmpeg = ROOT / "target/prebuilt-ffmpeg"
+    ffmpeg = TARGET / "prebuilt-ffmpeg"
     for name in ("ffmpeg-9.0.2.tar.xz", "build-ffmpeg.sh"):
         if not (ffmpeg / name).is_file():
             raise SystemExit(f"Fonte do FFmpeg ausente: {ffmpeg / name} (execute scripts/build-ffmpeg.py)")
         shutil.copyfile(ffmpeg / name, DIST / name)
     notes = DIST / "release-notes.md"
+    written = NOTES / f"{version}.md"
+    title, body = f"MK8-online {version}", ""
+    if written.is_file():
+        first, _, rest = written.read_text(encoding="utf-8").partition("\n")
+        if not first.startswith("# "):
+            raise SystemExit(f"{written}: a primeira linha deve ser '# <título da release>'")
+        title, body = first[2:].strip(), rest.strip() + "\n\n---\n\n"
+    (DIST / "release-title.txt").write_text(title + "\n", encoding="utf-8")
     notes.write_text(
+        body +
         f"## MK8-online {version} (experimental)\n\n"
         "Instale com o setup abaixo; quem já tem o Launcher pode usar **Suporte → Atualizar agora**.\n"
         "Cada máquina prepara o jogo com os próprios arquivos do console: nada do jogo é distribuído.\n\n"
         "O setup inclui DLLs do FFmpeg 9.0.2 (LGPL 2.1) compiladas com `build-ffmpeg.sh`; o código-fonte "
         "correspondente (`ffmpeg-9.0.2.tar.xz`) está anexado a esta release.\n\n"
-        "Pendências conhecidas: veja [docs/STATUS.md](../blob/main/docs/STATUS.md). "
+        f"Pendências conhecidas: veja [docs/STATUS.md](https://github.com/{os.environ.get('MK8_UPDATE_REPO', 'Vnnc1/MK8-online')}/blob/v{version}/docs/STATUS.md). "
         "Ao relatar um problema, anexe o .zip de **Suporte → Gerar relatório**.\n\n"
         f"SHA-256 de `{setup.name}`: `{digest}`\n",
         encoding="utf-8")
@@ -97,6 +111,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bump", metavar="VERSION")
     parser.add_argument("--tag", help="tag a conferir contra a versão (CI)")
-    parser.add_argument("--skip-package", action="store_true", help="reaproveita target/portable/Launcher.exe")
+    parser.add_argument("--skip-package", action="store_true", help="reaproveita <target>/portable/Launcher.exe")
     args = parser.parse_args()
     bump(args.bump) if args.bump else build(args)

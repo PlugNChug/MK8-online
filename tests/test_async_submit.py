@@ -50,6 +50,9 @@ void backend_execute(uint64_t h) { order[norder++] = (char)('a' + ((CmdRec *)(ui
 static int drains, translator_marked;  // (toolchain/texture_release_thread.py)
 void mk8_texture_translator_thread(void) { translator_marked++; }
 void mk8_textures_drain(void) { drains++; }
+void mk8_descriptors_drain(void) {}
+NvnTexture *mk8_texture_retain(NvnTexture *t) { if (t) abort(); return t; }
+void mk8_texture_release(NvnTexture *t) { if (t) abort(); }
 void renderer_prefetch_verify(void) {}
 uint64_t renderer_fence_seq(void) { return seq; }
 void renderer_submit(void) {}

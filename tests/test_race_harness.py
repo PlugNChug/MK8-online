@@ -53,6 +53,10 @@ class RaceHarnessTests(unittest.TestCase):
             (root/'user-no-mii/save/original').write_bytes(b'untouched')
             original_ini = 'frame_gen = off\nvolume = 0.35\n'
             (root/'user-no-mii/mk8d.ini').write_text(original_ini)
+            profile = root/'mii-profile.json'
+            profile.write_text(json.dumps(dict(schema=1, id=[0]*8 + [128] + [0]*7,
+                appearance=dict(name='Fixture', color=8, gender=1))), encoding='utf-8')
+            original_profile = profile.read_bytes()
             exe, dlc = root/'synthetic.exe', root/'dlc/installed.bin'
             exe.write_bytes(b'author-created test input; never executed')
             dlc.parent.mkdir()
@@ -68,8 +72,12 @@ class RaceHarnessTests(unittest.TestCase):
             def completed(*_):
                 session = Path(launch.call_args.kwargs['env']['LARECOMP_DATA_ROOT']).parent
                 (session/'frame-06500.png').write_bytes(b'synthetic capture')
-            for audible in (False, True):
-                with self.subTest(audio=audible), patch.object(race, 'LOCAL', root), \
+            for audible, has_profile in ((False, False), (False, True), (True, True)):
+                if has_profile:
+                    profile.write_bytes(original_profile)
+                else:
+                    profile.unlink()
+                with self.subTest(audio=audible, profile=has_profile), patch.object(race, 'LOCAL', root), \
                         patch.object(race.subprocess, 'Popen', return_value=child) as launch, \
                         patch.object(race, 'wait_capture', side_effect=completed):
                     if audible:
@@ -82,6 +90,14 @@ class RaceHarnessTests(unittest.TestCase):
                 self.assertNotIn('LARECOMP_BIND_TEST', env)
                 self.assertEqual(env['MK8_DLC_ROOT'], str(dlc.parent))
                 self.assertEqual(env['LARECOMP_AUDIO_GAIN'], '1' if audible else '0')
+                if has_profile:
+                    self.assertEqual(env['MK8_MII_NAME'], 'Fixture')
+                    self.assertEqual(profile.read_bytes(), original_profile)
+                else:
+                    self.assertNotIn('MK8_MII_NAME', env)
+                    self.assertNotIn('MK8_MII_PROFILE_PATH', env)
+                    self.assertFalse(profile.exists())
+                self.assertEqual(Path(env['LARECOMP_SAVE_DIR']), session/'data/save')
                 self.assertEqual((root/'user-no-mii/save/original').read_bytes(), b'untouched')
                 self.assertNotEqual(env['LARECOMP_DATA_ROOT'], str(root/'user-no-mii'))
                 self.assertEqual((root/'user-no-mii/mk8d.ini').read_text(), original_ini)

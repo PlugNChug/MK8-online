@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from time import monotonic, sleep, time_ns
+import webbrowser
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,16 @@ COURSES = ('stadium', 'water-park', 'sweet-sweet-canyon')
 
 
 def race_input(mode, last_frame, course='stadium', cup=0, track=None,
-               assisted=False, assist_toggle=(), long_session=False, intro=False):
+               assisted=False, assist_toggle=(), long_session=False, intro=False, character='mario'):
+    if character == 'mii':
+        if mode != 'time-trial' or cup or track not in (None, 0) or course != 'stadium':
+            raise ValueError('Mii diagnostic currently supports Time Trial / Mushroom / Stadium only')
+        # MK8 4.0.1: wrap from Mario to the final row/column, select the first Mii,
+        # then Normal Suit. The extra two dialogs shift the kart/course inputs.
+        start = ('400:A:6,520:DOWN:6,580:A:6,760:A:6,880:DOWN:6,940:A:6,'
+                 '1100:UP:6,1160:LEFT:6,1240:A:6,1500:A:6,1760:A:6,'
+                 '2020:A:6,2200:A:6,2380:A:6,2560:A:6,2740:A:6,2920:A:6')
+        return start + f',3100:A:{max(last_frame - 3090, 10)}'
     start = '400:A:6,520:DOWN:6,580:A:6,760:A:6'
     if assisted:
         # A tela de estatísticas expõe L (direção) e R (aceleração); são toggles persistidos.
@@ -103,13 +113,69 @@ def read_power_status():
             'battery_percent': status.percent, 'battery_saver': status.saver}
 
 
-def wait_capture(child, timeout, log):
+def profile_environment(profile):
+    """Match launcher profile overlays; the native service still validates CharInfo."""
+    data = json.loads(profile.read_text(encoding='utf-8'))
+    if data['schema'] != 1:
+        raise ValueError('Unsupported Mii profile schema')
+    identity = bytes(data['id'])
+    if len(identity) != 16 or identity[8] & 0xc0 != 0x80:
+        raise ValueError('Invalid Mii profile identity')
+    appearance = data['appearance']
+    name, color, gender = appearance['name'], appearance['color'], appearance['gender']
+    if (not name.strip() or len(name) > 10 or any(ord(c) < 32 or 127 <= ord(c) <= 159
+            or 0xd800 <= ord(c) <= 0xdfff or ord(c) > 0xffff for c in name)
+            or type(color) is not int or not 0 <= color <= 11
+            or type(gender) is not int or gender not in (0, 1)):
+        raise ValueError('Invalid Mii profile appearance')
+    env = dict(MK8_MII_ID=identity.hex(), MK8_MII_NAME=name,
+               MK8_MII_COLOR=str(color), MK8_MII_GENDER=str(gender))
+    raw = data.get('charinfo')
+    if raw is not None:
+        raw = bytearray(raw)
+        if len(raw) != 88:
+            raise ValueError('Mii CharInfo must contain 88 bytes')
+        raw[:16] = identity
+        raw[16:38] = name.encode('utf-16le').ljust(22, b'\0')
+        raw[0x27], raw[0x28] = color, gender
+        env['MK8_MII_CHARINFO'] = raw.hex()
+    else:
+        face = appearance.get('face', {})
+        fields = [('skin', 0, 5), ('shape', 0, 2), ('hair', 1, 3), ('hair_color', 1, 7),
+                  ('eyes', 0, 2), ('eye_color', 0, 5), ('glasses', False, 1),
+                  ('height', 64, 127), ('build', 64, 127)]
+        values = [face.get(key, default) for key, default, _ in fields]
+        if any(not isinstance(value, int) or not 0 <= value <= limit
+               for value, (_, _, limit) in zip(values, fields)):
+            raise ValueError('Invalid Mii face parameters')
+        env['MK8_MII_FACE'] = bytes(values).hex()
+    return env
+
+
+def wait_capture(child, timeout, log, nextendo=False):
     """Monitor only this test's process; the runtime parent waits for its ASLR child."""
     log = Path(log)
     started = monotonic()
     previous_power = None
+    opened_oauth = False
+    signed_in = False
     try:
         while child.poll() is None:
+            if nextendo and log.is_file():
+                text = log.read_text(encoding='utf-8', errors='replace')
+                if not opened_oauth:
+                    for line in text.splitlines():
+                        if line.startswith('https://nextendo.network/oauth/authorize?'):
+                            opened_oauth = True
+                            print(f'Nextendo OAuth URL: {line}', flush=True)
+                            try:
+                                webbrowser.open(line)
+                            except Exception:
+                                pass
+                            break
+                if not signed_in and '[nextendo] sign-in ok' in text:
+                    signed_in = True
+                    print('Nextendo sign-in ok! Booting MK8 Online Play...', flush=True)
             power = read_power_status()
             if power is not None and power != previous_power:
                 with log.with_name('power-events.jsonl').open('a', encoding='utf-8') as stream:
@@ -196,22 +262,32 @@ def run_once(args, source, cache):
         if actual != entry['sha256']:
             raise ValueError(f'Candidate changed on disk: {path}')
     dlc_root = session_dlc_root(args, candidate)
+    profile_source = args.mii_profile or source/'mii-profile.json'
+    has_profile = profile_source.is_file()
+    if not has_profile and (args.mii_profile is not None or args.character == 'mii'):
+        raise ValueError('Mii profile required for the requested Mii test')
 
     session = Path(tempfile.mkdtemp(prefix=f'race-{args.mode}-', dir=LOCAL))
     print(f'Test output: {session}', flush=True)
     prepare_session(source, session, cache, args.frame_gen, args.fullscreen)
     data = session / 'data'
     profile = session / 'mii-profile.json'
+    if has_profile:
+        shutil.copyfile(profile_source, profile)
 
     script = race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup), args.track,
-                        args.assisted, args.assist_toggle, args.long_session, args.intro)
+                        args.assisted, args.assist_toggle, args.long_session, args.intro, args.character)
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(('MK8_', 'LARECOMP_', 'LASRECOMP_', 'RECOMP_', 'NX_LAN_'))}
+    if has_profile:
+        env.update(profile_environment(profile))
+        env['MK8_MII_PROFILE_PATH'] = str(profile)
     env.update(dict(args.env))
     env.update(
-        MK8_EXPERIMENTAL_NO_MII='1', MK8_MII_PROFILE_PATH=str(profile),
+        MK8_EXPERIMENTAL_NO_MII='1',
         LARECOMP_DATA_ROOT=str(data), LARECOMP_GAME_LIB=candidate['files']['gamelib']['path'],
         LARECOMP_AUDIO_GAIN='1' if args.audio else '0',
+        LARECOMP_SAVE_DIR=str(data / 'save'),
         LARECOMP_INPUT=args.input or script,
         LARECOMP_WINDOW_SHOT=f'{args.last_frame - args.shot_step * (args.shots - 1)}:{args.last_frame}:{args.shot_step}',
         LARECOMP_SHOT_PATH=(session / 'frame-%05d.png').as_posix(),
@@ -231,6 +307,9 @@ def run_once(args, source, cache):
         env['MK8_DLC_ROOT'] = dlc_root
     if args.manual:
         manual_input_environment(env)
+    if args.mii_resources:
+        # Opt-in original Mii renderer with a MiiModel-layout folder (for example toolchain/mii_resource_nx.py output).
+        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=str(args.mii_resources))
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
@@ -245,6 +324,8 @@ def run_once(args, source, cache):
         'fullscreen': args.fullscreen,
         'environment': {key: value for key, value in env.items()
                         if key.startswith(('MK8_', 'LARECOMP_'))},
+        'character': args.character, 'mii_profile_sha256': hashlib.sha256(profile.read_bytes()).hexdigest() if has_profile else None,
+        'model_rendering_verified': False,
     }, indent=2), encoding='utf-8')
     started = monotonic()
     started_ns = time_ns()
@@ -254,12 +335,13 @@ def run_once(args, source, cache):
     try:
         with log.open('wb') as stream:
             child = subprocess.Popen(
-                [candidate['executable']['path'], str(Path(candidate['data_root']) / 'extracted')],
+                [candidate['executable']['path'], *(['--nextendo-login-play'] if args.nextendo else []),
+                 str(Path(candidate['data_root']) / 'extracted')],
                 cwd=data, env=env, stdin=subprocess.DEVNULL, stdout=stream,
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
-            wait_capture(child, args.timeout, log)
+            wait_capture(child, args.timeout, log, args.nextendo)
     finally:
         collect_log(log, Path(candidate['executable']['path']).with_suffix('.log'), started_ns)
         (session / 'result.json').write_text(json.dumps({
@@ -326,13 +408,19 @@ def parse_args(argv=None):
     parser.add_argument('--repeat', type=int, default=1,
                         help='Repete com saves novos da mesma origem e cache produzido pela execução anterior')
     parser.add_argument('--input', help='Override frame:button:duration input sequence')
+    parser.add_argument('--character', choices=['mario', 'mii'], default='mario',
+                        help='Mii selects the first profile and Normal Suit; does not enable model rendering')
     parser.add_argument('--cache-from', type=Path, help='Copy a previous cache directory; saves remain isolated')
+    parser.add_argument('--mii-resources', type=Path,
+                        help='Folder with the six MiiModel-layout files; enables the original Mii renderer')
+    parser.add_argument('--mii-profile', type=Path, help='Copy this profile into the isolated test; never modify it')
     parser.add_argument('--course', choices=['stadium', 'water-park', 'sweet-sweet-canyon'], default='stadium',
                         help='Time Trial course in Mushroom Cup')
     parser.add_argument('--cup', choices=CUPS, default='mushroom', help='Copa do Contra o Relógio ou Grand Prix assistido')
     parser.add_argument('--track', type=int, choices=range(4), help='Track 0-3 of --cup (overrides --course)')
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     parser.add_argument('--candidate', type=Path, help='candidate.json of another data folder (e.g. a fresh build)')
+    parser.add_argument('--nextendo', action='store_true', help='Authenticate in this process before boot; requires MK8_NEXTENDO_TEST=1')
     args = parser.parse_args(argv)
     if args.assisted and (args.mode != 'grand-prix' or args.input):
         parser.error('--assisted exige grand-prix e não aceita --input')
@@ -357,8 +445,14 @@ def parse_args(argv=None):
             or args.timeout <= 0 or args.repeat < 1 or (args.assisted and args.last_frame <= 1600)
             or any(len(pair) != 2 for pair in args.env)):
         parser.error('Require positive capture frames, capture count and step, and --env NAME=VALUE')
+    if args.mii_resources:
+        args.mii_resources = args.mii_resources.resolve()
+        names = ('ShapeMid.dat', 'ShapeHigh.dat', 'NXTextureLowLinear.dat', 'NXTextureLowSRGB.dat',
+                 'NXTextureMidLinear.dat', 'NXTextureMidSRGB.dat')
+        if not all((args.mii_resources / name).is_file() for name in names):
+            parser.error('--mii-resources requires the six MiiModel-layout files')
     script = args.input or race_input(args.mode, args.last_frame, args.course, CUPS.index(args.cup),
-                                      args.track, args.assisted, args.assist_toggle, args.long_session, args.intro)
+                                      args.track, args.assisted, args.assist_toggle, args.long_session, args.intro, args.character)
     if len(script.encode('utf-8')) >= 16384:
         parser.error('Roteiro excede o buffer de entrada do runtime (16383 bytes); reduza a duração.')
     return args

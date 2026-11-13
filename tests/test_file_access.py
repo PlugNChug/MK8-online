@@ -73,8 +73,9 @@ class FileAccessTests(unittest.TestCase):
             (dst/'file.bin').write_bytes(b'previous bytes')
             (dst/'stale.bin').write_bytes(b'keep until success')
             with locked_file(dst/'file.bin'):
-                with self.assertRaises(PermissionError):
-                    build.mirror(dst, src, copy_ok=True)
+                for _ in range(2):
+                    with self.assertRaises(PermissionError):
+                        build.mirror(dst, src, copy_ok=True)
                 self.assertEqual((dst/'file.bin').read_bytes(), b'previous bytes')
                 self.assertTrue((dst/'stale.bin').exists())
             build.mirror(dst, src, copy_ok=True)

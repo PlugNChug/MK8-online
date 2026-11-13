@@ -226,14 +226,33 @@ int main(void) {
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)
             program = output/'no-mii-test.c'
-            program.write_text('#include "hle.h"\nvoid rt_log(const char *fmt, ...) { (void)fmt; }\n#include "mii/no_mii.c"\nint main(void) { return mk8_no_mii_renderer(); }\n', encoding='utf-8')
+            program.write_text('''#include "hle.h"
+#include <assert.h>
+static unsigned resolutions;
+void rt_log(const char *fmt, ...) { (void)fmt; }
+const char *rt_host_fn_name(uint64_t pc, uint64_t *offset) {
+    resolutions++; *offset = pc; return "synthetic_consumer";
+}
+#include "mii/no_mii.c"
+int main(void) {
+    for (uint64_t i = 1; i <= 100; i++) {
+        mk8_trace_mii_consumer(i);
+        mk8_trace_mii_consumer(i);
+    }
+    assert(resolutions == (getenv("MK8_TRACE_MII_CONSUMERS") ? 64 : 0));
+    return mk8_no_mii_renderer();
+}
+''', encoding='utf-8')
             exe = output/'no-mii-test.exe'
             env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
             subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG', '-I'+str(ROOT/'upstream/smm2recomp/recomp/runtime'), '-I'+str(ROOT/'runtime/mk8'), str(program), '-o', str(exe)], env=env, check=True)
             env.pop('MK8_EXPERIMENTAL_NO_MII', None)
+            env.pop('MK8_TRACE_MII_CONSUMERS', None)
             self.assertEqual(subprocess.run([str(exe)], env=env).returncode, 0)
             for value, expected in [('0', 0), ('true', 0), ('1', 1)]:
                 self.assertEqual(subprocess.run([str(exe)], env=dict(env, MK8_EXPERIMENTAL_NO_MII=value)).returncode, expected)
+                self.assertEqual(subprocess.run([str(exe)], env=dict(env, MK8_EXPERIMENTAL_NO_MII=value,
+                                                                   MK8_TRACE_MII_CONSUMERS='1')).returncode, expected)
 
     def test_packaged_texture_layout_unaligned_and_null(self):
         with tempfile.TemporaryDirectory() as folder:

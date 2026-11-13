@@ -16,7 +16,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/build-ffmpeg.sh'
 OUTPUT = ROOT / 'prebuilt/ffmpeg'
-SOURCE = ROOT / 'target/prebuilt-ffmpeg'  # (source archive for the release, LGPL)
+sys.path.insert(0, str(ROOT / 'scripts'))
+from cargo_target import target_dir  # noqa: E402
+
+SOURCE = target_dir() / 'prebuilt-ffmpeg'  # (source archive for the release, LGPL)
 DLLS = ('avcodec-63.dll', 'avformat-63.dll', 'avutil-61.dll', 'swscale-10.dll')
 
 

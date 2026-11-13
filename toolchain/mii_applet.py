@@ -8,13 +8,13 @@ def adapt(text):
          'typedef struct { uint32_t id, mii_mode; bool started, mii_args, popped; size_t out_size; uint8_t out[0x80]; } AmApplet;'),
         ('    case 10: ap->started = true; break;',
          '''    case 10:
-        if (!ap->started && ap->id == 0x12 && mk8_no_mii_renderer()) {
+        if (!ap->started && ap->id == 0x12 && (mk8_no_mii_renderer() || getenv("MK8_MII_MENU_SIGNAL"))) {
             ap->out_size = mk8_mii_editor(ap->mii_args ? ap->mii_mode : UINT32_MAX, ap->out);
         }
         ap->started = true; break;'''),
         ('        Service *st = ipc_in_object(req, 0);',
          '''        Service *st = ipc_in_object(req, 0);
-        if (req->cmd == 100 && st && st->handler == am_storage && ap->id == 0x12 && mk8_no_mii_renderer()) {
+        if (req->cmd == 100 && st && st->handler == am_storage && ap->id == 0x12 && (mk8_no_mii_renderer() || getenv("MK8_MII_MENU_SIGNAL"))) {
             AmStorage *d = st->state;
             if (d->size == 0x100) {
                 uint32_t version;

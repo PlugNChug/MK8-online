@@ -32,6 +32,7 @@
         <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
         <button class="tab" data-tab="settings" aria-selected="false">Configurações</button>
         <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
+        <button class="tab" data-tab="miis" aria-selected="false">Perfil Mii</button>
       </nav>
 
       <main>
@@ -210,6 +211,33 @@
           </article>
           <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
         </section>
+
+        <section id="miis" class="panel" hidden>
+          <div class="mii-head-row">
+            <h1>Mii</h1>
+            <div id="mii-saved" class="mii-saved" role="list" aria-label="Seus Miis"></div>
+            <button id="mii-new" type="button">+ Novo Mii</button>
+          </div>
+          <div id="mii-library" class="card mii-library" hidden>
+            <p>Para desenhar o rosto, escolha uma vez a biblioteca de peças <b>AFLResHigh_2_3.dat</b> (fica só neste PC).</p>
+            <div class="row"><input id="mii-library-path" spellcheck="false" aria-label="Biblioteca de peças" placeholder="C:\…\AFLResHigh_2_3.dat" /><button id="mii-library-browse" type="button">Procurar</button><button id="mii-library-load" type="button" class="primary">Usar</button></div>
+          </div>
+          <div class="mii-creator">
+            <div class="mii-stage card">
+              <canvas id="mii-stage" width="560" height="640" aria-label="Mii com corpo"></canvas>
+              <div class="mii-view row"><button type="button" data-view="body" aria-pressed="true">Corpo inteiro</button><button type="button" data-view="face" aria-pressed="false">Rosto</button></div>
+              <label class="mii-name">Nome<input id="mii-name" maxlength="10" required /></label>
+              <button id="mii-save" type="button" class="primary">Salvar Mii</button>
+              <p id="mii-status" class="fine" role="status"></p>
+            </div>
+            <div class="mii-panel card">
+              <nav id="mii-tabs" class="mii-tabs" role="tablist" aria-label="Partes do Mii"></nav>
+              <div id="mii-options" class="mii-options" role="tabpanel"></div>
+            </div>
+          </div>
+          <p class="fine">Rosto desenhado por <a href="https://github.com/ariankordi/FFL.js" target="_blank" rel="noopener">FFL.js / Arian Kordi</a> · <a href="/vendor/ffl/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>, com a biblioteca AFL local. Corpo lido do jogo preparado neste PC; nada é copiado.</p>
+        </section>
+
         <!-- Jogar -->
         <section id="play" class="panel" hidden>
           <div class="panel-head">
@@ -241,62 +269,53 @@
           <div class="panel-head">
             <div>
               <h1>Multijogador</h1>
-              <p id="network-mode" class="muted">Teste de transporte disponível sem o jogo.</p>
+              <p class="muted">Salas com amigos pela Steam: sem VPN e sem abrir portas.</p>
             </div>
             <span id="network-state" class="pill">Desconectado</span>
           </div>
 
-          <form id="name-form" class="card inline">
-            <label>Nome de usuário<input id="username" maxlength="24" required /></label>
-            <button class="ghost">Salvar nome</button>
-          </form>
+          <div class="card mp-player">
+            <canvas id="mp-mii" width="84" height="84" aria-hidden="true"></canvas>
+            <div>
+              <p id="mp-mii-text">Carregando seu Mii…</p>
+              <button id="mp-mii-edit" type="button" class="ghost" data-goto="miis">Criar Mii agora</button>
+            </div>
+          </div>
+          <p id="steam-state" class="hint" role="status"></p>
 
           <div class="grid2">
             <div class="card">
-              <h2>Criar sala</h2>
-              <div class="row">
-                <button id="host" class="primary">Criar sala na rede local</button>
-                <button id="host-internet" class="ghost" disabled>Criar sala pela internet</button>
+              <h2>Sua sala</h2>
+              <button id="steam-host" type="button" class="primary">Criar sala</button>
+              <div id="steam-room" hidden>
+                <p id="peers">Sem participantes conectados.</p>
+                <div class="row">
+                  <button id="steam-overlay" type="button" class="ghost">Convidar pela Steam</button>
+                  <button id="leave" type="button" class="ghost">Encerrar sala</button>
+                </div>
               </div>
-              <p id="internet-note" class="hint"></p>
-              <div id="room-code-box" hidden>
-                <label>Código da sala<input id="room-code" readonly /></label>
-                <button id="copy-room-code" class="ghost">Copiar código</button>
-              </div>
-              <button id="invite" class="ghost" disabled>Novo convite</button>
-              <div id="invite-output" hidden>
-                <label>Seu convite<textarea id="invite-text" rows="2" readonly></textarea></label>
-                <button id="copy" class="ghost">Copiar de novo</button>
-              </div>
-              <details id="invite-advanced">
-                <summary>Endereço alternativo (VPN ou porta redirecionada)</summary>
-                <label>IP e porta acessíveis pelo convidado<input id="endpoint" placeholder="192.168.1.10:47820" spellcheck="false" /></label>
-              </details>
             </div>
-
             <div class="card">
-              <h2>Entrar</h2>
-              <label>Código ou convite do anfitrião<textarea id="invite-input" rows="3" placeholder="MK8-… ou mk8://…" spellcheck="false"></textarea></label>
-              <div class="row">
-                <button id="join" class="primary">Entrar na sala</button>
-                <button id="scan-rooms" class="ghost">Buscar salas</button>
-              </div>
-              <ul id="rooms"></ul>
+              <h2>Convites e salas de amigos</h2>
+              <ul id="steam-invites" class="mp-list"></ul>
+              <ul id="steam-rooms" class="mp-list"></ul>
+              <p id="steam-empty" class="hint">Nenhum convite nem sala de amigo aberta agora.</p>
             </div>
           </div>
 
-          <div class="card statusbar">
-            <p id="peers">Sem participantes conectados.</p>
-            <button id="leave" class="ghost" disabled>Encerrar sessão</button>
+          <div class="card">
+            <div class="row mp-friends-head"><h2>Amigos da Steam</h2><input id="friend-filter" aria-label="Procurar amigo" placeholder="Procurar amigo" /></div>
+            <ul id="steam-friends" class="mp-list mp-friends"></ul>
           </div>
 
           <details class="drawer">
-            <summary>Como testar em duas máquinas</summary>
+            <summary>Como funciona</summary>
             <ol class="howto">
-              <li>Cada PC instala o Launcher e prepara o jogo com os próprios arquivos (mesma versão 4.0.1).</li>
-              <li>Na mesma rede: libere <b>UDP 47820</b> no firewall do anfitrião. Pela internet: use o código <code>MK8-…</code> do relay.</li>
-              <li>O anfitrião cria a sala e envia um convite individual a cada amigo (vale por quatro horas).</li>
-              <li>Depois de conectar, todos usam <b>Jogar na sala</b>. No menu do jogo, segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião escolhe Create Room e os convidados entram pelo Lobby.</li>
+              <li>Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.</li>
+              <li>Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como "Spacewar", o aplicativo de testes da Steam.</li>
+              <li>O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.</li>
+              <li>O amigo aceita: no Launcher (Aceitar), no chat da Steam ou em Entrar na sala do amigo. O jogo dele abre e entra na sala sozinho.</li>
+              <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
             </ol>
           </details>
@@ -339,5 +358,7 @@
     </div>
 
     <footer>MK8-online · projeto experimental sem vínculo com a Nintendo · use somente arquivos do seu próprio console</footer>
-  </body>
+  <script src="/vendor/ffl/ffl-emscripten.cjs"></script>
+<script type="module" src="/mii-composer.js"></script>
+</body>
 </html>

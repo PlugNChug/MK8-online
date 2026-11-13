@@ -1,6 +1,13 @@
 use mk8_manifest::{verify, Config, Installation, Result};
 pub mod dlc;
 use serde::Serialize;
+pub mod avatar;
+pub mod mii;
+pub mod mii_body;
+pub mod mii_composer;
+pub mod mii_data;
+pub mod mii_native;
+pub mod mii_resources;
 use std::{
     fs,
     path::Path,
@@ -201,6 +208,12 @@ fn spawn_game(
     username: &str,
 ) -> Result<Child> {
     let dlc_root = dlc::launch_root(local, install)?;
+    let mii_directory = mii_resources::launch_directory(local)?;
+    let native_head = mii_native::launch_directory(local, network.is_some())?;
+    if native_head.is_some() && mii_directory.is_some() {
+        return Err("Desative os recursos MiiModel antes de usar a cabeça convertida.".into());
+    }
+    mii::read(local)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     rotate_game_log(local)?;
@@ -212,10 +225,20 @@ fn spawn_game(
         .env("RECOMP_USER_NAME", username)
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
+        .env("LARECOMP_SAVE_DIR", saves.join("save"))
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
         .env(
             "MK8_DLC_ROOT",
             dlc_root.as_deref().unwrap_or_else(|| Path::new("")),
+        )
+        .env(
+            "SDL_VULKAN_LIBRARY",
+            install
+                .executable
+                .path
+                .parent()
+                .ok_or("Pasta do runtime ausente")?
+                .join("vulkan-1.dll"),
         )
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
@@ -242,11 +265,21 @@ fn spawn_game(
             .env("LARECOMP_LAN_ROOM", "MK8ONLINE")
             .env("LARECOMP_LAN_SLOT", slot.to_string());
     }
+    mii::configure(&mut cmd, local)?;
+    mii_native::configure_command(&mut cmd, native_head.as_deref())?;
+    cmd.env_remove("MK8_MII_RESOURCE_DIR");
+    if let Some(directory) = mii_directory {
+        cmd.env("MK8_MII_RESOURCE_DIR", directory)
+            .env("MK8_EXPERIMENTAL_NO_MII", "0");
+    }
+    cmd.env("MK8_MII_MENU_SIGNAL", local.join("open-miis"));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // The independent supervisor has no console for the runtime to inherit.
-        cmd.creation_flags(0x08000000);
+        // DETACHED_PROCESS: no console at all. CREATE_NO_WINDOW gave the runtime a hidden console of its own, and
+        // the runtime (platform/windows.c log_to_file_without_console) then sent stdout/stderr to mk8drecomp.log
+        // beside the exe instead of game.log: every session's game.log, and the logs in Support reports, were empty.
+        cmd.creation_flags(0x0000_0008);
     }
     cmd.spawn().map_err(|e| format!("Falha ao abrir jogo: {e}"))
 }

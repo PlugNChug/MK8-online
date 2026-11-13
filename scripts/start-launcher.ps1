@@ -8,7 +8,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falha obtendo as fontes upstream' }
     cargo build --release --locked -p mk8-online
     if ($LASTEXITCODE -ne 0) { throw 'Falha compilando launcher' }
-    $launcher = Join-Path $projectRoot 'target/release/Launcher.exe'
+    $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Falha consultando a pasta de build do Cargo' }
+    $launcher = Join-Path $metadata.target_directory 'release/Launcher.exe'
     $launcherArgs = @('--port', "$Port")
     if ($Headless) {
         # Sem janela: somente a API e a interface local; endereço em local/launcher.json.

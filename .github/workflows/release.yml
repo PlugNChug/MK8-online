@@ -31,6 +31,12 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test --workspace --locked
+      - name: Upstream sources
+        run: python scripts/fetch-upstream.py
+      - name: Python tool dependencies
+        run: >-
+          python -m pip --isolated install --only-binary=:all: --require-hashes
+          -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
       - name: Build setup
         shell: pwsh
         run: |
@@ -40,10 +46,15 @@ jobs:
         with:
           name: setup
           path: target/dist/*
+      - name: Release title
+        id: title
+        shell: pwsh
+        run: '"text=" + (Get-Content target/dist/release-title.txt -Raw).Trim() | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8'
       - name: Publish
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.title.outputs.text }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: target/dist/release-notes.md
           files: |

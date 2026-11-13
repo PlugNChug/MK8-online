@@ -56,6 +56,12 @@ size_t mk8_mii_editor(uint32_t mode, uint8_t out[0x80]) {
     memset(out, 0, 0x80);
     out[0] = 1; // Cancel unless a valid profile is durably saved.
     size_t size = mode == 4 || mode == 5 ? 0x80 : 0x20;
+    // The launcher owns complete profiles. Never overwrite imported CharInfo with this legacy name-only editor.
+    if (getenv("MK8_MII_MENU_SIGNAL")) {
+        extern void mk8_open_mii_menu(void);
+        mk8_open_mii_menu();
+        return size; // Cancel this applet; profile changes take effect on next launch.
+    }
     if (mode != 0 && mode != 1 && mode != 4 && mode != 5) return size;
     char name[64] = "";
     const char *initial = getenv("MK8_MII_NAME");

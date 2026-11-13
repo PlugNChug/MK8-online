@@ -8,7 +8,7 @@ Para as versões seguintes, aumente a versão compilada e publique a tag corresp
 
 ## Versões
 
-O projeto usa `MAJOR.MINOR.PATCH`, com sufixo de pré-release enquanto for experimental (por exemplo `0.2.0-alpha.1`). A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
+O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.2.0-alpha.1`). A 0.2.0 é uma release pública de testes, sem sufixo; o estado experimental, principalmente do multiplayer Steam, permanece explícito no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
 
 ## Pelo GitHub Actions (recomendado)
 
@@ -16,7 +16,7 @@ O projeto usa `MAJOR.MINOR.PATCH`, com sufixo de pré-release enquanto for exper
 python scripts/release.py --bump 0.2.0-alpha.1   # altera Cargo.toml, tauri.conf.json e Cargo.lock
 git commit -am "Release 0.2.0-alpha.1"
 git tag v0.2.0-alpha.1
-git push origin main --tags
+git push origin master v0.2.0-alpha.1
 ```
 
 A tag dispara `.github/workflows/release.yml`, que:
@@ -26,7 +26,7 @@ A tag dispara `.github/workflows/release.yml`, que:
 3. gera `MK8-online-<versão>-setup.exe`, o `.sha256` e as notas;
 4. publica o Release. Uma tag com `-` (por exemplo `-alpha.1`) vira pré-release.
 
-Revise as notas geradas e acrescente o que mudou. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
+Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
 
 ## Localmente
 
@@ -38,7 +38,9 @@ python scripts/release.py              # target/dist/MK8-online-<versão>-setup.
 python scripts/release.py --skip-package   # só copia de novo target/portable/Launcher.exe como setup
 ```
 
-Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe` **e** o `.sha256`. Sem SHA-256 (o `digest` do GitHub ou o arquivo `.sha256`), o Launcher recusa a atualização.
+Os scripts resolvem a pasta de saída por `cargo metadata`: `target/` nos comandos acima significa o `target_directory` configurado, inclusive quando fica em outro disco. Não mova nem limpe builds para seguir um caminho literal de exemplo.
+
+Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe` **e** o `.sha256`, além dos fontes/scripts FFmpeg. Sem SHA-256 (o `digest` do GitHub ou o arquivo `.sha256`), o Launcher recusa a atualização. Se a tag disparar uma build automática duplicada, cancele somente essa execução antes de publicar o pacote local validado, para evitar substituição posterior dos anexos.
 
 ## O que vai no instalador
 

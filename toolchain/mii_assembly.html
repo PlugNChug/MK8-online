@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8">
+<title>Montagem Mii — fase 2</title>
+<style>
+body{margin:0;background:#18212b;color:#edf2f7;font:16px system-ui}main{max-width:1080px;margin:24px auto}button,label{margin-right:16px}button{padding:10px 18px}canvas{display:block;width:100%;margin-top:16px}pre{white-space:pre-wrap}input{width:65px}
+</style>
+<script src="/ffl/ffl-emscripten.cjs"></script>
+<script type="importmap">{"imports":{"three":"/three/three.module.js"}}</script>
+<main><h1>Montagem Mii · fase 2</h1>
+<p>Biblioteca local AFL. Prévia e exportação experimental; não altera perfis ou o jogo.</p>
+<button id="a" disabled>Perfil A</button><button id="b" disabled>Perfil B</button>
+<label>Cabelo <input id="hair" type="number" min="0" max="131" value="33"></label>
+<button id="apply" disabled>Aplicar cabelo</button><button id="export" disabled>Exportar GLB</button>
+<button id="reload" disabled>Ver GLB exportado</button>
+<p id="status" role="status">Carregando biblioteca local…</p><div id="view"></div><pre id="details"></pre>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import {FFL,CharModel,FFLCharModelDescDefault,ModelTexturesConverter} from '/ffl/ffl.js';
+import GeometryConverter from '/ffl/helpers/GeometryConverter.js';
+import FFLShaderMaterial from '/ffl/materials/FFLShaderMaterial.js';
+import {GLTFExporter} from '/three/GLTFExporter.js';
+import {GLTFLoader} from '/three/GLTFLoader.js';
+const status=document.querySelector('#status'),details=document.querySelector('#details');
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setSize(1080,650);renderer.setPixelRatio(1);
+document.querySelector('#view').append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color('#c6d5df');
+scene.add(new THREE.HemisphereLight(0xffffff,0x536170,2));
+const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(30,60,80);scene.add(light);
+const camera=new THREE.PerspectiveCamera(30,1080/650,1,1000);
+let ffl,model,data,lastExport,loaded,variant='A';
+function clearLoaded(){
+ if(!loaded)return;
+ scene.remove(loaded);loaded.traverse(m=>{if(m.isMesh){m.geometry.dispose();m.material.map?.dispose();m.material.dispose();}});loaded=null;
+}
+function profile(which){
+ const d=new Uint8Array(88);d[8]=128;d[16]=65;
+ d.set([0,0,0,64,64,0,0,0,0,0,0,33,1,0,2,8,4,3,4,2,12,6,1,4,3,6,2,10,1,4,9,23,19,4,3,13,8,0,0,4,10,0,8,4,10,0,4,2,20,0],38);
+ if(which==='B'){d[16]=66;d[0x28]=1;d[0x2d]=4;d[0x2e]=2;d[0x31]=24;d[0x32]=6;d[0x34]=16;d[0x45]=7;}
+ return d;
+}
+function show(bytes){
+ if(!(bytes instanceof Uint8Array)||bytes.length!==88)throw Error('CharInfo deve ter 88 bytes');
+ const next=new CharModel(ffl,bytes,FFLCharModelDescDefault,THREE.MeshStandardMaterial);
+ try{next.initTextures(renderer,FFLShaderMaterial);}catch(e){next.dispose();throw e;}
+ clearLoaded();lastExport=null;document.querySelector('#reload').disabled=true;
+ if(model){scene.remove(model.meshes);model.dispose();}
+ model=next;data=bytes.slice();scene.add(model.meshes);
+ const box=model.boundingBox,center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+ camera.position.copy(center).add(new THREE.Vector3(0,0,Math.max(size.y,size.x)*2.3));camera.lookAt(center);
+ renderer.render(scene,camera);
+ const parts=model.meshes.children.map(m=>({name:m.name,type:m.geometry.userData.modulateType,vertices:m.geometry.attributes.position.count,normal:!!m.geometry.attributes.normal,texture:!!m.material.map}));
+ details.textContent=JSON.stringify({variant,fields:{face:data[45],skin:data[46],hair:data[49],eyes:data[52],mouth:data[69]},parts},null,2);
+ status.textContent='Modelo montado';document.querySelector('#hair').value=data[49];
+}
+function action(fn){return async()=>{try{await fn();}catch(e){status.textContent='Erro: '+e.message;console.error(e);}};}
+document.querySelector('#a').onclick=action(()=>{variant='A';show(profile('A'));});
+document.querySelector('#b').onclick=action(()=>{variant='B';show(profile('B'));});
+document.querySelector('#apply').onclick=action(()=>{
+ const value=Number(document.querySelector('#hair').value);
+ if(!Number.isInteger(value)||value<0||value>131)throw Error('Cabelo fora de 0–131');
+ const updated=data.slice();updated[49]=value;show(updated);
+});
+document.querySelector('#export').onclick=action(async()=>{
+ const temporary=new CharModel(ffl,data,FFLCharModelDescDefault,THREE.MeshStandardMaterial);
+ try{
+  temporary.initTextures(renderer,FFLShaderMaterial);
+  await ModelTexturesConverter.convModelTargetsToDataTex(temporary,renderer);
+  // FFL linear gamma render-target bytes must be encoded as sRGB for glTF base color.
+  const converted=new Set();
+  for(const mesh of temporary.meshes.children){
+   const texture=mesh.material.map;if(!texture||converted.has(texture))continue;
+   converted.add(texture);
+   const pixels=texture.image.data;
+   for(let i=0;i<pixels.length;i++)if(i%4!==3){const c=pixels[i]/255;pixels[i]=Math.round(255*(c<=0.0031308?12.92*c:1.055*c**(1/2.4)-0.055));}
+   texture.colorSpace=THREE.SRGBColorSpace;texture.needsUpdate=true;
+  }
+  temporary.meshes.children.forEach(m=>GeometryConverter.normalize(m.geometry));
+  const result=await new GLTFExporter().parseAsync(temporary.meshes,{binary:true});
+  lastExport=result;document.querySelector('#reload').disabled=false;
+  const url=URL.createObjectURL(new Blob([result],{type:'model/gltf-binary'}));
+  const a=document.createElement('a');a.href=url;a.download='assembled-'+variant+'.glb';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }finally{temporary.dispose();renderer.render(scene,camera);}
+});
+document.querySelector('#reload').onclick=action(async()=>{
+ if(!lastExport)throw Error('Exporte um modelo primeiro');
+ const gltf=await new GLTFLoader().parseAsync(lastExport,'');
+ clearLoaded();loaded=gltf.scene;scene.remove(model.meshes);scene.add(loaded);
+ renderer.render(scene,camera);status.textContent='GLB reaberto';
+});
+try{
+ const resource=await fetch('/resource.dat');if(!resource.ok)throw Error('Recurso local indisponível');
+ ffl=await FFL.initWithResource(resource,ModuleFFL({locateFile:name=>'/ffl/'+name}));
+ ffl.module._FFLSetLinearGammaMode(1);show(profile('A'));
+ document.querySelectorAll('button:not(#reload)').forEach(b=>b.disabled=false);
+}catch(e){status.textContent='Erro: '+e.message;console.error(e);}
+</script></html>

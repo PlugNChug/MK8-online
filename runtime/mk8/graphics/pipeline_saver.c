@@ -25,7 +25,8 @@ void mk8_pipeline_built(void) {
 
 static void *saver(void *arg) {
     (void)arg;
-    uint64_t saved = atomic_load(&g_built), last_save = plat_now_ns();
+    // Builds completed before this thread started have not been persisted yet.
+    uint64_t saved = 0, last_save = plat_now_ns();
     for (;;) {
         plat_sleep_until_ns(plat_now_ns() + POLL_NS);
         uint64_t built = atomic_load(&g_built), now = plat_now_ns();

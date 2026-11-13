@@ -580,82 +580,74 @@ function renderInstall(status) {
   else setStep(null, "play-state", "pending", "Bloqueado");
 }
 
-/* ---------- Multijogador ---------- */
-$("host").onclick = () => action(() => api("session/host", {}));
-$("host-internet").onclick = () =>
-  action(async () => {
-    const result = await api("session/host-internet", {});
-    try {
-      await navigator.clipboard.writeText(result.code);
-      return { message: "Código copiado. Envie aos seus amigos." };
-    } catch {
-      return result;
-    }
-  });
-$("copy-room-code").onclick = () =>
-  action(async () => {
-    const input = $("room-code");
-    try {
-      await navigator.clipboard.writeText(input.value);
-      return { message: "Código copiado." };
-    } catch {
-      input.focus();
-      input.select();
-      return { message: "Copie o código selecionado." };
-    }
-  });
-$("name-form").onsubmit = (event) => {
-  event.preventDefault();
-  action(() => api("username", { name: $("username").value }));
-};
-$("scan-rooms").onclick = () =>
-  action(async () => {
-    const rooms = await api("session/discover", {});
-    $("rooms").replaceChildren(
-      ...rooms.map((room) => {
-        const row = document.createElement("li");
-        row.textContent = room.name;
-        return row;
-      }),
-    );
-    return {
-      message: rooms.length
-        ? "Peça um convite ao anfitrião da sala."
-        : "Nenhuma sala compatível encontrada na rede local.",
-    };
-  });
+/* ---------- Multijogador (Steam) ---------- */
 let roomMenu = 0;
-$("invite").onclick = () =>
-  action(async () => {
-    const endpoint = $("invite-advanced").open ? $("endpoint").value.trim() : "";
-    const result = await api("session/invite", endpoint ? { endpoint } : {});
-    $("invite-text").value = result.invite;
-    $("invite-output").hidden = false;
-    try {
-      await navigator.clipboard.writeText(result.invite);
-      return { message: "Convite copiado. Envie ao seu amigo." };
-    } catch {
-      $("invite-text").focus();
-      $("invite-text").select();
-      return { message: "Convite pronto. Copie o texto selecionado." };
-    }
-  });
-$("copy").onclick = () =>
-  action(async () => {
-    await navigator.clipboard.writeText($("invite-text").value);
-    return { message: "Convite copiado." };
-  });
-$("join").onclick = () =>
-  action(() => api("session/join", { invite: $("invite-input").value.trim() }));
-$("leave").onclick = () =>
-  action(async () => {
-    const result = await api("session/stop", {});
-    $("invite-text").value = "";
-    $("invite-output").hidden = true;
-    $("endpoint").value = "";
-    $("invite-advanced").open = false;
-    return result;
-  });
+let previousSession = null;
+let lastSteamError = null;
+let steamData = null;
+function listItem(text, buttons) {
+  const row = document.createElement("li");
+  const label = document.createElement("span");
+  label.textContent = text;
+  row.append(label, ...buttons);
+  return row;
+}
+function steamButton(text, fn, primary = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = primary ? "primary" : "ghost";
+  i18n.text(button, text);
+  button.onclick = () => action(fn);
+  return button;
+}
+function renderSteam() {
+  const data = steamData;
+  const hosting = !!data?.room && !!previousSession?.hosting;
+  $("steam-invites").replaceChildren(...(data?.invites ?? []).map((invite) =>
+    listItem(i18n.t("Convite de {0}").replace("{0}", invite.friend), [
+      steamButton("Aceitar", () => api("steam/join", { lobby: invite.lobby }), true),
+      steamButton("Recusar", () => api("steam/dismiss", { lobby: invite.lobby })),
+    ])));
+  const rooms = (data?.friends ?? []).filter((friend) => friend.room && friend.room !== data.room);
+  $("steam-rooms").replaceChildren(...rooms.map((friend) =>
+    listItem(i18n.t("Sala de {0}").replace("{0}", friend.name), [
+      steamButton("Entrar", () => api("steam/join", { lobby: friend.room }), true),
+    ])));
+  $("steam-empty").hidden = !!(data?.invites?.length || rooms.length);
+  const filter = $("friend-filter").value.trim().toLowerCase();
+  const friends = (data?.friends ?? []).filter((friend) => friend.online && friend.name.toLowerCase().includes(filter));
+  $("steam-friends").replaceChildren(...friends.slice(0, 60).map((friend) =>
+    listItem(friend.name, hosting ? [steamButton("Convidar", () => api("steam/invite", { friend: friend.id }))] : [])));
+  if (!friends.length) {
+    const empty = document.createElement("li");
+    i18n.text(empty, data ? "Nenhum amigo online agora." : "Abra a Steam para ver seus amigos.");
+    $("steam-friends").replaceChildren(empty);
+  }
+}
+async function loadSteam() {
+  if ($("session").hidden) return;
+  try {
+    const mii = await api("mii");
+    const name = mii.active?.appearance?.name;
+    i18n.text($("mp-mii-text"), name ? `Você entra nas salas como ${name}.` : "Crie seu Mii para abrir ou entrar em salas.");
+    i18n.text($("mp-mii-edit"), name ? "Trocar Mii" : "Criar Mii agora");
+    window.miiIcon?.($("mp-mii"));
+  } catch (_) {}
+  try {
+    steamData = await api("steam/friends");
+    i18n.text($("steam-state"), steamData.persona ? `Conectado à Steam como ${steamData.persona}.` : "Conectado à Steam.");
+  } catch (error) {
+    steamData = null;
+    i18n.text($("steam-state"), error.message);
+  }
+  renderSteam();
+}
+$("steam-host").onclick = () => action(() => api("steam/host", {}));
+$("steam-overlay").onclick = () => action(() => api("session/steam-overlay-invite", {}));
+$("friend-filter").oninput = renderSteam;
+$("leave").onclick = () => action(() => api("session/stop", {}));
+document.querySelector('[data-tab="session"]').addEventListener("click", () => loadSteam());
+setInterval(() => loadSteam(), 5000);
 
 /* ---------- Jogar e suporte ---------- */
 $("play-solo").onclick = () => action(() => api("play", { online: false }));
@@ -698,7 +690,7 @@ async function refresh() {
   if (status.room_menu !== roomMenu) {
     roomMenu = status.room_menu;
     showTab("session");
-    $("scan-rooms").click();
+    loadSteam();
   }
   const running = status.build.state === "running";
   i18n.text($("version"), "v" + status.version);
@@ -735,25 +727,28 @@ async function refresh() {
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
-  $("host").disabled = active || !!status.game_pid;
-  $("host-internet").disabled = active || !session.internet_available || !!status.game_pid;
-  i18n.text($("internet-note"), session.internet_available
-    ? "Envie o código para amigos em outras redes."
-    : "Relay público ainda não configurado nesta edição.");
-  $("room-code-box").hidden = !session.room_code;
-  $("room-code").value = session.room_code || "";
-  $("join").disabled = active || !!status.game_pid;
-  $("leave").disabled = !active || !!status.game_pid;
-  $("invite").disabled = !session.hosting;
-  i18n.text($("network-state"), session.connected ? "Transporte conectado" : active ? "Conectando" : "Desconectado");
-  i18n.text($("network-mode"), session.diagnostic_only
-    ? "Modo de teste: transporte sem jogo. Não representa uma corrida."
-    : "Use Jogar na sala e entre no modo LAN do jogo. Multiplayer em validação.");
-  i18n.text($("peers"), session.hosting
-    ? `${session.participants} conexão(ões) de transporte`
-    : session.connected
-      ? "Conectado ao anfitrião. Abra o jogo para entrar na sala LAN."
-      : "Sem conexão confirmada.");
+  $("steam-host").hidden = active;
+  $("steam-host").disabled = !!status.game_pid;
+  $("steam-room").hidden = !active;
+  $("leave").disabled = !!status.game_pid;
+  i18n.text($("network-state"), session.connected ? "Na sala" : active ? "Conectando" : "Sem sala");
+  const guests = Math.max(0, session.participants - (session.connected ? 1 : 0));
+  i18n.text($("peers"), session.pending_play
+    ? "Abrindo o jogo na sala…"
+    : session.hosting
+      ? guests > 0
+        ? `${guests} amigo(s) na sua sala.`
+        : "Sala aberta. Convide amigos da Steam."
+      : session.connected
+        ? "Você está na sala do seu amigo."
+        : "Conectando à sala…");
+  if (session.steam_error && session.steam_error !== lastSteamError) notice(session.steam_error, true);
+  lastSteamError = session.steam_error;
+  if (previousSession && session.hosting && guests > previousSession.guests) {
+    notice("Um amigo entrou na sua sala.");
+  }
+  if (previousSession && !previousSession.hosting !== !session.hosting) renderSteam();
+  previousSession = { connected: session.connected, guests, hosting: session.hosting };
   const gameLog = await api("game/log");
   $("game-log").textContent = gameLog.text || i18n.t("Nenhum teste iniciado.");
   const log = await api("log");
@@ -777,7 +772,6 @@ async function refresh() {
 }
 (async () => {
   try {
-    $("username").value = await api("username");
     savedConfig = await api("config");
     fieldNames.forEach((key) => ($(key).value = savedConfig[key] || ""));
     if (!savedConfig.base_package && !savedConfig.update_package && savedConfig.exefs) {

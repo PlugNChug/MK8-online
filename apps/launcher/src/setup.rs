@@ -432,16 +432,15 @@ pub fn tool_checks(root: &Path) -> Vec<Value> {
                 .is_ok_and(|marker| marker.trim() == hash)
         })
         .count();
-    // Written by `runtime-dlls.py --prefetch` at the end of the step: the DLLs the build
-    // copies are already downloaded and checked (older tool folders run the step once more).
-    let prefetched = folder.join("dlls/index.json").is_file();
+    let prefetched = runtime_ready(root, &tools_dir(root));
     checks.push(check(
         "Bibliotecas gráficas e FFmpeg".into(),
         !pins.is_empty() && extracted == pins.len() && prefetched,
         if pins.is_empty() {
             "Lista de pacotes fixados não encontrada.".into()
         } else if extracted == pins.len() && !prefetched {
-            "Pacotes extraídos; falta baixar as DLLs usadas pelo jogo.".into()
+            "Pacotes extraídos; execute Ferramentas para verificar ou reparar as DLLs do runtime."
+                .into()
         } else {
             format!(
                 "{extracted} de {} pacotes extraídos com o hash esperado.",
@@ -450,6 +449,59 @@ pub fn tool_checks(root: &Path) -> Vec<Value> {
         },
     ));
     checks
+}
+
+fn runtime_ready(root: &Path, tools: &Path) -> bool {
+    let Ok(raw) = fs::read(tools.join("deps/runtime-ready.json")) else {
+        return false;
+    };
+    let Ok(receipt) = serde_json::from_slice::<Value>(&raw) else {
+        return false;
+    };
+    let Some(files) = receipt["files"].as_array() else {
+        return false;
+    };
+    if receipt["schema"] != 1 || files.len() < 7 {
+        return false;
+    }
+    let mut names = std::collections::HashSet::new();
+    for file in files {
+        let base = match file["scope"].as_str() {
+            Some("tools") => tools,
+            Some("root") => root,
+            _ => return false,
+        };
+        let Some(relative) = file["path"].as_str() else {
+            return false;
+        };
+        let path = Path::new(relative);
+        if path
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return false;
+        }
+        let Some(hash) = file["sha256"].as_str() else {
+            return false;
+        };
+        if !mk8_manifest::hash_file(&base.join(path)).is_ok_and(|actual| actual.sha256 == hash) {
+            return false;
+        }
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            names.insert(name.to_owned());
+        }
+    }
+    [
+        "SDL3.dll",
+        "libshaderc_shared.dll",
+        "vulkan-1.dll",
+        "avcodec-63.dll",
+        "avformat-63.dll",
+        "avutil-61.dll",
+        "swscale-10.dll",
+    ]
+    .iter()
+    .all(|name| names.contains(*name))
 }
 
 #[cfg(test)]
@@ -629,7 +681,30 @@ mod tests {
         assert!(before["detail"].as_str().unwrap().contains("DLLs"));
         fs::create_dir_all(deps.join("dlls")).unwrap();
         fs::write(deps.join("dlls/index.json"), "{}").unwrap();
+        assert_eq!(libraries(&root)["ok"], false);
+        let mut files = Vec::new();
+        for name in [
+            "SDL3.dll",
+            "libshaderc_shared.dll",
+            "vulkan-1.dll",
+            "avcodec-63.dll",
+            "avformat-63.dll",
+            "avutil-61.dll",
+            "swscale-10.dll",
+        ] {
+            let path = deps.join(name);
+            fs::write(&path, b"fixture").unwrap();
+            files.push(json!({"scope":"tools", "path":format!("deps/{name}"), "sha256":mk8_manifest::hash_file(&path).unwrap().sha256}));
+        }
+        fs::write(
+            deps.join("runtime-ready.json"),
+            json!({"schema":1,"files":files}).to_string(),
+        )
+        .unwrap();
+        fs::remove_file(deps.join("dlls/index.json")).unwrap();
         assert_eq!(libraries(&root)["ok"], true);
+        fs::write(deps.join("vulkan-1.dll"), b"corrupt").unwrap();
+        assert_eq!(libraries(&root)["ok"], false);
         let _ = fs::remove_dir_all(&root);
     }
 }

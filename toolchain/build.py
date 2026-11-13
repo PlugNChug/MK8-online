@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 from repair import cleanup_stale, remove_owned, unlink_links_on_the_way, is_link
 from build_lock import exclusive_build
@@ -241,7 +242,8 @@ def mirror(path, target, copy_ok=False):
             if copy_ok and (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns):
                 continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{time.time_ns()}')
+        # Failed replacements leave their staging link intact. A retry in the same clock tick needs a new name.
+        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{uuid.uuid4().hex}')
         try:
             os.link(src, pending)
         except OSError as error:

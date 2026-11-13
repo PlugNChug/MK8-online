@@ -3,7 +3,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
 
 jobs:
@@ -21,5 +21,9 @@ jobs:
       - run: cargo test --workspace --locked
       - name: Upstream sources
         run: python scripts/fetch-upstream.py
+      - name: Python tool dependencies
+        run: >-
+          python -m pip --isolated install --only-binary=:all: --require-hashes
+          -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
       - name: Pipeline tests
         run: python -m unittest discover -s tests -p "test_pipeline.py"

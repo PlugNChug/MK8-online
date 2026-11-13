@@ -226,6 +226,44 @@ class DlcImportTests(unittest.TestCase):
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), "Compilador nativo necessário")
 class DlcRuntimeTests(unittest.TestCase):
+    def test_system_archive_routing_keeps_mii_dlc_and_rejections_separate(self):
+        from dlc import STORAGE_PATH
+        source = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int mk8_dlc_storage_path(uint64_t id, char *out, size_t size) {
+    if (id == 2) return -1;
+    if (id != 1) return 0;
+    int n = snprintf(out, size, "dlc-root");
+    return n >= 0 && (size_t)n < size ? 1 : -1;
+}
+''' + STORAGE_PATH + r'''
+int main(void) {
+    char path[100], small[4];
+    _putenv_s("MK8_MII_RESOURCE_DIR", "author-mii");
+    assert(mk8_data_storage_path(1, path, sizeof path) && !strcmp(path, "dlc-root"));
+    assert(!mk8_data_storage_path(2, path, sizeof path));
+    assert(mk8_data_storage_path(0x0100000000000802ull, path, sizeof path) && !strcmp(path, "author-mii"));
+    assert(mk8_data_storage_path(3, path, sizeof path) && !strcmp(path, "sysdata/0000000000000003"));
+    assert(!mk8_data_storage_path(1, small, sizeof small));
+    assert(!mk8_data_storage_path(0x0100000000000802ull, small, sizeof small));
+    _putenv_s("MK8_MII_RESOURCE_DIR", "");
+    assert(mk8_data_storage_path(0x0100000000000802ull, path, sizeof path) && !strcmp(path, "sysdata/0100000000000802"));
+    assert(!mk8_data_storage_path(3, small, sizeof small));
+}
+'''
+        path = self.root/'archive-routing.c'
+        path.write_text(source, encoding='utf-8')
+        exe = self.root/'archive-routing.exe'
+        result = subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1', path, '-o', exe],
+                                capture_output=True, env=compiler_env())
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        subprocess.run([exe], check=True)
+
     @classmethod
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory()

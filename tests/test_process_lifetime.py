@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -134,8 +135,25 @@ class LifetimeTests(unittest.TestCase):
                     'gameplay_verified': False, 'executable': identity(self.fixture),
                     'files': {k: identity(dummy) for k in ['npdm','main','sdk','subsdk0','gamelib']},
                     'data_root': str(data/'fixture-game'), 'shader_root': str(data)}
+        for name in ('vulkan-1.dll', 'SDL3.dll'):
+            source = ROOT/'local/native-tools/deps/packages/ucrt64/bin'/name
+            if not source.is_file():
+                self.skipTest('Prepared SDL/Vulkan required for the launch preflight')
+            target = self.fixture.parent/name
+            shutil.copyfile(source, target)
+            manifest['files'][name] = identity(target)
+        for source in (ROOT/'local/native-tools/deps/dlls').glob('*.dll'):
+            target = self.fixture.parent/source.name
+            shutil.copyfile(source, target)
+            manifest['files'][source.name] = identity(target)
+        # Refuse before spawning or rotating logs when the local loader is missing.
+        (self.fixture.parent/'vulkan-1.dll').rename(self.fixture.parent/'vulkan-1.hidden')
         (data/'candidate.json').write_text(json.dumps(manifest))
         first, post = self.launcher(data)
+        self.assertFalse(post('/api/play')['ok'])
+        self.assertFalse((saves/'game.pid').exists())
+        self.assertEqual((saves/'existing-save.bin').read_bytes(), b'original save')
+        (self.fixture.parent/'vulkan-1.hidden').rename(self.fixture.parent/'vulkan-1.dll')
         self.assertTrue(post('/api/play')['ok'])
         wait_for((saves/'game.pid').exists)
         pid = int((saves/'game.pid').read_text())

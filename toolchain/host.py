@@ -146,6 +146,7 @@ def prepare_host_sources(source, output):
     text = text.replace(old, '    case 0: OUT(uint8_t, 0) = mk8_mii_updated; mk8_mii_updated = false; resp_size(resp, 1); break;\n    case 1: case 20:')
     mii.write_text(text+'\n'+(ROOT/'runtime/mk8/mii/mii_editor.inc').read_text(encoding='utf-8'), encoding='utf-8')
     from mii_applet import adapt as adapt_mii_applet
+    # dlc.prepare owns system-archive routing, including the optional MiiModel directory.
     am = runtime/'services/am.c'
     am.write_text(adapt_mii_applet(am.read_text(encoding='utf-8')), encoding='utf-8')
     movie = runtime/'hle/movie.c'
@@ -222,6 +223,8 @@ def prepare_host_sources(source, output):
     prepare_split_screen(runtime)
     from online_notice import prepare as prepare_online_notice
     prepare_online_notice(runtime)
+    from nextendo import prepare as prepare_nextendo
+    prepare_nextendo(runtime)
     from movie_output import prepare as prepare_movie_output
     prepare_movie_output(runtime)
     from sampler_inline import prepare as prepare_sampler_inline
@@ -230,12 +233,16 @@ def prepare_host_sources(source, output):
     prepare_submit_ring(runtime)
     from shader_budget import prepare as prepare_shader_budget
     prepare_shader_budget(runtime)
+    from shader_storage import prepare as prepare_shader_storage
+    prepare_shader_storage(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread
     prepare_texture_release_thread(runtime)
     from pool_release import prepare as prepare_pool_release
     prepare_pool_release(runtime)
+    from descriptor_lifetime import prepare as prepare_descriptor_lifetime
+    prepare_descriptor_lifetime(runtime)
     from pipeline_cache_save import prepare as prepare_pipeline_cache_save
     prepare_pipeline_cache_save(runtime)
     from ipc_core_release import prepare as prepare_ipc_core_release
@@ -244,6 +251,8 @@ def prepare_host_sources(source, output):
     prepare_save_file_close(runtime)
     from vram_trace import prepare as prepare_vram_trace
     prepare_vram_trace(runtime)
+    from auto_lan import prepare as prepare_auto_lan
+    prepare_auto_lan(runtime)
     from reboot_lifetime import prepare as prepare_reboot_lifetime
     prepare_reboot_lifetime(runtime)
     from dlc import prepare as prepare_dlc
@@ -262,8 +271,10 @@ def prepare_host_sources(source, output):
     boundary = '        tabs_body(scale, true, NULL);'
     if text.count(boundary) != 1:
         raise ValueError('Runtime room menu boundary changed')
-    text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n' + boundary)
-    menu.write_text('extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
+    text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n'
+                        '        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();\n' + boundary)
+    menu.write_text('extern "C" bool mk8_mii_menu_available(void);\nextern "C" void mk8_open_mii_menu(void);\n'
+                   'extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
     kernel = runtime/'kernel.c'
     text = kernel.read_text(encoding='utf-8')
     stack = '    pthread_attr_setstacksize(&attr, 256ull << 20);  // guest recursion runs on the host stack'
@@ -355,7 +366,7 @@ def build_host(source, output, workers=None):
                     'runtime/nvn/maxwell/*.c', 'runtime/net/*.c', 'runtime/nvn/vulkan/*.c',
                     'runtime/nvn/vulkan/*.cpp', 'runtime/ui/*.mm', 'third_party/mbedtls/library/*.c', 'games/mk8d/*.c']:
         sources.extend(sorted(source.glob(pattern)))
-    sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm')]
+    sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
     sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
     sources += [source/'runtime/platform/windows.c', export_source]
     sources += [source/'third_party/imgui'/name for name in ['imgui.cpp', 'imgui_draw.cpp', 'imgui_tables.cpp', 'imgui_widgets.cpp', 'backends/imgui_impl_sdl3.cpp', 'backends/imgui_impl_vulkan.cpp']]

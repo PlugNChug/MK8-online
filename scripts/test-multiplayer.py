@@ -39,6 +39,9 @@ def api(url, token, route, body=None):
 
 
 def run(args):
+    metadata = json.loads(subprocess.check_output(
+        ['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT, text=True))
+    binaries = Path(metadata['target_directory']) / 'release'
     local = ROOT / 'local'
     if shutil.disk_usage(local).free < 4 * 1024**3:
         raise RuntimeError('At least 4 GiB free required')
@@ -47,8 +50,11 @@ def run(args):
     print(f'Test output: {session}', flush=True)
     (session/'run.json').write_text(json.dumps({
         'candidate': json.loads((local/'candidate.json').read_text())['identity'],
-        'relay': args.relay, 'host_input': args.host_input, 'guest_input': args.guest_input,
+        'relay': args.relay, 'p2p': args.p2p,
+        'host_input': args.host_input, 'guest_input': args.guest_input,
         'shots': args.shots, 'options': args.env,
+        'mii_resources': str(args.mii_resources) if args.mii_resources else None,
+        'profiles': [str(p) if p else None for p in (args.host_profile, args.guest_profile)],
     }, indent=2), encoding='utf-8')
     children, clients = [], []
     clean = {k: v for k, v in os.environ.items()
@@ -59,7 +65,7 @@ def run(args):
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.bind(('127.0.0.1', 0))
                 port = min(probe.getsockname()[1], 65000)
-            relay = subprocess.Popen([str(ROOT/'target/release/mk8-relay.exe'),
+            relay = subprocess.Popen([str(binaries/'mk8-relay.exe'),
                 '127.0.0.1:0', '127.0.0.1', '127.0.0.1', str(port)],
                 stdout=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             children.append(relay)
@@ -72,17 +78,23 @@ def run(args):
             folder.mkdir()
             for name in ('candidate.json', 'config.json'):
                 shutil.copyfile(local/name, folder/name)
+            if args.mii_profile:
+                shutil.copyfile(args.mii_profile, folder/'mii-profile.json')
             saves = folder/'user-no-mii'
             shutil.copytree(local/'user-no-mii/save', saves/'save')
             shutil.copyfile(local/'user-no-mii/mk8d.ini', saves/'mk8d.ini')
             if args.cache_from:
                 shutil.copytree(args.cache_from, saves/'cache')
+            profile = args.host_profile if index == 0 else args.guest_profile
+            if profile:
+                # Each player gets its own Mii profile; the personal profile is never modified.
+                shutil.copyfile(profile, folder/'mii-profile.json')
             env = dict(clean, LARECOMP_INPUT=args.host_input if index == 0 else args.guest_input,
                 LARECOMP_WINDOW_SHOT=args.shots, LARECOMP_EXIT_AFTER_SHOT='1',
                 LARECOMP_SHOT_PATH=(folder/'frame-%05d.png').as_posix(),
                 RECOMP_NET_LOG='1')
             env.update(dict(args.env))
-            process = subprocess.Popen([str(ROOT/'target/release/Launcher.exe'), '--headless',
+            process = subprocess.Popen([str(binaries/'Launcher.exe'), '--headless',
                 '--data-dir', str(folder)], env=env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
             children.append(process)
@@ -97,8 +109,16 @@ def run(args):
             token = re.search(r'name="mk8-token" content="([^"]+)"', html)[1]
             clients.append((url, token))
             api(url, token, 'username', {'name': 'Host' if index == 0 else 'Guest'})
+            if args.mii_resources:
+                # Same launcher option as "Modelos dentro do jogo": hashes the six files and enables the renderer.
+                api(url, token, 'mii/resources', {'directory': str(args.mii_resources), 'enabled': True})
         if args.relay:
             invite = api(*clients[0], 'session/host-internet', {})['code']
+        elif args.p2p:
+            api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
+            invite = api(*clients[0], 'status')['session']['room_code']
+            if not invite or not invite.startswith('MK8P-'):
+                raise RuntimeError(f'Expected MK8P- room code, got {invite!r}')
         else:
             api(*clients[0], 'session/host', {'bind': '127.0.0.1:0'})
             invite = api(*clients[0], 'session/invite', {})['invite']
@@ -150,10 +170,18 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', action='store_true', help='Local relay through the internet-code path')
+    parser.add_argument('--p2p', action='store_true', help='Single reusable P2P room code (MK8P-...) path')
     parser.add_argument('--host-input', required=True)
     parser.add_argument('--guest-input', required=True)
     parser.add_argument('--shots', default='1200:2400:400')
     parser.add_argument('--cache-from', type=Path)
+    parser.add_argument('--mii-profile', type=Path, help='Optional mii-profile.json to copy into each instance')
     parser.add_argument('--timeout', type=int, default=240)
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
-    run(parser.parse_args())
+    parser.add_argument('--mii-resources', type=Path, help='MiiModel-layout folder; enables the original Mii renderer')
+    parser.add_argument('--host-profile', type=Path, help='mii-profile.json copied into the host test folder')
+    parser.add_argument('--guest-profile', type=Path, help='mii-profile.json copied into the guest test folder')
+    parsed = parser.parse_args()
+    if parsed.mii_resources:
+        parsed.mii_resources = parsed.mii_resources.resolve()
+    run(parsed)
