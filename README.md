@@ -134,6 +134,12 @@ Course-specific visual checks support assisted Grand Prix cup selection, verifie
 
 Use `--audio` for audible test output and `--frame-gen saved` to preserve the copied frame-generation setting when matching normal play. Personal settings remain untouched.
 
+On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
+
+In **Settings → Game fonts**, use **Import Font Folder** to copy fonts dumped from your own Switch. Requires `FontStandard.ttf` or `nintendo_udsg-r_std_003.ttf/.bfttf`; regional/button fonts are optional. SharedFontDumper filenames are normalized automatically. The launcher checks TrueType table bounds and verifies hashes before launch; this does not authenticate Nintendo provenance. **System Default** disables imported fonts without deleting them; **Imported Console Fonts** re-enables them. Changes take effect next launch, without another game rebuild after installing the launcher/runtime with this support. Legacy folders and explicit `LARECOMP_FONT` overrides remain supported.
+
+With homebrew already working: get the `.nro` from [SharedFontDumper releases](https://github.com/simontime/SharedFontDumper/releases), place it under `switch/` on the SD card, and launch it from the Homebrew Menu. Press **A** for individual TTF files; **+** exits after completion. Copy the SD's `fonts` folder to your PC and import it. The [tool source](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c) documents these controls and filenames. This older tool's compatibility with current firmware/homebrew has not been tested here. Combined `shared_font.bin` dumps and firmware archives are not accepted.
+
 For popping/crackling, `--env LARECOMP_AUDIO_WAV=<absolute path to a new private WAV>` continuously records the game's stereo mix before SDL output gain. Avoid F7/F8 while reproducing the sound: screenshot readback/dumps disturb timing. Note the course section/lap and close the game normally afterward; a clean mixer recording alone does not rule out a playback/device problem.
 
 The local audio candidate starts new voices with zero previous volume so their first samples use the existing volume ramp, including reused voice slots. All 121 regression tests passed, and the user confirmed the Electrodrome popping reproducer sounded fixed. Other courses/sounds and full audio qualification remain open.

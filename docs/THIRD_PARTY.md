@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Importação de fontes do console — 13/11/2026
+
+Consultados README, releases e [source/main.c do SharedFontDumper](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c), de simontime: nomes `FontStandard.ttf`, `FontNintendoExtended.ttf` e fontes regionais, extração com A e saída com +. Não houve cópia de código nem distribuição da ferramenta/fontes. A decodificação BFTTF segue o formato já implementado no loader upstream fixado. Importador e seletor são próprios; fontes/dumps permanecem privados, validação estrutural não autentica origem Nintendo. Compatibilidade da ferramenta com firmware atual e renderização de fontes autênticas aguardam evidência do usuário.
+
 ## Atualização da base MK8-online — 13/11/2026
 
 Integrada a republicação de RatOne/[Vnnc1/MK8-online até `e554c7ba01eb25a823fdc7953d973d8dbeb2a9ad`](https://github.com/Vnnc1/MK8-online/commit/e554c7ba01eb25a823fdc7953d973d8dbeb2a9ad), incluindo setup nativo Python, download Mii e separação dos filtros de controle. Merge local `4286500`, preservando os patches próprios de gráficos/áudio e as adaptações DLC. Avisos de licença e referências upstream mantidos; validações desse checkout estão em `STATUS.md`, separadas dos resultados publicados pelo projeto de origem.
