@@ -225,4 +225,12 @@ footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1
 #mii-compose-canvas{width:100%;aspect-ratio:1;display:block;touch-action:none}
 #mii-composer .mii-fields{max-height:460px;overflow:auto;padding:4px}
 #mii-compose-status{min-height:1.5em}
+.mii-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.mii-nav button{padding:4px 10px;border-radius:999px;font-size:.9em}
+.mii-nav button[aria-selected="true"]{outline:2px solid #6aa7ff}
+#mii-full-fields{display:block;position:relative;scroll-behavior:smooth}
+.mii-group{border:1px solid #526174;border-radius:8px;margin:0 0 10px;padding:6px 10px 10px}
+.mii-group legend{font-weight:600;padding:0 4px}
+.mii-group label{display:grid;grid-template-columns:minmax(120px,1fr) minmax(80px,1.2fr) 4.5em;gap:8px;align-items:center;margin:4px 0}
+.mii-group input[type=range]{width:100%}
 @media(max-width:760px){.mii-compose-layout{grid-template-columns:1fr}}

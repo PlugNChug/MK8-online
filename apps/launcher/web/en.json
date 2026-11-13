@@ -468,5 +468,16 @@
   "Selecione o arquivo AFL local no editor Mii.": "Select the local AFL file in the Mii editor.",
   "Sala P2P criada! Código único copiado — envie aos seus amigos.": "P2P room created! Single room code copied — send it to your friends.",
   "Conectando pelo código único da sala. Aguarde confirmação do transporte.": "Connecting with the single room code. Waiting for transport confirmation.",
-  "Código único P2P (STUN automático) pronto para enviar aos amigos sem VPN.": "Single P2P code (automatic STUN) ready to share with friends without VPN."
+  "Código único P2P (STUN automático) pronto para enviar aos amigos sem VPN.": "Single P2P code (automatic STUN) ready to share with friends without VPN.",
+  "Criar e avançar": "Create and continue",
+  "Corpo": "Body",
+  "Rosto": "Face",
+  "Sobrancelhas": "Eyebrows",
+  "Nariz": "Nose",
+  "Boca": "Mouth",
+  "Barba e bigode": "Beard and mustache",
+  "Pinta": "Mole",
+  "Avançado": "Advanced",
+  "Partes do Mii": "Mii parts",
+  "Campos do Mii mudaram; atualize o editor.": "The Mii fields changed; update the editor."
 }

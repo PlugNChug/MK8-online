@@ -32,9 +32,19 @@ class MiiLauncherTests(unittest.TestCase):
                         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
                         page.goto(url);page.get_by_role('button',name='Perfil Mii',exact=True).click()
                         page.get_by_label('Nome do Mii',exact=True).fill('João')
-                        page.get_by_role('button',name='Salvar Mii',exact=True).click()
+                        page.get_by_role('button',name='Criar e avançar',exact=True).click()
                         expect(page.locator('#notice')).to_contain_text('Perfil salvo')
                         expect(page.locator('#mii-profiles option')).to_have_count(1)
+                        # Naming a new profile continues into the creator, grouped by part.
+                        expect(page.locator('#mii-composer')).to_be_visible()
+                        expect(page.locator('#mii-full-nav button')).to_have_text(['Corpo','Rosto','Cabelo','Olhos','Sobrancelhas','Nariz','Boca','Barba e bigode','Óculos','Pinta','Avançado'])
+                        expect(page.locator('#mii-full-fields input[data-offset]')).to_have_count(49)
+                        page.locator('#mii-full-nav button',has_text='Boca').click()
+                        expect(page.locator('#mii-full-nav button',has_text='Boca')).to_have_attribute('aria-selected','true')
+                        mouth=page.locator('fieldset[data-group="mouth"] input[type=range]').first
+                        mouth.fill('7')  # the slider drives the number field the profile is saved from
+                        expect(page.locator('#mii-full-fields input[data-offset="69"]')).to_have_value('7')
+                        page.locator('#mii-compose-close').click()
                         first=json.loads((local/'mii-profile.json').read_text(encoding='utf-8'))
                         expect(page.locator('#mii-canvas')).to_have_attribute('data-rendered','true')
                         page.locator('#mii-name').fill('Luigi')

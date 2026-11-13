@@ -173,7 +173,7 @@
             <form id="mii-form" class="card">
               <label>Nome do Mii<input id="mii-name" maxlength="10" required value="Player" /></label>
               <div id="mii-fields" class="mii-fields"></div>
-              <div class="row"><button type="submit" class="primary">Salvar Mii</button><button type="button" id="mii-export">Exportar .charinfo</button></div>
+              <div class="row"><button type="submit" id="mii-submit" class="primary">Salvar Mii</button><button type="button" id="mii-export">Exportar .charinfo</button></div>
               <label>Importar Mii do Switch (.charinfo)<input id="mii-import" type="file" accept=".charinfo,.ufsd" /></label>
               <p id="mii-identity" class="fine"></p>
               <button id="mii-compose-open" type="button">Editar Mii 3D</button>
@@ -192,7 +192,7 @@
                 <p>Arraste para girar. Use a roda do mouse para aproximar.</p>
                 <div class="row"><button id="mii-compose-reopen" type="button" disabled>Ver modelo salvo</button><button id="mii-compose-export" type="button" disabled>Exportar GLB salvo</button></div>
               </div>
-              <div><div id="mii-full-fields" class="mii-fields"></div><button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button></div>
+              <div><nav id="mii-full-nav" class="mii-nav" aria-label="Partes do Mii"></nav><div id="mii-full-fields" class="mii-fields"></div><button id="mii-full-save" type="button" disabled>Salvar detalhes do Switch</button></div>
             </div>
             <div class="card">
               <h3>Cabeça no jogo · experimental</h3>

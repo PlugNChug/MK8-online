@@ -34,7 +34,7 @@ async function binary(path){
 }
 function values(){
   const bytes=window.miiEditorData();if(!bytes)throw Error('Salve ou selecione um perfil primeiro.');
-  for(const input of el('mii-full-fields').querySelectorAll('input')){
+  for(const input of el('mii-full-fields').querySelectorAll('input[data-offset]')){
     if(!input.checkValidity())throw Error('Valor fora do intervalo: '+input.getAttribute('aria-label'));
     bytes[Number(input.dataset.offset)]=Number(input.value);
   }

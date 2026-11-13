@@ -1,5 +1,46 @@
 # Estado técnico — 11/11/2026
 
+## Fluxo de criação do Mii no launcher e no jogo — 12/11/2026
+
+**Launcher:** o fluxo de criação começa pelo nome. Em **Perfil Mii**, **Novo perfil**, o usuário informa o nome e usa **Criar e avançar**, que abre direto o criador (o mesmo modal do editor 3D). Os 49 campos CharInfo ficam agrupados por parte, cada um com controle deslizante e campo numérico:
+
+- Corpo: tipo, altura, porte e cor favorita;
+- Rosto;
+- Cabelo;
+- Olhos;
+- Sobrancelhas;
+- Nariz;
+- Boca;
+- Barba e bigode;
+- Óculos;
+- Pinta;
+- Avançado.
+
+A barra de partes rola só o painel de campos. Sem o AFL, os campos continuam salvando o perfil (`mii/data`); a prévia com peças reais exige a biblioteca local. Persistência e identidade não mudaram: `local/mii-profile.json` e `local/profiles/<id>/`, além dos saves em `user-no-mii`. O perfil ativo chega ao jogo na abertura por `MK8_MII_CHARINFO`. Interface em PT/EN.
+
+**Jogo → launcher:** o botão **Perfil Mii** do menu F1 do runtime e o applet de editor Mii do jogo sinalizam `open-miis`. O launcher agora mostra a aba e abre o mesmo criador. Se não houver perfil, o launcher foca o nome para criar um. As alterações continuam valendo na próxima abertura do jogo.
+
+O applet não foi chamado pelo jogo em nenhum log desta base. O MK8 não oferece um criador próprio dentro do jogo; por isso o criador é o do launcher. O caminho legado sem launcher, que pede só o nome pelo teclado do runtime, foi mantido.
+
+**Lobby com Mii padrão — hipótese descartada:** o `IProfile::Get` da conta preenche `UserData.miiID` com zeros. Por isso foi testado um patch que gravava ali o CreateId do perfil. Resultado, com teste nativo e duas instâncias LAN com perfis A/C e recursos gerados (`local/multiplayer-hfnd4lil`): o MK8 **não chama** `IProfile::Get` com buffer nesse fluxo, e a garagem continuou com os dois Miis padrão. O patch foi removido e o runtime foi recompilado sem ele.
+
+Rastreamento com `MK8_TRACE_MII=1` (`local/multiplayer-r4oj5h08`):
+
+- `Get` com sources 1 e 2 (perfil e seis padrões) na inicialização;
+- 13 chamadas `BuildRandom` (cmd 6) logo depois;
+- `IsFullDatabase` repetidas.
+
+O `BuildRandom` do upstream devolve sempre o mesmo Mii padrão. As 13 chamadas coincidem com as 12+1 instâncias Mii da interface de salas. A próxima investigação é identificar no código guest quem consome esses 13 resultados e de onde vem o Mii do próprio jogador na sala. Um `BuildRandom` que devolvesse o perfil seria um resultado fictício e não foi feito.
+
+**Validação:**
+
+- `tests/test_mii_launcher.py`: criar, avançar, ver as 11 partes, mudar a boca pelo controle deslizante e o resto do roteiro anterior;
+- `scripts/test-mii-composer.py`: três perfis, um feminino; o criador abre após criar;
+- `tests/test_launcher_languages.py`;
+- todos com o launcher compilado (debug e release).
+
+Capturas do criador com peças reais foram inspecionadas, incluindo a largura de 700 px. Nenhuma mudança Rust nem no runtime permaneceu. `gameplay_verified=false` e `multiplayer_verified=false`.
+
 ## `fix-multiplayer` integrada à `fix-chore` — 12/11/2026
 
 Merge de `fix-multiplayer` (salas P2P com código único `MK8P-…` + STUN, integração Steam `MK8S-…`, separação de pin TLS por host no Nextendo, abertura automática do OAuth). Único conflito: traduções em `apps/launcher/web/en.json`, mantidas as dos dois lados. Formatação, Clippy do workspace com `-D warnings` e todos os testes Rust passaram. `scripts/test-multiplayer.py` reúne `--p2p`/`--mii-profile` (multiplayer) e `--mii-resources`/`--host-profile`/`--guest-profile` (fix-chore). Evidência combinada (`local/multiplayer-5u3b89qo`, `--p2p --mii-resources`, 200,4 s): sala P2P por código único com **os dois Miis de corpo 3D animados na garagem**, retratos nos cartões de votação e corrida do anfitrião com o ícone Mii no minimapa. A tela "A communication error has occurred." do convidado em `1/frame-10000.png` foi registrada 7,6 s depois de o anfitrião encerrar após sua última captura (`0/frame-10000.png` às 19:28:28, `1/frame-10000.png` às 19:28:35): é efeito do encerramento do roteiro, como na execução P2P anterior, e não uma falha da sala. A cabeça estática (fases 4–6) continua bloqueada em salas; o caminho para Miis online é o renderer original com recursos gerados. Corrida completa entre dois PCs continua pendente.

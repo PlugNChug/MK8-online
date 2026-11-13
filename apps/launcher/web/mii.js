@@ -24,30 +24,63 @@
     "Estilo do nariz","Tamanho do nariz","Posição do nariz","Estilo da boca","Cor da boca","Tamanho da boca","Proporção da boca","Posição da boca",
     "Cor da barba","Estilo da barba","Estilo do bigode","Tamanho do bigode","Posição do bigode",
     "Estilo dos óculos","Cor dos óculos","Tamanho dos óculos","Posição dos óculos","Pinta","Tamanho da pinta","Posição X da pinta","Posição Y da pinta"];
+  // Creator sections: CharInfo offsets (0x26 + field index) grouped as in the console's Mii Maker.
+  const fullGroups=[["body","Corpo",[40,41,42,39]],["face","Rosto",[45,46,47,48]],["hair","Cabelo",[49,50,51]],
+    ["eyes","Olhos",[52,53,54,55,56,57,58]],["brows","Sobrancelhas",[59,60,61,62,63,64,65]],["nose","Nariz",[66,67,68]],
+    ["mouth","Boca",[69,70,71,72,73]],["beard","Barba e bigode",[74,75,76,77,78]],["glasses","Óculos",[79,80,81,82]],
+    ["mole","Pinta",[83,84,85,86]],["other","Avançado",[38,43,44]]];
   function fullLanguage() {
-    for(const label of $("mii-full-fields").children) {
-      const text=label.firstChild,input=label.lastChild;
+    for(const input of $("mii-full-fields").querySelectorAll("input[data-offset]")) {
+      const text=input.closest("label").querySelector("span");
       text.textContent=i18n.language==="pt-BR"?fullLabels[Number(input.dataset.offset)-38]:text.dataset.english;
       input.setAttribute("aria-label",text.textContent);
     }
   }
+  function showGroup(key) {
+    for(const tab of $("mii-full-nav").children) tab.setAttribute("aria-selected",String(tab.dataset.group===key));
+    const box=$("mii-full-fields"), section=box.querySelector(`[data-group="${key}"]`);
+    if(section) box.scrollTop=section.offsetTop;  // (only the field panel scrolls, not the dialog)
+  }
   async function fullFields(profile) {
     const sequence=++fullSequence;
-    fullData=null; $("mii-full-save").disabled=true; $("mii-full-fields").replaceChildren();
+    fullData=null; $("mii-full-save").disabled=true; $("mii-full-fields").replaceChildren(); $("mii-full-nav").replaceChildren();
     window.dispatchEvent(new Event("miiprofilechange"));
     if(!profile)return;
     const [schema, exported]=await Promise.all([fieldSchema,api("mii/export")]);
     if(sequence!==fullSequence)return;
     fullData=exported.data;
-    for(const field of schema) {
-      const label=document.createElement("label"), text=document.createElement("span"), input=document.createElement("input");
-      text.dataset.english=field.name; input.type="number"; input.min=field.min; input.max=field.max; input.step=1; input.required=true;
-      input.value=fullData[field.offset]; input.dataset.offset=field.offset; input.setAttribute("aria-label",field.name);
-      label.append(text,input); $("mii-full-fields").append(label);
+    const byOffset=new Map(schema.map(field=>[field.offset,field]));
+    if(fullGroups.flatMap(g=>g[2]).sort((a,b)=>a-b).join()!==schema.map(f=>f.offset).sort((a,b)=>a-b).join())
+      throw Error("Campos do Mii mudaram; atualize o editor.");
+    for(const [key,title,offsets] of fullGroups) {
+      const tab=document.createElement("button"); tab.type="button"; tab.dataset.group=key; i18n.text(tab,title);
+      tab.onclick=()=>showGroup(key); $("mii-full-nav").append(tab);
+      const section=document.createElement("fieldset"), legend=document.createElement("legend");
+      section.dataset.group=key; section.className="mii-group"; i18n.text(legend,title); section.append(legend);
+      for(const offset of offsets) {
+        const field=byOffset.get(offset);
+        const label=document.createElement("label"), text=document.createElement("span"), input=document.createElement("input");
+        const slider=document.createElement("input");
+        text.dataset.english=field.name; input.type="number"; input.min=field.min; input.max=field.max; input.step=1; input.required=true;
+        input.value=fullData[field.offset]; input.dataset.offset=field.offset; input.setAttribute("aria-label",field.name);
+        // Pointer convenience; the number field stays the accessible control and the value sent.
+        slider.type="range"; slider.min=field.min; slider.max=field.max; slider.step=1; slider.value=input.value;
+        slider.tabIndex=-1; slider.setAttribute("aria-hidden","true");
+        slider.oninput=()=>{input.value=slider.value;input.dispatchEvent(new Event("input",{bubbles:true}));};
+        input.addEventListener("input",()=>{if(input.value!=="")slider.value=input.value;});
+        label.append(text,slider,input); section.append(label);
+      }
+      $("mii-full-fields").append(section);
     }
+    $("mii-full-nav").firstChild.setAttribute("aria-selected","true");
     fullLanguage();
     $("mii-full-save").disabled=false;
     window.dispatchEvent(new Event("miiprofilechange"));
+  }
+  function openCreator() {
+    // The creator needs a saved profile (it edits that profile's CharInfo); a new one starts from its name.
+    if(creating){$("mii-name").focus();return;}
+    if(!$("mii-composer").open)$("mii-compose-open").click();
   }
   for (const [key,title,max] of fields) {
     const label=document.createElement("label"), text=document.createElement("span"), input=document.createElement("input");
@@ -111,6 +144,7 @@
   function fill(profile) {
     creating=!profile;
     $("mii-export").disabled=creating;
+    i18n.text($("mii-submit"),creating?"Criar e avançar":"Salvar Mii");
     const a=profile?.appearance ?? {name:"Player",color:0,gender:0,face:defaults};
     $("mii-name").value=a.name;
     for (const [key] of fields) $("mii-"+key).value=Number(key in a?a[key]:a.face[key]);
@@ -129,7 +163,9 @@
     return data;
   }
   $("mii-form").onsubmit=event=> {event.preventDefault(); miiAction(async()=>{
-    const result=await api(creating?"mii/create":"mii/save",appearance()); await load(); return result;
+    const created=creating, result=await api(creating?"mii/create":"mii/save",appearance()); await load();
+    if(created) openCreator();
+    return result;
   });};
   $("mii-new").onclick=()=>fill(null);
   $("mii-select").onclick=()=>miiAction(async()=>{await api("mii/select",{id:$("mii-profiles").value});await load();});
@@ -149,7 +185,7 @@
   $("mii-full-save").onclick=()=>miiAction(async()=>{
     if(!fullData)return;
     const data=[...fullData];
-    for(const input of $("mii-full-fields").querySelectorAll("input")) {
+    for(const input of $("mii-full-fields").querySelectorAll("input[data-offset]")) {
       if(!input.reportValidity())return;
       data[Number(input.dataset.offset)]=Number(input.value);
     }
@@ -180,7 +216,8 @@
   load().catch(e=>notice(e.message,true));
   resourceJob().catch(e=>notice(e.message,true));
   setInterval(async()=>{
-    try {const data=await api("mii/menu");if(data.menu!==menu){menu=data.menu;showTab("miis");}}
+    // The game asked for the Mii editor (its applet, or Perfil Mii in the runtime menu): open the same creator here.
+    try {const data=await api("mii/menu");if(data.menu!==menu){menu=data.menu;showTab("miis");openCreator();}}
     catch(_) {} // Main status polling reports connection failures.
   },2000);
   window.addEventListener("beforeunload",()=>{if(gl){gl.deleteBuffer(vertex);gl.deleteBuffer(index);gl.deleteProgram(program);}});
