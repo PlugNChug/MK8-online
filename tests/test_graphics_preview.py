@@ -32,6 +32,8 @@ typedef struct { uint64_t x[5]; } CmdRec;
 static uint64_t frame_no;
 static uint64_t vk_frame_counter(void) { return frame_no-1; }
 static uint64_t vk_pending_seq(void) { return 43; }
+// This recorder fixture has no backend pending reports; synchronization is exercised by test_occlusion.
+static void mk8_oq_wait_pair(const uint64_t *q) { (void)q; }
 static struct {
     bool render_off; Program *program; unsigned poly[3],ds[3];
     struct { uint64_t addr; } vbuf[1]; float viewport[1][4]; int32_t scissor[1][4];

@@ -1,5 +1,15 @@
 # Dependências e atribuições
 
+## Áudio — volume inicial de vozes, 12/11/2026
+
+Referências de comportamento do renderer Ryujinx, consultadas no histórico publicado, sem incorporar código C# ou dependência nova:
+
+- [StateUpdater, revisão `9f1cf6458c78a42256b1f390f5b3b9159b00a7cb`](https://www.git.axenov.dev/Museum/ryujinx/src/commit/9f1cf6458c78a42256b1f390f5b3b9159b00a7cb/Ryujinx.Audio/Renderer/Server/StateUpdater.cs): reinicialização do estado para `IsNew` antes dos parâmetros atuais.
+- [VoiceState, histórico na revisão `a5ff0024fb33964c802e1712e5b11a52390603e7`](https://www.git.axenov.dev/Museum/ryujinx/commit/a5ff0024fb33964c802e1712e5b11a52390603e7?files=Ryujinx.Audio): volume anterior inicial zero e volume atual recebido dos parâmetros.
+- [CommandGenerator, revisão `f556c80d0230056335632b60c71f1567e177239e`](https://git.axenov.dev/Museum/ryujinx/commit/f556c80d0230056335632b60c71f1567e177239e?files=Ryujinx.Audio%2FRenderer%2FServer): rampa de volume da voz, atualização do anterior após uso e ramps de routing separados. O mixer local já possuía ramps; a adaptação própria em `toolchain/host.py` corrige somente a inicialização do volume anterior de uma voz nova. Isso não estabelece equivalência integral ao renderer/hardware, nem atribui por si só a causa do estalo ouvido.
+
+As tentativas de baixar os arquivos inteiros receberam HTML de desafio anti-bot e não foram usadas como fonte C#. Os trechos consultados são os históricos indexados acima. Recursos `Ground_Tcroad.bars`, WAVs e coeficientes comerciais analisados permanecem privados em `local/`; os testes públicos usam somente PCM/ADPCM sintéticos. Avisos/licenças dos fontes upstream existentes foram preservados.
+
 ## Automação da conversão no launcher — fase 5, 10/11/2026
 
 O módulo Rust `crates/installer/src/mii_native.rs` e sua integração ao servidor são adaptações próprias; reutilizam o conversor Python/C# e a supervisão de processos existentes. Não foi adicionada dependência externa. A interface de composição mantém seu aviso AGPL-3.0-or-later e os avisos FFL.js/Three.js abaixo. Python/Pillow, BfresLibrary e DLLs continuam locais, com suas licenças preservadas; nenhum desses binários, AFL, corpo original ou modelo derivado foi incorporado ao instalador nesta fase. Os manifestos privados registram os hashes utilizados e `STATUS.md` documenta a evidência desta build.

@@ -40,7 +40,7 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 
 Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Portuguese).
 
-This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. F7 also traces the exact visibility-counter operands, report writes, and observed submission progress. It is a local integration build; the captured preview flicker remains under investigation. Build and test evidence is recorded in the technical status.
+This checkout's `integrate/vnnc1-0.2.0` branch combines the 0.2.0 sources with the existing DLC, graphics/reboot fixes and F7/F8 diagnostics. F7 also traces the exact visibility-counter operands, report writes, and observed submission progress. A targeted fix resolves pending reports for either counter before conditional rendering reads them, addressing the premature comparisons captured in Electrodrome. Four captured 100cc preview retests across Electrodrome, 3DS DK Jungle and N64 Rainbow Road showed no racer flicker, with resolved values preceding all 7,745 captured visibility comparisons, including tests after a fresh launch. The user also reports no recurrence of disappearing buildings or other course objects during testing so far. A new-voice volume-ramp correction passed the Electrodrome popping reproducer in a listening retest; broader audio qualification remains open. Build and test evidence is recorded in the technical status.
 
 ## Where it stands
 
@@ -126,9 +126,13 @@ In **Support → Create report**, create a diagnostic ZIP and attach it to an [i
 
 **Testes automatizados de corrida:** [roteiro assistido e coleta de evidências](README.pt-BR.md#testes-de-corrida-assistida).
 
-Course-specific visual checks support assisted Grand Prix cup selection, verified DLC cups, `--intro` to preserve the race flyover, and `--manual` for real keyboard/controller input. Reproduction commands and capture limits are in the linked guide; course observations and the unconfirmed sound-effect onset crackle are tracked in [technical status](docs/STATUS.md).
+Course-specific visual checks support assisted Grand Prix cup selection, verified DLC cups, `--intro` to preserve the race flyover, and `--manual` for real keyboard/controller input. Reproduction commands and capture limits are in the linked guide; course observations and the Electrodrome anti-gravity road audio reproducer are tracked in [technical status](docs/STATUS.md). The earlier mixer recording reproduced the popping for the user; the listening retest after correcting new-voice volume initialization sounded fixed, with the same road-effect variant confirmed active in the trace.
 
 Use `--audio` for audible test output and `--frame-gen saved` to preserve the copied frame-generation setting when matching normal play. Personal settings remain untouched.
+
+For popping/crackling, `--env LARECOMP_AUDIO_WAV=<absolute path to a new private WAV>` continuously records the game's stereo mix before SDL output gain. Avoid F7/F8 while reproducing the sound: screenshot readback/dumps disturb timing. Note the course section/lap and close the game normally afterward; a clean mixer recording alone does not rule out a playback/device problem.
+
+The local audio candidate starts new voices with zero previous volume so their first samples use the existing volume ramp, including reused voice slots. All 121 regression tests passed, and the user confirmed the Electrodrome popping reproducer sounded fixed. Other courses/sounds and full audio qualification remain open.
 
 Source-built runtimes also support opt-in graphics incident recording: enable `MK8_GFX_DIAGNOSTICS=1` before starting the game and press **F8** during play. It saves recent shader/pipeline skip events, fullscreen requests/applications, swapchain generations, render-scale changes, and one screenshot in `graphics-incidents/<ID>/` under the game's working directory. First/latest transition checkpoints remain available after the rolling history expires. For a transient preview defect, press **F7 as the racers enter view**: it collects the next 60 frames as thumbnails with draw/conditional-render records, then saves automatically. This explicit capture window affects timing; it cannot recover earlier images. Existing screenshot requests take priority. Use `--fullscreen off` or `--fullscreen on` in the race harness to control only the copied session's startup setting. See the [copied-save commands, F7 output, and evidence limits](README.pt-BR.md#diagnóstico-gráfico-manual). Detailed attachment/viewport/scissor command state is collected only during F7 windows.
 

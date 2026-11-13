@@ -6,7 +6,8 @@ answering "visible" for all of them came up blown out). NVN's counter is cumulat
 passed so far, and the game takes differences. Here each report ends the open occlusion query and begins the next
 (outside render passes, which a query may span), and notes how many queries of its submission precede it. When the
 submission is done the results are added in submission order to a running total and each report gets the total at
-its point. Until then a report holds the last resolved total. MK8_OCCLUSION_VISIBLE=1 (diagnostic) answers "visible".
+its point. Conditional rendering resolves pending reports for either operand before reading them; otherwise a
+first use could compare initial zeros and suppress visible objects. MK8_OCCLUSION_VISIBLE=1 (diagnostic) answers "visible".
 """
 
 STATE = '''
@@ -33,6 +34,7 @@ static void mk8_oq_resolve(Mk8Oq *o) {  // (cq_lock held) its submission is done
     uint64_t r[MK8_OQ_MAX] = {0};
     bool ok = o->n && o->pool &&
               vkGetQueryPoolResults(g_vk.dev, o->pool, 0, o->n, sizeof r, r, 8, VK_QUERY_RESULT_64_BIT) == VK_SUCCESS;
+    if (o->n && !ok) FATAL("[mk8] completed occlusion queries unavailable (submission %llu)\\n", (unsigned long long)o->seq);
     uint64_t base = mk8_samples_total, sum = 0;
     uint32_t q = 0;
     for (uint32_t k = 0; k < o->nrep; k++) {
@@ -54,7 +56,38 @@ static void mk8_oq_resolve_done(uint64_t done) {  // (cq_lock held) in submissio
         mk8_oq_resolve(next);
     }
 }
+static uint64_t mk8_oq_pending_pair(const uint64_t *a, const uint64_t *b) {
+    uint64_t seq = 0;
+    pthread_mutex_lock(&cq_lock);
+    for (int i = 0; i < SUBS; i++) {
+        const Mk8Oq *o = &mk8_oq[i];
+        for (uint32_t k = 0; k < o->nrep; k++)
+            if (o->rep_out[k] && (o->rep_out[k] == a || o->rep_out[k] == b)) {
+                if (!o->seq) FATAL("[mk8] pending occlusion report without submission\\n");
+                if (o->seq > seq) seq = o->seq;
+            }
+    }
+    pthread_mutex_unlock(&cq_lock);
+    return seq;
+}
+void renderer_flush(void);
+static void mk8_oq_wait_pair(const uint64_t *q) {  // renderer owner, before either CPU operand load
+    if (!q) return;
+    uint64_t seq = mk8_oq_pending_pair(q, q + 2);
+    if (!seq) return;  // no report dependency: no submission or wait
+    uint64_t pending = vk_pending_seq();
+    if (seq > pending) FATAL("[mk8] occlusion report beyond pending submission\\n");
+    wait_why = "conditional samples";
+    // Never hold cq_lock here: submission retirement and waits resolve reports under the same lock.
+    if (seq == pending) renderer_flush();  // its producer is still being recorded: submit it first
+    else vk_wait_seq(seq);                // already submitted: leave unrelated recorded work alone
+    // vk_wait_seq logs and returns on timeout. A stale report must not become a visibility decision.
+    if (mk8_oq_pending_pair(q, q + 2)) FATAL("[mk8] conditional occlusion report did not resolve\\n");
+}
 '''
+
+CONDITION_OLD = '                bool eq = q ? q[0] == q[2] : true;'
+CONDITION_NEW = '                mk8_oq_wait_pair(q);\n' + CONDITION_OLD
 
 RESOLVE_OLD = '    for (int i = 0; i < SUBS; i++) if (cq[i].n && cq[i].seq <= done) cq_resolve(i);\n    pthread_mutex_unlock(&cq_lock);\n'
 RESOLVE_NEW = '    for (int i = 0; i < SUBS; i++) if (cq[i].n && cq[i].seq <= done) cq_resolve(i);\n    mk8_oq_resolve_done(done);\n    pthread_mutex_unlock(&cq_lock);\n'
@@ -164,6 +197,7 @@ def prepare(runtime):
     text = replace(text, BEGIN_OLD, BEGIN_NEW)
     text = replace(text, SUBMIT_OLD, SUBMIT_NEW)
     text = replace(text, REPORT_OLD, REPORT_NEW)
+    text = replace(text, CONDITION_OLD, CONDITION_NEW)
     device = runtime/'nvn/vulkan/device.c'
     setup = device.read_text(encoding='utf-8')
     setup = replace(setup, 'VkG g_vk;\n', 'VkG g_vk;\nVkQueryControlFlags mk8_occlusion_flags;\n')
