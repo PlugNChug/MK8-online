@@ -8,6 +8,85 @@ Correção: respostas acima de 32 KiB são escritas em thread própria (`binary_
 
 Validação: formatação, Clippy com `-D warnings` e 66 testes Rust; navegador com o launcher release: e2e (21, 1 pulado por relay), idiomas (3), Mii (1) e o teste novo; `scripts/test-mii-composer.py` com a AFL privada passou (biblioteca, miniaturas, corpo, salvamento e recursos do jogo). Sem novo setup nem release.
 
+## Engasgos e FPS oscilando nas corridas — 14/11/2026
+
+**Medição nesta máquina** (RX 580 8 GB, driver AMD 26.1.1; GP Mushroom Cup, corrida 1, quadros 3000–14000; `scripts/frame-stats.py`):
+
+| Execução | Cache | FPS | p99 | Pior | >25 ms |
+| --- | --- | --- | --- | --- | --- |
+| `race-grand-prix-odwx3qkw` | jogo vazio (driver aquecido) | 59,95 | 17,74 | 47,4 ms | 17 |
+| `xchoj6wg` / `oy047b4c` | aquecido, FIFO | 59,99 / 59,98 | 17,66 / 17,61 | 30,8 / 32,5 ms | 5 / 7 |
+| `a8nu0oou` / `59bxbx65` | aquecido, FIFO_RELAXED | 59,99 / 60,00 | 17,66 / 17,62 | 29,4 / 30,1 ms | 4 / 3 |
+
+Aqui a oscilação em corrida não se reproduz. Engasgos grandes ficam nas transições: fim da corrida, com 475–519 ms em `other` enquanto uma thread do jogo espera ~265 ms por um núcleo emulado ocupado por outra (`kernel.c` não tem preempção dentro do código guest), e carregamento de pista com centenas de compilações.
+
+**Modo de apresentação (`toolchain/present_mode.py`, padrão).** O driver AMD no Windows não oferece MAILBOX, então o runtime usava FIFO sem registrar isso. Agora a ordem é MAILBOX → FIFO_RELAXED → FIFO, o modo aparece no log (`[vk] present mode …`) e `LARECOMP_VK_PRESENT=fifo|relaxed|immediate|mailbox` continua escolhendo. Na tabela, FIFO e FIFO_RELAXED medem igual, porque aqui quase nenhum quadro perde o prazo. **O ganho em máquinas que perdem o prazo com frequência não está comprovado.** `tests/test_present_mode.py` compila a escolha preparada (AMD sem MAILBOX, MAILBOX disponível, só FIFO, escolhas explícitas e recusas). Runtime recompilado com `--runtime-only`, candidato `6dde4ee3…`.
+
+**Picos restantes em corrida (≤ 30 ms, cache aquecido).** Vêm principalmente do prefetch de shaders. Na primeira vez que um programa aparece *na sessão*, `scan_draw` espera a tradução Maxwell→GLSL dele no caminho do quadro (`job_run_or_wait(g_tq, …)`, um único tradutor), porque a chave do pipeline depende do texto traduzido. São 13–34 programas novos por janela, 3–7 ms cada. Isso se repete a cada sessão porque só SPIR-V e pipelines vão para o disco, não a tradução. Além disso, a varredura custa ~0,6–0,9 ms por quadro.
+
+**Cache de traduções (`toolchain/translation_cache.py`, `runtime/mk8/graphics/translation_cache.c`, padrão; `MK8_TRANSLATION_CACHE=0` desliga).**
+- **Onde atua:** as quatro traduções do backend Vulkan em `exec.c` (três estágios de programa e compute) passam por `mk8_translate_cached`. `translate.c` (que os testes compilam sozinho) e `ahead.c` ficam intactos.
+- **Chave:** cobre tudo que `maxwell_translate` lê: cabeçalho e as palavras de código até onde a própria varredura de fim para (reproduzida), `ShaderKey`, globais do tradutor e o executável do runtime (tamanho e data). Variáveis de depuração que mudam a saída desviam o cache.
+- **Formato:** um único `cache/xlate.pack`, aberto uma vez e indexado em memória. Cada registro tem um segundo hash da chave e um hash do conteúdo; um registro que não confere é traduzido de novo. Outro runtime começa um pack novo. Um final cortado (falha durante a escrita) encerra o índice ali e é sobrescrito.
+- **Por que pack:** a primeira versão, com um arquivo por shader, custava 0,2–0,6 ms só para abrir no Windows (medido), quase o mesmo que traduzir. No pack, uma leitura custa ~0,04 ms, contra ~0,9 ms de tradução.
+- **Ganho já na primeira sessão:** com o cache vazio, mais da metade das buscas já acerta, porque o mesmo shader era traduzido de novo para cada programa e chave.
+- **Tamanho:** a corrida 1 gravou ~11 MB (615 traduções).
+
+A/B no mesmo build (`cb567004…`), com o mesmo SPIR-V e os mesmos pipelines de `race-grand-prix-a_k0sjcc`, quadros 3000–14000:
+
+| Execução | Prefetch > 5 ms | > 10 ms | Prefetch antes da corrida | Pior quadro | FPS |
+| --- | --- | --- | --- | --- | --- |
+| `x_caqan8` / `rj4yge6a`, desligado | 22 / 27 | 10 / 14 | 1.629 / 1.506 ms | 34,8 / 41,2 ms | 59,97 / 59,97 |
+| `tnd1lp2e` / `7pfxb1qx`, ligado | 5 / 7 | 2 / 2 | 1.240 / 1.125 ms | 37,4 / 29,9 ms | 59,94 / 60,00 |
+
+Os picos de prefetch caíram ~75–85% e o carregamento ficou ~0,3–0,4 s mais curto. A média já era 60 FPS. O pior quadro e a contagem acima de 17,5 ms variam entre execuções idênticas (127–295) e não são atribuídos à mudança. Captura do quadro 14200 com o cache ligado inspecionada: chegada, 3/3, imagem correta.
+
+`tests/test_translation_cache.py` usa o tradutor real em vários processos sobre a mesma pasta: leitura igual campo a campo, bytes além do trecho lido, chave/código/global diferentes, registro danificado (segundo hash, texto GLSL e campo da `ShaderInfo`) nunca servido, final de lixo, runtime novo, `=0` e desvio de depuração. Sem a conferência do hash de conteúdo, o teste falha. Runtime recompilado com `--runtime-only`; 49 testes relacionados passaram. **Ainda não validado:** máquina mais fraca, em que a tradução pesa mais, e sessão com as 4 pistas.
+
+Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão copia ~650 MB de cache, e o próprio roteiro interrompeu uma execução. Foram removidas só as cópias `data/cache` das 15 sessões criadas nesta rodada (sem junções, sem jogo aberto); logs e capturas ficaram.
+
+**Relatório de jogador (#8, 0.1.8, RTX 3060 notebook, 830 s):** média de 59,3 FPS em corrida, com 18 janelas abaixo de 57 FPS. Em 10 delas houve ≥ 10 compilações (até 759 na largada, cache frio). Num trecho de 8 s ficou travado em 30,0 FPS sem compilação, com espera pela GPU de 99–495 ms por janela, o que indica GPU no limite. O modo de apresentação não aparecia no log; numa NVIDIA ele provavelmente era MAILBOX. Faltam relatórios 0.2.x com a linha `[vk] present mode` e a GPU de quem vê a oscilação.
+
+## Congelamento ao cruzar a chegada: Yaz0 nativo e preempção de núcleo — 14/11/2026
+
+**Sintoma.** No fim de toda corrida (e no primeiro carregamento), quadros de 475–564 ms só em `other`, com o log mostrando uma thread do jogo esperando ~260 ms por um núcleo emulado. O `kernel.c` fixado entrega o núcleo apenas em chamadas de kernel (`core_check` em `rt_svc`), sem preempção dentro do código guest.
+
+**Duas inversões de prioridade:**
+- **Núcleo 2:** um worker de prioridade 52 descompactava os arquivos da próxima tela em `f_7000a88a44`, que é o decodificador **Yaz0** do jogo (constante `Yaz0`, retornos -1/-2). São dois arquivos de ~92 MB por fim de corrida. Como código recompilado, com registradores em memória e acessos pelas macros guest, o laço levava ~0,5 s com o núcleo preso.
+- **Núcleo 0:** um worker de prioridade 45 monta a próxima tela por ~0,5 s sem chamar o kernel, enquanto a thread principal (44) espera. `MK8_SAMPLE` na janela da transição não achou função dominante: é lógica de jogo espalhada.
+
+**Yaz0 nativo (`toolchain/yaz0_native.py`, `runtime/mk8/support/yaz0.c`; `MK8_YAZ0_GUEST=1` volta ao laço guest).**
+- **Patch:** uma linha antes do laço, na cópia de build de `main_230.c`, conferida por SHA-256 e com CRLF normalizado. O cabeçalho (magic e tamanho pelos helpers de ordem de bytes do próprio jogo, retornos -1/-2 e `size < 1`) continua no guest.
+- **Laço nativo:** faz as mesmas leituras e escritas, na mesma ordem, inclusive o excesso da última cópia, e deixa x8–x13 e as flags como o guest deixava. `mk8_yaz0_loop` foi exportado pelo executável.
+- **Medido:** 94.817 KB em 192 ms e 91.736 KB em 205 ms.
+- **Efeito:** a espera no núcleo 2 sumiu dos logs. O congelamento visível continuou, porque vinha do núcleo 0.
+- **Teste:** `tests/test_yaz0_native.py` extrai, no momento do teste, o laço do `main_230.c` gerado localmente (nada privado entra no repositório) e compara o laço do jogo com o nativo, junto de um decodificador independente em Python. Cobre literais, cópias curtas, longas e sobrepostas, e um tamanho menor que o fluxo. Com um erro de comprimento ou sem as flags, o teste falha.
+
+**Preempção nas chamadas indiretas (`toolchain/core_preempt.py`, padrão; `MK8_NO_PREEMPT=1` desliga).**
+- **Ponto de checagem:** `rt_dispatch`, por onde passa toda chamada indireta do guest (virtuais, ponteiros de função). Lê uma flag global, ligada só enquanto algum núcleo tem uma thread esperando com prioridade melhor que a do dono.
+- **Caminho lento:** faz o mesmo que `rt_svc` (`core_check` sob `g_klock`), com `trylock` para nunca esperar pelo lock ali.
+- **Por que é seguro:** continua uma thread por núcleo de cada vez. Uma thread de prioridade melhor tomar o núcleo numa chamada indireta é uma intercalação que o Horizon permite em qualquer instrução, e uma chamada guest já podia ceder o núcleo na próxima chamada de kernel.
+- **Teste:** `tests/test_core_preempt.py` roda as funções reais de núcleo do `kernel.c` preparado com threads reais. A espera da thread de prioridade melhor cai para 0,0 ms (era ~220 ms), sem sobreposição no núcleo. Com prioridade igual ou desligado, espera o trabalho inteiro.
+
+A/B no mesmo build (`b7180f73…`), cache `race-grand-prix-xh0dhyxh`, fim da corrida 1:
+
+| Execução | Pior quadro na transição | Quadros > 50 ms (soma) | Espera de núcleo | Corrida 3000–14000: > 20 ms |
+| --- | --- | --- | --- | --- |
+| `yscjaxvn` / `par8c_om`, desligada | 533 / 564 ms | 1.458 / 1.464 ms | 262 / 264 ms | 30 / 38 |
+| `5p3rtv2d` / `3c3pphsa`, ligada | 337 / 300 ms | 760 / 685 ms | nenhuma | 7 / 7 |
+
+O congelamento caiu pela metade e os pequenos tropeços de 20 ms+ durante a corrida também diminuíram. A média continua em 60 FPS. A captura do quadro 15600 mostra a corrida 2 iniciada normalmente.
+
+**Ainda resta:** ~190 ms de trabalho do jogo e o primeiro quadro da tela nova, ~300 ms, dos quais ~250 ms são tradução das listas e prefetch.
+
+**GP completo com tudo ligado** (preempção, Yaz0 nativo e cache de traduções), `race-grand-prix-2avu_1go`, contra o GP anterior `race-grand-prix-xh0dhyxh`:
+- **Estabilidade:** saída 0 em 1.086 s, sem `FATAL`/exceção e sem espera de núcleo registrada.
+- **Yaz0:** 142 arquivos descompactados nativamente, 579 MB em 1,3 s.
+- **Corridas:** 59,95–60,00 FPS e p99 17,56–17,59 ms nas quatro.
+- **Transições:** antes, cada uma tinha três quadros de 294–614 ms, com 455–613 ms parados em `other`. Agora são um ou dois quadros de 202–375 ms, com no máximo 219 ms em `other`. Os quadros 15999/31999/47999 são capturas do próprio teste e ficam fora da comparação.
+
+Runtime final `--runtime-only`, candidato `c9b9aaa4…`. Passaram 80 testes relacionados mais `test_native`, sem mudança em Rust. **Não validado:** máquina mais fraca, multijogador, áudio e controle manual durante as transições. `gameplay_verified` continua falso.
+
 ## Crash relatado ao fim da terceira corrida seguida — 14/11/2026, não reproduzido
 
 Nenhum relatório com log desse caso chegou (GitHub ou `Downloads`). Reprodução local com o candidato atual (`f079dd11…`, RX 580 8 GB, saves copiados, `MK8_TRACE_VRAM=1`): `local/race-grand-prix-78bcqglg` correu o GP do Mushroom Cup inteiro e começou um quinto percurso no mesmo processo. A captura do quadro 44.000 mostra a largada de Thwomp Ruins, depois do fim da 3ª corrida, e a do quadro 64.000 mostra Mario Kart Stadium. O teste terminou com saída 0 em 1.102,7 s, sem `FATAL`, exceção ou `svcBreak`. A VMA passou de 880 para 1.904 MB reservados no heap 0, com pico de cerca de 1,2 GB em uso. Uma GPU de 4 GB ou uma iGPU pode esgotar memória numa transição de pista. Os relatórios #11 (Intel Iris Xe, `vmaCreateImage` -1 em `exec.c:2300`) e #17 (APU AMD, -2) mostram exatamente esse tipo de `FATAL`, mas ainda na primeira corrida. Isso é hipótese, não causa demonstrada: falta o `mk8drecomp.log` de quem viu o crash na terceira corrida.
