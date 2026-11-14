@@ -261,6 +261,8 @@ def prepare_host_sources(source, output):
     prepare_present_mode(runtime)
     from translation_cache import prepare as prepare_translation_cache
     prepare_translation_cache(runtime)
+    from vertex_cache_age import prepare as prepare_vertex_cache_age
+    prepare_vertex_cache_age(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

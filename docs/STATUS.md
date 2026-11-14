@@ -47,6 +47,28 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
 
 **Relatório de jogador (#8, 0.1.8, RTX 3060 notebook, 830 s):** média de 59,3 FPS em corrida, com 18 janelas abaixo de 57 FPS. Em 10 delas houve ≥ 10 compilações (até 759 na largada, cache frio). Num trecho de 8 s ficou travado em 30,0 FPS sem compilação, com espera pela GPU de 99–495 ms por janela, o que indica GPU no limite. O modo de apresentação não aparecia no log; numa NVIDIA ele provavelmente era MAILBOX. Faltam relatórios 0.2.x com a linha `[vk] present mode` e a GPU de quem vê a oscilação.
 
+## VRAM em sessões longas — 14/11/2026
+
+**Medição.** `race-grand-prix-ov14d8nd`: 180.000 quadros, 50 min, 3 GPs da Copa Cogumelo (12 corridas) no mesmo processo, `MK8_TRACE_VRAM=1`. Saída 0, sem `FATAL`. **Não há crescimento exponencial.**
+- **1º GP:** o reservado da VMA sobe de 752 para 1.520 MB, o dobro, enquanto cada pista é vista pela primeira vez. No Gerenciador de Tarefas isso parece "exponencial".
+- **Depois:** o uso fica entre ~900 e 1.100 MB. O reservado sobe devagar, 1.520 → 1.904 MB nos GPs 2 e 3, por fragmentação.
+- **Cache de vértices:** subia sem parar, 31 → 130 MB, até o teto de 768 MB (`VC_BUDGET`). A cada carregamento os buffers do jogo mudam de endereço, e as faixas antigas só saíam ao atingir esse teto.
+- **Alocações:** 4.056 → 10.160.
+- **Texturas sem uso há mais de 1 minuto:** oscilam entre ~340 e 510 MB.
+
+**Texturas retidas.** As maiores são alvos de renderização em tamanhos variáveis (38 tamanhos distintos na sessão, de 1454×818 a 1905×1071) criados sobre os **mesmos endereços**, `refs 2`, `finalized 0`. O jogo reaproveita a memória para alvos de outro tamanho e abandona os objetos antigos sem finalizá-los. No console isso não custa nada; aqui cada objeto tem imagem Vulkan própria. Liberar essas imagens exige antes proteger os 47 acessos diretos a `t->backend` (cópias, aliases, alvos do passe), que hoje recebem a imagem sem passar por `tex_backend`. Uma imagem destruída ali viraria um handle nulo no Vulkan. Ainda não implementado.
+
+**Hipótese descartada.** A resolução variável não vem da medição de GPU. Com `MK8_TIMESTAMP_TOP_GPU=1` (início e fim medidos na GPU, em vez de misturar relógio do host e GPU), `race-grand-prix-a_yjfgwl` usou os mesmos ~6 tamanhos de alvo que o padrão (`x0sdgcp3`), com a mesma VRAM e 60 FPS. O padrão não muda.
+
+**Cache de vértices por idade (`toolchain/vertex_cache_age.py`, padrão; `MK8_VCACHE_IDLE_S=<s>`, 60 por padrão, 0 desliga).**
+- **Como funciona:** a cada ~10 s, `vc_flush` marca a submissão pendente e descarta as faixas sem uso desde a marca de ~60 s antes. O descarte passa por `vc_drop`, que só libera o buffer depois que a GPU termina as submissões que podiam lê-lo. A varredura para antes de encher a lista de descarte, para não esperar a GPU.
+- **Medição** (GP completo `race-grand-prix-vunwgxoi`, contra `race-grand-prix-2avu_1go`): o cache ficou em ~21–26 MB em vez de subir até 98 MB, e as alocações caíram de ~8.350 para ~4.100. FPS de 59,99–60,00 nas quatro corridas, p99 de 17,5 ms, sem `FATAL`. A pista seguinte copia de novo só o que usa.
+- **Teste:** `tests/test_vertex_cache_age.py` usa a tabela real, `vc_drop` e `vc_free_dead` do `exec.c` preparado. A entrada ociosa sai entre 60 e 70 s após o último uso, a usada fica, a da submissão pendente nunca sai, os buffers só são destruídos depois da GPU e `=0` desliga.
+
+Runtime `--runtime-only`, candidato `ee1f252a…`.
+
+**Folga de CPU na corrida.** `MK8_SAMPLE=6000:8`, `race-grand-prix-ofuel2rl`, a 60 FPS nesta máquina (Xeon E5-2666 v3 Haswell, 2,9 GHz, por núcleo parecido com uma i7-3770). A thread de tradução, com desenhos e driver AMD, usa 43% de um núcleo, ~7 ms por quadro; a principal do jogo, 31%; as demais, 26% e 18%. Uma CPU com metade do desempenho por núcleo ainda caberia em 60 FPS na corrida. O relato de 1 FPS (#7: GTX 1070 + i7-3770) não se explica por CPU e precisa do log dele. `LARECOMP_LOG_PACE` não serve para isso: o "ocupado" sai igual ao período, porque a espera do ritmo nessa thread não é contada como bloqueio.
+
 ## Congelamento ao cruzar a chegada: Yaz0 nativo e preempção de núcleo — 14/11/2026
 
 **Sintoma.** No fim de toda corrida (e no primeiro carregamento), quadros de 475–564 ms só em `other`, com o log mostrando uma thread do jogo esperando ~260 ms por um núcleo emulado. O `kernel.c` fixado entrega o núcleo apenas em chamadas de kernel (`core_check` em `rt_svc`), sem preempção dentro do código guest.
