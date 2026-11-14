@@ -263,6 +263,8 @@ def prepare_host_sources(source, output):
     prepare_translation_cache(runtime)
     from vertex_cache_age import prepare as prepare_vertex_cache_age
     prepare_vertex_cache_age(runtime)
+    from texture_retire import prepare as prepare_texture_retire
+    prepare_texture_retire(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

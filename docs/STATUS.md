@@ -56,7 +56,41 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
 - **Alocações:** 4.056 → 10.160.
 - **Texturas sem uso há mais de 1 minuto:** oscilam entre ~340 e 510 MB.
 
-**Texturas retidas.** As maiores são alvos de renderização em tamanhos variáveis (38 tamanhos distintos na sessão, de 1454×818 a 1905×1071) criados sobre os **mesmos endereços**, `refs 2`, `finalized 0`. O jogo reaproveita a memória para alvos de outro tamanho e abandona os objetos antigos sem finalizá-los. No console isso não custa nada; aqui cada objeto tem imagem Vulkan própria. Liberar essas imagens exige antes proteger os 47 acessos diretos a `t->backend` (cópias, aliases, alvos do passe), que hoje recebem a imagem sem passar por `tex_backend`. Uma imagem destruída ali viraria um handle nulo no Vulkan. Ainda não implementado.
+**Texturas retidas.** As maiores são alvos de renderização em tamanhos variáveis (38 tamanhos distintos na sessão, de 1454×818 a 1905×1071) criados sobre os **mesmos endereços**, `refs 2`, `finalized 0`. O jogo reaproveita a memória para alvos de outro tamanho e abandona os objetos antigos sem finalizá-los. No console isso não custa nada; aqui cada objeto tem imagem Vulkan própria.
+
+**Liberação de imagens ociosas (`toolchain/texture_retire.py`, padrão; `MK8_TEXTURE_IDLE_S=<s>`, 60 por padrão, 0 desliga).**
+- **Quando:** a cada ~10 s, na thread de tradução, logo depois da submissão do quadro.
+- **O que sai:** imagens que nenhum uso tocou nos últimos 60 s e que se encaixam em um destes casos:
+  - conteúdo vindo da memória guest (não escrito pela GPU): o próximo uso recria e recarrega a imagem, como o console lê essa memória;
+  - alvo escrito pela GPU cujo endereço recebeu, depois do último uso, uma textura de outro formato: no console o conteúdo antigo também deixou de existir ali.
+- **O que nunca sai:** imagem apresentada, com vídeo pendente ou envolvida numa cópia de profundidade adiada.
+- **O que fica:** o registro do backend.
+
+**Por que é seguro (auditoria dos 47 acessos diretos a `->backend`):**
+- O passe de render, `copy_texture`, a amostragem e o memo por quadro passam antes por `vk_view`/`vk_tex` → `tex_backend`, cujo ramo "sem imagem" (`pool_release.py`) recria a imagem.
+- `pass_layout`, as flags e os logs leem só metadados.
+- Os aliases de cópia validam o handle.
+- A sombra de profundidade recopia a cada submissão.
+- Os descriptor sets são por submissão.
+- A liberação esquece as views (incrementa `vk_view_gen`), invalida os snapshots daquela imagem e adia a destruição até a GPU terminar as submissões que podiam lê-la.
+- O carimbo de uso passa a ser sempre registrado, não só com `MK8_TRACE_VRAM`, e o backend novo nasce carimbado.
+
+**A/B no mesmo build** (`bccd7dce…`), GP completo com o cache `xh0dhyxh`:
+
+| Execução | Reservado no fim | Pico em uso | Em uso nas corridas 2–4 | Ociosas > 1 min | FPS |
+| --- | --- | --- | --- | --- | --- |
+| `qa8ysx5_`, desligado | 1.776 MB | 1.249 MB | 731–869 MB | até 719 MB | 60 |
+| `0so9vrpg`, padrão 60 s | 1.392 MB | 834 MB | 561–690 MB | até 237 MB | 60 |
+| `xlgl6t9w`, estresse 10 s | 1.264 MB | 658 MB | 501–549 MB | até 180 MB | 60 |
+
+Nas três execuções: saída 0, sem `FATAL`/exceção/perda de dispositivo e p99 de 17,4–17,6 ms em todas as corridas.
+- **Estresse:** liberou 10.300 imagens, 2,3 GB somados com recriações; os alvos substituídos também foram liberados.
+- **Capturas** (Sweet Sweet Canyon, Thwomp Ruins e a 5ª corrida no Estádio): imagem correta, sem textura preta ou faltando.
+- **Custo:** todos os quadros acima de 100 ms continuam nas transições entre corridas. No modo padrão, algumas transições ganharam um quadro a mais de ~100–250 ms (16 quadros/3,4 s contra 13/2,9 s desligado), compatível com recriar texturas liberadas durante a corrida quando a tela volta. Para trocar VRAM por menos recriação, `MK8_TEXTURE_IDLE_S` pode ser maior.
+
+**Teste:** `tests/test_texture_retire.py` extrai `mk8_retire_image` do `textures.c` preparado e cobre: textura da CPU ociosa liberada, recente mantida, alvo não substituído mantido, substituído depois do último uso liberado e antes mantido, apresentada, com vídeo ou com alias mantidas, um único fim de passe, snapshots esquecidos. Também confere o carimbo sempre ativo e a recriação vindo antes em `tex_backend`. `tests/test_pool_release.py` ganhou o campo novo e extrai só até o código novo.
+
+**Não validado:** GPU de 4 GB ou integrada, onde o ganho importa mais; telas fora da corrida (menus, MKTV, multijogador); sessões de várias horas.
 
 **Hipótese descartada.** A resolução variável não vem da medição de GPU. Com `MK8_TIMESTAMP_TOP_GPU=1` (início e fim medidos na GPU, em vez de misturar relógio do host e GPU), `race-grand-prix-a_yjfgwl` usou os mesmos ~6 tamanhos de alvo que o padrão (`x0sdgcp3`), com a mesma VRAM e 60 FPS. O padrão não muda.
 

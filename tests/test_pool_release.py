@@ -24,7 +24,8 @@ class PoolReleaseTests(unittest.TestCase):
             a, b = body.index('int mk8_live_textures('), body.index('static void live_remove(')
             body = body[:a] + body[b:]
             range_code = text[text.index('// MK8 (toolchain/pool_release.py): keep shared'):text.index('void vk_textures_reset(')]
-            unlisted = text[text.index('// The first owner can be finalized'):]
+            # (up to the idle retirement added after it: tests/test_texture_retire.py)
+            unlisted = text[text.index('// The first owner can be finalized'):text.index('// MK8 (toolchain/texture_retire.py): images no lookup')]
             fixture = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -71,7 +72,8 @@ void vk_alias_texture_destroyed(NvnTexture *t) { (void)t; }
 void mk8_pool_copy_aliases(uint64_t lo, uint64_t hi) { (void)lo; (void)hi; }
 '''
             # mk8_used is only needed by the optional diagnostic inserted in tex_backend.
-            fixture = fixture.replace('int refs, reg;', 'int refs, reg; uint64_t mk8_used;')
+            # mk8_used / mk8_superseded: stamps and the storage-supersession mark inserted in tex_backend.
+            fixture = fixture.replace('int refs, reg;', 'int refs, reg; uint64_t mk8_used, mk8_superseded;')
             checks = r'''
 int main(void) {
     NvnTexture a={.addr=0x1000,.width=16}, b=a, c={.addr=0x1800}, d=c;
