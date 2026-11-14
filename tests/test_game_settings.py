@@ -10,9 +10,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "toolchain"))
 from native import DEFAULT_COMPILER, compiler_env
+from host import prepare_host_sources
 
 HARNESS = r'''
 #include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
 #include "settings.h"
 #include "input_bind.h"
 const char *const g_tunic_colours[N_TUNIC_COLOURS] = {0};
@@ -20,6 +23,7 @@ const char *const g_heart_colours[N_HEART_COLOURS] = {0};
 void rt_log(const char *fmt, ...) { (void)fmt; }
 int input_pad_family(void) { return 0; }
 int main(void) {
+    _fmode = _O_BINARY;  // match the actual Windows runtime, including CRLF input
     settings_load();
     printf("%.2f %d %d %d %d %d %d %d\n", g_settings.volume, g_settings.res_mode,
            g_settings.fullscreen, g_settings.show_fps, g_settings.language,
@@ -44,6 +48,7 @@ class RuntimeSettingsTests(unittest.TestCase):
         defaults = {f["key"]: f["default"] for g in schema["groups"] for f in g["fields"]}
         with tempfile.TemporaryDirectory(prefix="mk8-settings-native-") as temporary:
             folder = Path(temporary)
+            base = prepare_host_sources(ROOT / 'upstream/smm2recomp/recomp', folder / 'host')
             harness = folder / "main.c"
             harness.write_text(HARNESS)
             exe = folder / "settings.exe"
@@ -65,8 +70,11 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertNotIn("bind_", baseline)
             changed = dict(defaults, volume="0.65", resolution="75%", fullscreen="1",
                            show_fps="1", language="fr", upscaler="bilinear", antialias="smaa",
-                           frame_gen="120", bind_key_a="Space", bind_pad_a="south")
+                           frame_gen="120", bind_key_a="Space", bind_pad_a="south",
+                           bind_key_zl="Left Alt", bind_key_zr="Space")
             output = run(changed)
             self.assertEqual(output.splitlines()[0], "0.65 10 1 1 4 0 1 1")
             self.assertIn("bind_key_a = Space", output)
             self.assertIn("bind_pad_a = south", output)
+            self.assertIn("bind_key_zl = Left Alt", output)
+            self.assertIn("bind_key_zr = Space", output)

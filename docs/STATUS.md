@@ -1,5 +1,19 @@
 # Estado técnico — 13/11/2026
 
+## Settings redesenhado: integração e persistência finais — 13/11/2026
+
+A integração local contém o tema e o slot extra de `experiment/main-menu-settings` (`d39f6da`), mais a correção de INI CRLF (`2433d5a`), preservando as adaptações anteriores. Candidato preparado **`4ecc88c2d51cd549ab5c9959dfae8c6fc127dede055ab36d8f6020921de8a3ec`**; build runtime-only concluída com **218 unidades e 108 executáveis/DLLs conferidos**. **49 testes nativos/Python passaram**, sem skips, incluindo contraste C++, navegação/foco, parser/bindings real em modo binário, ABI/cache e regressões de Info/MKTV. Sem mudanças Rust ou web; a interface alterada foi validada no próprio runtime Vulkan.
+
+`race-time-trial-4f_ccef9`: entrar no slot adicional, abrir Settings, trocar para Video, editar Show FPS, fechar com B, reabrir e fechar com Escape; saída 0 e duas confirmações registradas. O teste expôs a perda dos bindings CRLF na cópia. Após a correção, `race-time-trial-uxkp5agu` repetiu edição/salvamento pelo menu e saiu 0: o diff entre INI original e cópia contém **somente `show_fps = 1` → `0`**, mantendo `bind_key_zl = Left Alt`, `bind_key_zr = Space` e o tema salvo. O INI e os saves originais ficaram intactos. Captura final em `local/race-time-trial-uxkp5agu/data/build/saved-setting.png`. O botão DLC original também foi conferido com a flag ativa (`m1c12qe1`).
+
+Decisões tomadas com o usuário ausente: manter todos os botões originais e acrescentar um slot desenhado pelo runtime ligado à navegação nativa, em vez de editar layouts Nintendo; usar arte própria e manter a mesma flag opt-in. O slot não é um novo widget do motor Nintendo nem aceita clique de mouse nesta etapa; os controles existentes dentro de Settings continuam disponíveis. O usuário pode testar a build integrada já preparada reiniciando com `MK8_SETTINGS_EXPERIMENT=1`. Branches locais, sem push ou PR novo. Testes a 1280×720/16:9; outras proporções, toque, controle físico, fullscreen/resize e multiplayer continuam sem nova qualificação. O erro de swapchain histórico não foi alterado por este trabalho; `gameplay_verified=false`.
+
+## Preservação de bindings em INI CRLF — 13/11/2026
+
+O teste de persistência do novo menu detectou `show_fps` salvo corretamente, mas os overrides de ZL/ZR não sobreviveram na cópia. Causa: `platform/windows.c` define `_fmode = _O_BINARY`; `settings_load` abria o INI com `"r"`, e `sscanf` preservava o `\r` de arquivos CRLF no final de valores. Nomes como `Left Alt\r` e `Space\r` não eram reconhecidos pelo SDL e acabavam omitidos pelo salvamento posterior. `toolchain/settings_menu.py` prepara a abertura como `"rt"`, traduzindo CRLF independentemente do modo global. A correção vale com o experimento ligado ou desligado. O arquivo original do usuário permaneceu intacto; nenhuma remapagem foi aplicada a seus dados.
+
+`test_game_settings.py` agora compila o leitor e os bindings preparados reais, define o mesmo modo binário do runtime e verifica CRLF, nomes com espaços, teclado e gamepad. O teste nativo passou, incluindo ZL=Left Alt e ZR=Space. A correção não muda a ABI e usa build `--runtime-only`.
+
 ## Settings: tela própria e slot adicional — 13/11/2026
 
 Continuação de `experiment/main-menu-settings`, após aprovação do primeiro protótipo pelo usuário. A interface agora usa fundo azul quadriculado animado, painéis claros, seleção amarela, dicas de navegação e entrada suave de 160 ms. Preserva os controles, bindings e persistência existentes. Corrigidos os contrastes de valores, cabeçalho da tabela de controles e botão fechar. A escolha Default/NES fica oculta no experimento, sem modificar o valor salvo; retirar a flag restaura o visual anterior. Removida da descrição de aspecto a referência herdada a ilhas/casas/dungeons de outro jogo.
