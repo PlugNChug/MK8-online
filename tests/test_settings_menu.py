@@ -1,6 +1,7 @@
 """Native top-menu event routing, opt-in bounds, and verified guest adaptation."""
 import hashlib
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,33 @@ import settings_menu
 
 
 class SettingsMenuTests(unittest.TestCase):
+    @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
+    def test_light_palette_has_readable_text_and_selected_rows(self):
+        menu = (ROOT / 'upstream/smm2recomp/recomp/runtime/ui/menu.mm').read_text(encoding='utf-8')
+        palette = re.search(r'typedef struct \{\n    ImVec4 window, child, popup;.*?\} ThemePalette;', menu, re.S)[0]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'palette.cpp'
+            source.write_text('#include "imgui.h"\n#include <math.h>\n#include <assert.h>\n' + palette + '\n' +
+                              (ROOT / 'runtime/mk8/ui/settings_theme.inc').read_text(encoding='utf-8') + r'''
+static float channel(float v) { return v <= .04045f ? v/12.92f : powf((v+.055f)/1.055f,2.4f); }
+static float light(ImVec4 v) { return .2126f*channel(v.x)+.7152f*channel(v.y)+.0722f*channel(v.z); }
+static float contrast(ImVec4 a, ImVec4 b) { float x=light(a),y=light(b); return (fmaxf(x,y)+.05f)/(fminf(x,y)+.05f); }
+int main() {
+    ThemePalette base={}; const ThemePalette &p=mk8_settings_palette(base);
+    assert(contrast(p.text,p.window)>4.5f && contrast(p.text,p.hover)>4.5f);
+    assert(contrast(p.text_dim,p.child)>4.5f && contrast(p.accent,p.window)>4.5f);
+    assert(p.hover.x>.9f && p.hover.y>.7f && p.hover.z<.2f);
+    assert(!p.row_notch && p.window_round>0);
+}
+''', encoding='utf-8')
+            exe = root / 'palette.exe'
+            build = subprocess.run([str(DEFAULT_COMPILER), 'c++', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG',
+                                    '-I'+str(ROOT / 'upstream/smm2recomp/recomp/third_party/imgui'),
+                                    str(source), '-o', str(exe)], env=compiler_env(), capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr[-3000:])
+            subprocess.run([str(exe)], check=True, timeout=10)
+
     def test_guest_hash_and_boundaries_fail_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -93,20 +121,28 @@ int main(int argc, char **argv) {
         return 0;
     }
     assert(!mk8_settings_entry_visible() && !mk8_settings_entry_focused());
-    event(&c, 0, 0); assert(body_calls == 1 && mk8_settings_entry_visible());
-    event(&c, 10, 2); assert(body_calls == 2 && !mk8_settings_entry_visible());
-    event(&c, 105, 0); assert(body_calls == 3 && mk8_settings_entry_visible() && mk8_settings_entry_focused());
-    assert(mk8_settings_filter_buttons(0x8001, false) == 0x8000);
-    assert(body_calls == 3 && mk8_settings_take_open());
+    event(&c, 105, 0);
+    assert(mk8_settings_entry_visible() && !mk8_settings_entry_focused());
+    assert(mk8_settings_filter_buttons(1, false) == 1 && !mk8_settings_take_open());
+    mk8_settings_filter_buttons(0, false);
+    assert(mk8_settings_filter_buttons(1ull<<14, false) == 0 && mk8_settings_entry_focused());
+    assert(mk8_settings_filter_buttons(1ull<<14, false) == 0);
+    mk8_settings_filter_buttons(0, false);
+    assert(mk8_settings_filter_buttons(0x8001, false) == 0x8000 && mk8_settings_take_open());
     assert(!mk8_settings_take_open());
     assert(mk8_settings_filter_buttons(1, true) == 0 && !mk8_settings_take_open());
-    assert(mk8_settings_filter_buttons(1, false) == 0 && mk8_settings_take_open());
-    event(&c, 105, 1); assert(mk8_settings_filter_buttons(1, false) == 1);
-    assert(!mk8_settings_entry_focused());
-    event(&c, 103, 2); assert(body_calls == 5 && !mk8_settings_entry_visible());
+    assert(mk8_settings_filter_buttons(1ull<<12, false) == 0 && !mk8_settings_entry_focused());
+    assert(mk8_settings_filter_buttons(1ull<<12, false) == 0);
+    mk8_settings_filter_buttons(0, false);
+    assert(mk8_settings_filter_buttons(1, false) == 1);
+    event(&c, 105, 2); assert(!mk8_settings_entry_visible());
     c.x[1] = GUEST_HI - 0x38; event(&c, 105, 0);
-    assert(mk8_settings_filter_buttons(1, false) == 0 && mk8_settings_take_open());
-    mk8_settings_filter_buttons(1, false); settings_menu_reset();
+    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1ull<<14, false);
+    mk8_settings_filter_buttons(0, false);
+    assert(mk8_settings_filter_buttons(2, false) == 0 && !mk8_settings_entry_focused());
+    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1ull<<14, false);
+    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1, false);
+    settings_menu_reset();
     assert(!mk8_settings_take_open() && !mk8_settings_entry_visible());
     return 0;
 }
