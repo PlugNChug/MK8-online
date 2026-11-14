@@ -31,6 +31,11 @@ def replace(text, old, new):
 
 
 def prepare(runtime):
+    # Windows runtime defaults to binary I/O; explicitly translate CRLF in user INIs.
+    settings = runtime / 'settings.c'
+    if settings.is_file():
+        original = settings.read_text(encoding='utf-8')
+        settings.write_text(replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")'), encoding='utf-8')
     path = runtime / 'ui/menu.mm'
     text = path.read_text(encoding='utf-8')
     marker = '// ------------------------------------------------------------------ state shared with the main thread'

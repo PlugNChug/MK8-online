@@ -424,6 +424,12 @@ Validação desta branch: **11 testes nativos/Python aprovados**, zero skips: se
 Patch focado sobre fix-chore `15d1106`: na criação/reutilização de uma voz, inicializa prev_volume em 0.f em vez do volume atual. A rampa já existente cobre o primeiro bloco (240 amostras/48 kHz, 5 ms); decoder, resampling, ganho global e buffers SDL permanecem iguais. Testes nativos usam mixer/decoder preparados com PCM/ADPCM sintéticos, vozes novas/reutilizadas, estéreo, splitter, chegada tardia de buffers, pitches 1/1.498, loop contínuo, volume constante e mute. Evidência auditiva anterior é da branch integrada: usuário confirmou o reproducer em Electrodrome corrigido; não equivale a qualificação desta branch isolada. `gameplay_verified=false`.
 
 
+## Preservação de bindings em INI CRLF — 13/11/2026
+
+O teste de persistência do novo menu detectou `show_fps` salvo corretamente, mas os overrides de ZL/ZR não sobreviveram na cópia. Causa: `platform/windows.c` define `_fmode = _O_BINARY`; `settings_load` abria o INI com `"r"`, e `sscanf` preservava o `\r` de arquivos CRLF no final de valores. Nomes como `Left Alt\r` e `Space\r` não eram reconhecidos pelo SDL e acabavam omitidos pelo salvamento posterior. `toolchain/settings_menu.py` prepara a abertura como `"rt"`, traduzindo CRLF independentemente do modo global. A correção vale com o experimento ligado ou desligado. O arquivo original do usuário permaneceu intacto; nenhuma remapagem foi aplicada a seus dados.
+
+`test_game_settings.py` agora compila o leitor e os bindings preparados reais, define o mesmo modo binário do runtime e verifica CRLF, nomes com espaços, teclado e gamepad. O teste nativo passou, incluindo ZL=Left Alt e ZR=Space. A correção não muda a ABI e usa build `--runtime-only`.
+
 ## Settings: tela própria e slot adicional — 13/11/2026
 
 Continuação de `experiment/main-menu-settings`, após aprovação do primeiro protótipo pelo usuário. A interface agora usa fundo azul quadriculado animado, painéis claros, seleção amarela, dicas de navegação e entrada suave de 160 ms. Preserva os controles, bindings e persistência existentes. Corrigidos os contrastes de valores, cabeçalho da tabela de controles e botão fechar. A escolha Default/NES fica oculta no experimento, sem modificar o valor salvo; retirar a flag restaura o visual anterior. Removida da descrição de aspecto a referência herdada a ilhas/casas/dungeons de outro jogo.
