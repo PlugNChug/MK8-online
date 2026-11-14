@@ -47,6 +47,26 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
 
 **Relatório de jogador (#8, 0.1.8, RTX 3060 notebook, 830 s):** média de 59,3 FPS em corrida, com 18 janelas abaixo de 57 FPS. Em 10 delas houve ≥ 10 compilações (até 759 na largada, cache frio). Num trecho de 8 s ficou travado em 30,0 FPS sem compilação, com espera pela GPU de 99–495 ms por janela, o que indica GPU no limite. O modo de apresentação não aparecia no log; numa NVIDIA ele provavelmente era MAILBOX. Faltam relatórios 0.2.x com a linha `[vk] present mode` e a GPU de quem vê a oscilação.
 
+## Tela dividida local: a seleção de 2 jogadores congelava — 14/11/2026
+
+**Sintoma reproduzido.** Menu principal → Multiplayer → Grand Prix → 50cc → applet de controles (`[hid] controller support (players 2..2): 2 player(s)`) → seleção de personagens para 2 jogadores. A imagem ficava **parada**: sete capturas de 30 s, idênticas byte a byte. O jogo continuava desenhando o mesmo quadro (~80 desenhos por quadro) e suas threads rodavam a 60 Hz sem nenhuma ocupada (máximo 7% de CPU). Os botões dos dois jogadores chegavam ao runtime (`MK8_TRACE_PADS`), mas nem o cursor do jogador 1 andava, e o do jogador 2 nem aparecia. O gerenciador de controles do jogo (`f_70005fc03c`) lia estilo e estado dos IDs 0 e 1 normalmente, e o modo sem Mii não era a causa: com os recursos Mii reais a tela também congelava.
+
+**Causa.** No Switch, `nn::hid::ShowControllerSupport` abre um applet do sistema: o jogo sai do primeiro plano e, quando o applet fecha, o gerenciador de applets enfileira `FocusStateChanged`. O runtime respondia ao applet na hora e não enfileirava nada, e o MK8 deixava a cena pausada esperando o foco voltar.
+
+**Correção (`toolchain/controller_applet.py`, padrão; `MK8_NO_APPLET_FOCUS=1` desliga).** Ao responder ao applet, `am.c` ganha `mk8_am_push_message` e enfileira `FocusStateChanged`, como o fim do applet real. `GetCurrentFocusState` continua "em foco".
+
+**Prova, no mesmo build:**
+- **Desligado:** `race-grand-prix-10948eao`, quatro capturas idênticas.
+- **Ligado:** `race-grand-prix-v2nka2gx`. O jogador 1 levou o cursor amarelo a Luigi, o jogador 2 apareceu com o cursor ciano, escolheu e confirmou, e os dois foram para a seleção de kart, cada um no próprio painel.
+- **Corrida em tela dividida:** `race-grand-prix-esulv10d`, Mario Kart Stadium com dois Luigis, cada metade com câmera, itens, moedas e posição próprias (2º/3º no quadro 9600, 1º/4º no quadro 12000). Saída 0, sem `FATAL`.
+- **Desempenho:** 58,71 FPS na corrida dividida (quadros 8000–11990), p95 19,5 ms, p99 20,9 ms, um pico de 232 ms de tradução. São ~2× os desenhos por quadro do modo solo.
+
+**Teste:** `tests/test_controller_applet.py` roda a fila de mensagens real do `am.c` preparado: depois da mensagem do boot, o applet enfileira `FocusStateChanged`, sinaliza o evento, respeita o limite de 16 e recomeça no reboot. Também confere que o gancho fica em `ShowControllerSupport`, depois da resposta, e respeita `MK8_NO_APPLET_FOCUS`. Runtime `--runtime-only`; 40 testes relacionados passaram.
+
+**Limites:**
+- **Controles:** o jogador 1 é o teclado + o primeiro controle, e cada controle a mais é o próximo jogador. Com **teclado + 1 controle** não há jogador 2: os dois comandam o jogador 1, e o applet responde 1 jogador quando o jogo pede 2. Jogar a dois exige dois controles físicos. Uma opção "teclado é o jogador 1" fica como próximo passo.
+- **Não validado:** 3–4 jogadores, Batalha e VS dividido, controles físicos (o teste usou o jogador 2 roteirizado por `LARECOMP_INPUT2`), GP completo dividido e áudio. `gameplay_verified` continua falso.
+
 ## VRAM em sessões longas — 14/11/2026
 
 **Medição.** `race-grand-prix-ov14d8nd`: 180.000 quadros, 50 min, 3 GPs da Copa Cogumelo (12 corridas) no mesmo processo, `MK8_TRACE_VRAM=1`. Saída 0, sem `FATAL`. **Não há crescimento exponencial.**
@@ -1272,11 +1292,11 @@ Testes com a build atual (todas as correções acima), roteiros automáticos e c
 | **Multijogador por relay/código** (`multiplayer-fw34pdw8`) | Dois jogos reais na mesma corrida (anfitrião Mario, convidado Luigi com a marca "Host"), 60 FPS nos dois, imagem correta, sem erro de comunicação. |
 | **Multijogador pela LAN direta** (`multiplayer-b99dbh6f`) | Sala com "Host" e "Guest", corrida iniciada nos dois, 60 FPS, sem erro de comunicação. No lobby do convidado, o nome "Guest" aparece **espelhado** (defeito de texto a investigar). |
 | **Online Play (menu do jogo)** | Usa os servidores da Nintendo, que esta build não acessa. A mensagem do runtime pedia login no Nextendo Network (serviço do SMM2). `toolchain/online_notice.py` passa a explicar o caminho certo: sala no launcher (Multijogador) + Wireless Play com L + R + analógico esquerdo (LAN). |
-| **Tela dividida (Multiplayer local)** | Ainda falha (detalhes abaixo). |
+| **Tela dividida (Multiplayer local)** | Corrigida em 14/11/2026 (seção "Tela dividida local" no topo); a investigação abaixo é histórica. |
 
 **Vídeos dos menus (verde sólido) — corrigido.** As prévias de modo nos menus (MovieMenu.mp4, 512×608 H.264) apareciam verdes. O decodificador produzia quadros corretos (média Y 123, UV 127), mas o jogo entrega a cada quadro um buffer **próprio** a `GetOutputBuffer` e lê o quadro dali. O upstream apontava o Buffer para o buffer interno, então o do jogo ficava zerado, e NV12 zerado é verde. `toolchain/movie_output.py` copia o quadro para o buffer do jogo quando ele tem capacidade. O modo textura (SMM2) e a ausência de buffer continuam como antes; `MK8_MOVIE_OWN_BUFFER=1` restaura o upstream. `tests/test_movie_output.py` exercita a função real com os quatro casos. Capturas: prévias do Grande Prêmio e do Contra o Relógio visíveis.
 
-**Tela dividida — investigação.** Main menu → Multiplayer → applet de controles ("2 player(s)") → seleção de personagens para 2 jogadores. Nessa tela, nenhum botão de nenhum dos dois jogadores tem efeito (cursor, confirmar, voltar), embora na tela anterior (cilindradas) o jogador 1 funcione. Com os diagnósticos novos de `toolchain/split_screen.py` (`MK8_TRACE_PADS`, `MK8_TRACE_IMPORTS`), o jogo continua lendo o estado FullKey dos ids 0 e 1 uma vez por quadro e recebe os botões dos dois jogadores, inclusive do jogador 2 por `LARECOMP_INPUT2`. Os dois imports `nn::hid` que leem botões são do host; vibração, sensor de movimento, atribuição de Joy-Con e `SetSupportedNpad*` ficam com o SDK guest e o serviço `hid` responde ok. Não resolveram, e foram retirados: sinalizar os eventos de estilo ao fechar o applet e gravar a contagem de jogadores como `int` de 32 bits. A causa está no estado do jogo depois do applet. Próximo passo: observar o objeto de controle do jogo (`LARECOMP_WATCH_PAD`) antes e depois do applet. Não houve teste com dois controles físicos.
+**Tela dividida — investigação (histórica; causa e correção na seção "Tela dividida local", 14/11/2026).** Main menu → Multiplayer → applet de controles ("2 player(s)") → seleção de personagens para 2 jogadores. Nessa tela, nenhum botão de nenhum dos dois jogadores tem efeito (cursor, confirmar, voltar), embora na tela anterior (cilindradas) o jogador 1 funcione. Com os diagnósticos novos de `toolchain/split_screen.py` (`MK8_TRACE_PADS`, `MK8_TRACE_IMPORTS`), o jogo continua lendo o estado FullKey dos ids 0 e 1 uma vez por quadro e recebe os botões dos dois jogadores, inclusive do jogador 2 por `LARECOMP_INPUT2`. Os dois imports `nn::hid` que leem botões são do host; vibração, sensor de movimento, atribuição de Joy-Con e `SetSupportedNpad*` ficam com o SDK guest e o serviço `hid` responde ok. Não resolveram, e foram retirados: sinalizar os eventos de estilo ao fechar o applet e gravar a contagem de jogadores como `int` de 32 bits. A causa está no estado do jogo depois do applet. Próximo passo: observar o objeto de controle do jogo (`LARECOMP_WATCH_PAD`) antes e depois do applet. Não houve teste com dois controles físicos.
 
 ### Pistas e personagens pretos; bateria de pistas (08/11/2026)
 
