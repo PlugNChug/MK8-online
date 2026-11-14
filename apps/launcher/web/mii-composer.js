@@ -113,7 +113,9 @@ async function loadFFL(){
     const response=await fetch('/api/mii/composer/resource',{headers:{'X-MK8-Token':token}});
     if(!response.ok){await response.text();el('mii-library').hidden=false;return false;}  // (read: an unread body stays in flight)
     status('Carregando peças do Mii…');
-    ffl=await FFL.initWithResource(response,ModuleFFL({locateFile:n=>'/vendor/ffl/'+n}));
+    // (read the whole AFL first: FFL would wait for its wasm before reading the body, keeping this response open)
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    ffl=await FFL.initWithResource(bytes,ModuleFFL({locateFile:n=>'/vendor/ffl/'+n}));
     ffl.module._FFLSetLinearGammaMode(1);
     const canvas=document.createElement('canvas');canvas.width=canvas.height=THUMB;
     thumbs=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});

@@ -1271,7 +1271,16 @@ pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
 fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
     let mut res = Response::from_data(bytes).with_status_code(code);
     for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
-    let _ = req.respond(res);
+    // The loop serves one request at a time. A body larger than the socket buffers waits for the page to read
+    // it; the Mii creator reads the AFL only after FFL's wasm arrives from this same loop, so writing it here
+    // froze every launcher request (issues #15/#16). Large bodies are written on their own thread.
+    if res.data_length().unwrap_or(0) > 32 * 1024 {
+        std::thread::spawn(move || {
+            let _ = req.respond(res);
+        });
+    } else {
+        let _ = req.respond(res);
+    }
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
 /// answering status requests while the dialog is open.

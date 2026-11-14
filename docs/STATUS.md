@@ -1,4 +1,20 @@
-# Estado técnico — 13/11/2026
+# Estado técnico — 14/11/2026
+
+## Launcher congelado no criador Mii (issues #15 e #16) — 14/11/2026
+
+O servidor HTTP do launcher atende uma requisição por vez. O criador pedia a biblioteca AFL (4,5 MB) e entregava a resposta ainda não lida a `FFL.initWithResource`, que primeiro espera o módulo baixar `ffl-emscripten.wasm` desse mesmo servidor. Quando o corpo passava dos buffers do WebView/TCP, o laço ficava preso escrevendo a biblioteca e nunca atendia o `.wasm`: a tela ficava em "Carregando peças do Mii…" e **todas** as outras chamadas paravam (Procurar, Jogar, status). Isso explica os dois relatos, inclusive "Jogar solo não faz nada" depois de abrir o criador. Dependia do tamanho dos buffers de cada máquina; aqui os testes do criador passavam.
+
+Correção: respostas acima de 32 KiB são escritas em thread própria (`binary_response` em `apps/launcher/src/server.rs`), e o criador lê a AFL inteira antes de iniciar o módulo FFL. Reprodução com o `Launcher.exe` real e a AFL verificada: com a resposta da biblioteca sem leitura, o pedido do `.wasm` esperou 5 s sem resposta no binário anterior; no corrigido saiu na hora. O novo `tests/test_launcher_unread_response.py` faz o mesmo com um recurso público grande (`three.core.js`), sem arquivos privados: falha no launcher anterior e passa no novo.
+
+Validação: formatação, Clippy com `-D warnings` e 66 testes Rust; navegador com o launcher release: e2e (21, 1 pulado por relay), idiomas (3), Mii (1) e o teste novo; `scripts/test-mii-composer.py` com a AFL privada passou (biblioteca, miniaturas, corpo, salvamento e recursos do jogo). Sem novo setup nem release.
+
+## Crash relatado ao fim da terceira corrida seguida — 14/11/2026, não reproduzido
+
+Nenhum relatório com log desse caso chegou (GitHub ou `Downloads`). Reprodução local com o candidato atual (`f079dd11…`, RX 580 8 GB, saves copiados, `MK8_TRACE_VRAM=1`): `local/race-grand-prix-78bcqglg` correu o GP do Mushroom Cup inteiro e começou um quinto percurso no mesmo processo. A captura do quadro 44.000 mostra a largada de Thwomp Ruins, depois do fim da 3ª corrida, e a do quadro 64.000 mostra Mario Kart Stadium. O teste terminou com saída 0 em 1.102,7 s, sem `FATAL`, exceção ou `svcBreak`. A VMA passou de 880 para 1.904 MB reservados no heap 0, com pico de cerca de 1,2 GB em uso. Uma GPU de 4 GB ou uma iGPU pode esgotar memória numa transição de pista. Os relatórios #11 (Intel Iris Xe, `vmaCreateImage` -1 em `exec.c:2300`) e #17 (APU AMD, -2) mostram exatamente esse tipo de `FATAL`, mas ainda na primeira corrida. Isso é hipótese, não causa demonstrada: falta o `mk8drecomp.log` de quem viu o crash na terceira corrida.
+
+Achado na automação: `scripts/test-race.py grand-prix` segurava A sem soltar, e o jogo atual não sai do placar da primeira corrida assim (`race-grand-prix-3jar2huo`: quadros 20.000 a 52.000 no placar com 15/12 pontos). Os GPs "longos" com esse roteiro não passavam da corrida 1. Agora o modo GP solta A um quadro a cada 120; essa entrada é a do teste acima, e `tests/test_race_script.py` cobre o padrão. As duas execuções anteriores desta rodada terminaram com `window closed` (`SDL_EVENT_QUIT`) porque compartilhavam o console com outros comandos; num console próprio isso não ocorreu. Não contar essas execuções como crash.
+
+Triagem dos relatórios de jogadores que impedem jogar: (1) launcher congelado pelo criador Mii, corrigido acima; (2) memória de GPU esgotada em GPU integrada (#11, #17), com mitigação apenas para APU AMD (`shared_vram.py`), não validada em hardware real; a Intel Iris Xe já não importava o heap e falhou com -1 por volta de 186 s, depois de "type mismatch" repetido numa textura 4096×2936 e uploads de ~1 GB a cada 2 s; (3) MKTV/Info no menu (#8): applet 0x17 (web offline) termina sem dados, e o jogo chama `SetTerminateResult` e `svcBreak` em `70040b15d4`, ainda sem correção; (4) #13 (0.1.8, `0xc0000409`) veio com `game.log` vazio e não tem diagnóstico.
 
 ## Salas da Steam exigem o mesmo estado de DLC — 13/11/2026
 
