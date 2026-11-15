@@ -134,6 +134,15 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
   - O nome da pasta é o próprio nome no enum (`Course/%s/%s`).
   - `f_700085bcd8` (`main_181.c`) e `f_7000a5f6d4` (`main_228.c`) usam essa string.
 - **IDs livres:** a Nintendo deixou 14 reservados (`Reserved01`–`Reserved14`, IDs 2–15) e `Test` (ID 1). Uma pista com esses IDs seria lida de `Course/Reserved01/…`, pasta que a sobreposição pode criar.
+- **Formato exato do objeto de copas** (construtor `f_70003f96b0`, 1.700 linhas, um único `return`):
+  - copa = 0x80 bytes em `objeto + índice × 0x80`, com até 8 registros de 16 bytes `{ID u32, -1, rótulo u32, flag u8}` (vagas sem uso valem -1);
+  - mapa reverso em `objeto + 0xC80`: 123 × `{copa u32, posição u32}`;
+  - contagem em `+0x1430`: zerada e incrementada 24 vezes (12 copas base + 12 do DLC). A 25ª entrada (índice 24) é a copa de batalha, com as 8 arenas até `Bu_DekaLine` (ID 70), escrita depois do último incremento.
+- **Não há vaga livre:** as 25 entradas estão ocupadas e terminam exatamente em `+0xC80`, onde começa o mapa reverso. Uma 25ª copa de corrida, mesmo como prova de conceito, exige realocar o vetor de copas para uma área maior e corrigir todos os acessos:
+  - o limite de 25 em 131 pontos de 10 funções;
+  - a base do mapa reverso (`+0xC80`) e a contagem (`+0x1430`);
+  - a tela de copas (terceira página);
+  - os IDs reservados 2–15 resolvem o espaço de IDs para até 15 pistas novas sem tocar no limite de 123.
 - **Consequência para um conjunto próprio do CTGP:**
   - cabem até 15 pistas novas sem ampliar o espaço de IDs, mas o vetor de copas só tem 1 vaga livre (25 lugares, 24 usados) e a tela de copas só tem duas páginas de 12;
   - as 64 pistas do CTGP como pistas novas exigiriam ampliar o enum e os 129 pontos limitados a 123, o vetor de copas (131 pontos) e a tela de copas (terceira página), e separar os recordes do save.
