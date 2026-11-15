@@ -78,7 +78,8 @@ int main(int argc, char **argv) {
             self.assertNotIn('{ wait_why = "compute results"; renderer_flush(); }\n}', text.replace('if (mk8_eager_compute()) ', ''))
             self.assertIn('    mk8_cw_before_draw(r, indexed);\n', text)
             track = between(text, '// MK8 (toolchain/compute_flush.py): guest memory written', 'static void gpu_read_clear(void) {')
-            readers = between(text, '// MK8: CPU copies at a command boundary', 'static void dispatch_compute(')
+            reader_end = text.index('\n}', text.index('static bool mk8_cw_stage_pending(')) + 2
+            readers = text[text.index('// MK8: CPU copies at a command boundary'):reader_end]
             draw = between(text, '// Vertex streams and indices the draw binds in place', 'static void draw(CmdRec *r, bool indexed) {')
             fixture = r'''
 #include <stdbool.h>

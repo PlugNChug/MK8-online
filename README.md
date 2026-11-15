@@ -45,6 +45,8 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 ## Where it stands
 
+An experimental compute-only preparation path is available with `MK8_COMPUTE_PREPARE=1`, disabled by default. It copies bounded inputs during shader registration and uses the existing renderer queue; native ownership tests pass, but a live comparison is still required before claiming fewer racing hitches.
+
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
 | Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |

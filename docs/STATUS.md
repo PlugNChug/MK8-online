@@ -1,5 +1,15 @@
 # Estado técnico — 15/11/2026
 
+## Experimento de preparação antecipada de compute — 15/11/2026
+
+O log moderado identificou compute `725a00f200` esperando **727,541 ms** no quadro 23.304; seu trabalho do driver levou 1.066,634 ms. Não há registro de SetShaders nessa sessão: a fase exata de carregamento e a identidade de conteúdo desse bloqueador continuam abertas. Dois candidatos do replay anterior tinham **1.602 quadros** entre registro e primeiro uso, mas o replay não reproduziu o hitch original.
+
+`MK8_COMPUTE_PREPARE=1` habilita um candidato **desligado por padrão**, restrito a PREFETCH e tradução assíncrona. SetShaders copia código com tamanho explícito (máximo 64 KiB, alinhado a 8), dimensões locais e identidade; a fila existente entrega a cópia ao único dono da tabela de compute. Jobs existentes compilam o pipeline. Não ativa `LARECOMP_AHEAD` nem muda espera obrigatória/falha de dispatch.
+
+Filas e preparações ainda não usadas têm limites separados de 64. O primeiro pedido real verifica bytes, tamanho e dimensões antes de adotar; cópias obsoletas ou limites atingidos preservam compilação sob demanda. Jobs descartados só são liberados após DONE; reboot drena fila e jobs antes de liberar recursos extras. Logs opt-in registram quadro de registro/início/primeiro pedido, fingerprint, dimensões e job. “first-use” corresponde ao primeiro `compute_program`, que pode ocorrer no prefetch da submissão antes do dispatch.
+
+Base `fix-chore d443092`, branch `codex/compute-preparation`. **18 testes nativos** de fila/ownership passaram na base; os testes de compute também passaram nas fontes integradas atuais com tracing, readback e UI preservados. Exercitam cópia, mutação, limites, guard page, modos, estados pending/ready/failed, invalidação em voo e limpeza após reboot. Compilação dos arquivos completos também passou. Não demonstram ganho de desempenho nem eliminação do hitch; o teste em GPU deve medir registro até primeiro uso e conferir imagens com saves/cache copiados. `gameplay_verified=false`.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).

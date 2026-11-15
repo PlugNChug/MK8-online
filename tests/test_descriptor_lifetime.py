@@ -46,6 +46,9 @@ class DescriptorLifetimeTests(unittest.TestCase):
 #include <string.h>
 #include <windows.h>
 #include "nvn/nvn.h"
+#include "nvn/mk8_compute_prepare.h"
+int shader_mode(void) { return 0; }
+void mk8_compute_prepare(Mk8ComputeSnapshot *s) { free(s); }
 #undef NVN
 #define NVN(name) void name(Cpu *c)
 #define MK8_SAMPLER(guest) ((NvnSamplerDesc *)(uintptr_t)((guest) + 8))
@@ -286,7 +289,7 @@ int main(int argc, char **argv) {
         cls.env.pop('MK8_ASYNC_SUBMIT', None)
         cls.env.pop('MK8_TEXPOOL_CUBE_HISTORY', None)
         result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
-                                 '-I'+str(cls.runtime), '-I'+str(DEPS/'include'), str(source), '-o', str(cls.exe)],
+                                 '-I'+str(cls.runtime), '-I'+str(cls.runtime/'nvn'), '-I'+str(DEPS/'include'), str(source), '-o', str(cls.exe)],
                                 env=cls.env, capture_output=True, text=True, timeout=300)
         if result.returncode:
             raise AssertionError(result.stderr)
