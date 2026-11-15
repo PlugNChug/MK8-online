@@ -45,12 +45,16 @@ static bool mk8_job_ready(JobQueue *q, BuildJob *j) { (void)q; (void)j; bounded+
 static bool mk8_targets_redrawn(void) { return true; }
 uint64_t vk_frame_counter(void) { return 42; }
 int main(int argc, char **argv) {
-    (void)argv;
+    assert(argc == 2);
+    bool verbose = !strcmp(argv[1], "verbose");
+    bool enabled = strcmp(argv[1], "disabled") != 0;
+    assert(mk8_wait_trace_ms() == (verbose ? 10 : enabled ? 50 : 0));
+    assert(mk8_wait_trace_verbose() == verbose);
     Prog p = {{0x123, 0x456, 0}};
     result = false;
     assert(!mk8_traced_job(NULL, NULL, &p, "translate", 0, true));
     assert(bounded == 1 && full == 0);
-    if (argc > 1) {
+    if (verbose) {
         assert(strstr(message, "phase=translate ms=25.000"));
         assert(strstr(message, "code=123/456/0"));
         assert(strstr(message, "ready=0"));
@@ -58,11 +62,31 @@ int main(int argc, char **argv) {
     result = true;
     assert(mk8_traced_job(NULL, NULL, &p, "pipeline", 0xabc, true));
     assert(bounded == 2 && full == 0);
-    if (argc > 1) assert(strstr(message, "pipeline=abc budgeted=1 redrawn=1 ready=1"));
+    if (verbose) assert(strstr(message, "pipeline=abc budgeted=1 redrawn=1 ready=1"));
+    else assert(!message[0]);
     assert(mk8_traced_job(NULL, NULL, &p, "compute", 0, false));
     assert(bounded == 2 && full == 1);
-    if (argc > 1) assert(strstr(message, "phase=compute ms=1000.000"));
+    if (enabled) {
+        assert(strstr(message, "frame=42 phase=compute ms=1000.000"));
+        assert(strstr(message, "job="));
+        assert(strstr(message, "code=123/456/0"));
+        assert(strstr(message, "budgeted=0 redrawn=0 ready=1"));
+    }
     else assert(!message[0]);
+    message[0] = 0;
+    uint64_t start = enabled ? ticks : 0;
+    ticks += 25000000;
+    mk8_shader_build_time(&p, NULL, "compute-spirv", start);
+    if (verbose) assert(strstr(message, "phase=compute-spirv ms=25.000"));
+    else assert(!message[0]);
+    message[0] = 0;
+    ticks += 25000000;
+    mk8_shader_build_time(&p, NULL, "compute-driver", start);
+    if (enabled) {
+        assert(strstr(message, "phase=compute-driver ms=50.000"));
+        assert(strstr(message, "job="));
+        assert(strstr(message, "code=123/456/0"));
+    } else assert(!message[0]);
     return 0;
 }
 ''', encoding='utf-8')
@@ -71,10 +95,10 @@ int main(int argc, char **argv) {
             subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2',
                             '-UNDEBUG', str(source), '-o', str(exe)], env=env, check=True)
             env.pop('MK8_TRACE_SHADER_WAITS', None)
-            subprocess.run([str(exe)], env=env, check=True, timeout=10)
-            for disabled in ('0', '-1', 'invalid'):
-                subprocess.run([str(exe)], env=dict(env, MK8_TRACE_SHADER_WAITS=disabled), check=True, timeout=10)
-            subprocess.run([str(exe), 'trace'], env=dict(env, MK8_TRACE_SHADER_WAITS='10'), check=True, timeout=10)
+            subprocess.run([str(exe), 'default'], env=env, check=True, timeout=10)
+            for disabled in ('0', '-1', '', 'invalid', '50junk', 'nan', 'inf'):
+                subprocess.run([str(exe), 'disabled'], env=dict(env, MK8_TRACE_SHADER_WAITS=disabled), check=True, timeout=10)
+            subprocess.run([str(exe), 'verbose'], env=dict(env, MK8_TRACE_SHADER_WAITS='10'), check=True, timeout=10)
 
     def test_rejects_changed_source(self):
         with tempfile.TemporaryDirectory() as directory:
