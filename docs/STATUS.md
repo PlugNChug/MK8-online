@@ -108,6 +108,13 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
 
 **Fase B, parte com código — não iniciada, por decisão de escopo:** copas além de 24, botão aleatório e menus próprios do CTGP. A estrutura de gancho entra junto com o primeiro limite real alterado, no padrão já usado (`yaz0_native.py`: patch da unidade gerada validado por hash), e não como infraestrutura sem uso.
 
+**Fase B (código) — mapa da engenharia reversa (16/11/2026), sem alteração no jogo:**
+- **Não há tabela estática copa → pista:** nenhuma permutação de 0–95 (nem de 0–47) em u8/u16/u32 nos segmentos de dados do `main`. O mapeamento é montado em tempo de execução.
+- **Caminho das pistas:** `Course/%s/%s` (`main+0xf0d209`) e `Course/%s` (`+0xf0d223`) são usados por `f_700089ed04` (`main_186.c`). Ela pega o objeto da corrida via `0x70012f9e98`, lê um índice com limite em `+0x58` (u16), lê um byte em `+0x6a` e chama um método virtual (`rt_dispatch`). O nome da pasta vem de um objeto, não de uma tabela.
+- **Inicialização da UI de menus:** `f_700040c5f4` (`main_083.c`) cria os pools de recursos do menu (tamanhos 0x35, 0x2a, 0x17, 0x10…) e usa as strings `*_00` de imagens de pista.
+- **Rótulo de plataforma:** 1461 (`0x5b5`) só aparece no código como aritmética de datas (dias em 4 anos, em `f_70005645f8`…); o rótulo vem de dados, ainda não localizados.
+- **Próximo passo para copas extras:** rastrear dinamicamente, com o jogo rodando, os objetos de pista e copa nos dois pontos acima (`FN_ENTER` com filtro de endereço, sem mudar comportamento). Só então decidir onde aumentar os limites, com testes de save.
+
 **Fase B (código) — o que a leitura do 4.0.1 mostrou:**
 - **Tabela de copas:** `main+0x12840b8` é a tabela estática de 24 ponteiros para os ícones (Mushroom…Thunder, DLC02–05, Charger00–11), com os ponteiros em relocações `R_AARCH64_RELATIVE` e não no dado.
 - **Limite fixo no código:** `f_700050ccc0` faz `min(copa, 0x17)` antes de ler essa tabela, ou seja, 24 copas fixas.
