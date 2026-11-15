@@ -154,3 +154,5 @@ Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a
 Project code is licensed under **[GPL-3.0-or-later](LICENSE)**. Dependencies keep their own licenses; the SMM2Recomp snapshot includes GPLv3, LASRecomp includes MIT notices, and the setup carries FFmpeg (LGPL 2.1) with its source attached to each release. The license grants no rights to Nintendo's game code, assets or trademarks.
 
 An independent community project, not affiliated with or endorsed by Nintendo or Valve. Mario Kart and related names belong to their respective owners.
+
+Conditional occlusion rendering waits for pending reports on either comparison operand before reading their actual sample counts. This addresses transient missing racers/objects during previews; it preserves legitimate hidden results. The fix is applied during runtime preparation and needs a game/runtime rebuild.
