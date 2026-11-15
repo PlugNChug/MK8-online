@@ -44,7 +44,7 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
-| Launcher | Native window, guided preparation, installer, updates, reports; English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |
+| Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |
 | Solo racing | Mushroom Cup completed; battles, MKTV highlight reel and time trials reached | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Steam rooms with invites; two game instances on one PC entered the same LAN room automatically | A guest joining over Steam from another PC, full races between two PCs |

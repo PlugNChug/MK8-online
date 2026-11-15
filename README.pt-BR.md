@@ -48,7 +48,7 @@ Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
 
 | Área | Progresso atual | Próxima etapa |
 | --- | --- | --- |
-| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; inglês e PT-BR | Atualização 0.1.8 → 0.2.0 por testadores reais |
+| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.1.8 → 0.2.0 por testadores reais |
 | Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
 | Multijogador | Salas Steam com convites; duas instâncias do jogo no mesmo PC entraram sozinhas na mesma sala LAN | Convidado entrando pela Steam a partir de outro PC, corridas completas entre dois PCs |

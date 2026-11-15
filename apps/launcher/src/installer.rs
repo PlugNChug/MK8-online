@@ -593,17 +593,41 @@ fn uninstall(app: &Path, silent: bool) -> Result<(), Error> {
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .and_then(|v| v["home"].as_str().map(str::to_string))
         .unwrap_or_else(|| local_appdata().join("MK8-online").display().to_string());
-    let english = crate::language::read(&PathBuf::from(&data).join("data")) != "pt-BR";
+    let language = crate::language::read(&PathBuf::from(&data).join("data"));
     if !silent {
         let answer = rfd::MessageDialog::new()
-            .set_title(if english { "Uninstall MK8-online" } else { "Desinstalar MK8-online" })
+            .set_title(crate::language::pick(
+                &language,
+                "Desinstalar MK8-online",
+                "Uninstall MK8-online",
+                "Desinstalar MK8-online",
+            ))
             .set_level(rfd::MessageLevel::Info)
             .set_buttons(rfd::MessageButtons::YesNo)
-            .set_description(if english { format!(
-                "Remove MK8-online from this PC?\n\nYour data (prepared game, builds and saves) will remain in:\n{data}\nYou can remove that folder later to free up space."
-            ) } else { format!(
-                "Remover o MK8-online deste computador?\n\nSeus dados (jogo preparado, builds e saves) ficam em:\n{data}\nApague essa pasta depois, se quiser liberar o espaço."
-            ) })
+            .set_description(crate::language::pick(
+                &language,
+                format!(
+                    "Remover o MK8-online deste computador?
+
+Seus dados (jogo preparado, builds e saves) ficam em:
+{data}
+Apague essa pasta depois, se quiser liberar o espaço."
+                ),
+                format!(
+                    "Remove MK8-online from this PC?
+
+Your data (prepared game, builds and saves) will remain in:
+{data}
+You can remove that folder later to free up space."
+                ),
+                format!(
+                    "¿Quitar MK8-online de esta PC?
+
+Tus datos (juego preparado, compilaciones y partidas guardadas) se quedarán en:
+{data}
+Puedes borrar esa carpeta más tarde si quieres liberar espacio."
+                ),
+            ))
             .show();
         if answer != rfd::MessageDialogResult::Yes {
             return Ok(());
@@ -633,11 +657,12 @@ fn uninstall(app: &Path, silent: bool) -> Result<(), Error> {
         rfd::MessageDialog::new()
             .set_title("MK8-online")
             .set_level(rfd::MessageLevel::Info)
-            .set_description(if english {
-                format!("MK8-online has been removed. Your data remains in {data}.")
-            } else {
-                format!("O MK8-online foi removido. Seus dados continuam em {data}.")
-            })
+            .set_description(crate::language::pick(
+                &language,
+                format!("O MK8-online foi removido. Seus dados continuam em {data}."),
+                format!("MK8-online has been removed. Your data remains in {data}."),
+                format!("MK8-online se quitó. Tus datos siguen en {data}."),
+            ))
             .show();
     }
     // This copy in %TEMP% removes itself once it has exited.
@@ -830,6 +855,10 @@ fn serve(
             )),
             ("GET", "/en.json") => Some((
                 include_str!("../web/en.json").into(),
+                "application/json; charset=utf-8",
+            )),
+            ("GET", "/es.json") => Some((
+                include_str!("../web/es.json").into(),
                 "application/json; charset=utf-8",
             )),
             ("GET", "/setup.js") => Some((
