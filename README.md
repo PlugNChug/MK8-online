@@ -45,6 +45,8 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 ## Where it stands
 
+A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
+
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
 | Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |

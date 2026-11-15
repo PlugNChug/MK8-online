@@ -205,6 +205,8 @@ def prepare_host_sources(source, output):
     text = text.replace(boundary, (ROOT/'runtime/mk8/graphics/maxwell_gather.inc').read_text(encoding='utf-8')+'\n'+boundary)
     text = text.replace(opcode, '    } else if (OPM(0xdf00000000000000ull, 0xffc0000000000000ull)) {  // TLD4S F32\n        mk8_emit_tld4s(c, w);\n'+opcode)
     translator.write_text(text, encoding='utf-8')
+    from maxwell_mip_query import prepare as prepare_maxwell_mip_query
+    prepare_maxwell_mip_query(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
     prepare_texture_lifetime(runtime)
     from gpu_sync import prepare as prepare_gpu_sync
