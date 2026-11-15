@@ -241,6 +241,8 @@ def prepare_host_sources(source, output):
     prepare_shader_budget(runtime)
     from shader_storage import prepare as prepare_shader_storage
     prepare_shader_storage(runtime)
+    from shader_wait_trace import prepare as prepare_shader_wait_trace
+    prepare_shader_wait_trace(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread
