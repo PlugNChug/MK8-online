@@ -1,5 +1,12 @@
 # Dependências e atribuições
 
+## Comparação semântica de texturas — 15/11/2026
+
+A adaptação de `nvnTextureCompare` usa a comparação de propriedades, swizzle e armazenamento de [SavageWindRecomp, `runtime/nvn/objects.c`](https://github.com/Revivedx/SavageWindRecomp/blob/740b18025fe11ba03c117dbb56668db304b5043e/runtime/nvn/objects.c), commit `740b18025fe11ba03c117dbb56668db304b5043e`. Créditos: Revivedx e colaboradores de Savage Wind Recomp; Peiikai, pela base LAS Recomp. O [aviso MIT integral](licenses/SavageWindRecomp-MIT.txt) foi preservado, incluindo seus limites para propriedades Nintendo e componentes de terceiros. A adaptação fica na preparação própria do runtime; nenhum endereço, teste ou recurso de BOTW foi copiado.
+
+A motivação local vem do probe privado MK8 `1267wfvj`: 18 pares de cubemaps de ambiente com descrições registradas iguais retornaram 0 e houve duplicação do slot 8036→8054; a primeira comparação entre textura 2D e cubemap era corretamente desigual. Essa evidência identifica o falso negativo; a validação local e seus limites são registrados em [STATUS.md](STATUS.md). Resultados de SavageWindRecomp em BOTW não qualificam MK8-online nem demonstram que os clarões deste jogo estejam resolvidos.
+
+
 ## Importação de fontes do console — 13/11/2026
 
 Consultados README, releases e [source/main.c do SharedFontDumper](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c), de simontime: nomes `FontStandard.ttf`, `FontNintendoExtended.ttf` e fontes regionais, extração com A e saída com +. Não houve cópia de código nem distribuição da ferramenta/fontes. A decodificação BFTTF segue o formato já implementado no loader upstream fixado. Importador e seletor são próprios; fontes/dumps permanecem privados, validação estrutural não autentica origem Nintendo. Compatibilidade da ferramenta com firmware atual e renderização de fontes autênticas aguardam evidência do usuário.
