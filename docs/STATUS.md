@@ -135,6 +135,41 @@ Nenhum dos três dá o CTGP completo no 4.0.1 sem um projeto grande. O passo 4 d
    `gameplay_verified` continua falso.
 6. Depois da varredura de 15/11, o caminho 2 é uma reimplementação do plugin em AArch64, e o caminho 3 exige um front-end A32 (veja acima). Qualquer um deles precisa de decisão do usuário antes de começar. O caminho 2 começa com um teste nativo da tabela de ganchos em `FN_ENTER` com funções sintéticas; só depois vem a recompilação do jogo inteiro.
 
+**Caminho 1 testado — 15/11/2026.**
+
+*Condições:* jogo reimportado do NSZ (`Importação 4.0.1 verificada`), build completa, PRs #18/#19 incluídas. Contra-relógio de 4.800 quadros com `LARECOMP_LOG_FILES=1`. As sobreposições parciais são hardlinks em `local/ctgp-overlay-*`; a pasta `Documents/CTGPDX` não foi alterada e o plugin `skyline/` nunca foi usado.
+
+| Sessão | Sobreposição | Resultado |
+|---|---|---|
+| `race-time-trial-o33nrkca` | nenhuma (base) | 60 FPS até o fim |
+| `race-time-trial-m5um97f1` | romfs completo do CTGP | **crash** aos 16 s ao entrar no menu: `c0000005` em `0x90`, `f_70008bab3c`, logo após ler `UI/cmn/menu.sarc` |
+| `race-time-trial-n4fawqy7` | sem `UI/cmn/menu.sarc` | **crash** no mesmo ponto: `c0000005` em `0`, `f_70005908a8` (resta `common.sarc`) |
+| `race-time-trial-ssw00gbi` | sem `UI/` | 60 FPS até o fim; músicas de título/menu, `StaticSysMenu`, Lakitu do CTGP carregados |
+| `race-time-trial-lzz6p1u3` | sem `UI/`, só `message.sarc` | 60 FPS até o fim |
+| `race-time-trial-79ux_uty` | `CT_00` no lugar de `Gu_FirstCircuit`: arquivos da pista, `MapObj`, música e imagem; banco de sons da pista original | **pista CTGP correu**: modelo, cenário, objetos, minimapa e música próprios; 60 FPS, máximo 18 ms, sem erro |
+
+**Conclusões:**
+- O romfs do CTGP **como está** não funciona no 4.0.1: as SARCs de interface `common.sarc` e `menu.sarc`, montadas para 3.0.3 e para o plugin, derrubam o menu.
+- Os formatos de pista são os mesmos do 4.0.1: modelo `FRES 0.5.0.3`, KCL, AAMP, `VFXB`, BNTX e BYAML. A música `FSTM` v3 e o Lakitu `FRES 0.5.0.2` também carregaram.
+- **Uma pista CTGP corre no 4.0.1 sem nenhum código**, ocupando a vaga de uma pista existente.
+- `gameplay_verified=false`: o teste cobriu uma pista, uma volta parcial e só o contra-relógio.
+
+**Caminho 2 — plano, a decidir com o usuário (nada foi implementado):**
+- **Fase A — pistas em vagas, sem código.**
+  - Uma ferramenta local (`toolchain/ctgp_slots.py`) monta uma sobreposição privada em `local/`, com hardlinks quando o disco permite, a partir da cópia do usuário. Ela nunca vai para repositório, release ou setup.
+  - Mapeia `CT_xx` para vagas existentes: arquivos de `Course/<vaga>`, `pBGM_<vaga>_N/F`, `ym_CoursePict_<vaga>_00^u` e o nome da pista no `message.sarc` (MSBT dentro da SARC).
+  - Bancos de som da pista: cada `Course_CT_xx.barslist` (ARSL) aponta para o banco de uma pista original (`CT_00` → `Gu_DossunIseki`). A primeira versão usa o banco da vaga.
+  - Limite: 48 vagas originais, ou mais 48 do Booster Course Pass (`Cnsw_*`, mesma estrutura) com o DLC importado. As 64 pistas não cabem todas ao mesmo tempo; o usuário escolhe ou alterna conjuntos.
+  - Launcher: opção "Pacote de pistas" com ativação, como o DLC, e `RECOMP_MOD_DIR` só no processo filho. Nas salas da Steam, exigir o mesmo pacote (hash), como a regra de DLC.
+  - Testes: unidade da montagem com arquivos sintéticos, e GP completo com quatro pistas CTGP (imagem, áudio, voltas, reinício e save).
+- **Fase B — comportamento do CTGP, com código.** Copas e pistas extras além das vagas, botão aleatório e menus do CTGP.
+  - Engenharia reversa, no AArch64 do 4.0.1, da tabela de pistas e copas e das telas de seleção.
+  - Ganchos próprios aplicados pelo pipeline: por unidade gerada, como `yaz0_native.py`, ou por uma tabela de ganchos em `FN_ENTER`, com validação de hash.
+  - Layouts de menu refeitos sobre as SARCs do 4.0.1, porque as do CTGP derrubam o menu.
+  - Cada gancho com teste nativo e prova em corrida.
+- **Fase C — multijogador** com o pacote: validação em duas máquinas, como exige o projeto.
+- **Limites legais:** o CTGP é de uso pessoal e não pode ser redistribuído. A ferramenta só lê a cópia do próprio usuário; nada do pacote entra em fontes, testes públicos ou releases. Créditos e termos ficam em `docs/THIRD_PARTY.md` quando houver código.
+
 ## Tela dividida local: a seleção de 2 jogadores congelava — 14/11/2026
 
 **Sintoma reproduzido.** Menu principal → Multiplayer → Grand Prix → 50cc → applet de controles (`[hid] controller support (players 2..2): 2 player(s)`) → seleção de personagens para 2 jogadores. A imagem ficava **parada**: sete capturas de 30 s, idênticas byte a byte. O jogo continuava desenhando o mesmo quadro (~80 desenhos por quadro) e suas threads rodavam a 60 Hz sem nenhuma ocupada (máximo 7% de CPU). Os botões dos dois jogadores chegavam ao runtime (`MK8_TRACE_PADS`), mas nem o cursor do jogador 1 andava, e o do jogador 2 nem aparecia. O gerenciador de controles do jogo (`f_70005fc03c`) lia estilo e estado dos IDs 0 e 1 normalmente, e o modo sem Mii não era a causa: com os recursos Mii reais a tela também congelava.
