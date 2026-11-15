@@ -30,6 +30,9 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 > [!NOTE]
 > **0.2.0 is a public test release, still experimental.** Solo races complete in local tests. Visual defects, first-use shader stutters and VRAM growth remain. Multiplayer between two separate PCs has not been qualified yet: that is exactly what this release asks testers to try.
 
+New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
+
+
 ## What's new in 0.2.0
 
 - **Mii creator.** The **Mii profile** tab is a creator now. Name your Mii, then pick every part (body, face, skin, hair, eyes, eyebrows, nose, mouth, beard, glasses, mole) from buttons that show *your* Mii with that option. The preview puts the head on MK8's own lobby body, read from your prepared game, so type, height, build and favorite color are visible.

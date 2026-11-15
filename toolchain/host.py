@@ -87,6 +87,12 @@ def prepare_host_sources(source, output):
     if text.count(old) != 1:
         raise ValueError('Audio mix logging changed upstream')
     audio.write_text(text.replace(old, '    if (r->elapsed_frames >= 2 && !({ static int mk8_on = -1; if (mk8_on < 0) mk8_on = getenv("LARECOMP_AUDIO_LOG") != NULL; mk8_on; })) return;\n'+old), encoding='utf-8')
+    text = audio.read_text(encoding='utf-8')
+    old = '        if (g_nswap) swap_voice_new(v);\n        v->prev_volume = v->volume;\n'
+    if text.count(old) != 1:
+        raise ValueError('Audio new-voice gain boundary changed upstream')
+    # New voices start with zero previous volume; use the existing block ramp for their first samples.
+    audio.write_text(text.replace(old, '        if (g_nswap) swap_voice_new(v);\n        v->prev_volume = 0.f;\n'), encoding='utf-8')
     dispatch = runtime/'dispatch.c'
     text = dispatch.read_text(encoding='utf-8')
     old = '    Cpu *c = kernel_current_cpu();'
