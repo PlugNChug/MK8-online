@@ -137,20 +137,29 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
 - **Formato exato do objeto de copas** (construtor `f_70003f96b0`, 1.700 linhas, um único `return`):
   - copa = 0x80 bytes em `objeto + índice × 0x80`, com até 8 registros de 16 bytes `{ID u32, -1, rótulo u32, flag u8}` (vagas sem uso valem -1);
   - mapa reverso em `objeto + 0xC80`: 123 × `{copa u32, posição u32}`;
-  - contagem em `+0x1430`: zerada e incrementada 24 vezes (12 copas base + 12 do DLC). A 25ª entrada (índice 24) é a copa de batalha, com as 8 arenas até `Bu_DekaLine` (ID 70), escrita depois do último incremento.
+  - contagem em `+0x1430`: zerada e incrementada 24 vezes (12 copas base + 12 do DLC), e fica em 24. A 25ª entrada (índice 24 = a contagem) é a copa de batalha, com as 8 arenas até `Bu_DekaLine` (ID 70), escrita sem incrementar;
+  - segundo mapa em `objeto + 0x1058` (123 × 8 bytes): o mapa reverso das arenas. O construtor do objeto (`f_70003f952c`) inicia os dois mapas com -1;
+  - nenhuma das funções que leem copas lê a contagem: elas usam posições fixas.
 - **Não há vaga livre:** as 25 entradas estão ocupadas e terminam exatamente em `+0xC80`, onde começa o mapa reverso. Uma 25ª copa de corrida, mesmo como prova de conceito, exige realocar o vetor de copas para uma área maior e corrigir todos os acessos:
-  - o limite de 25 aparece em 131 pontos de 10 funções: 107 são escritas do próprio construtor e 42 são leituras em 9 funções;
+  - o limite de 25 aparece em 163 pontos de 20 funções: 107 escritas do próprio construtor e 56 leituras em 19 funções (contagem completa da etapa 1 abaixo);
   - a base do mapa reverso (`+0xC80`) e a contagem (`+0x1430`);
   - a tela de copas (terceira página);
-  - os IDs reservados 2–15 resolvem o espaço de IDs para até 15 pistas novas sem tocar no limite de 123.
+  - os IDs reservados 2–15 **não** servem para pistas novas (ver "IDs reservados" abaixo).
 - **Etapa 1 feita (branch `ctgp-recomp`): copas numa área com lugar para 41.**
-  - `toolchain/cup_relocation.py` altera a cópia de build de 5 unidades geradas, cada uma conferida por SHA-256. `main_082.c` é aceita como fica depois do gancho do diálogo Mii (`toolchain/experimental.py`), que continua aplicado.
+  - `toolchain/cup_relocation.py` altera a cópia de build de 11 unidades geradas, cada uma conferida por SHA-256. `main_082.c` e `main_115.c` são aceitas como ficam depois dos ganchos do diálogo Mii e da votação LAN (`toolchain/experimental.py`), que continuam aplicados.
   - O construtor fica igual e, no seu único `return`, entrega o objeto a `mk8_cups_built` (`runtime/mk8/support/cups.c`), que copia as 25 entradas para a área nova; as 16 entradas a mais começam vazias (registros -1).
-  - As 42 leituras passam a aceitar até 41 (`0x29`) e calculam a entrada por `mk8_cup_entry`: a área nova para o objeto do construtor, a conta original (com limite 25) para qualquer outro.
+  - As leituras passam a aceitar até 41 (`0x29`) e calculam a entrada por `mk8_cup_entry`: a área nova para o objeto do construtor, a conta original (com limite 25) para qualquer outro.
+  - Cada limite é seguido pelo registrador do índice até a conta `base + (índice << 7)`: rótulos são ignorados, `goto` dentro da função é seguido e chamadas só são aceitas com o índice em registrador preservado (`x19`–`x28`). São 58 limites e 56 contas em 19 funções (dois limites de `f_700048e190` chegam à mesma conta); cada função é conferida por esses dois números e um limite que não chega à conta recusa a build.
+  - A primeira versão (commit `65d0bc4`) só pegava limites com a conta logo em seguida: 42 contas em 9 funções. As outras 14 (por exemplo `f_70004a3940`, que copia o registro escolhido para a seleção) continuavam lendo o objeto original; uma copa acrescentada seria mostrada na tela e ignorada ao escolher a pista.
   - O mapa reverso e a contagem continuam no objeto original. `MK8_CUPS_RELOCATE=0` desliga tudo.
-  - Testes: `tests/test_cup_relocation.py` (4: alteração sintética e nas unidades verificadas, recusa de contagem diferente, harness nativo da cópia/entradas vazias/desligamento).
-  - No jogo (15/11/2026, com DLC): contra o relógio com a mudança ligada e desligada mostra a mesma tela de copas; o rastreador do painel de pistas (`MK8_TRACE_ENTRY=700043c2e8:x1:64`) leu os 24 registros da área nova com a mudança ligada e os 24 do objeto original com ela desligada. Grand Prix completo a 60 FPS, sem erros no log.
-  - Ainda não mostra copa nova: é só a base. Próximas etapas: preencher a 26ª entrada com `Reserved01–04`, ajustar a contagem e o mapa reverso para ela, e a terceira página da tela de copas.
+  - Testes: `tests/test_cup_relocation.py` (5: alteração sintética, incluindo rótulos, `goto` e chamadas; as 11 unidades verificadas como a build as recebe; recusa de contagem diferente; harness nativo da cópia/entradas vazias/desligamento).
+  - No jogo (15/11/2026, com DLC): contra o relógio com a mudança ligada e desligada mostra a mesma tela de copas; o rastreador do painel de pistas (`MK8_TRACE_ENTRY=700043c2e8:x1:64`) leu os 24 registros da área nova com a mudança ligada e os 24 do objeto original com ela desligada. Grand Prix completo a 60 FPS, sem erros no log. Repetido com as 56 contas: mesma tela, contra o relógio a 60 FPS, Grand Prix até a volta 3/3 a 59–60 FPS, sem exceções.
+  - Ainda não mostra copa nova: é só a base.
+- **IDs reservados não servem para pistas novas** (experimento de 15/11/2026, só local):
+  - O jogo converte o ID numa posição das tabelas por pista (imagem, música, recordes, fantasmas…): `ID − 16` para `ID < 75` e `ID − 27` acima. Para `Reserved01` (ID 2) a posição é -14.
+  - Experimento: uma 26ª copa com os IDs 2–5 e pastas `Course/Reserved01–04` (cópias de uma pista do jogo, com `.barslist` reescrito), mostrada no lugar da Mushroom Cup. Com as 42 contas, a tela mostrou os nomes escolhidos e as imagens das pistas DLC01–04, e a corrida carregou a pista original. Com as 56, o jogo parou na tela de copas lendo `0x18` (`f_70004a5c48`, chamada por `f_70004a3940`), com `x9 = -14`.
+  - Usá-los exigiria mudar essa conversão nos 129 pontos limitados a 123 e ampliar todas as tabelas por pista.
+  - Também ficou registrado: a imagem do menu é `UI/cmn/menu/ym_CoursePict_<sufixo>^u.bntx`, com uma lista fixa de sufixos (48 pistas base, 8 arenas, DLC01–48, Random); o fundo do troféu é `UI/cmn/ending/ym_AwardBG_<nome>_00^o.bntx`; a música vem de nomes `pBGM_…` no binário, escolhidos por ID.
 - **Consequência para um conjunto próprio do CTGP:**
   - cabem até 15 pistas novas sem ampliar o espaço de IDs, mas o vetor original de copas não tem vaga livre (25 lugares: 24 copas de corrida e a de batalha; a etapa 1 acima abre 16) e a tela de copas só tem duas páginas de 12;
   - as 64 pistas do CTGP como pistas novas exigiriam ampliar o enum e os 129 pontos limitados a 123, o vetor de copas (131 pontos) e a tela de copas (terceira página), e separar os recordes do save.

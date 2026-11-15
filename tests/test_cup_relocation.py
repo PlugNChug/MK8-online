@@ -42,8 +42,35 @@ class CupPatchTests(unittest.TestCase):
         self.units = dict(C.UNITS)
         self.addCleanup(lambda: C.UNITS.update(self.units) or [C.UNITS.pop(k) for k in list(C.UNITS) if k not in self.units])
 
+    def test_clamps_followed_through_labels_jumps_and_calls(self):
+        reader = '''void f_7000bbbb00(Cpu *c) {
+    (void)(subs32(c, (uint32_t)c->x[9], 0x19ull));
+L_7000bbbb04:;
+    c->x[9] = (uint64_t)((COND_CC(c)) ? c->x[9] : (uint64_t)(0ull));
+    goto L_7000bbbb40;
+    (void)(subs32(c, (uint32_t)c->x[9], 0x19ull));
+    c->x[9] = (uint64_t)((COND_CC(c)) ? c->x[9] : (uint64_t)(0ull));
+L_7000bbbb40:;
+    c->x[8] = (uint64_t)(c->x[8] + (c->x[9] << 7));
+    (void)(subs32(c, (uint32_t)c->x[8], 0x19ull));
+    c->x[24] = (uint64_t)((COND_CC(c)) ? c->x[8] : (uint64_t)(0ull));
+    c->x[30] = 0x7000bbbb58ull; f_70008bf0b0(c);
+    c->x[8] = (uint64_t)(c->x[22] + (c->x[24] << 7));
+    return;
+}
+'''
+        C.UNITS['main_test.c'] = ('', {'7000bbbb00': (3, 2)})  # (two clamps meet at one computation)
+        out = C.patch(reader, 'main_test.c')
+        self.assertEqual(out.count('0x29ull'), 3)
+        self.assertIn('c->x[8] = (uint64_t)(mk8_cup_entry(c->x[8], c->x[9]));', out)
+        self.assertIn('c->x[8] = (uint64_t)(mk8_cup_entry(c->x[22], c->x[24]));', out)  # (x24 survives the call)
+        clobbered = reader.replace('c->x[24]', 'c->x[10]')  # (x10 does not: refused)
+        C.UNITS['main_test.c'] = ('', {'7000bbbb00': (3, 2)})
+        with self.assertRaises(ValueError):
+            C.patch(clobbered, 'main_test.c')
+
     def test_reader_clamps_widen_and_entries_redirect(self):
-        C.UNITS['main_test.c'] = ('', {'7000aaaa00': 2})
+        C.UNITS['main_test.c'] = ('', {'7000aaaa00': (2, 2)})
         out = C.patch('#include "cpu.h"\n' + READER, 'main_test.c')
         self.assertEqual(out.count('0x29ull));'), 3)  # (two widened, one that was 0x29 already)
         self.assertNotIn('0x19ull', out)
@@ -51,10 +78,10 @@ class CupPatchTests(unittest.TestCase):
         self.assertIn('c->x[10] = (uint64_t)(mk8_cup_entry(c->x[0], c->x[10]));', out)
         self.assertIn('(void)(subs32(c, (uint32_t)c->x[8], (uint32_t)((uint32_t)c->x[9])));', out)  # (in between: kept)
         self.assertLess(out.index('uint64_t mk8_cup_entry('), out.index('void f_7000aaaa00'))
-        C.UNITS['main_test.c'] = ('', {'7000aaaa00': 3})
+        C.UNITS['main_test.c'] = ('', {'7000aaaa00': (3, 3)})
         with self.assertRaises(ValueError):
             C.patch(READER, 'main_test.c')  # (a different number of clamps: refused)
-        C.UNITS['main_test.c'] = ('', {'7000aaaa00': 2})
+        C.UNITS['main_test.c'] = ('', {'7000aaaa00': (2, 2)})
         with self.assertRaises(ValueError):  # (a clamp whose entry computation is not there: refused)
             C.patch(READER.replace('c->x[9] = (uint64_t)(c->x[21] + (c->x[9] << 7));', 'c->x[9] = 0;'), 'main_test.c')
         with self.assertRaises(ValueError):
@@ -72,19 +99,22 @@ class CupPatchTests(unittest.TestCase):
         folder = GENERATED.parent
         sites = 0
         for unit in C.UNITS:
-            text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
-            out = C.patch(text, unit)
+            with tempfile.TemporaryDirectory() as tmp:  # (as the build passes it: some after toolchain/experimental.py)
+                from experimental import patch_no_mii_unit
+                built = patch_no_mii_unit(folder/unit, Path(tmp))
+                text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
+                out = C.patch_unit(built, Path(tmp)).read_text(encoding='utf-8')
             sites += out.count('mk8_cup_entry(c->x')
             selects = lambda t: Counter(l for l in t.split('\n') if 'COND_CC(c)) ?' in l)
             self.assertEqual(selects(text), selects(out))
             for match in C._functions(out):
                 if match.group(1) in C.UNITS[unit][1]:
-                    self.assertNotIn('0x19ull', match.group(2))
-        self.assertEqual(sites, 42)
+                    self.assertIsNone(C.CLAMP.search(match.group(2)))  # (no clamp left at 25)
+        self.assertEqual(sites, 56)
         with tempfile.TemporaryDirectory() as tmp:  # (main_082.c as the build passes it: after the Mii dialog hook)
             from experimental import patch_no_mii_unit
             out = C.patch_unit(patch_no_mii_unit(folder/'main_082.c', Path(tmp)), Path(tmp)).read_text(encoding='utf-8')
-            self.assertEqual(out.count('mk8_cup_entry(c->x'), 24)
+            self.assertEqual(out.count('mk8_cup_entry(c->x'), 26)
             self.assertIn('if (mk8_no_mii_renderer() && (uint32_t)c->x[8] == 0x21)', out)
         with tempfile.TemporaryDirectory() as tmp:
             changed = Path(tmp)/'main'/'main_100.c'
@@ -97,7 +127,8 @@ class CupPatchTests(unittest.TestCase):
             self.assertEqual(C.patch_unit(other, Path(tmp)/'out'), other)
 
 
-RT_H = '#include <stdint.h>\n#define LOG(...) ((void)0)\n'
+RT_H = ('#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n#define LOG(...) ((void)0)\n'
+        '#define FATAL(...) (fprintf(stderr, __VA_ARGS__), exit(70))\n')
 HARNESS = r'''
 #include <stdint.h>
 #include <stdlib.h>
