@@ -67,9 +67,13 @@ def sarc(files):
     return bytes(out)
 
 
+def all_slots():
+    return P.slots('base') + P.slots('dlc')
+
+
 def common_labels():
     values = {str(label): f'Cup {label}' for label, _, _ in P.BASE_CUPS + P.BCP_CUPS}
-    for _, _, _, label, _, _ in P.slots():
+    for _, _, _, label, _, _ in all_slots():
         values[str(label)] = f'Course {label}'
         values[str(label + 100)] = f'{TAG}Course {label}{END}'
     for label in P.PLATFORM_LABELS:
@@ -86,7 +90,7 @@ def write(path, data=b'x'):
 def fixture(root):
     """A 4.0.1-shaped RomFS with every slot, and a CTGP-shaped SD folder with its 64 courses."""
     romfs = root/'game/romfs'
-    for ct, cup, folders, label, music, picture in P.slots():
+    for ct, cup, folders, label, music, picture in all_slots():
         for folder in folders:
             for name in ('course_model.szs', 'course_kcl.szs', f'Course_{folder}.bars'):
                 write(romfs/'Course'/folder/name, b'original')
@@ -151,14 +155,22 @@ class CtgpPackTests(unittest.TestCase):
             P.set_texts(common, {'404': 'x'})
 
     def test_slots_cover_every_ctgp_course_once(self):
-        all_slots, base = P.slots(), P.slots(False)
-        self.assertEqual([s[0] for s in all_slots], list(range(64)))
-        self.assertEqual(len(base), 48)
-        folders = [f for s in all_slots for f in s[2]]
-        self.assertEqual(len(folders), len(set(folders)))
-        self.assertEqual(all_slots[0][2], ('Gu_FirstCircuit',))
-        self.assertEqual([s[2][0] for s in all_slots[48:52]], ['Cnsw_11', 'Cnsw_12', 'Cnsw_13', 'Cnsw_14'])
-        self.assertEqual(all_slots[56][2:], (('Cnsw_21',), 11709, ('Cnsw_21',), 'DLC09'))
+        base, dlc = P.slots('base'), P.slots('dlc')
+        self.assertEqual([s[0] for s in base], list(range(64)))
+        self.assertEqual([s[0] for s in dlc], list(range(48)))
+        for layout in (base, dlc):
+            folders = [f for s in layout for f in s[2]]
+            self.assertEqual(len(folders), len(set(folders)))
+        self.assertEqual(base[0][2], ('Gu_FirstCircuit',))
+        self.assertEqual([s[2][0] for s in base[48:52]], ['Cnsw_11', 'Cnsw_12', 'Cnsw_13', 'Cnsw_14'])
+        self.assertEqual(base[56][2:], (('Cnsw_21',), 11709, ('Cnsw_21',), 'DLC09'))
+        self.assertEqual(sorted(P.BCP_FOLDERS), sorted(f'Cnsw_{w}{n}' for w in range(1, 7) for n in range(1, 9)))
+        self.assertEqual(dlc[16][2:], (('Cnsw_31',), 11717, ('Cnsw_31',), 'DLC17'))  # Rock Cup: London Loop's slot
+        self.assertEqual(dlc[19][2][0], 'Cnsw_62')  # (the cups do not follow the folder numbers)
+        self.assertFalse(any(f.startswith('Cnsw_') for s in base[:48] for f in s[2]))
+        self.assertTrue(all(s[2][0].startswith('Cnsw_') for s in dlc))
+        with self.assertRaises(P.PackError):
+            P.slots('other')
         self.assertEqual(len(P.CT_NAMES), 64)
 
     def test_plan_maps_ctgp_courses_into_the_slots(self):
@@ -205,6 +217,27 @@ class CtgpPackTests(unittest.TestCase):
             label = next(s[3] for s in P.slots() if s[0] == unresolved[0])
             self.assertEqual(names[str(label)], f'CTGP {unresolved[0] + 1:02d}')
 
+    def test_dlc_layout_keeps_the_base_game_original(self):
+        with tempfile.TemporaryDirectory() as folder:
+            romfs, sd = fixture(Path(folder))
+            files = P.plan(P.locate(sd), romfs, 'dlc')
+            src = lambda rel: files[rel].read_bytes() if isinstance(files[rel], Path) else files[rel]
+            self.assertFalse([rel for rel in files if rel.startswith('Course/') and not rel.startswith('Course/Cnsw_')])
+            self.assertFalse(any('WU_FIRST_CIRCUIT' in rel or 'CupIconMushroom' in rel for rel in files))
+            self.assertEqual(src('Course/Cnsw_11/course_model.szs'), b'ct0-course_model.szs')
+            self.assertEqual(src('Course/Cnsw_62/course_model.szs'), b'ct19-course_model.szs')
+            self.assertEqual(src('Audio/Resource/Stream/pBGM_Cnsw_62_F.bfstm'), b'music19F')
+            self.assertEqual(src('UI/cmn/menu/ym_CoursePict_DLC20_00^u.bntx'), b'pict19')
+            self.assertEqual(src('UI/cmn/race/ym_CupIconCharger11_Nml^l.bntx'), b'icon11')
+            names, _ = texts(src('UI/USen/message.sarc'))
+            self.assertEqual(names['1301'], 'Cup 1301')  # the base game's cups and courses keep their names
+            self.assertEqual(names['1401'], 'Course 1401')
+            self.assertEqual(names['1461'], 'Wii')
+            self.assertEqual(names['11601'], 'CTGP cup 0')
+            self.assertEqual(names['11612'], 'CTGP cup 11')
+            self.assertEqual(names['11701'], 'GPDX Name 500100')
+            self.assertEqual(names['11820'], f'{TAG}Name 500117{END}')  # (slot 20: CT_13)
+
     def test_build_verify_and_import(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -231,6 +264,11 @@ class CtgpPackTests(unittest.TestCase):
             import_ctgp.import_pack(sd, romfs, local)  # reused as is, and the preference is kept
             self.assertEqual(json.loads((local/'ctgp.json').read_text()), {'enabled': False})
             self.assertEqual(sorted(p.name for p in (local/'ctgp').iterdir()), ['pack'])
+            other = import_ctgp.import_pack(sd, romfs, local, layout='dlc')  # another layout: built again
+            self.assertEqual((other['layout'], other['courses'], other['base_courses']), ('dlc', 48, 0))
+            self.assertNotEqual(other['identity'], manifest['identity'])
+            self.assertFalse((pack/'romfs/Course/Gu_FirstCircuit').exists())
+            self.assertEqual(manifest['layout'], 'base')
             with self.assertRaises(P.PackError):
                 P.locate(root/'game')
 

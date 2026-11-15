@@ -27,6 +27,8 @@ pub struct Status {
     pub courses: u64,
     pub base_courses: u64,
     pub names_verified: bool,
+    /// "base": in place of the base game's cups (+4 DLC cups); "dlc": in place of the DLC's cups only.
+    pub layout: String,
 }
 
 fn pack(local: &Path) -> PathBuf {
@@ -117,6 +119,7 @@ pub fn status(local: &Path, install: Option<&Installation>) -> Status {
         courses: 0,
         base_courses: 0,
         names_verified: false,
+        layout: String::new(),
     };
     let Some(install) = install else {
         return value;
@@ -134,6 +137,7 @@ pub fn status(local: &Path, install: Option<&Installation>) -> Status {
             value.courses = m["courses"].as_u64().unwrap_or(0);
             value.base_courses = m["base_courses"].as_u64().unwrap_or(0);
             value.names_verified = m["names_verified"].as_bool().unwrap_or(false);
+            value.layout = m["layout"].as_str().unwrap_or("base").to_string();
         }
         Ok((None, _)) => value.state = "missing",
         Err(error) => {
@@ -276,6 +280,7 @@ mod tests {
             ("ready", true, false)
         );
         assert_eq!((ready.courses, ready.base_courses), (64, 48));
+        assert_eq!(ready.layout, "base"); // (a pack from before the layouts)
         assert_eq!(launch_overlay(&local, &install).unwrap(), None); // imported but off by default
         set_enabled(&local, &install, true).unwrap();
         assert_eq!(

@@ -72,6 +72,30 @@ Nessa corrida 6.043 imagens (17 GB) foram criadas e descartadas: a rotatividade 
 
 `gameplay_verified=false`.
 
+### DLC importado e Fase B — 15/11/2026
+
+**Booster Course Pass importado:**
+- origem: `Downloads/…[0100152000023001][v65536].nsp`, 121 KB, com o `prod.keys` do `config.json`, por `toolchain/import_dlc.py`;
+- verificado e anexado ao candidato pela build `--runtime-only`.
+- **Pacote na disposição base:** a primeira copa do DLC mostrou "Moo Moo Mountain" (`CT_30`), correu a 60 FPS e trouxe o Lakitu do CTGP (`race-time-trial-ujfapcmy`).
+- **Tela de copas com DLC + CTGP:** "Boo Cup" no lugar da copa Cogumelo, com nomes e imagens das 4 pistas CTGP (`race-time-trial-f6_8i48_`).
+- **Os ícones das copas nessa tela continuam os originais.** Na tela de seleção eles vêm de dentro do `menu.sarc` do 4.0.1; os arquivos soltos `UI/cmn/race/ym_CupIcon*` que o pacote troca são os da corrida.
+
+**Segunda disposição: no lugar das copas do DLC** (`--layout dlc`, seletor no cartão do launcher):
+- as 12 copas do Booster Course Pass recebem as copas 1–12 do CTGP;
+- o jogo base fica 100% original, e com o DLC ativo há as 48 pistas originais e 48 do CTGP ao mesmo tempo;
+- as copas 13–16 do CTGP ficam de fora nessa disposição; trocar a disposição reimporta em segundos (hardlinks).
+
+A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o número da pasta (Rock Cup = `Cnsw_31`, `33`, `34`, `62`). Ela vem da tabela do próprio jogo, repetida pelo plugin, e foi conferida com os nomes `117xx` do 4.0.1 (11717 London Loop … 11720 Maple Treeway). A disposição base, que só usa as 4 primeiras copas do DLC, não muda: lá a ordem coincide.
+
+**Fase B (código) — o que a leitura do 4.0.1 mostrou:**
+- **Tabela de copas:** `main+0x12840b8` é a tabela estática de 24 ponteiros para os ícones (Mushroom…Thunder, DLC02–05, Charger00–11), com os ponteiros em relocações `R_AARCH64_RELATIVE` e não no dado.
+- **Limite fixo no código:** `f_700050ccc0` faz `min(copa, 0x17)` antes de ler essa tabela, ou seja, 24 copas fixas.
+- **Nomes de pistas:** `Gu_FirstCircuit_00`… em `main+0xee7de9` são montados por código (ADRP/ADD), sem tabela de ponteiros.
+- **O que acrescentar copas exige** (em vez de substituir vagas): ganchos em várias rotinas com limites fixos (24 copas, 96 pistas), nas tabelas de pista/copa, nos saves dimensionados para 96 pistas, nas páginas da tela de copas e no online. É engenharia reversa de semanas, com risco a saves.
+- **Plano:** antes, um teste nativo da tabela de ganchos em `FN_ENTER`; depois, cada limite com teste próprio.
+- **Ainda dependem desse trabalho:** botão aleatório, menus e copas extras do CTGP.
+
 ## PRs #18, #19 e #25 integradas na fix-chore — 15/11/2026
 
 - **#18 (gráficos, oclusão antes da renderização condicional)** e **#19 (áudio, rampa no início das vozes)**: merges sem conflito. A build do runtime (`--runtime-only`, 216 unidades) contém `mk8_oq_wait_pair(q);` em `exec.c` e `v->prev_volume = 0.f;` em `audio.c`. Seções de cada PR mais abaixo.

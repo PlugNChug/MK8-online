@@ -835,7 +835,6 @@
   "Importar CTGP…": "Importar CTGP…",
   "Importar novamente…": "Importar de nuevo…",
   "Log do CTGP": "Registro de CTGP",
-  "48 pistas ocupam as 12 copas do jogo base. Com o Booster Course Pass ativado, mais 16 ocupam as 4 primeiras copas do DLC; as outras 8 copas do DLC continuam originais. Com o CTGP ativado o jogo usa saves próprios, criados como cópia dos seus. Nas salas da Steam, todos precisam do mesmo pacote: o mesmo CTGP ativado ou todos sem ele.": "48 pistas ocupan las 12 copas del juego base. Con el Pase de pistas extra activado, otras 16 ocupan las 4 primeras copas del DLC; las otras 8 copas del DLC siguen siendo las originales. Con CTGP activado el juego usa sus propias partidas guardadas, creadas como copia de las tuyas. En las salas de Steam, todos necesitan el mismo paquete: el mismo CTGP activado o todos sin él.",
   "Baixe o CTGP Deluxe em": "Descarga CTGP Deluxe en",
   ", para uso pessoal. O MK8-online não distribui o pacote: ele é lido da sua cópia e fica só neste computador.": ", para uso personal. MK8-online no distribuye el paquete: se lee de tu copia y se queda solo en este equipo.",
   "Pasta selecionada.": "Carpeta seleccionada.",
@@ -869,5 +868,12 @@
   "A sala usa o CTGP Deluxe. Importe e ative o CTGP em Configurações para entrar.": "Esta sala usa CTGP Deluxe. Importa y activa CTGP en Configuración para entrar.",
   "A sala não usa o CTGP Deluxe. Desative o CTGP em Configurações para entrar.": "Esta sala no usa CTGP Deluxe. Desactiva CTGP en Configuración para entrar.",
   "A sala usa outra versão do CTGP Deluxe. Importe a mesma versão para entrar.": "Esta sala usa otra versión de CTGP Deluxe. Importa la misma versión para entrar.",
-  "Identidade do CTGP inválida.": "Identidad de CTGP no válida."
+  "Identidade do CTGP inválida.": "Identidad de CTGP no válida.",
+  "No lugar das copas do jogo base: 48 pistas nas 12 copas do jogo e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC. No lugar das copas do DLC: 48 pistas nas 12 copas do Booster Course Pass e o jogo base continua original (requer o DLC importado e ativado). Trocar a disposição importa o pacote de novo, em segundos. Com o CTGP ativado o jogo usa saves próprios, criados como cópia dos seus. Nas salas da Steam, todos precisam do mesmo pacote: o mesmo CTGP ativado ou todos sem ele.": "En lugar de las copas del juego base: 48 pistas en las 12 copas del juego y, con el Pase de pistas extra activado, otras 16 en las 4 primeras copas del DLC. En lugar de las copas del DLC: 48 pistas en las 12 copas del Pase de pistas extra, y el juego base sigue siendo el original (requiere el DLC importado y activado). Cambiar la disposición vuelve a importar el paquete, en segundos. Con CTGP activado el juego usa sus propias partidas guardadas, creadas como copia de las tuyas. En las salas de Steam, todos necesitan el mismo paquete: el mismo CTGP activado o todos sin él.",
+  "Onde colocar as pistas do CTGP": "Dónde colocar las pistas de CTGP",
+  "No lugar das copas do jogo base (48 pistas; +16 com o DLC)": "En lugar de las copas del juego base (48 pistas; +16 con el DLC)",
+  "No lugar das copas do DLC (48 pistas; o jogo base fica original)": "En lugar de las copas del DLC (48 pistas; el juego base sigue siendo el original)",
+  "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las.": "Las copas de CTGP ocupan el lugar de las del DLC: importa y activa el Pase de pistas extra para verlas.",
+  "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo.": "{0} pistas de CTGP en las copas del DLC; el juego base sigue siendo el original. Se aplica al iniciar el juego.",
+  "Disposição das copas do CTGP inválida.": "Disposición de las copas de CTGP no válida."
 }

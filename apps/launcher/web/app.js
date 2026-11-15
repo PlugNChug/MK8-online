@@ -363,7 +363,8 @@ $("dlc-import").onclick = () => action(async () => {
 $("ctgp-import").onclick = () => action(async () => {
   const source = $("ctgp-source").value.trim();
   if (!source) throw new Error(i18n.t("Selecione a pasta extraída do CTGP Deluxe."));
-  const result = await api("ctgp/import", { source, reinstall: !!lastCtgp?.installed });
+  const layout = $("ctgp-layout").value;
+  const result = await api("ctgp/import", { source, reinstall: !!lastCtgp?.installed, layout });
   lastCtgpImport = "running";
   return result;
 });
@@ -375,6 +376,7 @@ $("ctgp-enabled").onchange = () => action(async () => {
   }
 });
 let lastCtgp = null;
+$("ctgp-layout").addEventListener("change", () => { $("ctgp-layout").dataset.touched = "1"; });
 let lastCtgpImport = "idle";
 $("dlc-enabled").onchange = () => action(async () => {
   try {
@@ -393,6 +395,10 @@ function renderCtgp(status, busyNow, running) {
   $("ctgp-enabled").checked = ctgp.enabled;
   $("ctgp-enabled").disabled = busyNow || !ctgp.installed;
   $("ctgp-source").disabled = busyNow;
+  $("ctgp-layout").disabled = busyNow || ctgp.state === "unprepared" || ctgp.state === "unsupported";
+  if (ctgp.installed && ctgp.layout && document.activeElement !== $("ctgp-layout") && !$("ctgp-layout").dataset.touched)
+    $("ctgp-layout").value = ctgp.layout;
+  const dlcOn = !!status.dlc?.enabled;
   $("ctgp-import").disabled = busyNow || ctgp.state === "unprepared" || ctgp.state === "unsupported";
   i18n.text($("ctgp-import"), ctgp.state === "ready" ? "Importar novamente…"
     : ctgp.state === "invalid" ? "Reparar importação…" : "Importar CTGP…");
@@ -404,6 +410,11 @@ function renderCtgp(status, busyNow, running) {
     : ctgp.state === "unsupported" ? "Atualize a build para usar o CTGP."
     : ctgp.state === "unprepared" ? "Prepare o jogo antes de importar o CTGP."
     : ctgp.state === "invalid" ? ctgp.detail
+    : ctgp.installed && ctgp.enabled && ctgp.layout === "dlc" && !dlcOn
+      ? "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las."
+    : ctgp.installed && ctgp.layout === "dlc" ? (ctgp.enabled
+      ? "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo."
+      : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
     : ctgp.installed ? (ctgp.enabled ? "{0} pistas do CTGP no lugar das originais. Vale ao iniciar o jogo."
       : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
     : "Importe a pasta extraída do ZIP oficial do CTGP Deluxe.");

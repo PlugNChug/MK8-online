@@ -139,6 +139,7 @@ impl Setup {
         source: &Path,
         romfs: &Path,
         reinstall: bool,
+        layout: &str,
     ) -> Result<(), String> {
         let mut step = Step::new(
             "Importação do CTGP Deluxe",
@@ -152,6 +153,8 @@ impl Setup {
                 &romfs,
                 &"--local",
                 &local,
+                &"--layout",
+                &layout,
             ],
         );
         if reinstall {

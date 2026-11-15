@@ -727,6 +727,15 @@ impl App {
                         .map(|value| value.as_bool().ok_or("Opção de reinstalação inválida."))
                         .transpose()?
                         .unwrap_or(false);
+                    let layout = match value
+                        .get("layout")
+                        .and_then(Value::as_str)
+                        .unwrap_or("base")
+                    {
+                        "base" => "base",
+                        "dlc" => "dlc",
+                        _ => return Err("Disposição das copas do CTGP inválida.".into()),
+                    };
                     drop(guards);
                     drop(pipeline);
                     self.ctgp_import.start_ctgp(
@@ -735,6 +744,7 @@ impl App {
                         &source,
                         &romfs,
                         reinstall,
+                        layout,
                     )?;
                     return Ok(json!({"message": "Importação do CTGP iniciada."}));
                 }

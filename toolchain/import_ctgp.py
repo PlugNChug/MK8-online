@@ -18,7 +18,7 @@ from repair import cleanup_stale, is_link, remove_owned
 from storage import GIB, require_space
 
 
-def import_pack(source, romfs, local, reinstall=False):
+def import_pack(source, romfs, local, reinstall=False, layout='base'):
     local = Path(local).resolve()
     folder = local / 'ctgp'
     target = folder / 'pack'
@@ -29,13 +29,17 @@ def import_pack(source, romfs, local, reinstall=False):
     if target.exists() and not reinstall:
         try:
             manifest = ctgp_pack.verify(target)
-            print(f"CTGP já importado ({manifest['courses']} pistas); reaproveitado.", flush=True)
-            return manifest
+            if manifest.get('layout', 'base') == layout:
+                print(f"CTGP já importado ({manifest['courses']} pistas); reaproveitado.", flush=True)
+                return manifest
+            print('Outra disposição das copas pedida; montando de novo.', flush=True)
         except (ValueError, OSError, KeyError) as error:
             print(f'Importação anterior incompleta ({error}); montando de novo.', flush=True)
     title = ctgp_pack.locate(source)
     print(f'CTGP encontrado em {title}.', flush=True)
-    files = ctgp_pack.plan(title, romfs)
+    if layout not in ctgp_pack.LAYOUTS:
+        raise ValueError(f'Disposição desconhecida: {layout}')
+    files = ctgp_pack.plan(title, romfs, layout)
     same_disk = os.stat(title).st_dev == os.stat(folder).st_dev
     copy = 0 if same_disk else sum(p.stat().st_size for p in files.values() if isinstance(p, Path))
     copy += sum(len(b) for b in files.values() if isinstance(b, bytes))
@@ -43,15 +47,19 @@ def import_pack(source, romfs, local, reinstall=False):
     print(f"Montando {len(files)} arquivos ({'hardlinks' if same_disk else f'cópia de {copy / GIB:.1f} GiB'}).",
           flush=True)
     stage = folder / f'pack-{time.time_ns()}'
-    manifest = ctgp_pack.build(title, romfs, stage, link=same_disk)
+    manifest = ctgp_pack.build(title, romfs, stage, link=same_disk, layout=layout)
     ctgp_pack.verify(stage)
     if target.exists():
         remove_owned(target, folder)
     stage.rename(target)
     atomic_json(local / 'ctgp.json', {'enabled': True})
-    print(f"CTGP Deluxe importado: {manifest['base_courses']} pistas no jogo base, "
-          f"{manifest['courses'] - manifest['base_courses']} nas copas do Booster Course Pass (com o DLC ativo).",
-          flush=True)
+    if layout == 'dlc':
+        print(f"CTGP Deluxe importado: {manifest['courses']} pistas nas copas do Booster Course Pass (com o DLC "
+              "ativo); o jogo base fica original.", flush=True)
+    else:
+        print(f"CTGP Deluxe importado: {manifest['base_courses']} pistas no jogo base, "
+              f"{manifest['courses'] - manifest['base_courses']} nas copas do Booster Course Pass (com o DLC ativo).",
+              flush=True)
     if not manifest['names_verified']:
         print('Aviso: versão do CTGP diferente da 1.1.1; os nomes das pistas podem não corresponder.', flush=True)
     return manifest
@@ -63,10 +71,12 @@ def main():
     parser.add_argument('--romfs', required=True, type=Path, help='RomFS do MK8 4.0.1 preparado')
     parser.add_argument('--local', required=True, type=Path)
     parser.add_argument('--reinstall', action='store_true')
+    parser.add_argument('--layout', choices=sorted(ctgp_pack.LAYOUTS), default='base',
+                        help='base: no lugar das copas do jogo base; dlc: no lugar das copas do DLC')
     args = parser.parse_args()
     with exclusive_build(args.local):
         try:
-            import_pack(args.source, args.romfs, args.local, args.reinstall)
+            import_pack(args.source, args.romfs, args.local, args.reinstall, args.layout)
         except (ValueError, OSError) as error:
             print(f'Erro: {error}', flush=True)
             sys.exit(1)

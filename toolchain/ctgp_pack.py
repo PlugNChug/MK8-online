@@ -6,9 +6,11 @@ CTGP Deluxe 1.1.1 targets the 32-bit MK8 3.0.3: its Skyline plugin registers 64 
 Mario Kart Stadium (docs/STATUS.md, 15/11/2026). So the pack is built as a RomFS overlay that puts CTGP courses into
 existing course slots:
 
-- the 48 base-game slots take CTGP cups 1-12 (CT_00..CT_2F), cup by cup;
-- the first 16 Booster Course Pass slots take CTGP cups 13-16 (CT_30..CT_3F). They only show with the DLC enabled
-  (its RomFS holds just contents.dat and version.txt; the courses are in the base RomFS), so the DLC stays optional;
+- layout 'base': the 48 base-game slots take CTGP cups 1-12 (CT_00..CT_2F), cup by cup, and the first 16 Booster
+  Course Pass slots take CTGP cups 13-16 (CT_30..CT_3F). Those only show with the DLC enabled (its RomFS holds just
+  contents.dat and version.txt; the courses are in the base RomFS), so the DLC stays optional;
+- layout 'dlc': the 12 Booster Course Pass cups take CTGP cups 1-12 and the base game stays original: with the DLC
+  enabled, the 48 original courses and 48 CTGP courses at once (CTGP cups 13-16 are left out);
 - per slot: the course folder (minus CTGP's own sound bank, the slot's stays), its music (N/F and variants), its
   course picture; the cup icons; and the names in every language's message.sarc (the 4.0.1 file with CTGP's course
   and cup names written into the slot's labels; CTGP's own message.sarc, built for 3.0.3, is not used);
@@ -79,11 +81,18 @@ BASE_CUPS = [
     (1312, 'DLC05', [('D3ds_NeoBowserCity', 1493, '3DS_NEOBOWSERCITY'), ('Dagb_RibbonRoad', 1494, 'GBA_RIBBONROAD'),
                      ('Du_Metro', 1495, 'WU_METRO'), ('Du_BigBlue', 1496, 'WU_BIGBLUE')]),
 ]
-# Booster Course Pass: the first four cups (waves 1-2). Course pictures DLC01..DLC16 belong to Cnsw_11..18, 21..28.
+# Booster Course Pass, in cup order: the course folder of pictures DLC01..DLC48 (the game's own table, as the
+# CTGP plugin repeats it). Names 11701.. and cups 11601.. (icons Charger00..11) follow the same order.
+BCP_FOLDERS = ['Cnsw_' + n for n in (
+    '11', '12', '13', '14', '15', '16', '17', '18', '21', '22', '23', '24', '25', '26', '27', '28',
+    '31', '33', '34', '62', '35', '32', '37', '38', '41', '47', '42', '44', '55', '43', '36', '45',
+    '65', '46', '63', '58', '48', '53', '52', '61', '54', '56', '66', '64', '51', '67', '57', '68')]
 BCP_CUPS = [(11601 + c, f'Charger{c:02d}',
-             [(f'Cnsw_{wave}{n}', 11701 + 4 * c + k, f'Cnsw_{wave}{n}', f'DLC{4 * c + k + 1:02d}')
-              for k, (wave, n) in enumerate([(1 + c // 2, 1 + 4 * (c % 2) + i) for i in range(4)])])
-            for c in range(4)]
+             [(BCP_FOLDERS[4 * c + k], 11701 + 4 * c + k, BCP_FOLDERS[4 * c + k], f'DLC{4 * c + k + 1:02d}')
+              for k in range(4)])
+            for c in range(12)]
+# Where CTGP's cups go, in CTGP cup order.
+LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS}
 PLATFORM_LABELS = range(1461, 1469)  # Wii, GBA, DS, 3DS, N64, SNES, GCN, Tour: retro prefixes shown before a name
 # CTGP files verified to load on 4.0.1 outside the course slots (race-time-trial-ssw00gbi, -lzz6p1u3)
 EXTRAS = ['Audio/Resource/Stream/BGM_MENU_LOCAL.bfstm', 'Audio/Resource/Stream/BGM_MENU_SINGLE_MULTI.bfstm',
@@ -238,11 +247,12 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def slots(dlc_slots=True):
+def slots(layout='base'):
     """[(ct index, cup index, folders, name label, music bases, picture)], cup by cup."""
+    if layout not in LAYOUTS:
+        raise PackError(f'Disposição desconhecida: {layout}')
     out = []
-    cups = BASE_CUPS + (BCP_CUPS if dlc_slots else [])
-    for c, (_, _, courses) in enumerate(cups):
+    for c, (_, _, courses) in enumerate(LAYOUTS[layout]):
         for k, course in enumerate(courses):
             folders, label, music = course[0], course[1], course[2]
             picture = course[3] if len(course) > 3 else folders
@@ -252,7 +262,7 @@ def slots(dlc_slots=True):
     return out
 
 
-def plan(title, romfs):
+def plan(title, romfs, layout='base'):
     """Every overlay file: (overlay path, source path or bytes). Validates both trees first."""
     title, romfs = Path(title), Path(romfs)
     ct_romfs = title / 'romfs'
@@ -265,7 +275,7 @@ def plan(title, romfs):
         raise PackError('RomFS do MK8 4.0.1 não encontrado.')
     files = {}
     stream = romfs / 'Audio/Resource/Stream'
-    for ct, cup, folders, label, music, picture in slots():
+    for ct, cup, folders, label, music, picture in slots(layout):
         src = ct_romfs / f'Course/CT_{ct:02X}'
         for folder in folders:
             if not (romfs / 'Course' / folder).is_dir():
@@ -283,7 +293,7 @@ def plan(title, romfs):
         pict = ct_romfs / f'UI/cmn/menu/ym_CoursePict_CT_{ct:02X}_00^u.bntx'
         if pict.is_file() and (romfs / f'UI/cmn/menu/ym_CoursePict_{picture}_00^u.bntx').is_file():
             files[f'UI/cmn/menu/ym_CoursePict_{picture}_00^u.bntx'] = pict
-    for c, (_, icon, _) in enumerate(BASE_CUPS + BCP_CUPS):
+    for c, (_, icon, _) in enumerate(LAYOUTS[layout]):
         for variant in ICON_VARIANTS:
             src = ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c]}{variant}'
             if src.is_file() and (romfs / f'UI/cmn/race/ym_CupIcon{icon}{variant}').is_file():
@@ -295,7 +305,7 @@ def plan(title, romfs):
         target = romfs / f'UI/{lang}/message.sarc'
         if target.is_file():
             files[f'UI/{lang}/message.sarc'] = messages(target, ct_romfs / f'UI/{lang}/message.sarc',
-                                                        ct_romfs / 'UI/USen/message.sarc')
+                                                        ct_romfs / 'UI/USen/message.sarc', layout)
     return files
 
 
@@ -317,24 +327,25 @@ def ctgp_names(ctgp_sarc):
     return names, cups
 
 
-def messages(target, ctgp_sarc, fallback):
+def messages(target, ctgp_sarc, fallback, layout='base'):
     """The 4.0.1 message.sarc of one language with CTGP's course and cup names in the slots' labels."""
     names, cups = ctgp_names(ctgp_sarc if Path(ctgp_sarc).is_file() else fallback)
     parsed = sarc_read(Path(target).read_bytes())
     common = next(blob for name, _, _, blob, _ in parsed['files'] if name == 'Common.msbt')
-    values = {str(label): '' for label in PLATFORM_LABELS}
-    for c, (cup_label, _, _) in enumerate(BASE_CUPS + BCP_CUPS):
+    # (the retro prefixes, Wii, GBA..., belong to the base game's slots: emptied only when CTGP takes them)
+    values = {str(label): '' for label in PLATFORM_LABELS} if layout == 'base' else {}
+    for c, (cup_label, _, _) in enumerate(LAYOUTS[layout]):
         values[str(cup_label)] = cups[c]
-    for ct, _, _, label, _, _ in slots():
+    for ct, _, _, label, _, _ in slots(layout):
         values[str(label)] = names[ct]
         values[str(label + 100)] = names[ct]
     return sarc_write(parsed, {'Common.msbt': set_texts(common, values)})
 
 
-def build(title, romfs, output, link=True):
+def build(title, romfs, output, link=True, layout='base'):
     """Writes the overlay (romfs/ + manifest.json) into output, which must not exist. Returns the manifest."""
     title, output = locate(title), Path(output)
-    files = plan(title, romfs)
+    files = plan(title, romfs, layout)
     stage = output.with_name(output.name + '.stage')
     if output.exists() or stage.exists():
         raise PackError(f'Destino já existe: {output}')
@@ -361,10 +372,11 @@ def build(title, romfs, output, link=True):
             'schema': 1, 'kind': 'ctgp-deluxe', 'title': TITLE, 'source': str(title),
             'plugin_sha256': sha256(plugin) if plugin.is_file() else None,
             'names_verified': sha256(plugin) == PLUGIN_111 if plugin.is_file() else False,
-            'courses': len(slots()), 'base_courses': len(slots(False)),
+            'layout': layout, 'courses': len(slots(layout)),
+            'base_courses': sum(1 for s in slots(layout) if not s[2][0].startswith('Cnsw_')),
             'files': record, 'gameplay_verified': False,
         }
-        manifest['identity'] = hashlib.sha256(json.dumps({k: manifest[k] for k in ('plugin_sha256', 'files')},
+        manifest['identity'] = hashlib.sha256(json.dumps({k: manifest[k] for k in ('plugin_sha256', 'layout', 'files')},
                                                          sort_keys=True).encode()).hexdigest()
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=1), encoding='utf-8')
         stage.rename(output)

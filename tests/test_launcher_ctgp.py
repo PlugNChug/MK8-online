@@ -97,7 +97,7 @@ class LauncherCtgpTests(unittest.TestCase):
         page.locator("#ctgp-import").click()
         expect(page.locator("#ctgp-state")).to_have_text("Importando…")
         expect(page.locator("#ctgp-import")).to_be_disabled()
-        self.assertEqual(calls, [("import", {"source": "D:/Jogos/CTGPDX", "reinstall": False})])
+        self.assertEqual(calls, [("import", {"source": "D:/Jogos/CTGPDX", "reinstall": False, "layout": "base"})])
         state["ctgp"].update(state="ready", installed=True, enabled=True, courses=64, base_courses=48,
                              names_verified=True)
         state["ctgp_import"]["state"] = "done"
@@ -113,6 +113,21 @@ class LauncherCtgpTests(unittest.TestCase):
         expect(page.locator("#ctgp-enabled")).to_be_disabled(timeout=5000)
         expect(page.locator("#ctgp-hint")).to_have_text("Feche o jogo para alterar o CTGP.")
         state["game_pid"] = None
+        # The DLC layout: the base game stays original, and the card says the DLC must be on to see CTGP's cups.
+        state["ctgp"].update(enabled=True, layout="dlc", courses=48, base_courses=0)
+        state["dlc"] = {"state": "missing", "installed": False, "enabled": False, "detail": ""}
+        expect(page.locator("#ctgp-hint")).to_have_text(
+            "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las.", timeout=5000)
+        expect(page.locator("#ctgp-layout")).to_have_value("dlc")
+        state["dlc"].update(state="ready", installed=True, enabled=True)
+        expect(page.locator("#ctgp-hint")).to_have_text(
+            "48 pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo.", timeout=5000)
+        page.locator("#ctgp-source").fill("D:/Jogos/CTGPDX")
+        page.locator("#ctgp-layout").select_option("base")
+        page.locator("#ctgp-import").click()
+        self.assertEqual(calls[-1], ("import", {"source": "D:/Jogos/CTGPDX", "reinstall": True, "layout": "base"}))
+        state["ctgp_import"]["state"] = "done"
+        state["ctgp"].update(enabled=False, layout="base", courses=64, base_courses=48)
         for language, text in (("en", "Original game. Enable it to play the 64 CTGP courses."),
                                ("es", "Juego original. Actívalo para jugar las 64 pistas de CTGP.")):
             page.locator("#language").select_option(language)
