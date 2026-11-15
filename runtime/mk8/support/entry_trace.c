@@ -2,7 +2,7 @@
 // funções guest escolhidas, com x0..x3, o chamador e, se pedido, bytes da memória apontada por um registrador.
 // Não altera registradores, memória nem fluxo do jogo.
 //
-// MK8_TRACE_ENTRY=<endereço hex>[:x<reg>:<bytes>][,...]   ex.: 700043c2e8:x1:48,7000418ed0
+// MK8_TRACE_ENTRY=<endereço hex>[:x<reg>[+<deslocamento hex>]:<bytes>][,...]   ex.: 700043c2e8:x1:48,700089ec04:x2+180:64
 // MK8_TRACE_ENTRY_MAX=<n>: entradas registradas por função (padrão 64).
 // Liga o gancho FN_ENTER de toda função (como o perfilador LARECOMP_FNPROF), então o jogo fica mais lento.
 #include "rt.h"
@@ -18,6 +18,7 @@ extern volatile int g_fnprof;
 static struct {
     uint64_t addr;
     int reg, bytes;
+    uint32_t offset;
     _Atomic int seen;
 } g_trace[MK8_TRACE_MAX];
 static int g_trace_n = -1, g_trace_limit = 64, g_trace_profiling;
@@ -30,14 +31,21 @@ int mk8_trace_entry_parse(const char *spec) {
         uint64_t addr = strtoull(p, &end, 16);
         if (end == p || addr < GUEST_LO || addr >= GUEST_HI) return g_trace_n = 0;
         int reg = -1, bytes = 0;
+        uint32_t offset = 0;
         if (*end == ':') {
             if (end[1] != 'x') return g_trace_n = 0;
             reg = (int)strtol(end + 2, &end, 10);
+            if (*end == '+') {
+                unsigned long off = strtoul(end + 1, &end, 16);
+                if (off > 0x10000) return g_trace_n = 0;
+                offset = (uint32_t)off;
+            }
             if (reg < 0 || reg > 30 || *end != ':') return g_trace_n = 0;
             bytes = (int)strtol(end + 1, &end, 10);
             if (bytes <= 0 || bytes > 256) return g_trace_n = 0;
         }
         g_trace[g_trace_n].addr = addr, g_trace[g_trace_n].reg = reg, g_trace[g_trace_n].bytes = bytes;
+        g_trace[g_trace_n].offset = offset;
         atomic_store(&g_trace[g_trace_n].seen, 0);
         g_trace_n++;
         p = end;
@@ -83,7 +91,7 @@ int mk8_trace_entry(uint64_t addr, uint64_t lr) {
         uint64_t x[4] = {c->x[0], c->x[1], c->x[2], c->x[3]}, at = 0;
         const uint8_t *mem = NULL;
         if (g_trace[i].reg >= 0) {
-            at = c->x[g_trace[i].reg];
+            at = c->x[g_trace[i].reg] + g_trace[i].offset;
             if (at >= GUEST_LO && at + (uint64_t)g_trace[i].bytes <= GUEST_HI) mem = (const uint8_t *)(uintptr_t)at;
         }
         char line[1024];

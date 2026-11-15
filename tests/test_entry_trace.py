@@ -59,6 +59,12 @@ int main(void) {
     nlogged = 0;
     mk8_trace_entry(0x700043c2e8ull, 0);
     if (!strstr(logged[0], "fora da memória guest")) return 10;
+    cpu.x[1] = (uint64_t)(uintptr_t)record;  // (an offset from the register: x1+4, the name label)
+    if (mk8_trace_entry_parse("700043c2e8:x1+4:4") != 1 || mk8_trace_entry_parse("700043c2e8:x1+zz:4")) return 11;
+    mk8_trace_entry_parse("700043c2e8:x1+4:4");
+    nlogged = 0;
+    mk8_trace_entry(0x700043c2e8ull, 0);
+    if (nlogged != 1 || !strstr(logged[0], "[x1] 79050000") || strstr(logged[0], "10000000")) { puts(logged[0]); return 12; }
     return 0;
 }
 '''
