@@ -108,6 +108,25 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
 
 **Fase B, parte com código — não iniciada, por decisão de escopo:** copas além de 24, botão aleatório e menus próprios do CTGP. A estrutura de gancho entra junto com o primeiro limite real alterado, no padrão já usado (`yaz0_native.py`: patch da unidade gerada validado por hash), e não como infraestrutura sem uso.
 
+**Fase B, passo 1 — rastreamento com o jogo rodando (branch `ctgp-phase-b`, 16/11/2026, somente leitura):**
+- **Ferramentas:**
+  - `scripts/fnprof-diff.py` compara dois perfis `LARECOMP_FNPROF` e aponta a unidade gerada de cada função;
+  - `MK8_TRACE_ENTRY=<endereço>[:x<reg>:<bytes>]` (`runtime/mk8/support/entry_trace.c`, ligado em `fnprof_hit` por `toolchain/entry_trace.py`) registra x0–x3, o chamador e bytes apontados por um registrador na entrada de funções escolhidas. Não muda registradores, memória nem fluxo; sem a variável o gancho fica desligado. Teste nativo: `tests/test_entry_trace.py`.
+- **Perfis da tela de copas** (jogo base + DLC, sem CTGP, quadros 1760–1880): parado 2.805 funções; movendo o cursor por 6 copas 3.233 (428 novas); trocando de página (R).
+  - 15 funções rodam exatamente 24 vezes (4 pistas × 6 movimentos). Entre elas `f_700043c2e8` (`main_089.c`), que recebe em x1 o registro da pista e usa o campo `+8` mais 100 como mensagem (rótulos 14xx → 15xx).
+- **Registro de copa observado** (`MK8_TRACE_ENTRY=700043c2e8:x1:64`): por copa, 4 registros de 16 bytes `{ID da pista u32, -1, rótulo do nome u32, 0}`, com as copas a 0x80 bytes umas das outras num objeto da heap.
+  - Cogumelo = IDs 27, 28, 19, 17 (rótulos 1401–1404); Flor = 16, 18, 20, 21; Estrela = 26, 29, 25, 24.
+  - Os IDs internos das pistas não seguem a ordem das copas.
+- **Construtor:** `f_70003f96b0` (`main_081.c`) é a única função com os 96 rótulos de pista.
+  - Grava as copas como `objeto + copa × 0x80`, com índice limitado a 25 (`< 0x19`) e contagem em `+0x1430`.
+  - Grava também um mapa pista → (copa, posição) de 8 bytes por ID, limitado a 123 (`< 0x7b`).
+- **Tamanho do trabalho para copas extras (contagem no código gerado):**
+  - o acesso ao vetor de copas com o limite de 25 aparece em 131 pontos de 10 funções;
+  - o limite de 123 IDs de pista aparece em 129 pontos de 17 funções (entre elas `f_700050ccc0`, a dos ícones);
+  - ainda faltam o caminho ID → pasta (`f_700089ed04`, por objetos virtuais) e os saves.
+  - 16 copas do CTGP exigiriam 40 copas (o objeto tem lugar para 25) e IDs de pista ≥ 123: o objeto teria de ser realocado ou ampliado e todos esses pontos corrigidos.
+- **Próximo passo (2):** localizar a alocação do objeto de copas (tamanho fixo), o mapa ID → pasta e os vetores do save indexados por ID de pista ou copa. Só depois decidir entre ampliar o objeto existente ou criar um segundo conjunto de copas só para o CTGP, com recordes num arquivo próprio.
+
 **Fase B (código) — mapa da engenharia reversa (16/11/2026), sem alteração no jogo:**
 - **Não há tabela estática copa → pista:** nenhuma permutação de 0–95 (nem de 0–47) em u8/u16/u32 nos segmentos de dados do `main`. O mapeamento é montado em tempo de execução.
 - **Caminho das pistas:** `Course/%s/%s` (`main+0xf0d209`) e `Course/%s` (`+0xf0d223`) são usados por `f_700089ed04` (`main_186.c`). Ela pega o objeto da corrida via `0x70012f9e98`, lê um índice com limite em `+0x58` (u16), lê um byte em `+0x6a` e chama um método virtual (`rt_dispatch`). O nome da pasta vem de um objeto, não de uma tabela.
