@@ -146,6 +146,8 @@ aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP 
 1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
 2. **Configurações → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
    No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
+   Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC) ou **no lugar das
+   copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado).
 3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. O jogo, o DLC e os seus saves nunca são
    alterados; com o CTGP ligado o jogo usa saves próprios, criados uma vez como cópia dos seus.
 

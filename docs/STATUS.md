@@ -85,6 +85,10 @@ Nessa corrida 6.043 imagens (17 GB) foram criadas e descartadas: a rotatividade 
 - as 12 copas do Booster Course Pass recebem as copas 1–12 do CTGP;
 - o jogo base fica 100% original, e com o DLC ativo há as 48 pistas originais e 48 do CTGP ao mesmo tempo;
 - as copas 13–16 do CTGP ficam de fora nessa disposição; trocar a disposição reimporta em segundos (hardlinks).
+- **Testado:**
+  - página do jogo base: copa Cogumelo e pistas originais, e a corrida carregou `Gu_FirstCircuit` original (`race-time-trial-m8_mnqio`);
+  - página do DLC (R): "Boo Cup" com as 4 pistas CTGP, e a corrida carregou `Cnsw_11` com os arquivos do CTGP (`race-time-trial-7b9v6o3a`).
+- **Limite visual dessa disposição:** os nomes do CTGP herdam o rótulo de plataforma da vaga ("Tour", "3DS", "N64", "Wii"). Esses rótulos (1461–1468) são os mesmos das pistas originais do jogo base, que nessa disposição continuam valendo.
 
 A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o número da pasta (Rock Cup = `Cnsw_31`, `33`, `34`, `62`). Ela vem da tabela do próprio jogo, repetida pelo plugin, e foi conferida com os nomes `117xx` do 4.0.1 (11717 London Loop … 11720 Maple Treeway). A disposição base, que só usa as 4 primeiras copas do DLC, não muda: lá a ordem coincide.
 

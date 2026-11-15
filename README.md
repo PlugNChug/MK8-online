@@ -136,6 +136,8 @@ courses, music and cups can: the launcher puts the 64 CTGP courses into existing
 1. Download CTGP Deluxe from [ctgpdx.com](https://www.ctgpdx.com/download) (personal use) and extract the ZIP.
 2. **Settings → CTGP Deluxe**: choose the extracted folder (the one with `atmosphere/`) and click **Import CTGP…**.
    On the same disk as the data folder it takes seconds and no extra space (hard links).
+   Choose where the courses go: **in place of the base game's cups** (48 courses, +16 with the DLC) or **in place
+   of the DLC's cups** (48 courses next to the 48 original ones; needs the Booster Course Pass imported and enabled).
 3. **Enable CTGP Deluxe** switches it on; turn it off to play the original game. The game, the DLC and your saves are
    never changed; with CTGP on, the game uses its own saves, created once as a copy of yours.
 
