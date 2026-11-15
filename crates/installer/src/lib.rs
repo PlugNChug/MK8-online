@@ -1,4 +1,5 @@
 use mk8_manifest::{verify, Config, Installation, Result};
+pub mod ctgp;
 pub mod dlc;
 use serde::Serialize;
 pub mod avatar;
@@ -214,8 +215,14 @@ fn spawn_game(
     }
     mii::read(local)?;
     let dlc_root = dlc::launch_root(local, install)?;
+    let pack = ctgp::launch_overlay(local, install)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
+    // The CTGP pack keeps its own saves (records and ghosts of its courses), seeded once from the regular ones.
+    let save_dir = match &pack {
+        Some(_) => ctgp::save_folder(&saves)?,
+        None => saves.join("save"),
+    };
     rotate_game_log(local)?;
     let log = fs::File::create(local.join("game.log")).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&install.executable.path);
@@ -230,7 +237,7 @@ fn spawn_game(
         .env("RECOMP_USER_NAME", username)
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
-        .env("LARECOMP_SAVE_DIR", saves.join("save"))
+        .env("LARECOMP_SAVE_DIR", &save_dir)
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
         .env(
             "SDL_VULKAN_LIBRARY",
@@ -244,6 +251,10 @@ fn spawn_game(
         .env(
             "MK8_DLC_ROOT",
             dlc_root.as_deref().unwrap_or_else(|| Path::new("")),
+        )
+        .env(
+            "MK8_ROMFS_OVERLAY",
+            pack.as_deref().unwrap_or_else(|| Path::new("")),
         )
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
@@ -334,6 +345,7 @@ mod tests {
             shader_root: root.clone(),
             gameplay_verified: false,
             dlc_supported: false,
+            pack_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

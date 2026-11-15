@@ -137,6 +137,23 @@ As medições excluem as janelas de captura e não garantem 60 FPS em toda cena 
 
 Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
 
+## Pacote de pistas CTGP Deluxe (opcional, experimental)
+
+O CTGP Deluxe 1.1.1 é feito para o MK8 3.0.3 (32 bits); esta build é 4.0.1 (64 bits), então o código dele não roda
+aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP nas vagas de pista existentes, 48 nas
+12 copas do jogo base e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC.
+
+1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
+2. **Configurações → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
+   No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
+3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. O jogo, o DLC e os seus saves nunca são
+   alterados; com o CTGP ligado o jogo usa saves próprios, criados uma vez como cópia dos seus.
+
+Nas salas da Steam todos precisam do mesmo pacote (o mesmo CTGP ativado ou todos sem ele). O MK8-online não distribui
+o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios, copas extras e botão aleatório do
+CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original. Veja
+[STATUS.md](docs/STATUS.md).
+
 ## Compilar e contribuir
 
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:

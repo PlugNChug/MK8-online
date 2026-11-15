@@ -44,8 +44,9 @@ static TexBackend make(bool gpu, uint64_t used, uint64_t superseded) {
 }
 #define NOW 10000ull
 #define IDLE 3600ull
+#define GRACE 120ull
 static int retire(TexBackend *b, bool *ended, uint64_t *bytes, int *targets) {
-    return mk8_retire_image(b, NOW, IDLE, ended, bytes, targets);
+    return mk8_retire_image(b, NOW, IDLE, GRACE, ended, bytes, targets);
 }
 int main(void) {
     bool ended = false;
@@ -72,6 +73,13 @@ int main(void) {
     if (retire(&cpu_idle, &ended, &bytes, &targets) != 0) return 11;  // (already retired: no image)
     if (ends != 1 || !ended) return 12;  // (the pass ends once, before the first)
     if (destroyed != 2 || forgotten != 2 || bytes != (16u << 20) || targets != 1) return 13;
+    // A target the game made again at another size (dynamic resolution) goes after the short grace, not the minute:
+    TexBackend resized = make(true, NOW - GRACE, NOW - GRACE + 1), resized_recent = make(true, NOW - GRACE + 1, NOW);
+    TexBackend current = make(true, NOW - GRACE, 0);  // (not superseded: kept however long it waits)
+    if (retire(&resized, &ended, &bytes, &targets) != 1 || resized.image) return 14;
+    if (retire(&resized_recent, &ended, &bytes, &targets) != 0 || !resized_recent.image) return 15;
+    if (retire(&current, &ended, &bytes, &targets) != 0 || !current.image) return 16;
+    if (targets != 2 || destroyed != 3) return 17;
     return 0;
 }
 '''

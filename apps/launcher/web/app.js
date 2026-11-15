@@ -293,6 +293,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
         await refreshDlcFiles();
         return { message: "Arquivo selecionado." };
       }
+      if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
       await api("config", config());
       return { message: "Arquivo selecionado." };
     });
@@ -359,6 +360,22 @@ $("dlc-import").onclick = () => action(async () => {
   lastDlcImport = "running";
   return result;
 });
+$("ctgp-import").onclick = () => action(async () => {
+  const source = $("ctgp-source").value.trim();
+  if (!source) throw new Error(i18n.t("Selecione a pasta extraída do CTGP Deluxe."));
+  const result = await api("ctgp/import", { source, reinstall: !!lastCtgp?.installed });
+  lastCtgpImport = "running";
+  return result;
+});
+$("ctgp-enabled").onchange = () => action(async () => {
+  try {
+    return await api("ctgp/toggle", { enabled: $("ctgp-enabled").checked });
+  } finally {
+    await refresh();
+  }
+});
+let lastCtgp = null;
+let lastCtgpImport = "idle";
 $("dlc-enabled").onchange = () => action(async () => {
   try {
     return await api("dlc/toggle", { enabled: $("dlc-enabled").checked });
@@ -366,6 +383,35 @@ $("dlc-enabled").onchange = () => action(async () => {
     await refresh();
   }
 });
+
+// CTGP Deluxe: an optional course pack, imported from the player's own copy and switched on or off here.
+function renderCtgp(status, busyNow, running) {
+  const ctgp = status.ctgp || { state: "unprepared", installed: false, enabled: false };
+  lastCtgp = ctgp;
+  if (lastCtgpImport === "running" && status.ctgp_import?.state === "done") $("ctgp-source").value = "";
+  lastCtgpImport = status.ctgp_import?.state || "idle";
+  $("ctgp-enabled").checked = ctgp.enabled;
+  $("ctgp-enabled").disabled = busyNow || !ctgp.installed;
+  $("ctgp-source").disabled = busyNow;
+  $("ctgp-import").disabled = busyNow || ctgp.state === "unprepared" || ctgp.state === "unsupported";
+  i18n.text($("ctgp-import"), ctgp.state === "ready" ? "Importar novamente…"
+    : ctgp.state === "invalid" ? "Reparar importação…" : "Importar CTGP…");
+  i18n.text($("ctgp-state"), running ? "Importando…"
+    : ctgp.state === "invalid" || ctgp.state === "unsupported" ? "Requer atenção"
+    : ctgp.installed ? ctgp.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("ctgp-hint"), status.game_pid ? "Feche o jogo para alterar o CTGP."
+    : running ? "Montando o pacote de pistas. Aguarde."
+    : ctgp.state === "unsupported" ? "Atualize a build para usar o CTGP."
+    : ctgp.state === "unprepared" ? "Prepare o jogo antes de importar o CTGP."
+    : ctgp.state === "invalid" ? ctgp.detail
+    : ctgp.installed ? (ctgp.enabled ? "{0} pistas do CTGP no lugar das originais. Vale ao iniciar o jogo."
+      : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
+    : "Importe a pasta extraída do ZIP oficial do CTGP Deluxe.");
+  const failed = status.ctgp_import?.state === "failed";
+  i18n.text($("ctgp-detail"), failed ? status.ctgp_import.detail
+    : ctgp.installed && !ctgp.names_verified ? "Versão do CTGP diferente da 1.1.1: os nomes das pistas podem não corresponder." : "");
+  $("ctgp-detail").classList.toggle("error", failed || ctgp.state === "invalid");
+}
 
 // Progress of the running build: smoothed estimate from the recent rate and the average rate so far.
 let samples = [];
@@ -399,7 +445,8 @@ function renderInstall(status) {
   const setupRunning = setup.state === "running";
   const buildRunning = build.state === "running";
   const dlcRunning = status.dlc_import?.state === "running";
-  const busyNow = setupRunning || buildRunning || dlcRunning || !!status.game_pid;
+  const ctgpRunning = status.ctgp_import?.state === "running";
+  const busyNow = setupRunning || buildRunning || dlcRunning || ctgpRunning || !!status.game_pid;
   settingsBlocked = busyNow;
   const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
   if (lastDlcImport === "running" && status.dlc_import?.state === "done") dlcReplace = false;
@@ -433,6 +480,7 @@ function renderInstall(status) {
     : "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
   i18n.text($("dlc-detail"), status.dlc_import?.state === "failed" ? status.dlc_import.detail : dlc.detail || "");
   $("dlc-detail").classList.toggle("error", status.dlc_import?.state === "failed" || dlc.state === "invalid");
+  renderCtgp(status, busyNow, ctgpRunning);
   lastBuild = build;
   document
     .querySelectorAll("[data-browse]")
@@ -780,6 +828,10 @@ async function refresh() {
   if (status.dlc_import && status.dlc_import.state !== "idle") {
     const log = await api("dlc/log");
     $("dlc-log").textContent = log.text || status.dlc_import.detail;
+  }
+  if (status.ctgp_import && status.ctgp_import.state !== "idle") {
+    const log = await api("ctgp/log");
+    $("ctgp-log").textContent = log.text || status.ctgp_import.detail;
   }
   return status;
 }

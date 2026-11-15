@@ -234,6 +234,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertFalse(candidate['gameplay_verified'])
             self.assertTrue(candidate['dlc_supported'])
+            self.assertTrue(candidate['pack_supported'])  # (runtime/mk8/support/romfs_overlay.c)
 
 
 if __name__=="__main__":

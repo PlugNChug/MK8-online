@@ -127,6 +127,23 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
+## CTGP Deluxe course pack (optional, experimental)
+
+CTGP Deluxe 1.1.1 is made for MK8 3.0.3 (32-bit); this build is 4.0.1 (64-bit), so its code cannot run here. Its
+courses, music and cups can: the launcher puts the 64 CTGP courses into existing course slots, 48 in the base game's
+12 cups and, with the Booster Course Pass enabled, 16 more in the DLC's first 4 cups.
+
+1. Download CTGP Deluxe from [ctgpdx.com](https://www.ctgpdx.com/download) (personal use) and extract the ZIP.
+2. **Settings → CTGP Deluxe**: choose the extracted folder (the one with `atmosphere/`) and click **Import CTGP…**.
+   On the same disk as the data folder it takes seconds and no extra space (hard links).
+3. **Enable CTGP Deluxe** switches it on; turn it off to play the original game. The game, the DLC and your saves are
+   never changed; with CTGP on, the game uses its own saves, created once as a copy of yours.
+
+In Steam rooms everyone needs the same pack (the same CTGP enabled, or everyone without it). MK8-online does not
+distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus, extra cups and random
+button need its code (not available); time-trial staff ghosts are the original course's. See
+[STATUS.md](docs/STATUS.md).
+
 ## Build and contribute
 
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:

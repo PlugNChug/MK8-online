@@ -1,5 +1,77 @@
 # Estado técnico — 15/11/2026
 
+## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
+
+**O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
+
+**Partes:**
+- `toolchain/ctgp_pack.py` / `import_ctgp.py` montam `<dados>/ctgp/pack`:
+  - a partir da pasta extraída do ZIP oficial, com hardlinks no mesmo disco (4,6 s, sem cópia);
+  - CTGP fica só na pasta de dados do jogador; o repositório guarda apenas números (CT → rótulo de nome, lidos estaticamente do plugin 1.1.1, `PLUGIN_111`) e nomes de arquivo.
+- **Vagas:**
+  - copas 1–12 do CTGP nas 12 copas do jogo base (48 pistas);
+  - copas 13–16 nas 4 primeiras copas do Booster Course Pass (`Cnsw_11`–`28`), visíveis só com o DLC ativo, pois as pistas do BCP estão no RomFS base e o DLC só as libera.
+- **O que vai em cada vaga:**
+  - a pasta da pista (sem o banco de sons próprio do CTGP; fica o da vaga);
+  - as músicas N/F e variantes (LAP2, REPLAY);
+  - a imagem de seleção, os ícones de copa;
+  - os nomes de copa/pista no `message.sarc` 4.0.1 de 15 idiomas, com tags MSBT preservadas e os prefixos de plataforma (Wii, GBA…) vazios;
+  - as músicas de título/menu, os sons de menu e o Lakitu.
+  - Os `common.sarc`/`menu.sarc` do CTGP derrubam o menu do 4.0.1 e nunca são usados.
+- **Runtime:** `runtime/mk8/support/romfs_overlay.c` implementa o gancho fraco `game_romfs_overlay()` com `MK8_ROMFS_OVERLAY`. É uma segunda sobreposição depois de `RECOMP_MOD_DIR`, que segue para a cabeça Mii. Uma pasta inválida encerra o jogo em vez de abrir o jogo base calado.
+- **Launcher:**
+  - cartão **Configurações → CTGP Deluxe** com importar, liga/desliga, estado e log, em pt/en/es;
+  - `crates/installer/src/ctgp.rs` verifica o pacote antes de cada abertura (tamanho de cada arquivo, nada a mais);
+  - com o CTGP ligado o jogo usa `save-ctgp`, criado uma vez como cópia de `save`;
+  - build sem `pack_supported` recusa o pacote ligado.
+- **Steam:** a sala publica `mk8_ctgp` (identidade do pacote ou `0`) e quem entra precisa do mesmo estado (`check_pack`).
+
+**Problema encontrado e corrigido no runtime:**
+- **Sintoma:** VRAM a 7,3 GB e RAM do jogo a 7,8 GB no sobrevoo inicial do GP. Uma corrida terminou em `VK_ERROR_OUT_OF_DEVICE_MEMORY` (`race-grand-prix-oz51459d`).
+- **Bisseção** (GP, primeira corrida, até o sobrevoo):
+  - não é o Lakitu, a música nem um arquivo de modelo;
+  - é a lista de objetos `course_muunt.byaml` de `CT_00`, e nela os 7 `FireworksFc` (o Stadium original tem 2);
+  - sem os fogos o pico cai a 1.648 MB, igual ao jogo base.
+- **Mecanismo:** os fogos pesam a GPU, a resolução dinâmica do jogo refaz os alvos a cada poucos quadros em tamanhos novos (1499x843, 1546x870, 720x405…), e o runtime criava uma imagem por tamanho. `texture_retire` só liberava alvos substituídos depois de 60 s sem uso: ~700 imagens/s acumulavam.
+- **Correção** (`toolchain/texture_retire.py`): alvo substituído sai após `MK8_TARGET_GRACE_FRAMES` (30, meio segundo), com a varredura na mesma cadência. O conteúdo dele já não existe nem no console. Texturas com conteúdo continuam com os 60 s.
+
+| GP, 1ª corrida (quadros 3600–14000) | FPS médio | p99 | pior quadro | VRAM reservada / usada (pico) |
+|---|---|---|---|---|
+| jogo base (`race-grand-prix-x2kyzd8r`) | 59,89 | 17,7 ms | 72 ms | 1.648 / 1.459 MB |
+| CTGP antes (`-70aahhh4`) | 56,22 | 35,1 ms | 138 ms | 7.373 / 7.314 MB |
+| CTGP, carência 2 s (`-7dpwm7t1`) | 58,24 | 21,1 ms | 64 ms | 5.616 / 2.107 MB |
+| CTGP, carência 0,5 s (`-cgxrwi9u`) | 57,84 | 22,6 ms | 80 ms | 2.928 / 1.732 MB |
+
+Nessa corrida 6.043 imagens (17 GB) foram criadas e descartadas: a rotatividade da resolução dinâmica continua, só não acumula. Reaproveitar imagens entre tamanhos seria a próxima melhoria.
+
+**Grande Prêmio completo com o CTGP** (`race-grand-prix-tovnrm2s`, 64.000 quadros, 18 min, cache frio):
+- as quatro pistas do CTGP no lugar da copa Cogumelo:
+  - Omatsuri Circuit;
+  - Vanilla Lake 1;
+  - Broken Pier;
+  - Mystic Tangle.
+- 12 pilotos, CPUs no traçado, itens e minimapa próprios; saída 0, sem `FATAL`;
+- FPS médio por corrida: 58,2 / 59,2 / 59,8 / 59,8; p99 20,7 / 19,8 / 17,6 / 17,6 ms;
+- picos isolados de 230–600 ms nas trocas de pista: compilação de primeiro uso com cache frio, como no jogo base;
+- VRAM no pico: 3.696 MB reservados, 2.361 MB usados.
+
+**Jogo base com a mesma correção** (`race-grand-prix-bm9gt9k4`, 1ª corrida): 59,91 FPS e p99 17,6 ms, como antes. A VRAM reservada no pico caiu de 1.648 para 1.136 MB.
+
+**Validação:**
+- Rust: fmt, Clippy e testes, incluindo 3 do `ctgp.rs` e a regra Steam.
+- Python: 6 em `test_ctgp_pack.py`, só com dados sintéticos — SARC/MSBT ida e volta, mapeamento das vagas, nomes, montagem/verificação/importação e teste nativo de `romfs_overlay.c`.
+- `test_texture_retire` com os casos novos.
+- Navegador: `test_launcher_ctgp` (estados, importar, liga/desliga, bloqueio com o jogo aberto, en/es, 390 px), DLC e idiomas: 10 testes.
+
+**Ainda não testado:**
+- as copas do CTGP nas vagas do BCP (falta DLC importado aqui);
+- outras pistas além das 4 da primeira copa;
+- multijogador com o pacote em duas máquinas;
+- os fantasmas de staff do contra-relógio e o fundo da tela de prêmio, que continuam os da pista original;
+- os 5 nomes que a leitura do plugin não resolveu (`CT_08`, `0A`, `0D`, `37`, `3B`), que aparecem como "CTGP NN".
+
+`gameplay_verified=false`.
+
 ## PRs #18, #19 e #25 integradas na fix-chore — 15/11/2026
 
 - **#18 (gráficos, oclusão antes da renderização condicional)** e **#19 (áudio, rampa no início das vozes)**: merges sem conflito. A build do runtime (`--runtime-only`, 216 unidades) contém `mk8_oq_wait_pair(q);` em `exec.c` e `v->prev_volume = 0.f;` em `audio.c`. Seções de cada PR mais abaixo.

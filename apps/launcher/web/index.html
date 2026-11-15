@@ -239,6 +239,28 @@
             <p class="fine">Nas salas da Steam, todos precisam do mesmo estado: com o DLC ativado ou todos sem ele.</p>
             <button type="button" class="ghost" data-goto="install">Importar ou reparar DLC</button>
           </article>
+          <article id="ctgp-card" class="card settings-dlc" aria-labelledby="ctgp-title">
+            <div class="row"><h2 id="ctgp-title">CTGP Deluxe</h2><span id="ctgp-state" class="pill">Não instalado</span></div>
+            <p class="hint">Pacote de pistas opcional: as pistas, músicas e copas do CTGP Deluxe no lugar das do jogo base. Desative para voltar ao jogo original; o jogo, o DLC e os seus saves não são alterados.</p>
+            <label class="dlc-toggle"><input type="checkbox" id="ctgp-enabled" disabled />Ativar CTGP Deluxe</label>
+            <p id="ctgp-hint" class="hint">Importe a pasta extraída do ZIP oficial do CTGP Deluxe.</p>
+            <div id="ctgp-files" class="files">
+              <div class="file-tile" id="tile-ctgp-source">
+                <span class="ft-icon" aria-hidden="true">C</span>
+                <span class="ft-text"><strong>Pasta do CTGP Deluxe</strong><small>A pasta extraída do ZIP, com atmosphere/</small></span>
+                <input id="ctgp-source" aria-label="Pasta do CTGP Deluxe" spellcheck="false" placeholder="Caminho da pasta" />
+                <button type="button" class="ghost" data-browse="ctgp-source" data-kind="ctgp" aria-label="Escolher a pasta do CTGP Deluxe" hidden>Escolher</button>
+              </div>
+            </div>
+            <div class="row">
+              <button type="button" id="ctgp-import" class="ghost" disabled>Importar CTGP…</button>
+              <button type="button" class="ghost" data-log="ctgp-log">Ver log</button>
+            </div>
+            <p id="ctgp-detail" class="hint" role="status"></p>
+            <pre id="ctgp-log" class="log" aria-label="Log do CTGP" hidden></pre>
+            <p class="fine">48 pistas ocupam as 12 copas do jogo base. Com o Booster Course Pass ativado, mais 16 ocupam as 4 primeiras copas do DLC; as outras 8 copas do DLC continuam originais. Com o CTGP ativado o jogo usa saves próprios, criados como cópia dos seus. Nas salas da Steam, todos precisam do mesmo pacote: o mesmo CTGP ativado ou todos sem ele.</p>
+            <p class="fine">Baixe o CTGP Deluxe em <a href="https://www.ctgpdx.com/download" target="_blank" rel="noopener">ctgpdx.com</a>, para uso pessoal. O MK8-online não distribui o pacote: ele é lido da sua cópia e fica só neste computador.</p>
+          </article>
           <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
         </section>
         <!-- Jogar -->

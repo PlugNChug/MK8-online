@@ -130,6 +130,15 @@ Referências consultadas em 10/11/2026: [Switchbrew — serviço `aoc:u`](https:
 
 O protótipo consulta também as assinaturas IPC de [`nn::aocsrv::detail::IAddOnContentManager` no SwIPC](https://reswitched.github.io/SwIPC/ifaces.html#nn::aocsrv::detail::IAddOnContentManager): comandos, argumentos e descritores de saída. A implementação própria fica em `runtime/mk8/services/dlc.c` e é aplicada às cópias de build por `toolchain/dlc.py`; não houve cópia de implementação de outros emuladores.
 
+## CTGP Deluxe — pacote de pistas opcional, 15/11/2026
+
+[CTGP Deluxe](https://www.ctgpdx.com/download) (CTGP Deluxe Team e autores de cada pista e música, creditados no
+próprio pacote) é um mod de uso pessoal, sem venda nem redistribuição. Nada dele está neste repositório, em testes
+públicos, releases ou no setup: `toolchain/import_ctgp.py` lê a cópia que o jogador baixou e monta a sobreposição só na
+pasta de dados dele. O repositório guarda apenas números (qual rótulo de nome cada pista CT usa, obtidos lendo
+estaticamente o plugin 1.1.1 do usuário, sem executá-lo) e nomes de arquivo. Os formatos SARC, MSBT e BYAML foram
+lidos/escritos por implementação própria (`toolchain/ctgp_pack.py`); os testes usam somente arquivos sintéticos.
+
 ## Áudio — volume inicial de vozes, 12/11/2026
 
 Referências de comportamento do renderer Ryujinx, consultadas no histórico publicado, sem incorporar código C# ou dependência nova:
