@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Comparação semântica de texturas — 15/11/2026
+
+A adaptação de `nvnTextureCompare` usa a comparação de propriedades, swizzle e armazenamento de [SavageWindRecomp, `runtime/nvn/objects.c`](https://github.com/Revivedx/SavageWindRecomp/blob/740b18025fe11ba03c117dbb56668db304b5043e/runtime/nvn/objects.c), commit `740b18025fe11ba03c117dbb56668db304b5043e`. Créditos: Revivedx e colaboradores de Savage Wind Recomp; Peiikai, pela base LAS Recomp. O [aviso MIT integral](licenses/SavageWindRecomp-MIT.txt) foi preservado, incluindo seus limites para propriedades Nintendo e componentes de terceiros. A adaptação fica na preparação própria do runtime; nenhum endereço, teste ou recurso de BOTW foi copiado.
+
+A motivação local vem do probe privado MK8 `1267wfvj`: 18 pares de cubemaps de ambiente com descrições registradas iguais retornaram 0 e houve duplicação do slot 8036→8054; a primeira comparação entre textura 2D e cubemap era corretamente desigual. Essa evidência identifica o falso negativo; a validação local e seus limites são registrados em [STATUS.md](STATUS.md). Resultados de SavageWindRecomp em BOTW não qualificam MK8-online nem demonstram que os clarões deste jogo estejam resolvidos.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.
