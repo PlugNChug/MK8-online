@@ -3,7 +3,17 @@ use serde_json::Value;
 use std::path::Path;
 
 pub fn valid(value: &str) -> bool {
-    matches!(value, "en" | "pt-BR")
+    matches!(value, "es" | "en" | "pt-BR")
+}
+
+/// Picks the text for a native dialog; anything that is not Portuguese or
+/// Spanish (including an unset language) uses English.
+pub fn pick<T>(language: &str, pt: T, en: T, es: T) -> T {
+    match language {
+        "pt-BR" => pt,
+        "es" => es,
+        _ => en,
+    }
 }
 
 pub fn read(local: &Path) -> String {
@@ -38,6 +48,8 @@ mod tests {
         assert!(write(&root, &json!({"language": "../other"})).is_err());
         assert!(write(&root, &json!({"language": 1})).is_err());
         assert_eq!(read(&root), "en");
+        write(&root, &json!({"language": "es"})).unwrap();
+        assert_eq!(read(&root), "es");
         write(&root, &json!({"language": "pt-BR"})).unwrap();
         assert_eq!(read(&root), "pt-BR");
         assert_eq!(
@@ -48,5 +60,13 @@ mod tests {
         assert_eq!(read(&root), "");
         std::fs::remove_file(config).unwrap();
         std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn picks_dialog_text_by_language() {
+        assert_eq!(pick("pt-BR", "pt", "en", "es"), "pt");
+        assert_eq!(pick("es", "pt", "en", "es"), "es");
+        assert_eq!(pick("en", "pt", "en", "es"), "en");
+        assert_eq!(pick("", "pt", "en", "es"), "en");
     }
 }

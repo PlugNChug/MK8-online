@@ -1286,47 +1286,54 @@ fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
 /// answering status requests while the dialog is open.
 fn browse(req: Request, body: &str, parent: &DialogParent) {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
-    let english = value["language"] == "en";
+    let language = value["language"].as_str().unwrap_or("pt-BR").to_string();
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
-        Some("dlc") => Some((if english { "DLC NSP" } else { "NSP do DLC" }, &["nsp"][..])),
+        Some("dlc") => Some((
+            crate::language::pick(&language, "NSP do DLC", "DLC NSP", "NSP del DLC"),
+            &["nsp"][..],
+        )),
         Some("nacp") => Some((
-            if english {
-                "NACP metadata"
-            } else {
-                "Metadados NACP"
-            },
+            crate::language::pick(
+                &language,
+                "Metadados NACP",
+                "NACP metadata",
+                "Metadatos NACP",
+            ),
             &["nacp"][..],
         )),
         Some("package") => Some((
-            if english {
-                "MK8 packages"
-            } else {
-                "Pacotes MK8"
-            },
+            crate::language::pick(&language, "Pacotes MK8", "MK8 packages", "Paquetes de MK8"),
             &["nsz", "nsp"][..],
         )),
         Some("keys") => Some((
-            if english {
-                "Console keys"
-            } else {
-                "Chaves do console"
-            },
+            crate::language::pick(
+                &language,
+                "Chaves do console",
+                "Console keys",
+                "Claves de la consola",
+            ),
             &["keys"][..],
         )),
         Some("afl") => Some((
-            if english {
-                "Mii parts library"
-            } else {
-                "Biblioteca de peças Mii"
-            },
+            crate::language::pick(
+                &language,
+                "Biblioteca de peças Mii",
+                "Mii parts library",
+                "Biblioteca de partes Mii",
+            ),
             &["dat"][..],
         )),
         _ => None,
     };
     let title = value["title"]
         .as_str()
-        .unwrap_or(if english { "Select" } else { "Selecionar" })
+        .unwrap_or(crate::language::pick(
+            &language,
+            "Selecionar",
+            "Select",
+            "Seleccionar",
+        ))
         .chars()
         .take(120)
         .collect::<String>();
@@ -1349,11 +1356,12 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
             dialog
                 .add_filter(name, extensions)
                 .add_filter(
-                    if english {
-                        "All files"
-                    } else {
-                        "Todos os arquivos"
-                    },
+                    crate::language::pick(
+                        &language,
+                        "Todos os arquivos",
+                        "All files",
+                        "Todos los archivos",
+                    ),
                     &["*"],
                 )
                 .pick_file()
@@ -1408,6 +1416,15 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 req,
                 200,
                 include_str!("../web/en.json").into(),
+                "application/json; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/es.json" {
+            response(
+                req,
+                200,
+                include_str!("../web/es.json").into(),
                 "application/json; charset=utf-8",
             );
             continue;
