@@ -1,4 +1,33 @@
-# Estado técnico — 14/11/2026
+# Estado técnico — 15/11/2026
+
+## PRs #18, #19 e #25 integradas na fix-chore — 15/11/2026
+
+- **#18 (gráficos, oclusão antes da renderização condicional)** e **#19 (áudio, rampa no início das vozes)**: merges sem conflito. A build do runtime (`--runtime-only`, 216 unidades) contém `mk8_oq_wait_pair(q);` em `exec.c` e `v->prev_volume = 0.f;` em `audio.c`. Seções de cada PR mais abaixo.
+- **#25 (launcher em espanhol)**: a base era `master`.
+  - Conflitos em `en.json` e `tests/test_launcher_languages.py`: as entradas e os testes dos dois lados foram mantidos.
+  - `es.json` recebeu espanhol para as 120 mensagens da fix-chore (DLC, Configurações, regra de DLC nas salas Steam) e para `Volume`, que a aba Configurações mostrava em português.
+  - O seletor de NSP do DLC usa `language::pick` nos três idiomas.
+- **Teste corrigido, anterior às PRs:** `test_local_mii` não compilava desde a integração do DLC (#12) porque faltava o stub de `mk8_dlc_storage_path` no harness.
+
+**Validação:**
+- Rust: `cargo fmt --check`, Clippy `--workspace -D warnings` e 67 testes.
+- Python nativo/pipeline: 238 testes; as falhas restantes são de ambiente:
+  - módulos Playwright importados pelo Python do projeto, que não tem Playwright;
+  - `test_mii_native_head`, que exige PIL, ausente nos dois Pythons;
+  - testes do launcher real sem `MK8_LAUNCHER_EXE`; o alvo do Cargo é `D:/Project/MK8-online-build/target`.
+- Com o Python do sistema e `MK8_LAUNCHER_EXE`: idiomas, launcher real (resposta grande), DLC, e2e, Mii GLB/launcher e vida útil de processos aprovados (35 testes, 1 skip).
+- Launcher release real em Chromium, sem `pageerror`:
+  - espanhol pelo locale `es-ES`;
+  - seis abas;
+  - troca es/en/pt-BR e persistência após recarregar;
+  - 390 px sem rolagem horizontal.
+
+**Jogo não testado nesta integração.** A primeira corrida (Grande Prêmio) foi interrompida por mim: a suíte de testes disputava CPU e invalidaria o FPS. Na segunda tentativa (12:31), `local/imports` não existia mais, nem `local/game-data`, `local/cache` e as sessões `race-*`. A Lixeira mostra arquivos de `local` apagados às 12:30–12:31, o que indica limpeza manual; nenhum comando desta sessão usa a Lixeira. Builds, config, perfis, `user*` e saves estão intactos. Para testar é preciso reimportar o jogo (NSZ + chaves) e reconstruir os dados.
+
+**O que medir com o jogo de volta:**
+- **#18:** quantas esperas `conditional samples` aparecem em `LARECOMP_VK_PROF` e o FPS do GP contra `race-grand-prix-0so9vrpg` (60 FPS no texture retire, apagada). A espera faz `renderer_flush` quando o report está no trabalho ainda não enviado.
+- **#19:** audição em Electrodrome.
+- `gameplay_verified=false`.
 
 ## Launcher congelado no criador Mii (issues #15 e #16) — 14/11/2026
 

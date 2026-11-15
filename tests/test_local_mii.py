@@ -65,6 +65,8 @@ static int romfs_index(const char *dir, void *unused, RomfsIndex *ix, char *why,
 static Service *service_new(const char *n,void (*fn)(void),void *state) {
     static Service s; s.state=state; return &s;
 }
+// (toolchain/dlc.py declares this before the extracted function; neither title here is the DLC's)
+static int mk8_dlc_storage_path(uint64_t title,char *path,size_t size) { return 0; }
 ''' + body + r'''
 int main(int argc,char **argv) {
     assert(argc==2); _putenv_s("MK8_MII_RESOURCE_DIR",argv[1]);
