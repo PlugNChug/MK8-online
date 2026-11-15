@@ -734,6 +734,7 @@ impl App {
                     {
                         "base" => "base",
                         "dlc" => "dlc",
+                        "dlc-late" => "dlc-late",
                         _ => return Err("Disposição das copas do CTGP inválida.".into()),
                     };
                     drop(guards);

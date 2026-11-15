@@ -10,11 +10,15 @@ existing course slots:
   Course Pass slots take CTGP cups 13-16 (CT_30..CT_3F). Those only show with the DLC enabled (its RomFS holds just
   contents.dat and version.txt; the courses are in the base RomFS), so the DLC stays optional;
 - layout 'dlc': the 12 Booster Course Pass cups take CTGP cups 1-12 and the base game stays original: with the DLC
-  enabled, the 48 original courses and 48 CTGP courses at once (CTGP cups 13-16 are left out);
+  enabled, the 48 original courses and 48 CTGP courses at once; 'dlc-late' places CTGP cups 5-16 there instead;
 - per slot: the course folder (minus CTGP's own sound bank, the slot's stays), its music (N/F and variants), its
   course picture; the cup icons; and the names in every language's message.sarc (the 4.0.1 file with CTGP's course
   and cup names written into the slot's labels; CTGP's own message.sarc, built for 3.0.3, is not used);
-- CTGP's title/menu music, menu sounds and Lakitu model (verified to load on 4.0.1).
+- CTGP's title/menu music, menu sounds and Lakitu model (verified to load on 4.0.1);
+- the cup select screen's icons: 4.0.1 keeps them as 200x200 RGB565 textures in a BNTX inside menu.sarc ->
+  mn_L_CupSlctBtn_00.szs. CTGP's own colour icons (ym_CupIcon*_130x130^h, 210x210 BC3, one BC7) are decoded, scaled
+  and written over the slots' icons in a copy of the 4.0.1 menu.sarc; nothing else in that archive changes. (The
+  *_Nml^l files are normal maps, not the icons.)
 
 CTGP's UI/cmn/common.sarc and menu.sarc crash the 4.0.1 menu and are never used. The pack is read from the player's own
 copy and stays in their data folder: CTGP is for personal use, not for redistribution. Nothing from it is in this
@@ -92,7 +96,9 @@ BCP_CUPS = [(11601 + c, f'Charger{c:02d}',
               for k in range(4)])
             for c in range(12)]
 # Where CTGP's cups go, in CTGP cup order.
-LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS}
+LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS, 'dlc-late': BCP_CUPS}
+# the first CTGP cup each layout places ('dlc-late': CTGP cups 5-16 in the DLC's 12, so both DLC layouts reach all 16)
+LAYOUT_FIRST_CUP = {'base': 0, 'dlc': 0, 'dlc-late': 4}
 PLATFORM_LABELS = range(1461, 1469)  # Wii, GBA, DS, 3DS, N64, SNES, GCN, Tour: retro prefixes shown before a name
 # CTGP files verified to load on 4.0.1 outside the course slots (race-time-trial-ssw00gbi, -lzz6p1u3)
 EXTRAS = ['Audio/Resource/Stream/BGM_MENU_LOCAL.bfstm', 'Audio/Resource/Stream/BGM_MENU_SINGLE_MULTI.bfstm',
@@ -118,8 +124,10 @@ def sarc_read(data):
     names_at = 0x20 + 16 * count + 8
     files = []
     for name_hash, attr, start, end in nodes:
-        at = names_at + (attr & 0xFFFF) * 4
-        name = data[at:data.index(b'\0', at)].decode('utf-8')
+        name = None  # (archives of hashed, unnamed files: attr without its name flag)
+        if attr & 0x01000000:
+            at = names_at + (attr & 0xFFFF) * 4
+            name = data[at:data.index(b'\0', at)].decode('utf-8')
         files.append((name, name_hash, attr, data[data_off + start:data_off + end], start))
     return {'header': data[:0x14], 'sfat': data[0x14:0x20], 'names': data[names_at - 8:data_off], 'files': files,
             'data_off': data_off}
@@ -132,11 +140,12 @@ def _align_of(offset):
     return max(a, 4)
 
 
-def sarc_write(parsed, replace):
-    """The same archive (node order, hashes, names, data alignment) with some files' contents replaced."""
+def sarc_write(parsed, replace, by_index=False):
+    """The same archive (node order, hashes, names, data alignment) with some files' contents replaced (by name, or
+    by node index for archives of unnamed files)."""
     out_nodes, blobs, cursor = [], [], 0
-    for name, name_hash, attr, blob, start in parsed['files']:
-        blob = replace.get(name, blob)
+    for i, (name, name_hash, attr, blob, start) in enumerate(parsed['files']):
+        blob = replace.get(i if by_index else name, blob)
         align = _align_of(start) if start else 0x80
         cursor = (cursor + align - 1) & ~(align - 1)
         out_nodes.append((name_hash, attr, cursor, cursor + len(blob)))
@@ -232,6 +241,254 @@ def set_texts(data, values):
     return msbt_write(data, texts)
 
 
+# ------------------------------------------------------------------ Yaz0, BNTX, Tegra block-linear surfaces
+def yaz0_decode(data):
+    if data[:4] != b'Yaz0':
+        raise PackError('Yaz0 inválido')
+    size = struct.unpack_from('>I', data, 4)[0]
+    out, i = bytearray(), 16
+    while len(out) < size:
+        flags = data[i]
+        i += 1
+        for bit in range(8):
+            if len(out) >= size:
+                break
+            if flags & (0x80 >> bit):
+                out.append(data[i])
+                i += 1
+                continue
+            b1, b2 = data[i], data[i + 1]
+            i += 2
+            dist, n = ((b1 & 15) << 8 | b2) + 1, b1 >> 4
+            if n == 0:
+                n = data[i] + 0x12
+                i += 1
+            else:
+                n += 2
+            start = len(out) - dist
+            if dist >= n:
+                out += out[start:start + n]
+            else:
+                for k in range(n):
+                    out.append(out[start + k])
+    return bytes(out)
+
+
+def yaz0_store(data, alignment=0):
+    """A valid Yaz0 stream without compression (every group of 8 bytes copied as is)."""
+    out = bytearray(b'Yaz0' + struct.pack('>II', len(data), alignment) + bytes(4))
+    for at in range(0, len(data), 8):
+        out.append(0xFF)
+        out += data[at:at + 8]
+    return bytes(out)
+
+
+def bntx_textures(data):
+    """name -> (format, width, height, mips, image bytes, block height log2, data offset) of a Switch BNTX."""
+    if data[:4] != b'BNTX':
+        raise PackError('BNTX inválido')
+    nx = data.find(b'NX  ')
+    count = struct.unpack_from('<I', data, nx + 4)[0]
+    infos = struct.unpack_from('<Q', data, nx + 8)[0]
+    out = {}
+    for i in range(count):
+        at = struct.unpack_from('<Q', data, infos + 8 * i)[0]
+        if data[at:at + 4] != b'BRTI':
+            raise PackError('BNTX inválido')
+        mips = struct.unpack_from('<H', data, at + 0x16)[0]
+        fmt, _, width, height = struct.unpack_from('<IIII', data, at + 0x1C)
+        layout = struct.unpack_from('<I', data, at + 0x34)[0]
+        size = struct.unpack_from('<I', data, at + 0x50)[0]
+        name_at, _, ptrs = struct.unpack_from('<QQQ', data, at + 0x60)
+        n = struct.unpack_from('<H', data, name_at)[0]
+        out[data[name_at + 2:name_at + 2 + n].decode()] = (fmt, width, height, mips, size, layout,
+                                                            struct.unpack_from('<Q', data, ptrs)[0])
+    return out
+
+
+def _gob(x, y, row_bytes, bpp, block_height):
+    """Byte offset of texel (x, y) in a block-linear surface: GOBs of 64x8 bytes, blocks of block_height GOBs."""
+    xb = x * bpp
+    block = (y // (8 * block_height)) * ((row_bytes + 63) // 64) + xb // 64
+    xs, ys = xb % 64, y % 8
+    return (block * 512 * block_height + ((y % (8 * block_height)) // 8) * 512
+            + (xs // 32) * 256 + (ys // 2) * 64 + ((xs % 32) // 16) * 32 + (ys % 2) * 16 + xs % 16)
+
+
+def bc3_rgba(blocks, width, height, block_height):
+    """A block-linear BC3 surface as linear RGBA8."""
+    bw, bh = (width + 3) // 4, (height + 3) // 4
+    out = bytearray(width * height * 4)
+    for by in range(bh):
+        for bx in range(bw):
+            at = _gob(bx, by, bw * 16, 16, block_height)
+            blk = blocks[at:at + 16]
+            a0, a1 = blk[0], blk[1]
+            alphas = [a0, a1] + ([((6 - i) * a0 + (1 + i) * a1) // 7 for i in range(6)] if a0 > a1 else
+                                 [((4 - i) * a0 + (1 + i) * a1) // 5 for i in range(4)] + [0, 255])
+            abits = int.from_bytes(blk[2:8], 'little')
+            c0, c1, cbits = struct.unpack_from('<HHI', blk, 8)
+            p0 = ((c0 >> 11) * 255 // 31, ((c0 >> 5) & 63) * 255 // 63, (c0 & 31) * 255 // 31)
+            p1 = ((c1 >> 11) * 255 // 31, ((c1 >> 5) & 63) * 255 // 63, (c1 & 31) * 255 // 31)
+            cols = [p0, p1, tuple((2 * a + b) // 3 for a, b in zip(p0, p1)), tuple((a + 2 * b) // 3 for a, b in zip(p0, p1))]
+            for i in range(16):
+                x, y = bx * 4 + i % 4, by * 4 + i // 4
+                if x < width and y < height:
+                    r, g, b = cols[(cbits >> (2 * i)) & 3]
+                    out[(y * width + x) * 4:(y * width + x) * 4 + 4] = bytes((r, g, b, alphas[(abits >> (3 * i)) & 7]))
+    return bytes(out)
+
+
+def rgba8_linear(data, width, height, block_height):
+    """A block-linear RGBA8 surface as linear RGBA8."""
+    out = bytearray(width * height * 4)
+    for y in range(height):
+        for x in range(width):
+            at = _gob(x, y, width * 4, 4, block_height)
+            out[(y * width + x) * 4:(y * width + x) * 4 + 4] = data[at:at + 4]
+    return bytes(out)
+
+
+# BC7 (Direct3D 11 format): modes 1 and 3-7; the 3-subset modes 0 and 2 are refused.
+BC7_P2 = [0xCCCC, 0x8888, 0xEEEE, 0xECC8, 0xC880, 0xFEEC, 0xFEC8, 0xEC80, 0xC800, 0xFFEC, 0xFE80, 0xE800, 0xFFE8, 0xFF00,
+      0xFFF0, 0xF000, 0xF710, 0x008E, 0x7100, 0x08CE, 0x008C, 0x7310, 0x3100, 0x8CCE, 0x088C, 0x3110, 0x6666, 0x366C,
+      0x17E8, 0x0FF0, 0x718E, 0x399C, 0xAAAA, 0xF0F0, 0x5A5A, 0x33CC, 0x3C3C, 0x55AA, 0x9696, 0xA55A, 0x73CE, 0x13C8,
+      0x324C, 0x3BDC, 0x6996, 0xC33C, 0x9966, 0x0660, 0x0272, 0x04E4, 0x4E40, 0x2720, 0xC936, 0x936C, 0x39C6, 0x639C,
+      0x9336, 0x9CC6, 0x817E, 0xE718, 0xCCF0, 0x0FCC, 0x7744, 0xEE22]
+BC7_A2 = [15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 2, 8, 2, 2, 8, 8, 15, 2, 8, 2, 2, 8, 8, 2, 2,
+      15, 15, 6, 8, 2, 8, 15, 15, 2, 8, 2, 2, 2, 15, 15, 6, 6, 2, 6, 8, 15, 15, 2, 2, 15, 15, 15, 15, 15, 2, 2, 15]
+BC7_WEIGHTS = {2: [0, 21, 43, 64], 3: [0, 9, 18, 27, 37, 46, 55, 64],
+           4: [0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64]}
+# mode: subsets, partition bits, rotation bits, index selection bit, color bits, alpha bits, endpoint p-bits,
+# shared p-bits, index bits, secondary index bits
+BC7_MODES = {1: (2, 6, 0, 0, 6, 0, 0, 1, 3, 0), 3: (2, 6, 0, 0, 7, 0, 1, 0, 2, 0), 4: (1, 0, 2, 1, 5, 6, 0, 0, 2, 3),
+         5: (1, 0, 2, 0, 7, 8, 0, 0, 2, 2), 6: (1, 0, 0, 0, 7, 7, 1, 0, 4, 0), 7: (2, 6, 0, 0, 5, 5, 1, 0, 2, 0)}
+
+
+def bc7_block(data):
+    """16 RGBA tuples of one 16-byte BC7 block, row by row."""
+    value, pos = int.from_bytes(data, 'little'), 0
+
+    def read(n):
+        nonlocal pos
+        v = (value >> pos) & ((1 << n) - 1)
+        pos += n
+        return v
+    mode = 0
+    while mode < 8 and not (value >> mode) & 1:
+        mode += 1
+    if mode not in BC7_MODES:
+        raise PackError(f'Modo BC7 {mode} não suportado')
+    read(mode + 1)
+    ns, pb, rb, isb, cb, ab, epb, spb, ib, ib2 = BC7_MODES[mode]
+    partition, rotation, selection = read(pb), read(rb), read(isb)
+    ends = [[0, 0, 0, 255] for _ in range(ns * 2)]
+    for ch in range(3):
+        for e in ends:
+            e[ch] = read(cb)
+    if ab:
+        for e in ends:
+            e[3] = read(ab)
+    pbits = [read(1) for _ in range(ns * 2)] if epb else [p for p in (read(1) for _ in range(ns)) for _ in (0, 1)] if spb else None
+    cbits, abits = cb + (1 if pbits else 0), ab + (1 if pbits and ab else 0)
+    for i, e in enumerate(ends):
+        for ch in range(4 if ab else 3):
+            v, bits = e[ch], abits if ch == 3 else cbits
+            if pbits:
+                v = v << 1 | pbits[i]
+            v <<= 8 - bits
+            e[ch] = v | v >> bits
+    subset = [((BC7_P2[partition] >> i) & 1) if ns == 2 else 0 for i in range(16)]
+    anchors = {0, BC7_A2[partition]} if ns == 2 else {0}
+    first = [read(ib - (1 if i in anchors else 0)) for i in range(16)]
+    second = [read(ib2 - (1 if i == 0 else 0)) for i in range(16)] if ib2 else None
+    out = []
+    for i in range(16):
+        e0, e1 = ends[2 * subset[i]], ends[2 * subset[i] + 1]
+        if second is None:
+            wc = wa = BC7_WEIGHTS[ib][first[i]]
+        elif selection:
+            wc, wa = BC7_WEIGHTS[ib2][second[i]], BC7_WEIGHTS[ib][first[i]]
+        else:
+            wc, wa = BC7_WEIGHTS[ib][first[i]], BC7_WEIGHTS[ib2][second[i]]
+        px = [((64 - wc) * e0[ch] + wc * e1[ch] + 32) >> 6 for ch in range(3)]
+        px.append(((64 - wa) * e0[3] + wa * e1[3] + 32) >> 6)
+        if rotation:
+            px[3], px[rotation - 1] = px[rotation - 1], px[3]
+        out.append(tuple(px))
+    return out
+
+
+def bc7_rgba(blocks, width, height, block_height):
+    """A block-linear BC7 surface as linear RGBA8."""
+    bw, bh = (width + 3) // 4, (height + 3) // 4
+    out = bytearray(width * height * 4)
+    for by in range(bh):
+        for bx in range(bw):
+            at = _gob(bx, by, bw * 16, 16, block_height)
+            for i, px in enumerate(bc7_block(blocks[at:at + 16])):
+                x, y = bx * 4 + i % 4, by * 4 + i // 4
+                if x < width and y < height:
+                    out[(y * width + x) * 4:(y * width + x) * 4 + 4] = bytes(px)
+    return bytes(out)
+
+
+def icon_rgb565(rgba, width, height, size, block_height, out_w, out_h):
+    """RGBA8 (premultiplied onto black, as the mask cuts the circle) scaled to out_w x out_h by averaging the source
+    texels each target texel covers, as RGB565 block-linear."""
+    surface = bytearray(size)
+    for y in range(out_h):
+        y0, y1 = y * height // out_h, max(y * height // out_h + 1, (y + 1) * height // out_h)
+        for x in range(out_w):
+            x0, x1 = x * width // out_w, max(x * width // out_w + 1, (x + 1) * width // out_w)
+            r = g = b = n = 0
+            for sy in range(y0, min(y1, height)):
+                for sx in range(x0, min(x1, width)):
+                    pr, pg, pb, pa = rgba[(sy * width + sx) * 4:(sy * width + sx) * 4 + 4]
+                    r, g, b, n = r + pr * pa, g + pg * pa, b + pb * pa, n + 1
+            r, g, b = r // (255 * n), g // (255 * n), b // (255 * n)
+            at = _gob(x, y, out_w * 2, 2, block_height)
+            struct.pack_into('<H', surface, at, (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3))
+    return bytes(surface)
+
+
+def cup_select_icons(menu_sarc, icons, skipped=None):
+    """4.0.1 menu.sarc with the cup select icons replaced: icons = {'Mushroom': CTGP icon BNTX path, ...}. An icon in
+    a format this cannot read keeps the slot's original icon (its name goes to skipped)."""
+    menu = sarc_read(menu_sarc)
+    archive = next((blob for name, _, _, blob, _ in menu['files'] if name == 'mn_L_CupSlctBtn_00.szs'), None)
+    if archive is None:
+        raise PackError('menu.sarc sem mn_L_CupSlctBtn_00.szs')
+    inner = sarc_read(yaz0_decode(archive))
+    index = next((i for i, f in enumerate(inner['files']) if f[3][:4] == b'BNTX'), None)
+    if index is None:
+        raise PackError('mn_L_CupSlctBtn_00.szs sem BNTX')
+    bntx = bytearray(inner['files'][index][3])
+    textures = bntx_textures(bytes(bntx))
+    for icon, path in icons.items():
+        slot = textures.get(f'ym_CupIcon{icon}^h')
+        if not slot or slot[0] != 0x701 or slot[3] != 1:
+            raise PackError(f'Ícone de copa inesperado no 4.0.1: {icon}')
+        source = Path(path).read_bytes()
+        tex = next(iter(bntx_textures(source).values()))
+        decode = {0xB01: rgba8_linear, 0xB06: rgba8_linear, 0x1C01: bc3_rgba, 0x1C06: bc3_rgba,
+                  0x2001: bc7_rgba, 0x2006: bc7_rgba}.get(tex[0])
+        try:
+            if not decode:
+                raise PackError(f'formato {tex[0]:#x}')
+            rgba = decode(source[tex[6]:tex[6] + tex[4]], tex[1], tex[2], 1 << tex[5])
+        except PackError as error:
+            if skipped is not None:
+                skipped.append(f'{Path(path).name}: {error}')
+            continue
+        fmt, width, height, _, size, layout, at = slot
+        bntx[at:at + size] = icon_rgb565(rgba, tex[1], tex[2], size, 1 << layout, width, height)
+    name, *_ = inner['files'][index]
+    rebuilt = sarc_write(inner, {i: b for i, b in [(index, bytes(bntx))]}, by_index=True)
+    alignment = struct.unpack_from('>I', archive, 8)[0]
+    return sarc_write(menu, {'mn_L_CupSlctBtn_00.szs': yaz0_store(rebuilt, alignment)})
+
+
 # ------------------------------------------------------------------ the pack
 def locate(source):
     """The CTGP title folder in a selection: the SD root, atmosphere/, contents/ or the title folder itself."""
@@ -258,11 +515,11 @@ def slots(layout='base'):
             picture = course[3] if len(course) > 3 else folders
             folders = folders if isinstance(folders, tuple) else (folders,)
             music = music if isinstance(music, tuple) else (music,)
-            out.append((4 * c + k, c, folders, label, music, picture))
+            out.append((4 * (c + LAYOUT_FIRST_CUP[layout]) + k, c, folders, label, music, picture))
     return out
 
 
-def plan(title, romfs, layout='base'):
+def plan(title, romfs, layout='base', notes=None):
     """Every overlay file: (overlay path, source path or bytes). Validates both trees first."""
     title, romfs = Path(title), Path(romfs)
     ct_romfs = title / 'romfs'
@@ -295,12 +552,17 @@ def plan(title, romfs, layout='base'):
             files[f'UI/cmn/menu/ym_CoursePict_{picture}_00^u.bntx'] = pict
     for c, (_, icon, _) in enumerate(LAYOUTS[layout]):
         for variant in ICON_VARIANTS:
-            src = ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c]}{variant}'
+            src = ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c + LAYOUT_FIRST_CUP[layout]]}{variant}'
             if src.is_file() and (romfs / f'UI/cmn/race/ym_CupIcon{icon}{variant}').is_file():
                 files[f'UI/cmn/race/ym_CupIcon{icon}{variant}'] = src
     for rel in EXTRAS:
         if (ct_romfs / rel).is_file() and (romfs / rel).is_file():
             files[rel] = ct_romfs / rel
+    icons = {icon: ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c + LAYOUT_FIRST_CUP[layout]]}_130x130^h.bntx'
+             for c, (_, icon, _) in enumerate(LAYOUTS[layout])}
+    icons = {icon: path for icon, path in icons.items() if path.is_file()}
+    if icons and (romfs / 'UI/cmn/menu.sarc').is_file():
+        files['UI/cmn/menu.sarc'] = cup_select_icons((romfs / 'UI/cmn/menu.sarc').read_bytes(), icons, notes)
     for lang in LANGUAGES:
         target = romfs / f'UI/{lang}/message.sarc'
         if target.is_file():
@@ -335,7 +597,7 @@ def messages(target, ctgp_sarc, fallback, layout='base'):
     # (the retro prefixes, Wii, GBA..., belong to the base game's slots: emptied only when CTGP takes them)
     values = {str(label): '' for label in PLATFORM_LABELS} if layout == 'base' else {}
     for c, (cup_label, _, _) in enumerate(LAYOUTS[layout]):
-        values[str(cup_label)] = cups[c]
+        values[str(cup_label)] = cups[c + LAYOUT_FIRST_CUP[layout]]
     for ct, _, _, label, _, _ in slots(layout):
         values[str(label)] = names[ct]
         values[str(label + 100)] = names[ct]

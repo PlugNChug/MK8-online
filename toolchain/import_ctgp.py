@@ -39,7 +39,10 @@ def import_pack(source, romfs, local, reinstall=False, layout='base'):
     print(f'CTGP encontrado em {title}.', flush=True)
     if layout not in ctgp_pack.LAYOUTS:
         raise ValueError(f'Disposição desconhecida: {layout}')
-    files = ctgp_pack.plan(title, romfs, layout)
+    notes = []
+    files = ctgp_pack.plan(title, romfs, layout, notes)
+    for note in notes:
+        print(f'Aviso: ícone de copa mantido original ({note}).', flush=True)
     same_disk = os.stat(title).st_dev == os.stat(folder).st_dev
     copy = 0 if same_disk else sum(p.stat().st_size for p in files.values() if isinstance(p, Path))
     copy += sum(len(b) for b in files.values() if isinstance(b, bytes))

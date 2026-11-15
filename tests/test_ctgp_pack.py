@@ -71,6 +71,69 @@ def all_slots():
     return P.slots('base') + P.slots('dlc')
 
 
+def bntx(textures):
+    """A minimal Switch BNTX: textures = {name: (format, width, height, block height log2, data)}."""
+    names = list(textures)
+    out = bytearray(b'BNTX' + bytes(28))
+    nx = len(out)
+    out += b'NX  ' + struct.pack('<I', len(names)) + bytes(8 + 0x20)
+    infos = len(out)
+    out += bytes(8 * len(names))
+    struct.pack_into('<Q', out, nx + 8, infos)
+    for i, name in enumerate(names):
+        fmt, width, height, layout, data = textures[name]
+        brti = len(out)
+        struct.pack_into('<Q', out, infos + 8 * i, brti)
+        out += bytes(0x90)
+        out[brti:brti + 4] = b'BRTI'
+        struct.pack_into('<H', out, brti + 0x16, 1)
+        struct.pack_into('<IIII', out, brti + 0x1C, fmt, 0, width, height)
+        struct.pack_into('<I', out, brti + 0x34, layout)
+        struct.pack_into('<I', out, brti + 0x50, len(data))
+        name_at = len(out)
+        out += struct.pack('<H', len(name)) + name.encode() + b'\0'
+        out += bytes(-len(out) % 8)
+        ptrs = len(out)
+        out += bytes(8)
+        data_at = len(out)
+        out += data
+        struct.pack_into('<QQQ', out, brti + 0x60, name_at, 0, ptrs)
+        struct.pack_into('<Q', out, ptrs, data_at)
+    return bytes(out)
+
+
+def unnamed_sarc(blobs):
+    """A SARC of hashed, unnamed files (like the layout archives inside menu.sarc)."""
+    data_off = (0x20 + 16 * len(blobs) + 8 + 0x7F) & ~0x7F
+    out = bytearray(b'SARC' + struct.pack('<HHIIHH', 0x14, 0xFEFF, 0, data_off, 0x100, 0))
+    out += b'SFAT' + struct.pack('<HHI', 0xC, len(blobs), 0x65)
+    body, nodes = bytearray(), []
+    for i, blob in enumerate(blobs):
+        body += bytes(-len(body) % 0x80)
+        nodes.append((0x1000 + i, 0, len(body), len(body) + len(blob)))
+        body += blob
+    for node in nodes:
+        out += struct.pack('<IIII', *node)
+    out += b'SFNT' + struct.pack('<HH', 8, 0)
+    out += bytes(data_off - len(out)) + body
+    struct.pack_into('<I', out, 8, len(out))
+    return bytes(out)
+
+
+SLOT = 512  # (8x8 texels in one 64x8-byte GOB: RGB565 rows of 16 bytes; BC3 rows of 2 blocks, 32 bytes)
+RED_BC3 = bytes((255, 255, 0, 0, 0, 0, 0, 0)) + struct.pack('<HHI', 0xF800, 0xF800, 0)
+
+
+def red_icon():
+    """CTGP's Nml^l icons are RGBA8: a 16x16 one, red and opaque (scaled down 2:1 into the 8x8 slots)."""
+    data = bytearray(1024)
+    for y in range(16):
+        for x in range(16):
+            at = P._gob(x, y, 64, 4, 1)
+            data[at:at + 4] = bytes((255, 0, 0, 255))
+    return bntx({'icon_Nml^l': (0xB06, 16, 16, 0, bytes(data))})
+
+
 def common_labels():
     values = {str(label): f'Cup {label}' for label, _, _ in P.BASE_CUPS + P.BCP_CUPS}
     for _, _, _, label, _, _ in all_slots():
@@ -106,6 +169,9 @@ def fixture(root):
     for rel in P.EXTRAS:
         write(romfs/rel, b'og')
     write(romfs/'UI/USen/message.sarc', sarc({'Common.msbt': msbt(common_labels()), 'Menu.msbt': msbt({'1': 'Menu'})}))
+    icons = bntx({f'ym_CupIcon{icon}^h': (0x701, 8, 8, 0, bytes(SLOT)) for _, icon, _ in P.BASE_CUPS + P.BCP_CUPS})
+    layout = P.yaz0_store(unnamed_sarc([b'FLYT layout', icons, b'FLAN animation']), 0x80)
+    write(romfs/'UI/cmn/menu.sarc', sarc({'mn_L_CupSlctBtn_00.szs': layout, 'other.szs': b'untouched'}))
     ctgp = root/'CTGPDX/atmosphere/contents'/P.TITLE/'romfs'
     for i in range(P.CT_COUNT):
         course = ctgp/f'Course/CT_{i:02X}'
@@ -119,6 +185,8 @@ def fixture(root):
     for c, icon in enumerate(P.CTGP_CUP_ICONS):
         for variant in P.ICON_VARIANTS:
             write(ctgp/f'UI/cmn/race/ym_CupIcon{icon}{variant}', f'icon{c}'.encode())
+    for icon in P.CTGP_CUP_ICONS:  # (the menu's icons are decoded and converted from these)
+        write(ctgp/f'UI/cmn/race/ym_CupIcon{icon}_130x130^h.bntx', red_icon())
     for rel in P.EXTRAS:
         write(ctgp/rel, b'ctgp extra')
     write(ctgp/'UI/cmn/menu.sarc', b'never used')  # crashes 4.0.1: must stay out of the pack
@@ -195,10 +263,21 @@ class CtgpPackTests(unittest.TestCase):
             self.assertEqual(src(stream + 'pBGM_Cnsw_11_F.bfstm'), b'music48F')
             self.assertEqual(src('UI/cmn/menu/ym_CoursePict_Du_Animal_00^u.bntx'), b'pict43')
             self.assertEqual(src('UI/cmn/menu/ym_CoursePict_DLC16_00^u.bntx'), b'pict63')
-            self.assertEqual(src('UI/cmn/race/ym_CupIconMushroom_Nml^l.bntx'), b'icon0')
+            self.assertEqual(src('UI/cmn/race/ym_CupIconMushroom_Line^s.bntx'), b'icon0')
             self.assertEqual(src('UI/cmn/race/ym_CupIconCharger03_Line^s.bntx'), b'icon15')
+            menu = {n: b for n, _, _, b, _ in P.sarc_read(src('UI/cmn/menu.sarc'))['files']}
+            self.assertEqual(menu['other.szs'], b'untouched')
+            inner = P.sarc_read(P.yaz0_decode(menu['mn_L_CupSlctBtn_00.szs']))['files']
+            self.assertEqual([f[3] for f in (inner[0], inner[2])], [b'FLYT layout', b'FLAN animation'])
+            textures = P.bntx_textures(inner[1][3])
+            fmt, w, h, mips, size, layout, at = textures['ym_CupIconMushroom^h']
+            texels = {struct.unpack_from('<H', inner[1][3], at + P._gob(x, y, 16, 2, 1))[0]
+                      for y in range(8) for x in range(8)}
+            self.assertEqual(texels, {0xF800})  # Boo's (red) icon, decoded and scaled, as RGB565 in every texel
+            fmt, w, h, mips, size, layout, at = textures['ym_CupIconCharger04^h']
+            self.assertEqual(inner[1][3][at:at + size], bytes(SLOT))  # (a cup this layout leaves alone: unchanged)
             self.assertEqual(src('RaceCommon/JugemObj/JugemObj.bfres'), b'ctgp extra')
-            self.assertNotIn('UI/cmn/menu.sarc', files)
+            self.assertNotEqual(src('UI/cmn/menu.sarc'), b'never used')  # (4.0.1's, with icons; never CTGP's)
             self.assertFalse(any(rel.startswith('skyline/') for rel in files))
             names, archive = texts(src('UI/USen/message.sarc'))
             self.assertEqual(names['1301'], 'CTGP cup 0')
@@ -228,7 +307,7 @@ class CtgpPackTests(unittest.TestCase):
             self.assertEqual(src('Course/Cnsw_62/course_model.szs'), b'ct19-course_model.szs')
             self.assertEqual(src('Audio/Resource/Stream/pBGM_Cnsw_62_F.bfstm'), b'music19F')
             self.assertEqual(src('UI/cmn/menu/ym_CoursePict_DLC20_00^u.bntx'), b'pict19')
-            self.assertEqual(src('UI/cmn/race/ym_CupIconCharger11_Nml^l.bntx'), b'icon11')
+            self.assertEqual(src('UI/cmn/race/ym_CupIconCharger11_Line^s.bntx'), b'icon11')
             names, _ = texts(src('UI/USen/message.sarc'))
             self.assertEqual(names['1301'], 'Cup 1301')  # the base game's cups and courses keep their names
             self.assertEqual(names['1401'], 'Course 1401')
@@ -237,6 +316,53 @@ class CtgpPackTests(unittest.TestCase):
             self.assertEqual(names['11612'], 'CTGP cup 11')
             self.assertEqual(names['11701'], 'GPDX Name 500100')
             self.assertEqual(names['11820'], f'{TAG}Name 500117{END}')  # (slot 20: CT_13)
+
+    def test_bc3_blocks_decode(self):
+        data = bytearray(SLOT)
+        for by in range(2):
+            for bx in range(2):
+                at = P._gob(bx, by, 32, 16, 1)
+                data[at:at + 16] = RED_BC3
+        rgba = P.bc3_rgba(bytes(data), 8, 8, 1)
+        self.assertEqual(set(rgba[i:i + 4] for i in range(0, len(rgba), 4)), {bytes((255, 0, 0, 255))})
+        half = P.icon_rgb565(bytes((0, 0, 255, 255)) * 4, 2, 2, SLOT, 1, 8, 8)  # (and an upscale stays exact)
+        self.assertEqual(struct.unpack_from('<H', half, 0)[0], 0x001F)
+
+    def test_bc7_blocks_decode(self):
+        def bits(*fields):  # (value, width) pairs, least significant first
+            value = pos = 0
+            for v, n in fields:
+                value |= v << pos
+                pos += n
+            return value.to_bytes(16, 'little')
+        # mode 6: endpoints all 127 with p-bit 1 -> 255, alpha too: every texel white and opaque
+        white = bits((1 << 6, 7), *[(127, 7)] * 8, (1, 1), (1, 1), (0, 63))
+        self.assertEqual(set(P.bc7_block(white)), {(255, 255, 255, 255)})
+        # mode 1 (2 subsets, partition 0: the right two columns are subset 1): subset 0 black, subset 1 red
+        red = bits((1 << 1, 2), (0, 6), (0, 6), (0, 6), (63, 6), (63, 6), (0, 6), (0, 6), (0, 6), (0, 6), (0, 6), (0, 6),
+                   (0, 6), (0, 6), (1, 1), (1, 1), *[(0, 3)] * 14, (0, 2), (0, 2))
+        texels = P.bc7_block(red)
+        self.assertEqual(texels[0], (2, 2, 2, 255))  # (6-bit 0 + p-bit 1 = 7-bit 1, expanded to 2)
+        self.assertEqual(texels[3], (255, 2, 2, 255))  # (subset 1, index 0: its red endpoint 63 + p-bit -> 255)
+        self.assertEqual([P.BC7_P2[0] >> i & 1 for i in range(4)], [0, 0, 1, 1])
+        with self.assertRaises(P.PackError):
+            P.bc7_block(bits((1, 1), (0, 127)))  # mode 0: 3 subsets, refused
+
+    def test_late_dlc_layout_places_ctgp_cups_5_to_16(self):
+        late = P.slots('dlc-late')
+        self.assertEqual([s[0] for s in late], list(range(16, 64)))
+        self.assertEqual(late[0][2:], (('Cnsw_11',), 11701, ('Cnsw_11',), 'DLC01'))
+        with tempfile.TemporaryDirectory() as folder:
+            romfs, sd = fixture(Path(folder))
+            files = P.plan(P.locate(sd), romfs, 'dlc-late')
+            src = lambda rel: files[rel].read_bytes() if isinstance(files[rel], Path) else files[rel]
+            self.assertEqual(src('Course/Cnsw_11/course_model.szs'), b'ct16-course_model.szs')
+            self.assertEqual(src('Course/Cnsw_68/course_model.szs'), b'ct63-course_model.szs')
+            self.assertEqual(src('UI/cmn/race/ym_CupIconCharger00_Line^s.bntx'), b'icon4')
+            names, _ = texts(src('UI/USen/message.sarc'))
+            self.assertEqual(names['11601'], 'CTGP cup 4')
+            self.assertEqual(names['11612'], 'CTGP cup 15')
+            self.assertEqual(names['1301'], 'Cup 1301')
 
     def test_build_verify_and_import(self):
         with tempfile.TemporaryDirectory() as folder:

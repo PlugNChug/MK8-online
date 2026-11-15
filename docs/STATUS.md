@@ -92,6 +92,22 @@ Nessa corrida 6.043 imagens (17 GB) foram criadas e descartadas: a rotatividade 
 
 A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o número da pasta (Rock Cup = `Cnsw_31`, `33`, `34`, `62`). Ela vem da tabela do próprio jogo, repetida pelo plugin, e foi conferida com os nomes `117xx` do 4.0.1 (11717 London Loop … 11720 Maple Treeway). A disposição base, que só usa as 4 primeiras copas do DLC, não muda: lá a ordem coincide.
 
+**Fase B, parte sem código — concluída:**
+- **Ícones das copas na tela de seleção:**
+  - **Onde estão:** no 4.0.1 são texturas `ym_CupIcon<Nome>^h` de 200×200 em RGB565 tiled. Ficam num BNTX dentro de `menu.sarc` → `mn_L_CupSlctBtn_00.szs` (Yaz0, SARC de arquivos só com hash).
+  - **Conversão:** o pacote decodifica os ícones coloridos do CTGP (`ym_CupIcon*_130x130^h`, 210×210; 15 em BC3 e o Blooper em BC7), reduz por média de área e grava sobre os ícones das vagas numa cópia do `menu.sarc` 4.0.1. O resto do arquivo não muda e o Yaz0 é gravado sem compressão (válido).
+  - **Decodificador BC7:** modos 1 e 3–7; os modos de 3 subconjuntos (0 e 2) não são usados pelos ícones e são recusados. Um ícone ilegível mantém o original e a importação avisa.
+  - `*_Nml^l` são normal maps, não os ícones.
+  - **Na tela:** copas do jogo base com os 12 ícones do CTGP e as 4 primeiras do DLC com Life Mushroom, Ice Flower, Prankster Comet e Coin (`race-time-trial-x0ys7od8`).
+- **Terceira disposição `dlc-late`:** copas 5–16 do CTGP nas 12 copas do DLC. Com `dlc` e `dlc-late`, as 64 pistas do CTGP ficam acessíveis ao lado das originais.
+- **Testes:** 10 em `test_ctgp_pack`:
+  - ícone convertido conferido texel a texel;
+  - blocos BC3 e BC7 (modos 6 e 1, recusa do modo 0);
+  - disposição `dlc-late`;
+  - SARC de arquivos sem nome e Yaz0 de ida e volta.
+
+**Fase B, parte com código — não iniciada, por decisão de escopo:** copas além de 24, botão aleatório e menus próprios do CTGP. A estrutura de gancho entra junto com o primeiro limite real alterado, no padrão já usado (`yaz0_native.py`: patch da unidade gerada validado por hash), e não como infraestrutura sem uso.
+
 **Fase B (código) — o que a leitura do 4.0.1 mostrou:**
 - **Tabela de copas:** `main+0x12840b8` é a tabela estática de 24 ponteiros para os ícones (Mushroom…Thunder, DLC02–05, Charger00–11), com os ponteiros em relocações `R_AARCH64_RELATIVE` e não no dado.
 - **Limite fixo no código:** `f_700050ccc0` faz `min(copa, 0x17)` antes de ler essa tabela, ou seja, 24 copas fixas.

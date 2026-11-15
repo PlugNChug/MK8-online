@@ -27,7 +27,8 @@ pub struct Status {
     pub courses: u64,
     pub base_courses: u64,
     pub names_verified: bool,
-    /// "base": in place of the base game's cups (+4 DLC cups); "dlc": in place of the DLC's cups only.
+    /// "base": in place of the base game's cups (+4 DLC cups); "dlc" / "dlc-late": CTGP cups 1-12 / 5-16 in place
+    /// of the DLC's cups only.
     pub layout: String,
 }
 

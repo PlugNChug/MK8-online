@@ -410,9 +410,9 @@ function renderCtgp(status, busyNow, running) {
     : ctgp.state === "unsupported" ? "Atualize a build para usar o CTGP."
     : ctgp.state === "unprepared" ? "Prepare o jogo antes de importar o CTGP."
     : ctgp.state === "invalid" ? ctgp.detail
-    : ctgp.installed && ctgp.enabled && ctgp.layout === "dlc" && !dlcOn
+    : ctgp.installed && ctgp.enabled && ctgp.layout?.startsWith("dlc") && !dlcOn
       ? "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las."
-    : ctgp.installed && ctgp.layout === "dlc" ? (ctgp.enabled
+    : ctgp.installed && ctgp.layout?.startsWith("dlc") ? (ctgp.enabled
       ? "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo."
       : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
     : ctgp.installed ? (ctgp.enabled ? "{0} pistas do CTGP no lugar das originais. Vale ao iniciar o jogo."
