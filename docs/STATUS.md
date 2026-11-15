@@ -127,6 +127,17 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
   - 16 copas do CTGP exigiriam 40 copas (o objeto tem lugar para 25) e IDs de pista ≥ 123: o objeto teria de ser realocado ou ampliado e todos esses pontos corrigidos.
 - **Próximo passo (2):** localizar a alocação do objeto de copas (tamanho fixo), o mapa ID → pasta e os vetores do save indexados por ID de pista ou copa. Só depois decidir entre ampliar o objeto existente ou criar um segundo conjunto de copas só para o CTGP, com recordes num arquivo próprio.
 
+**Fase B, passo 2 — IDs de pista (16/11/2026, somente leitura):**
+- **A lista de pistas é um enum do sead:** uma string de 124 nomes separados por vírgula em `main+0xed765d`: `Invalid, Gu_Menu, Test, Reserved01 … Reserved14, Gu_MarioCircuit … Cnsw_68`.
+  - O ID da pista é a posição menos 1. Confere com o rastreamento: Gu_MarioCircuit = 16, Gu_FirstCircuit = 27, Gu_WaterPark = 28.
+  - O último ID é Cnsw_68 = 122, daí o limite de 123 (`0x7b`).
+  - O nome da pasta é o próprio nome no enum (`Course/%s/%s`).
+  - `f_700085bcd8` (`main_181.c`) e `f_7000a5f6d4` (`main_228.c`) usam essa string.
+- **IDs livres:** a Nintendo deixou 14 reservados (`Reserved01`–`Reserved14`, IDs 2–15) e `Test` (ID 1). Uma pista com esses IDs seria lida de `Course/Reserved01/…`, pasta que a sobreposição pode criar.
+- **Consequência para um conjunto próprio do CTGP:**
+  - cabem até 15 pistas novas sem ampliar o espaço de IDs, mas o vetor de copas só tem 1 vaga livre (25 lugares, 24 usados) e a tela de copas só tem duas páginas de 12;
+  - as 64 pistas do CTGP como pistas novas exigiriam ampliar o enum e os 129 pontos limitados a 123, o vetor de copas (131 pontos) e a tela de copas (terceira página), e separar os recordes do save.
+
 **Fase B (código) — mapa da engenharia reversa (16/11/2026), sem alteração no jogo:**
 - **Não há tabela estática copa → pista:** nenhuma permutação de 0–95 (nem de 0–47) em u8/u16/u32 nos segmentos de dados do `main`. O mapeamento é montado em tempo de execução.
 - **Caminho das pistas:** `Course/%s/%s` (`main+0xf0d209`) e `Course/%s` (`+0xf0d223`) são usados por `f_700089ed04` (`main_186.c`). Ela pega o objeto da corrida via `0x70012f9e98`, lê um índice com limite em `+0x58` (u16), lê um byte em `+0x6a` e chama um método virtual (`rt_dispatch`). O nome da pasta vem de um objeto, não de uma tabela.
