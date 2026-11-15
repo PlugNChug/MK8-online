@@ -139,12 +139,20 @@ A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o 
   - mapa reverso em `objeto + 0xC80`: 123 × `{copa u32, posição u32}`;
   - contagem em `+0x1430`: zerada e incrementada 24 vezes (12 copas base + 12 do DLC). A 25ª entrada (índice 24) é a copa de batalha, com as 8 arenas até `Bu_DekaLine` (ID 70), escrita depois do último incremento.
 - **Não há vaga livre:** as 25 entradas estão ocupadas e terminam exatamente em `+0xC80`, onde começa o mapa reverso. Uma 25ª copa de corrida, mesmo como prova de conceito, exige realocar o vetor de copas para uma área maior e corrigir todos os acessos:
-  - o limite de 25 em 131 pontos de 10 funções;
+  - o limite de 25 aparece em 131 pontos de 10 funções: 107 são escritas do próprio construtor e 42 são leituras em 9 funções;
   - a base do mapa reverso (`+0xC80`) e a contagem (`+0x1430`);
   - a tela de copas (terceira página);
   - os IDs reservados 2–15 resolvem o espaço de IDs para até 15 pistas novas sem tocar no limite de 123.
+- **Etapa 1 feita (branch `ctgp-recomp`): copas numa área com lugar para 41.**
+  - `toolchain/cup_relocation.py` altera a cópia de build de 5 unidades geradas, cada uma conferida por SHA-256. `main_082.c` é aceita como fica depois do gancho do diálogo Mii (`toolchain/experimental.py`), que continua aplicado.
+  - O construtor fica igual e, no seu único `return`, entrega o objeto a `mk8_cups_built` (`runtime/mk8/support/cups.c`), que copia as 25 entradas para a área nova; as 16 entradas a mais começam vazias (registros -1).
+  - As 42 leituras passam a aceitar até 41 (`0x29`) e calculam a entrada por `mk8_cup_entry`: a área nova para o objeto do construtor, a conta original (com limite 25) para qualquer outro.
+  - O mapa reverso e a contagem continuam no objeto original. `MK8_CUPS_RELOCATE=0` desliga tudo.
+  - Testes: `tests/test_cup_relocation.py` (4: alteração sintética e nas unidades verificadas, recusa de contagem diferente, harness nativo da cópia/entradas vazias/desligamento).
+  - No jogo (15/11/2026, com DLC): contra o relógio com a mudança ligada e desligada mostra a mesma tela de copas; o rastreador do painel de pistas (`MK8_TRACE_ENTRY=700043c2e8:x1:64`) leu os 24 registros da área nova com a mudança ligada e os 24 do objeto original com ela desligada. Grand Prix completo a 60 FPS, sem erros no log.
+  - Ainda não mostra copa nova: é só a base. Próximas etapas: preencher a 26ª entrada com `Reserved01–04`, ajustar a contagem e o mapa reverso para ela, e a terceira página da tela de copas.
 - **Consequência para um conjunto próprio do CTGP:**
-  - cabem até 15 pistas novas sem ampliar o espaço de IDs, mas o vetor de copas só tem 1 vaga livre (25 lugares, 24 usados) e a tela de copas só tem duas páginas de 12;
+  - cabem até 15 pistas novas sem ampliar o espaço de IDs, mas o vetor original de copas não tem vaga livre (25 lugares: 24 copas de corrida e a de batalha; a etapa 1 acima abre 16) e a tela de copas só tem duas páginas de 12;
   - as 64 pistas do CTGP como pistas novas exigiriam ampliar o enum e os 129 pontos limitados a 123, o vetor de copas (131 pontos) e a tela de copas (terceira página), e separar os recordes do save.
 
 **Fase B (código) — mapa da engenharia reversa (16/11/2026), sem alteração no jogo:**
