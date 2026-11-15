@@ -301,6 +301,11 @@ PROBE_DRAWS = [
 ]
 RT_DATA = ('            for (int k = 0; k < 160 && k * 4 < (int)ub.size; k++) LOG(" %.6g", u[k]);\n',
            '            for (int k = 0; k < 640 && k * 4 < (int)ub.size; k++) LOG(" %.6g", u[k]);  // (toolchain/texture_pool.py)\n')
+RT_DEPTH = ('    if (getenv("LARECOMP_DEBUG_DATA")) {  // vertex streams 0-1 and fragment cbufs: the first floats\n',
+            '    if (getenv("LARECOMP_DEBUG_DATA")) {  // vertex streams 0-1 and fragment cbufs: the first floats\n'
+            '        LOG("[draw]   depth poly3 %#x offset %a %a %a range %a %a base_vertex %d\\n", (unsigned)st.poly[3],\n'
+            '            st.poly_offset[0], st.poly_offset[1], st.poly_offset[2], st.depth_range[0][0], st.depth_range[0][1],\n'
+            '            indexed ? (int32_t)r->x[4] : 0);\n')
 LOOKUP_ANCHOR = 'static NvnTexture *shader_texture_object(int stage, ShaderTexture *st_) {\n'
 USES = [
     ('    return ((NvnTexEntry *)st.tpool->entries)[tic].tex;\n', '    return mk8_tex_entry(st.tpool, tic, st_->type)->tex;\n'),
@@ -349,6 +354,6 @@ def prepare(runtime):
     text = replace(text, LOOKUP_ANCHOR, LOOKUP + LOOKUP_ANCHOR)
     for old, new in USES:
         text = replace(text, old, new)
-    for old, new in (RT_TRACE, RT_PASS, RT_DRAW, RT_DATA, *PROBE_DRAWS):
+    for old, new in (RT_TRACE, RT_PASS, RT_DRAW, RT_DATA, RT_DEPTH, *PROBE_DRAWS):
         text = replace(text, old, new)
     execute.write_text(text, encoding='utf-8')
