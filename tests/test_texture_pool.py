@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 from host import DEPS, prepare_host_sources
-from native import DEFAULT_COMPILER
+from native import DEFAULT_COMPILER, compiler_env
 import texture_pool
 
 
@@ -19,6 +19,64 @@ def between(text, start, end):
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class TexturePoolTests(unittest.TestCase):
+    def test_draw_probe_selector_only_ends_requested_debug_draws(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out/'host')
+            execute = (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8')
+            selector = between(execute, '    // LARECOMP_DEBUG_PROBE_DRAWS=', '    if (g_gpuprof_frame && gp_n) {')
+            source = out/'probe.c'
+            source.write_text(r'''
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+typedef struct { struct { uint64_t code_addr; } stages[2]; } Program;
+static Program program;
+static struct { Program *program; struct { int ncolor; } rt; bool rt_dirty; } st = { .program = &program };
+static bool g_debug_frame;
+static int ended;
+static void vk_end_pass(void) { ended++; }
+static void after_draw(void) {
+''' + selector + r'''
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 100;
+    unsigned mode = (unsigned)atoi(argv[1]);
+    enum { MULTI = 1, SHADER = 2, ALL = 4 };
+    const struct { bool debug; int targets; uint64_t shader; unsigned modes; } cases[] = {
+        { false, 0, 0x123, 0 }, { false, 1, 0x123, 0 }, { false, 2, 0x123, 0 },
+        { false, 0, 0x456, 0 }, { false, 1, 0x456, 0 }, { false, 2, 0x456, 0 },
+        { true, 0, 0x456, ALL }, { true, 0, 0x123, ALL | SHADER },
+        { true, 1, 0x456, ALL }, { true, 1, 0x123, ALL | SHADER },
+        { true, 2, 0x456, ALL | MULTI }, { true, 2, 0x123, ALL | MULTI | SHADER },
+    };
+    for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
+        g_debug_frame = cases[i].debug;
+        st.rt.ncolor = cases[i].targets;
+        program.stages[1].code_addr = cases[i].shader;
+        st.rt_dirty = false;
+        ended = 0;
+        after_draw();
+        bool expected = (cases[i].modes & mode) != 0;
+        if (ended != (int)expected || st.rt_dirty != expected) return (int)i + 1;
+    }
+    return 0;
+}
+''', encoding='utf-8')
+            exe = out/'probe.exe'
+            build = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2',
+                                    str(source), '-o', str(exe)], env=compiler_env(), capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr[-3000:])
+            for value, mode in ((None, 0), ('1', 1), ('123', 2), ('all', 4)):
+                with self.subTest(selector=value):
+                    env = dict(os.environ)
+                    env.pop('LARECOMP_DEBUG_PROBE_DRAWS', None)
+                    if value is not None:
+                        env['LARECOMP_DEBUG_PROBE_DRAWS'] = value
+                    result = subprocess.run([str(exe), str(mode)], env=env, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_cube_sampler_reads_last_cube_of_reused_id(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)

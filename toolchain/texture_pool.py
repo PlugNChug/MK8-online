@@ -288,6 +288,17 @@ RT_PASS = ('    if (g_debug_frame) {\n        LOG("[pass] begin %ux%u:", minw, m
 """)
 RT_DRAW = ('    if (g_debug_frame) debug_draw(pr, r, indexed);\n',
            '    if (g_debug_frame || mk8_rtt_pass) debug_draw(pr, r, indexed);  // (toolchain/texture_pool.py)\n')
+PROBE_DRAWS = [
+    ('    // LARECOMP_DEBUG_PROBE_DRAWS=1 | <fs hex>: with the probe, the debug frame\'s draws into several targets (or with that\n'
+     '    // fragment shader) end their pass, so each one\'s result is probed\n',
+     '    // LARECOMP_DEBUG_PROBE_DRAWS=all | 1 | <fs hex>: end each debug draw\'s pass for the pixel probe:\n'
+     '    // all draws, multiple targets (1), or the matching fragment shader.\n'),
+    ('    static uint64_t probe_fs;\n', '    static uint64_t probe_fs;\n    static bool probe_all;\n'),
+    ('        probe_fs = e ? strtoull(e, NULL, 16) : 0;\n',
+     '        probe_all = e && !strcmp(e, "all");\n        probe_fs = e && !probe_all ? strtoull(e, NULL, 16) : 0;\n'),
+    ('        (probe_fs ? st.program->stages[1].code_addr == probe_fs : st.rt.ncolor > 1))',
+     '        (probe_all || (probe_fs ? st.program->stages[1].code_addr == probe_fs : st.rt.ncolor > 1)))'),
+]
 RT_DATA = ('            for (int k = 0; k < 160 && k * 4 < (int)ub.size; k++) LOG(" %.6g", u[k]);\n',
            '            for (int k = 0; k < 640 && k * 4 < (int)ub.size; k++) LOG(" %.6g", u[k]);  // (toolchain/texture_pool.py)\n')
 LOOKUP_ANCHOR = 'static NvnTexture *shader_texture_object(int stage, ShaderTexture *st_) {\n'
@@ -338,6 +349,6 @@ def prepare(runtime):
     text = replace(text, LOOKUP_ANCHOR, LOOKUP + LOOKUP_ANCHOR)
     for old, new in USES:
         text = replace(text, old, new)
-    for old, new in (RT_TRACE, RT_PASS, RT_DRAW, RT_DATA):
+    for old, new in (RT_TRACE, RT_PASS, RT_DRAW, RT_DATA, *PROBE_DRAWS):
         text = replace(text, old, new)
     execute.write_text(text, encoding='utf-8')
