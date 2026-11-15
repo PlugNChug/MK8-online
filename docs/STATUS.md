@@ -47,6 +47,47 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
 
 **Relatório de jogador (#8, 0.1.8, RTX 3060 notebook, 830 s):** média de 59,3 FPS em corrida, com 18 janelas abaixo de 57 FPS. Em 10 delas houve ≥ 10 compilações (até 759 na largada, cache frio). Num trecho de 8 s ficou travado em 30,0 FPS sem compilação, com espera pela GPU de 99–495 ms por janela, o que indica GPU no limite. O modo de apresentação não aparecia no log; numa NVIDIA ele provavelmente era MAILBOX. Faltam relatórios 0.2.x com a linha `[vk] present mode` e a GPU de quem vê a oscilação.
 
+## CTGP Deluxe — investigação, sem implementação — 14/11/2026
+
+**O que o projeto declara** (ctgpdx.com: download, FAQ e aviso): a versão 1.1.1 "only works on Mario Kart 8 Deluxe version 3.0.3", e o site não explica por quê. A instalação é um ZIP de 3,86 GB (4,52 GB extraído) colocado na raiz do SD de um Switch desbloqueado. O Online Play foi removido, e local/LAN continuam. Os termos dizem "fan creations intended for personal use only and are not for sale or distribution". O pacote não foi baixado: os termos proíbem redistribuição e a extração deixaria o C: abaixo da reserva de 4 GiB.
+
+**O que esta recompilação aceita hoje:**
+- **Arquivos:** `RECOMP_MOD_DIR` sobrepõe `romfs/` e dá saves próprios ao mod (`runtime/mods.c`). O próprio `mods.h` diz "no game code".
+- **Código:** só `main`, `sdk` e `subsdk0` do perfil 4.0.1 são recompilados, com hashes fixos.
+- **Ganchos:** `rt_dispatch` aceita substituições por endereço só em chamadas indiretas. As chamadas diretas entre funções recompiladas não passam por ele. Toda função guest começa com `FN_ENTER(endereço)`, hoje usado só pelo perfilador.
+
+**Por que um mod de código não funciona como no console.** Mods de código do Switch (exlaunch em `exefs/subsdk9` + `main.npdm`, ou patches IPS) fazem duas coisas, e as duas quebram aqui:
+- **Ganchos por endereço:** eles escrevem instruções de desvio no `.text` do `main` usando endereços fixos da versão que conhecem (daí a trava na 3.0.3).
+- **Código recompilado:** numa recompilação estática o código já virou C. Escrever instruções no `.text` em tempo de execução não muda nada, em qualquer versão.
+
+**Caminhos, do menor ao maior:**
+1. **Só arquivos sobre o 4.0.1** (já possível com `RECOMP_MOD_DIR`): substituições de pistas, música e interface podem funcionar. Copas e pistas extras, menus e opções novas dependem do código e não apareceriam. Formatos que mudaram entre 3.0.3 e 4.0.1 podem quebrar.
+2. **Portar o código do mod para o 4.0.1:**
+   - recompilar o módulo do mod como mais uma unidade do pipeline;
+   - capturar os ganchos que ele instala no boot (escritas no `.text` do `main`) e aplicá-los como desvio na entrada das funções, com um `FN_ENTER` que consulte uma tabela de ganchos (exige recompilar o jogo inteiro uma vez);
+   - mapear cada endereço 3.0.3 → 4.0.1 por comparação binária dos dois `main`, o que exige o `main` 3.0.3 do próprio usuário.
+   Ganchos no meio de funções precisariam de pontos inseridos na recompilação.
+3. **Recompilar o 3.0.3 como segundo perfil:** dispensa o mapeamento de endereços, mas todas as adaptações guest com endereço fixo (Mii, LAN, setjmp, Yaz0 e outras) teriam de ser refeitas para o 3.0.3. As do host em geral sobrevivem. A qualificação também teria de ser refeita.
+
+**Próximo passo necessário:** a lista de arquivos do ZIP (sem extrair), para saber se há `exefs/subsdk9`/`main.npdm`/`exefs_patches`, quantos arquivos de `romfs` existem e para qual título. Nada foi alterado no código.
+
+**Roteiro para testar depois (caminho 1, só arquivos; nenhum passo altera código):**
+1. Baixar o ZIP pela página oficial, para uso pessoal. Nunca colocá-lo em `upstream`, testes, releases ou no setup.
+2. Listar sem extrair e guardar a lista fora do repositório:
+   `local/python/Scripts/python.exe -I -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); [print(i.file_size, i.filename) for i in z.infolist()]" "<CTGP.zip>" > local/ctgp-lista.txt`
+   Na lista, procurar o título (`atmosphere/contents/0100152000022000/`, MK8 Deluxe), a pasta `romfs/` e a parte de código (`exefs/subsdk*`, `main.npdm`, `exefs_patches/`). Isso decide entre os caminhos 1, 2 e 3.
+3. Extrair só a pasta do título num diretório novo e vazio, em disco com espaço para os ~4,5 GB **além** da reserva de 4 GiB, por exemplo `<disco>/ctgp/0100152000022000/`. Não executar nada de dentro dela.
+4. Rodar pelo roteiro de teste, que já força `LARECOMP_SAVE_DIR` para uma cópia isolada. Isso importa porque `RECOMP_MOD_DIR` sozinho redireciona os saves para a pasta do mod. Começar por menu e contra-relógio:
+   `local/python/Scripts/python.exe scripts/test-race.py time-trial --last-frame 4800 --shots 3 --shot-step 1400 --timeout 300 --env RECOMP_MOD_DIR=<disco>/ctgp/0100152000022000 --env LARECOMP_LOG_FILES=1`
+   O `RECOMP_MOD_DIR` deve apontar para a pasta que **contém** `romfs/`. O launcher recusa `RECOMP_MOD_DIR` quando um Mii do perfil está ativo (`mii_native.rs`), então nesse teste o perfil Mii fica desativado.
+5. Registrar como evidência:
+   - os arquivos lidos do mod (`LARECOMP_LOG_FILES`);
+   - erros de formato e crashes;
+   - imagens do menu, da seleção de copa e da corrida;
+   - quais pistas e menus mudaram e quais continuaram originais (o esperado sem o código do mod).
+   `gameplay_verified` continua falso.
+6. Os caminhos 2 e 3 só começam depois disso e com o `main` 3.0.3 extraído pelo próprio usuário. O caminho 2 exige primeiro um teste nativo da tabela de ganchos em `FN_ENTER` com funções sintéticas; só depois vem a recompilação do jogo inteiro.
+
 ## Tela dividida local: a seleção de 2 jogadores congelava — 14/11/2026
 
 **Sintoma reproduzido.** Menu principal → Multiplayer → Grand Prix → 50cc → applet de controles (`[hid] controller support (players 2..2): 2 player(s)`) → seleção de personagens para 2 jogadores. A imagem ficava **parada**: sete capturas de 30 s, idênticas byte a byte. O jogo continuava desenhando o mesmo quadro (~80 desenhos por quadro) e suas threads rodavam a 60 Hz sem nenhuma ocupada (máximo 7% de CPU). Os botões dos dois jogadores chegavam ao runtime (`MK8_TRACE_PADS`), mas nem o cursor do jogador 1 andava, e o do jogador 2 nem aparecia. O gerenciador de controles do jogo (`f_70005fc03c`) lia estilo e estado dos IDs 0 e 1 normalmente, e o modo sem Mii não era a causa: com os recursos Mii reais a tela também congelava.
