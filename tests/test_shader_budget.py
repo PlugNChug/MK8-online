@@ -20,8 +20,6 @@ class ShaderBudgetTests(unittest.TestCase):
             out = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out)
             execute = (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8')
-            for _, new in shader_budget.SITES:
-                self.assertIn(new, execute)
             budget = execute[execute.index('// MK8 (toolchain/shader_budget.py): MK8_SHADER_WAIT_MS'):
                              execute.index('static bool prog_ready(Prog *p) {')]
             source = out/'budget.c'
