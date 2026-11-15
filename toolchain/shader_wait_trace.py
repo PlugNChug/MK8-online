@@ -1,4 +1,4 @@
-"""Diagnóstico opt-in das esperas: identifica o programa sem mudar a compilação."""
+"""Registra trabalhos de shader lentos; inventário completo somente por opt-in."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,14 +16,14 @@ def prepare(runtime):
     support = (ROOT/'runtime/mk8/graphics/shader_wait_trace.inc').read_text(encoding='utf-8')
     text = replace(text, '} Prog;\n', '} Prog;\n' + support)
     text = replace(text, '    p->fkey = *fkey;\n', '''    p->fkey = *fkey;
-    if (mk8_wait_trace_ms() > 0)
+    if (mk8_wait_trace_verbose())
         LOG("[mk8:shader-create] frame=%llu program=%p key=%llx vs=%llx fs=%llx gs=%llx\\n",
             (unsigned long long)vk_frame_counter(), (void *)p, (unsigned long long)h,
             (unsigned long long)p->code[0], (unsigned long long)p->code[1], (unsigned long long)p->code[2]);
 ''')
     text = replace(text, '    g_cs_creates++;\n', '''    g_cs_creates++;
     cp->p.code[0] = ss->code_addr;  // Identidade privada do compute para o diagnóstico.
-    if (mk8_wait_trace_ms() > 0)
+    if (mk8_wait_trace_verbose())
         LOG("[mk8:shader-create] frame=%llu program=%p cs=%llx\\n",
             (unsigned long long)vk_frame_counter(), (void *)&cp->p, (unsigned long long)ss->code_addr);
 ''')
@@ -54,8 +54,8 @@ def prepare(runtime):
     path = runtime/'nvn/objects.c'
     text = path.read_text(encoding='utf-8')
     anchor = '    if ((p->stage_mask & 3) == 3) {  // (compile-ahead: a program set now is often drawn much later; shader_ahead.h)\n'
-    text = replace(text, anchor, '''    const char *mk8_trace_wait = getenv("MK8_TRACE_SHADER_WAITS");
-    if (mk8_trace_wait && strtod(mk8_trace_wait, NULL) > 0) {
+    text = replace(text, anchor, '''    extern bool mk8_wait_trace_verbose(void);
+    if (mk8_wait_trace_verbose()) {
         extern uint64_t renderer_present_count(void);
         LOG("[mk8:shader-set] frame=%llu mask=%x vs=%llx fs=%llx gs=%llx cs=%llx\\n",
             (unsigned long long)renderer_present_count(), p->stage_mask,
