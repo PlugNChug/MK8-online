@@ -98,7 +98,25 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
    Ganchos no meio de funções precisariam de pontos inseridos na recompilação.
 3. **Recompilar o 3.0.3 como segundo perfil:** dispensa o mapeamento de endereços, mas todas as adaptações guest com endereço fixo (Mii, LAN, setjmp, Yaz0 e outras) teriam de ser refeitas para o 3.0.3. As do host em geral sobrevivem. A qualificação também teria de ser refeita.
 
-**Próximo passo necessário:** a lista de arquivos do ZIP (sem extrair), para saber se há `exefs/subsdk9`/`main.npdm`/`exefs_patches`, quantos arquivos de `romfs` existem e para qual título. Nada foi alterado no código.
+**Varredura do pacote extraído pelo usuário (15/11/2026, só leitura, fora do repositório em `Documents/CTGPDX`; nada foi executado nem copiado):**
+- **Tamanho e título:** 1.120 arquivos, 4,52 GB, tudo em `atmosphere/contents/0100152000022000/` (MK8 Deluxe).
+- **Código:** `exefs/subsdk1` (Skyline, 42.869 B, build id `782d51e7…`), `exefs/main.npdm` e o plugin `romfs/skyline/plugins/CTGPDX.nro` (548.864 B). Não há `exefs_patches`.
+- **Arquitetura — o fato decisivo:** o `main.npdm` do mod declara processo **32 bits** (flags `0x4`, espaço de endereço de 32 bits). O `main.npdm` do 4.0.1 deste projeto declara **64 bits** (`0x7`). `subsdk1` e o plugin são **ARM de 32 bits**: entrada `b` ARM `0xEA00001E`, `.dynamic` e símbolos ELF32 e importações `A32HookFunction`, `A32InlineHook` e `__aeabi_*`. O MK8 3.0.3 que o mod atende é, portanto, um executável de 32 bits, e o 4.0.1 é AArch64. Isso explica a trava na 3.0.3: a passagem para 64 bits mudou todo o código de máquina.
+- **O que o plugin faz:** não importa nenhum símbolo do jogo; instala ganchos por endereço no `main` de 32 bits. Pelas strings:
+  - 64 pistas `CT_00`–`CT_3F`, com música e arquivos lidos de `content://Course/` e `content://Audio/Resource/Stream/`;
+  - ícones de copa extras (`L_CupIcon_18`–`25`) e um botão aleatório (`Random_00`, `RandomBtnOnOff`);
+  - troca de fundo do menu;
+  - versão `CTGPDelux010101`.
+- **Arquivos (romfs):**
+  - **novos, sem efeito sem o plugin** (1.020 arquivos): 64 pistas novas em `Course/CT_xx` (816 arquivos, 3,4 GB), 128 músicas `pBGM_CT_xx`, 64 imagens `ym_CoursePict_CT_xx`. Nenhuma substitui pista original; o jogo só as carrega se o código registrar os nomes `CT_xx`.
+  - **substituem arquivos originais** (99): as músicas `BGM_MENU_*` e `BGM_TITLE*`, `StaticSysMenu.bars`, `JugemObj.bfres`, `message.sarc` de 15 idiomas, `common.sarc`, `menu.sarc`, `race.sarc`, telas de título e de carregamento, e 80 ícones de copa `ym_CupIcon*`.
+
+**Consequência para os três caminhos:**
+1. **Só arquivos sobre o 4.0.1:** aplicaria apenas os 99 arquivos que substituem originais. Não aparece nenhuma pista nova. As SARCs de mensagens e menus vêm da 3.0.3 e podem não corresponder às do 4.0.1, com textos ou layouts errados ou crash. Serve só como teste de compatibilidade de formato, não como "CTGP jogável".
+2. **Portar o código:** não há comparação binária possível entre um `main` de 32 bits e um de 64 bits. Seria reescrever a lógica do plugin (registro de 64 pistas, copas, menus, música) como ganchos próprios nas funções AArch64 do 4.0.1, com engenharia reversa do 4.0.1. É um projeto novo de mod, não uma conversão; os 1.020 arquivos de pista seriam reaproveitados se os formatos forem os mesmos.
+3. **Perfil 3.0.3:** o recompilador (LASRecomp/SMM2Recomp) traduz só AArch64; não há suporte a A32/Thumb. Exigiria um front-end ARM de 32 bits inteiro, mais a refação de todas as adaptações guest. É o caminho mais caro.
+
+Nenhum dos três dá o CTGP completo no 4.0.1 sem um projeto grande. O passo 4 do roteiro abaixo (caminho 1) só deve ser tentado como teste de formato, depois que o jogo for reimportado.
 
 **Roteiro para testar depois (caminho 1, só arquivos; nenhum passo altera código):**
 1. Baixar o ZIP pela página oficial, para uso pessoal. Nunca colocá-lo em `upstream`, testes, releases ou no setup.
@@ -115,7 +133,7 @@ Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão
    - imagens do menu, da seleção de copa e da corrida;
    - quais pistas e menus mudaram e quais continuaram originais (o esperado sem o código do mod).
    `gameplay_verified` continua falso.
-6. Os caminhos 2 e 3 só começam depois disso e com o `main` 3.0.3 extraído pelo próprio usuário. O caminho 2 exige primeiro um teste nativo da tabela de ganchos em `FN_ENTER` com funções sintéticas; só depois vem a recompilação do jogo inteiro.
+6. Depois da varredura de 15/11, o caminho 2 é uma reimplementação do plugin em AArch64, e o caminho 3 exige um front-end A32 (veja acima). Qualquer um deles precisa de decisão do usuário antes de começar. O caminho 2 começa com um teste nativo da tabela de ganchos em `FN_ENTER` com funções sintéticas; só depois vem a recompilação do jogo inteiro.
 
 ## Tela dividida local: a seleção de 2 jogadores congelava — 14/11/2026
 
