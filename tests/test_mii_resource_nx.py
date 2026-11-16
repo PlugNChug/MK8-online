@@ -97,6 +97,36 @@ class MiiResourceNxTests(unittest.TestCase):
         self.assertEqual((hair[2][2], hair[2][3], hair[2][4], len(hair[5])), (0, 12, 12, 18))
         self.assertIsNone(nx.convert_shape(bytes(0x48), 'hair_normal'))
 
+    def test_glasses_keep_luminance_and_coverage_in_nx_order(self):
+        # Transparent background, partial lens, opaque frame: authored RG8 AFL pixels.
+        pixels = bytes([0, 255, 128, 240, 255, 16, 64, 200])
+        source = pixels + struct.pack('>IHHBBBB', 0, 4, 1, 1, 1, 0, 0)
+        tiled, fields = nx.convert_texture(source, 'glass')
+        self.assertEqual(fields, (4, 1, 1))
+        self.assertEqual(nx.deswizzle(tiled, 4, 1, 2, 0), bytes([255, 0, 240, 128, 16, 255, 200, 64]))
+        other, _ = nx.convert_texture(source, 'hat')
+        self.assertEqual(nx.deswizzle(other, 4, 1, 2, 0), pixels)
+        with self.assertRaisesRegex(ValueError, 'glasses format'):
+            nx.convert_texture(afl_texture(8, 8, 2, 0), 'glass')
+
+    def test_glasses_table_uses_converted_pixels(self):
+        afl = nx.Afl(build_afl())
+        source = afl_texture(8, 8, 1, 7)
+        original_part = afl.part
+        marker = object()
+        afl.textures['glass'][12] = marker
+        afl.part = lambda info: source if info is marker else original_part(info)
+        textures, report = nx.build_textures(afl)
+        self.assertEqual(report['glass'], 1)
+        # MK8 4.0.1 glass table starts at 0x1b14, entry size 0x1c.
+        entry = 0x1b14 + 12 * 0x1c
+        pos, size, packed = struct.unpack_from('<III', textures, entry)
+        tiled = zlib.decompress(textures[pos:pos + packed])
+        self.assertEqual(len(tiled), size)
+        linear = nx.deswizzle(tiled, 8, 8, 2, 0)
+        self.assertEqual(linear[0::2], source[1:128:2])
+        self.assertEqual(linear[1::2], source[0:128:2])
+
     def test_rejects_bad_shapes(self):
         bad_index = bytearray(afl_shape())
         struct.pack_into('>3H', bad_index, len(bad_index) - 6, 0, 1, 9)
