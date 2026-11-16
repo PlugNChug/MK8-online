@@ -102,7 +102,7 @@ A importação direta de NSP/NSZ aceita duas variantes verificadas do programa b
 
 Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e sobrevivem a atualizações e à desinstalação. Para usar outro disco com o launcher portátil: `.\Launcher.exe --data-dir E:\MK8-Local`, e continue usando a mesma pasta.
 
-**Idioma:** o launcher e o instalador oferecem **English** e **Português (Brasil)** (**Language / Idioma**). O idioma do jogo é independente.
+**Idioma:** o launcher e o instalador oferecem **English**, **Português (Brasil)** e **Español** (**Language / Idioma**). O idioma do jogo é independente.
 
 ### Crie seu Mii
 
