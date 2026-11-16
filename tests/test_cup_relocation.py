@@ -104,16 +104,22 @@ L_7000bbbb40:;
                 built = patch_no_mii_unit(folder/unit, Path(tmp))
                 text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
                 out = C.patch_unit(built, Path(tmp)).read_text(encoding='utf-8')
-            sites += out.count('mk8_cup_entry(c->x') + out.count('mk8_cup_select(c->x')
+            sites += out.count('mk8_cup_entry(c->x') + out.count('mk8_cup_select(c->x') + out.count('mk8_cup_by_course(c->x')
             for match in C._functions(out):
                 if match.group(1) in C.SELECTORS:
-                    self.assertIn('mk8_cup_select(c->x', match.group(2))
+                    self.assertIn(C.SELECTORS[match.group(1)] + '(c->x', match.group(2))
             selects = lambda t: Counter(l for l in t.split('\n') if 'COND_CC(c)) ?' in l)
             self.assertEqual(selects(text), selects(out))
             for match in C._functions(out):
                 if match.group(1) in C.UNITS[unit][1]:
                     self.assertIsNone(C.CLAMP.search(match.group(2)))  # (no clamp left at 25)
         self.assertEqual(sites, 56)
+        hooks = Counter()  # (the cup screen: both button setups, both page turns, the state query)
+        for unit in C.UI_UNITS:
+            out = C.patch((folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n'), unit)
+            for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32'):
+                hooks[call] += out.count(call)
+        self.assertEqual(hooks, Counter({'mk8_cup_page_id(c->x': 2, 'mk8_cup_page_turn(c->x': 2, 'mk8_cup_owned(LD32': 1}))
         with tempfile.TemporaryDirectory() as tmp:  # (the path builders: the folder hook once the name is ready)
             out = C.patch_unit(folder/'main_186.c', Path(tmp)).read_text(encoding='utf-8')
             self.assertIn('L_700089ece0:;\n    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));', out)
@@ -148,16 +154,18 @@ void mk8_cups_built(uint64_t object);
 uint64_t mk8_cup_entry(uint64_t base, uint64_t index);
 static uint8_t object[0x1500];
 uint64_t mk8_cup_select(uint64_t base, uint64_t index);
+uint64_t mk8_cup_by_course(uint64_t base, uint64_t index);
 uint64_t mk8_course_folder(uint64_t settings, uint64_t name);
 int mk8_cups_parse(const char *spec, uint8_t *entries, int capacity, const uint8_t *reverse, int16_t ids[][4],
                    char folders[][4][32]);
 static uint32_t rd(uint64_t a) { uint32_t v; memcpy(&v, (const void *)(uintptr_t)a, 4); return v; }
 static void game_cups(void) {  // (24 race cups with courses 16.., the reverse map, the battle cup's courses unmapped)
-    for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
+    memset(object, 0xff, 25 * 0x80);
     memset(object + 0xc80, 0xff, 123 * 8);
     for (uint32_t id = 16; id < 16 + 96; id++) {
         uint32_t where[2] = {(id - 16) / 4, (id - 16) % 4};
         memcpy(object + 0xc80 + id * 8, where, 8);
+        memcpy(object + where[0] * 0x80 + where[1] * 16, &id, 4);
     }
 }
 static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04)
@@ -187,9 +195,58 @@ static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02
     uint32_t other = 40;  // (a course the added cup does not have)
     memcpy(settings + 0x1a0, &other, 4);
     if (mk8_course_folder(at, named) != named) return 18;
+    mk8_cup_by_course(base, 6);  // (a course of the added cup's, set by its ID: cup 6 has 40-43, none of them)
+    if (mk8_course_folder(at, named) != named) return 20;
+    mk8_cup_select(base, 25);
+    mk8_cup_by_course(base, 2);  // (cup 2 has course 27, which the added cup borrows: still the added cup)
+    memcpy(settings + 0x1a0, &ids[0], 4);
+    if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP01")) return 21;
     mk8_cup_select(base, 0);  // (back to a game cup)
     memcpy(settings + 0x1a0, &ids[0], 4);
     if (mk8_course_folder(at, named) != named) return 19;
+    return 0;
+}
+uint64_t mk8_cup_page_id(uint64_t id);
+void mk8_cup_page_turn(uint64_t input);
+int64_t mk8_cup_owned(uint64_t id);
+static int page(int game, int expect) {  // (a button setup: the game's ids for its page; the cups it gets)
+    for (int i = 0; i < 12; i++)
+        if (mk8_cup_page_id((uint64_t)(game * 12 + i)) != (uint64_t)(expect + i)) return 1;
+    return 0;
+}
+static int pages(int added) {  // (MK8_CUPS_EXTRA with one cup, or none)
+    game_cups();
+    uint64_t base = (uint64_t)(uintptr_t)object;
+    mk8_cups_built(base);
+    if (!added) {  // (no added cups: the game's pages as they are)
+        mk8_cup_page_turn(1 << 12);
+        return page(0, 0) || page(1, 12) || mk8_cup_owned(25) != -1 ? 40 : 0;
+    }
+    if (page(0, 0)) return 41;                              // (opened on the first page)
+    mk8_cup_page_turn(1 << 12); if (page(1, 12)) return 42;  // (forward: DLC)
+    mk8_cup_page_turn(1 << 12); if (page(0, 25)) return 43;  // (forward: the added cups, in the first page's layout)
+    if (mk8_cup_owned(25) != 0 || mk8_cup_owned(26) != 1 || mk8_cup_owned(3) != -1 || mk8_cup_owned(41) != -1) return 44;
+    mk8_cup_page_turn(1 << 12); if (page(1, 0)) return 45;   // (forward again: back to the base cups)
+    mk8_cup_page_turn(1 << 11); if (page(0, 25)) return 46;  // (back: the added cups)
+    mk8_cup_page_turn(1 << 11); if (page(1, 12)) return 47;  // (back: DLC)
+    mk8_cup_select(base, 25);                                // (a race from the added cup; the screen opens again)
+    if (page(1, 25)) return 48;
+    if (mk8_cup_page_id(30) != 30) return 49;                // (a cup beyond the pages: unchanged)
+    return 0;
+}
+static int pages16(void) {  // (16 added cups, as CTGP Deluxe's: pages base, DLC, added 1-12, added 13-16)
+    game_cups();
+    uint64_t base = (uint64_t)(uintptr_t)object;
+    mk8_cups_built(base);
+    if (page(0, 0)) return 50;
+    mk8_cup_page_turn(1 << 12); if (page(1, 12)) return 51;
+    mk8_cup_page_turn(1 << 12); if (page(0, 25)) return 52;
+    mk8_cup_page_turn(1 << 12); if (page(1, 37)) return 53;  // (cups 13-16 and 8 empty places after them)
+    if (mk8_cup_owned(40) != 0 || mk8_cup_owned(41) != -1) return 54;
+    mk8_cup_page_turn(1 << 12); if (page(0, 0)) return 55;   // (and round to the base cups)
+    mk8_cup_page_turn(1 << 11); if (page(1, 37)) return 56;
+    mk8_cup_select(base, 39);                                // (a race from added cup 15: the screen opens on its page)
+    if (page(0, 37)) return 57;
     return 0;
 }
 static int refused(void) {
@@ -210,6 +267,8 @@ static int refused(void) {
 int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "added")) return added_cup();
     if (argc > 1 && !strcmp(argv[1], "refused")) return refused();
+    if (argc > 1 && !strcmp(argv[1], "pages")) return pages(getenv("MK8_CUPS_EXTRA") != NULL);
+    if (argc > 1 && !strcmp(argv[1], "pages16")) return pages16();
     int off = argc > 1;  // (MK8_CUPS_RELOCATE=0 in the environment)
     for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
     uint64_t base = (uint64_t)(uintptr_t)object, other = 0x7200000000ull;
@@ -254,6 +313,12 @@ class CupRuntimeTests(unittest.TestCase):
             env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             self.assertEqual(subprocess.run([str(exe), 'added'], env=env, timeout=60).returncode, 0)
             self.assertEqual(subprocess.run([str(exe), 'refused'], timeout=60).returncode, 0)
+            self.assertEqual(subprocess.run([str(exe), 'pages'], env=env, timeout=60).returncode, 0)
+            self.assertEqual(subprocess.run([str(exe), 'pages'], timeout=60).returncode, 0)
+            cups16 = ';'.join(','.join(f'{16 + 4 * c + s}:{20001 + 4 * c + s}:CT{c:02}{s}' for s in range(4))
+                              for c in range(16))
+            env16 = dict(os.environ, MK8_CUPS_EXTRA=cups16)
+            self.assertEqual(subprocess.run([str(exe), 'pages16'], env=env16, timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,5:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             run = subprocess.run([str(exe), 'added'], env=env, timeout=60, capture_output=True)
             self.assertEqual(run.returncode, 70)  # (a reserved ID: the game stops with the reason)

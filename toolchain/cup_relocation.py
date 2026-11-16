@@ -37,13 +37,17 @@ UNITS = {
     'main_119.c': ('2611d632acc04d898350952779d61c0407deee2029f1b4d1cba03f97669b9247', {'70004fb290': (1, 1)}),
     'main_121.c': ('0ba51132a85db27e2f2bbfa04b0f24e75f432ade1142e12869f6f77873e96fe0', {'7000501778': (1, 1)}),
     'main_123.c': ('3aa03c28e54f7fbcb64f8a1159bbbe5fcd3b501cde1ba404b0ffed8363968b2f', {'700050dc6c': (1, 1)}),
+    'main_182.c': ('9937927a02dc942790b2c4a07ea51d5b941b16732864a99d08b7d934ec7f6286', {}),  # (the DLC check only)
 }
 # Units as toolchain/experimental.py leaves them (its hooks are in other functions than the cup readers)
 AFTER_EXPERIMENTAL = {'main_082.c': 'f861292e6a6cb546924ca6f555bd28dce080afebdf251a7c8c9e3d9b8da7c814',
                       'main_115.c': 'cddddcba68768597f16f60322f4753f4c3e7c7ace2d9966708c5ae02d4fb758e'}
 # The readers that copy the chosen course into the selection (+0x2088), and the Grand Prix's (its 4 courses into its
-# list, f_70004fb290): they also tell which cup the race is from.
-SELECTORS = {'70004980a0', '7000498e90', '70004a3940', '70004fb290'}
+# list, f_70004fb290): they also tell which cup the race is from. f_70004a3940 takes a course ID and finds its cup in
+# the reverse map (always a game cup): it tells the cup it found, which keeps an added cup chosen only when they share
+# a course.
+SELECTORS = {'70004980a0': 'mk8_cup_select', '7000498e90': 'mk8_cup_select', '70004a3940': 'mk8_cup_by_course',
+             '70004fb290': 'mk8_cup_select'}
 # The course path builders (Course/%s/%s and Course/%s): once they have the course's name (from the course enum, or for
 # ID 1 the settings' own), they ask mk8_course_folder for the folder of an added cup's course. unit -> (SHA-256,
 # [(label where the name is ready, the line to add)])
@@ -53,8 +57,40 @@ PATHS = {
         ('L_700089ed48:;', '    c->x[20] = (uint64_t)(mk8_course_folder(c->x[21], c->x[20]));  // MK8 (toolchain/cup_relocation.py)'),
     ]),
 }
+# The cup select screen (runtime/mk8/support/cups.c: a third page with the added cups): function -> [(line found once
+# in it, 'before' or 'after', line to add)]. The button setups of both pages map each button's cup; the navigation
+# reports which way a page turn goes; the per-cup DLC check (main_182.c) answers for the added cups.
+_MARK = '  // MK8 (toolchain/cup_relocation.py)'
+UI = {
+    '7000494b44': [('    { uint64_t ea = c->sp + 0x38ull; ST32(ea, (uint32_t)c->x[24]); }', 'before',
+                    '    c->x[24] = (uint64_t)(uint32_t)mk8_cup_page_id(c->x[24]);' + _MARK)],
+    '7000495564': [('    { uint64_t ea = c->sp + 0x38ull; ST32(ea, (uint32_t)c->x[25]); }', 'before',
+                    '    c->x[25] = (uint64_t)(uint32_t)mk8_cup_page_id(c->x[25]);' + _MARK)],
+    '70004966c8': [('    { uint64_t ea = c->x[19] + 0x5a3ull; ST8(ea, (uint32_t)c->x[8]); }', 'after',
+                    '    mk8_cup_page_turn(c->x[20]);' + _MARK),
+                   ('    { uint64_t ea = c->x[19] + 0x5a3ull; ST8(ea, 0u); }', 'after',
+                    '    mk8_cup_page_turn(c->x[20]);' + _MARK)],
+    '7000863428': [('    FN_ENTER(0x7000863428ull);', 'after',
+                    '    { int64_t mk8_owned = mk8_cup_owned(LD32(c->x[1])); if (mk8_owned >= 0) '
+                    '{ ST32(c->x[8], (uint32_t)mk8_owned); return; } }' + _MARK)],
+}
+UI_UNITS = {'main_099.c': {'7000494b44'}, 'main_100.c': {'7000495564', '70004966c8'}, 'main_182.c': {'7000863428'}}
+
+
+def patch_ui(body, name):
+    for anchor, where, line in UI[name]:
+        if body.count(anchor + '\n') != 1:
+            raise ValueError(f'Cup screen changed: f_{name}')
+        body = body.replace(anchor + '\n', (line + '\n' + anchor + '\n') if where == 'before' else (anchor + '\n' + line + '\n'))
+    return body
+
+
 DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_cup_page_id(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
+                'void mk8_cup_page_turn(uint64_t input);  // MK8 (toolchain/cup_relocation.py)\n'
+                'int64_t mk8_cup_owned(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_select(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_cup_by_course(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_course_folder(uint64_t settings, uint64_t name);  // MK8 (toolchain/cup_relocation.py)\n'
                 'void mk8_cups_built(uint64_t object);  // MK8 (toolchain/cup_relocation.py): runtime/mk8/support/cups.c\n')
 CLAMP = re.compile(r'\(void\)\(subs32\(c, \(uint32_t\)c->x\[(\d+)\], 0x19ull\)\);')
@@ -151,7 +187,10 @@ def patch(text, unit):
                     + body[len(entry):].replace('\n    return;\n', '\n    mk8_cups_built(mk8_cups_object);\n    return;\n'))
             seen.add(name)
         elif name in readers:
-            body = patch_function(body, readers[name], 'mk8_cup_select' if name in SELECTORS else 'mk8_cup_entry')
+            body = patch_function(body, readers[name], SELECTORS.get(name, 'mk8_cup_entry'))
+            seen.add(name)
+        elif name in UI_UNITS.get(unit, ()):
+            body = patch_ui(body, name)
             seen.add(name)
         else:
             continue
@@ -159,7 +198,7 @@ def patch(text, unit):
         out.append(body)
         pos = match.end(2)
     out.append(text[pos:])
-    wanted = set(readers) | ({BUILDER} if unit == 'main_081.c' else set())
+    wanted = set(readers) | set(UI_UNITS.get(unit, ())) | ({BUILDER} if unit == 'main_081.c' else set())
     if seen != wanted:
         raise ValueError(f'Cup functions missing in {unit}: {sorted(wanted - seen)}')
     result = ''.join(out)

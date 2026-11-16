@@ -138,16 +138,74 @@ uint64_t mk8_cup_entry(uint64_t base, uint64_t index) {
     return base + (index << 7);
 }
 
-// The readers that copy the chosen course into the selection (f_70004980a0, f_7000498e90, f_70004a3940) or a Grand
-// Prix's 4 courses into its list (f_70004fb290): the same
+// The readers that copy the chosen course into the selection (f_70004980a0, f_7000498e90) or a Grand Prix's 4
+// courses into its list (f_70004fb290): the same
 // entry, and the cup it came from is the one the next race is from.
 uint64_t mk8_cup_select(uint64_t base, uint64_t index) {
     uint64_t at = cup_index(base, index);
     if (at != UINT64_MAX && (int)at != g_cups_selected) {
-        g_cups_selected = (int)at;
         if (at >= MK8_CUPS_ORIGINAL) LOG("[mk8:cups] copa acrescentada %d escolhida\n", (int)at - MK8_CUPS_ORIGINAL + 1);
+        else if (g_cups_selected >= MK8_CUPS_ORIGINAL && g_cups_added > 0) LOG("[mk8:cups] copa %d escolhida\n", (int)at);
+        g_cups_selected = (int)at;
     }
     return mk8_cup_entry(base, index);
+}
+
+// ---- the cup select screen's pages. The game has two: 12 buttons with cups 0-11 (f_7000494b44) or 12-23
+// (f_7000495564), and turning (f_70004966c8, bit 11 or 12 of the input) switches its page byte (+0x5a3) between them.
+// With added cups the runtime keeps more: the page shown is base (0), DLC (1) or added (2, and 3 for cups 13-16),
+// turning moves through all of them, and the button setups ask mk8_cup_page_id for each button's cup. Without added
+// cups nothing changes.
+static int g_cup_page = -1, g_cup_turn;
+
+// From the navigation, after it switches the game's page: which way (bit 12 forward, bit 11 back).
+void mk8_cup_page_turn(uint64_t input) {
+    if (g_cups_added > 0) g_cup_turn = ((input >> 12) & 1) ? 1 : ((input >> 11) & 1) ? -1 : 1;
+}
+
+// From the button setups, for each button's cup (0-11 on the first page, 12-23 on the second): the page decided at
+// the first button (after a turn, the next page that way; on opening, the page of the chosen cup if it is added).
+uint64_t mk8_cup_page_id(uint64_t id) {
+    if (g_cups_added <= 0 || id >= MK8_RACE_CUPS) return id;
+    int slot = (int)(id % 12), game = (int)(id / 12), pages = 2 + (g_cups_added + 11) / 12;
+    if (slot == 0) {
+        if (g_cup_turn) {
+            int from = g_cup_page >= 0 ? g_cup_page : !game;
+            g_cup_page = (from + g_cup_turn + pages) % pages;
+            g_cup_turn = 0;
+        } else {
+            g_cup_page = g_cups_selected >= MK8_CUPS_ORIGINAL ? 2 + (g_cups_selected - MK8_CUPS_ORIGINAL) / 12 : game;
+        }
+    }
+    int page = g_cup_page >= 0 ? g_cup_page : game;
+    return page >= 2 ? (uint64_t)(MK8_CUPS_ORIGINAL + (page - 2) * 12 + slot) : (uint64_t)(page * 12 + slot);
+}
+
+// From the per-cup DLC check (f_7000863428), which the cup state query (f_7000494e44) asks for the cups past the
+// first 12: 0 is no restriction (what an owned DLC cup answers: the cup shows and can be chosen); anything else makes
+// the query ask again, and its cup is shown with "???" (state 0 for 3, 2 otherwise). An added cup with courses has no
+// restriction, an empty one has (1); -1 for the game's cups, which it answers itself (traced 15/11/2026).
+int64_t mk8_cup_owned(uint64_t id) {
+    if (g_cups_added <= 0 || id < MK8_CUPS_ORIGINAL || id >= MK8_CUPS_CAPACITY) return -1;
+    return (int64_t)id - MK8_CUPS_ORIGINAL < g_cups_added ? 0 : 1;
+}
+
+// The reader that sets the selection from a course ID (f_70004a3940): the cup it found in the reverse map is a game
+// cup. An added cup chosen before stays chosen when it shares a course with that cup (the course chosen from it, or
+// a race of one of its courses); otherwise the race is from the game cup (a random course elsewhere, for one).
+uint64_t mk8_cup_by_course(uint64_t base, uint64_t index) {
+    uint64_t at = cup_index(base, index);
+    int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
+    if (at != UINT64_MAX && at < MK8_CUPS_ORIGINAL && cup >= 0 && cup < g_cups_added) {
+        const uint8_t *game = g_cups + at * MK8_CUP_BYTES;
+        for (int k = 0; k < 8; k++) {
+            int32_t id;
+            memcpy(&id, game + 16 * k, 4);
+            for (int s = 0; s < 4; s++)
+                if (id >= 0 && g_ids[cup][s] == id) return mk8_cup_entry(base, index);
+        }
+    }
+    return mk8_cup_select(base, index);
 }
 
 // From the path builders, with the name they chose for the race's course: the course's folder when the race is from
