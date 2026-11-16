@@ -704,5 +704,16 @@
   "Não foi possível extrair a biblioteca Mii.": "Could not extract the Mii library.",
   "Mantenha pelo menos 4 GiB livres para baixar a biblioteca Mii.": "Keep at least 4 GiB free to download the Mii library.",
   "Preparando os modelos Mii. Jogar será liberado ao concluir.": "Preparing Mii models. Play will be available when finished.",
-  "Modelos Mii prontos. Você já pode jogar.": "Mii models are ready. You can play now."
+  "Modelos Mii prontos. Você já pode jogar.": "Mii models are ready. You can play now.",
+  "Depuração": "Debugging",
+  "Salvando…": "Saving…",
+  "As opções são salvas automaticamente e valem ao iniciar o jogo. Não alteram a sessão em andamento.": "Options save automatically and apply the next time you start the game. The current session is unchanged.",
+  "Capturas gráficas (F7/F8)": "Graphics captures (F7/F8)",
+  "F7 captura uma sequência curta; F8 salva um relatório com imagem. As capturas podem pausar o jogo brevemente.": "F7 captures a short sequence; F8 saves a report with a screenshot. Captures may briefly pause the game.",
+  "Gravar áudio para diagnóstico": "Record diagnostic audio",
+  "Grava continuamente em WAV. Cada início pelo launcher cria um arquivo em user-no-mii/audio-recordings, na pasta de dados. Reiniciar pelo menu do jogo substitui a gravação da sessão atual.": "Records continuously to WAV. Each launcher start creates a new file in user-no-mii/audio-recordings, inside the data folder. Restarting from the in-game menu replaces the current session’s recording.",
+  "Menu nativo de configurações (experimental)": "Native settings menu (experimental)",
+  "Ativa o botão de chave e o menu nativo pelo F1. Requer uma build com o experimento incluído.": "Enables the wrench button and native F1 menu. Requires a game build that includes the experiment.",
+  "Depuração salva. As alterações valem ao iniciar o jogo.": "Debugging options saved. Changes apply when starting the game.",
+  "Não foi possível salvar a depuração.": "Could not save debugging options."
 }

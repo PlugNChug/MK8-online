@@ -205,6 +205,18 @@
             </fieldset>
             <p class="hint">Use fontes extraídas do seu console. A importação guarda uma cópia privada. Padrão do sistema mantém as fontes importadas para usar depois. As alterações valem ao iniciar o jogo.</p>
           </article>
+          <article class="card" aria-labelledby="debug-title">
+            <h2 id="debug-title">Depuração</h2>
+            <p class="hint">As opções são salvas automaticamente e valem ao iniciar o jogo. Não alteram a sessão em andamento.</p>
+            <fieldset id="debug-fields" disabled>
+              <div class="settings-grid">
+                <div><label class="settings-check"><span>Capturas gráficas (F7/F8)</span><input id="debug-graphics" type="checkbox" aria-describedby="debug-graphics-hint" /></label><p id="debug-graphics-hint" class="hint">F7 captura uma sequência curta; F8 salva um relatório com imagem. As capturas podem pausar o jogo brevemente.</p></div>
+                <div><label class="settings-check"><span>Gravar áudio para diagnóstico</span><input id="debug-audio" type="checkbox" aria-describedby="debug-audio-hint" /></label><p id="debug-audio-hint" class="hint">Grava continuamente em WAV. Cada início pelo launcher cria um arquivo em user-no-mii/audio-recordings, na pasta de dados. Reiniciar pelo menu do jogo substitui a gravação da sessão atual.</p></div>
+                <div><label class="settings-check"><span>Menu nativo de configurações (experimental)</span><input id="debug-settings" type="checkbox" aria-describedby="debug-settings-hint" /></label><p id="debug-settings-hint" class="hint">Ativa o botão de chave e o menu nativo pelo F1. Requer uma build com o experimento incluído.</p></div>
+              </div>
+            </fieldset>
+            <p id="debug-status" class="hint" role="status"></p>
+          </article>
           <form id="game-settings">
             <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
             <div class="row settings-actions">

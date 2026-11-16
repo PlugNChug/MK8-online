@@ -31,6 +31,7 @@ pub fn run() -> Result<i32> {
     }
     crate::vulkan::check(&request.install, &request.local)?;
     crate::fonts::configure(&request.local)?;
+    crate::debug_options::configure(&request.local)?;
 
     std::env::set_var(
         "MK8_MANUAL_VIEWER",
