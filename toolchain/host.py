@@ -359,7 +359,7 @@ def build_host(source, output, workers=None):
     shim = output/'vk_shim.c'
     run([sys.executable, source/'tools/gen_vk_shim.py', DEPS/'include', source/'runtime/platform/vulkan-1.exports', shim], output/'vk-shim.log', env)
     # Export only the shared runtime ABI used by the generated game code.
-    exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cups_built']
+    exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_course_folder', 'mk8_cups_built']
     exports = output/'exports.def'
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'

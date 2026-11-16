@@ -41,7 +41,21 @@ UNITS = {
 # Units as toolchain/experimental.py leaves them (its hooks are in other functions than the cup readers)
 AFTER_EXPERIMENTAL = {'main_082.c': 'f861292e6a6cb546924ca6f555bd28dce080afebdf251a7c8c9e3d9b8da7c814',
                       'main_115.c': 'cddddcba68768597f16f60322f4753f4c3e7c7ace2d9966708c5ae02d4fb758e'}
+# The readers that copy the chosen course into the selection (+0x2088), and the Grand Prix's (its 4 courses into its
+# list, f_70004fb290): they also tell which cup the race is from.
+SELECTORS = {'70004980a0', '7000498e90', '70004a3940', '70004fb290'}
+# The course path builders (Course/%s/%s and Course/%s): once they have the course's name (from the course enum, or for
+# ID 1 the settings' own), they ask mk8_course_folder for the folder of an added cup's course. unit -> (SHA-256,
+# [(label where the name is ready, the line to add)])
+PATHS = {
+    'main_186.c': ('9584bae10537278bb103dd2c287dadc687a07b40a83deec4ee5f4e1e1b85d7e6', [
+        ('L_700089ece0:;', '    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));  // MK8 (toolchain/cup_relocation.py)'),
+        ('L_700089ed48:;', '    c->x[20] = (uint64_t)(mk8_course_folder(c->x[21], c->x[20]));  // MK8 (toolchain/cup_relocation.py)'),
+    ]),
+}
 DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_cup_select(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_course_folder(uint64_t settings, uint64_t name);  // MK8 (toolchain/cup_relocation.py)\n'
                 'void mk8_cups_built(uint64_t object);  // MK8 (toolchain/cup_relocation.py): runtime/mk8/support/cups.c\n')
 CLAMP = re.compile(r'\(void\)\(subs32\(c, \(uint32_t\)c->x\[(\d+)\], 0x19ull\)\);')
 ENTRY = re.compile(r'c->x\[(\d+)\] = \(uint64_t\)\(c->x\[(\d+)\] \+ \(c->x\[(\d+)\] << 7\)\);')
@@ -96,7 +110,7 @@ def _entry_of(lines, i, labels):
     return None
 
 
-def patch_function(body, expected):
+def patch_function(body, expected, call='mk8_cup_entry'):
     """One reader's body with its clamps widened and entry computations redirected; exactly `expected` of them."""
     lines = body.split('\n')
     labels = {line[:-2]: n for n, line in enumerate(lines) if LABEL.fullmatch(line)}
@@ -115,8 +129,8 @@ def patch_function(body, expected):
         lines[i] = lines[i].replace('0x19ull', '0x29ull')
     for k in entries:
         entry = ENTRY.search(lines[k])
-        lines[k] = lines[k].replace(entry.group(0), 'c->x[%s] = (uint64_t)(mk8_cup_entry(c->x[%s], c->x[%s]));'
-                                    % (entry.group(1), entry.group(2), entry.group(3)))
+        lines[k] = lines[k].replace(entry.group(0), 'c->x[%s] = (uint64_t)(%s(c->x[%s], c->x[%s]));'
+                                    % (entry.group(1), call, entry.group(2), entry.group(3)))
     return '\n'.join(lines)
 
 
@@ -137,7 +151,7 @@ def patch(text, unit):
                     + body[len(entry):].replace('\n    return;\n', '\n    mk8_cups_built(mk8_cups_object);\n    return;\n'))
             seen.add(name)
         elif name in readers:
-            body = patch_function(body, readers[name])
+            body = patch_function(body, readers[name], 'mk8_cup_select' if name in SELECTORS else 'mk8_cup_entry')
             seen.add(name)
         else:
             continue
@@ -153,8 +167,29 @@ def patch(text, unit):
     return result[:first] + DECLARATIONS + result[first:]
 
 
+def patch_paths(text, unit):
+    """The path builders' unit with the folder hook after each label where the course's name is ready."""
+    if 'mk8_course_folder' in text:
+        raise ValueError('Course folder hook already applied')
+    for label, line in PATHS[unit][1]:
+        if text.count('\n' + label + '\n') != 1:
+            raise ValueError(f'Course path builder changed: {label}')
+        text = text.replace('\n' + label + '\n', '\n' + label + '\n' + line + '\n')
+    first = text.index('void f_')
+    return text[:first] + DECLARATIONS + text[first:]
+
+
 def patch_unit(src, output):
-    """The build copy of a cup unit with the relocation; any other unit unchanged."""
+    """The build copy of a cup or path unit with the relocation; any other unit unchanged."""
+    if src.name in PATHS and src.parent.name == 'main':
+        raw = src.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != PATHS[src.name][0]:
+            raise ValueError(f'Course folder hook requires the verified MK8 4.0.1 generated unit {src.name}')
+        target = output/'cups'/src.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(patch_paths(re.sub(r'\r+\n', '\n', raw.decode('utf-8')), src.name))
+        return target
     if src.name not in UNITS or src.parent.name not in ('main', 'experimental'):
         return src
     expected = UNITS[src.name][0] if src.parent.name == 'main' else AFTER_EXPERIMENTAL.get(src.name)

@@ -104,13 +104,24 @@ L_7000bbbb40:;
                 built = patch_no_mii_unit(folder/unit, Path(tmp))
                 text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
                 out = C.patch_unit(built, Path(tmp)).read_text(encoding='utf-8')
-            sites += out.count('mk8_cup_entry(c->x')
+            sites += out.count('mk8_cup_entry(c->x') + out.count('mk8_cup_select(c->x')
+            for match in C._functions(out):
+                if match.group(1) in C.SELECTORS:
+                    self.assertIn('mk8_cup_select(c->x', match.group(2))
             selects = lambda t: Counter(l for l in t.split('\n') if 'COND_CC(c)) ?' in l)
             self.assertEqual(selects(text), selects(out))
             for match in C._functions(out):
                 if match.group(1) in C.UNITS[unit][1]:
                     self.assertIsNone(C.CLAMP.search(match.group(2)))  # (no clamp left at 25)
         self.assertEqual(sites, 56)
+        with tempfile.TemporaryDirectory() as tmp:  # (the path builders: the folder hook once the name is ready)
+            out = C.patch_unit(folder/'main_186.c', Path(tmp)).read_text(encoding='utf-8')
+            self.assertIn('L_700089ece0:;\n    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));', out)
+            self.assertIn('L_700089ed48:;\n    c->x[20] = (uint64_t)(mk8_course_folder(c->x[21], c->x[20]));', out)
+            with self.assertRaises(ValueError):
+                C.patch_paths(out, 'main_186.c')
+            with self.assertRaises(ValueError):
+                C.patch_paths('void f_1(Cpu *c) {\n}\n', 'main_186.c')
         with tempfile.TemporaryDirectory() as tmp:  # (main_082.c as the build passes it: after the Mii dialog hook)
             from experimental import patch_no_mii_unit
             out = C.patch_unit(patch_no_mii_unit(folder/'main_082.c', Path(tmp)), Path(tmp)).read_text(encoding='utf-8')
@@ -136,7 +147,69 @@ HARNESS = r'''
 void mk8_cups_built(uint64_t object);
 uint64_t mk8_cup_entry(uint64_t base, uint64_t index);
 static uint8_t object[0x1500];
+uint64_t mk8_cup_select(uint64_t base, uint64_t index);
+uint64_t mk8_course_folder(uint64_t settings, uint64_t name);
+int mk8_cups_parse(const char *spec, uint8_t *entries, int capacity, const uint8_t *reverse, int16_t ids[][4],
+                   char folders[][4][32]);
+static uint32_t rd(uint64_t a) { uint32_t v; memcpy(&v, (const void *)(uintptr_t)a, 4); return v; }
+static void game_cups(void) {  // (24 race cups with courses 16.., the reverse map, the battle cup's courses unmapped)
+    for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
+    memset(object + 0xc80, 0xff, 123 * 8);
+    for (uint32_t id = 16; id < 16 + 96; id++) {
+        uint32_t where[2] = {(id - 16) / 4, (id - 16) % 4};
+        memcpy(object + 0xc80 + id * 8, where, 8);
+    }
+}
+static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04)
+    game_cups();
+    uint8_t reverse[123 * 8];
+    memcpy(reverse, object + 0xc80, sizeof reverse);
+    uint64_t base = (uint64_t)(uintptr_t)object;
+    mk8_cups_built(base);
+    if (memcmp(reverse, object + 0xc80, sizeof reverse)) return 10;  // (each course keeps its own cup)
+    uint64_t cup = mk8_cup_entry(base, 25);
+    const uint32_t ids[4] = {27, 28, 19, 17};
+    for (int s = 0; s < 4; s++)
+        if (rd(cup + 16 * s) != ids[s] || rd(cup + 16 * s + 4) != 0xffffffffu || rd(cup + 16 * s + 8) != 20001u + s)
+            return 11;
+    if (rd(cup + 64) != 0xffffffffu || rd(mk8_cup_entry(base, 26)) != 0xffffffffu) return 12;
+    static uint8_t settings[0x200];
+    const char *name = "Gu_FirstCircuit";
+    uint64_t named = (uint64_t)(uintptr_t)name, at = (uint64_t)(uintptr_t)settings;
+    memcpy(settings + 0x1a0, &ids[0], 4);
+    if (mk8_course_folder(at, named) != named) return 13;  // (no cup chosen yet)
+    mk8_cup_select(base, 3);
+    if (mk8_course_folder(at, named) != named) return 14;  // (a game cup: its own course)
+    if (mk8_cup_select(base, 25) != cup) return 15;
+    if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP01")) return 16;
+    memcpy(settings + 0x1a0, &ids[3], 4);
+    if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP04")) return 17;
+    uint32_t other = 40;  // (a course the added cup does not have)
+    memcpy(settings + 0x1a0, &other, 4);
+    if (mk8_course_folder(at, named) != named) return 18;
+    mk8_cup_select(base, 0);  // (back to a game cup)
+    memcpy(settings + 0x1a0, &ids[0], 4);
+    if (mk8_course_folder(at, named) != named) return 19;
+    return 0;
+}
+static int refused(void) {
+    game_cups();
+    static uint8_t entries[16 * 0x80];
+    int16_t ids[16][4];
+    char folders[16][4][32];
+    const uint8_t *reverse = object + 0xc80;
+    if (mk8_cups_parse("27:1:A,28:2:B,19:3:C,17:4:D;16:5:E,18:6:F,20:7:G,21:8:H", entries, 16, reverse, ids, folders) != 2
+        || ids[1][3] != 21 || strcmp(folders[1][3], "H")) return 20;
+    const char *bad[] = {"27:1:A,28:2:B,19:3:C", "27:1:A,28:2:B,19:3:C,17:4:D,16:5:E", "27:1:A,27:2:B,19:3:C,17:4:D",
+                         "27:1:A,28:2:B,19:3:C,5:4:D", "27:1:A,28:2:B,19:3:C,115:4:D", "27:0:A,28:2:B,19:3:C,17:4:D",
+                         "27:1,28:2:B,19:3:C,17:4:D", "27:1:A/B,28:2:B,19:3:C,17:4:D", "27:1:,28:2:B,19:3:C,17:4:D", "x"};
+    for (unsigned i = 0; i < sizeof bad / sizeof *bad; i++)
+        if (mk8_cups_parse(bad[i], entries, 16, reverse, ids, folders) >= 0) return 21 + (int)i;
+    return 0;
+}
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "added")) return added_cup();
+    if (argc > 1 && !strcmp(argv[1], "refused")) return refused();
     int off = argc > 1;  // (MK8_CUPS_RELOCATE=0 in the environment)
     for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
     uint64_t base = (uint64_t)(uintptr_t)object, other = 0x7200000000ull;
@@ -178,6 +251,12 @@ class CupRuntimeTests(unittest.TestCase):
             self.assertEqual(subprocess.run([str(exe)], timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_RELOCATE='0')
             self.assertEqual(subprocess.run([str(exe), 'off'], env=env, timeout=60).returncode, 0)
+            env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
+            self.assertEqual(subprocess.run([str(exe), 'added'], env=env, timeout=60).returncode, 0)
+            self.assertEqual(subprocess.run([str(exe), 'refused'], timeout=60).returncode, 0)
+            env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,5:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
+            run = subprocess.run([str(exe), 'added'], env=env, timeout=60, capture_output=True)
+            self.assertEqual(run.returncode, 70)  # (a reserved ID: the game stops with the reason)
 
 
 if __name__ == '__main__':
