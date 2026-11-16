@@ -13,8 +13,10 @@
 // f_700089ec04) pedem o nome a mk8_course_folder, que devolve a pasta dela no lugar do nome da pista original.
 #include "rt.h"
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define MK8_CUPS_ORIGINAL 25
 #define MK8_CUPS_CAPACITY 41  // the game's 25 + 16 (CTGP Deluxe's cups)
@@ -251,10 +253,13 @@ uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index) {
     return mk8_cup_entry(base, index);
 }
 
+static const char *g_race_folder;  // (the race's course folder when it is an added cup's course)
+
 // From the path builders, with the name they chose for the race's course: the course's folder when the race is from
 // an added cup that has it, the name unchanged otherwise.
 uint64_t mk8_course_folder(uint64_t settings, uint64_t name) {
     int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
+    g_race_folder = NULL;
     if (cup < 0 || cup >= g_cups_added || !settings) return name;
     uint32_t id;
     memcpy(&id, (const void *)(uintptr_t)(settings + MK8_SETTINGS_COURSE), 4);
@@ -265,7 +270,39 @@ uint64_t mk8_course_folder(uint64_t settings, uint64_t name) {
             logged[cup][s] = 1;
             LOG("[mk8:cups] pista %u da copa acrescentada %d: Course/%s\n", id, cup + 1, g_folders[cup][s]);
         }
+        g_race_folder = g_folders[cup][s];
         return (uint64_t)(uintptr_t)g_folders[cup][s];
     }
     return name;
+}
+
+// From nn::fs::OpenFile (sdk f_7004050080), with the path the game opens: during a race of an added cup's course, its
+// course music (the sound system's "content://Audio/Resource/Stream/pBGM_<course>_N.bfstm", and _F for the last lap)
+// is the course folder's own, <folder>_N.bfstm / _F.bfstm in the overlay's Audio/Resource/Stream, when it is there;
+// any other path, or no such file, unchanged. (The overlay is in the RomFS index from the start; the guest's RomFS
+// reads the file with its own size.)
+#define MK8_STREAM_DIR "content://Audio/Resource/Stream/"
+
+uint64_t mk8_stream_path(uint64_t path) {
+    const char *folder = g_race_folder, *p = (const char *)(uintptr_t)path;
+    if (!folder || !p) return path;
+    size_t n = strnlen(p, 256), dir = sizeof MK8_STREAM_DIR - 1;
+    if (n >= 256 || n < dir + 5 + 8 || strncmp(p, MK8_STREAM_DIR, dir) || strncmp(p + dir, "pBGM_", 5)) return path;
+    const char *tail = p + n - 8;  // "_N.bfstm" or "_F.bfstm"
+    if (strcmp(tail, "_N.bfstm") && strcmp(tail, "_F.bfstm")) return path;
+    static char out[2][128];
+    char *buf = out[tail[1] == 'F'];
+    const char *overlay = getenv("MK8_ROMFS_OVERLAY");
+    char host[1100];
+    struct stat st;
+    if (!overlay || snprintf(host, sizeof host, "%s/Audio/Resource/Stream/%s%s", overlay, folder, tail) >= (int)sizeof host
+        || stat(host, &st) || !S_ISREG(st.st_mode))
+        return path;
+    snprintf(buf, sizeof out[0], "%s%s%s", MK8_STREAM_DIR, folder, tail);
+    static const char *logged[2];
+    if (logged[tail[1] == 'F'] != folder) {
+        logged[tail[1] == 'F'] = folder;
+        LOG("[mk8:cups] música %s -> %s\n", p + dir, buf + dir);
+    }
+    return (uint64_t)(uintptr_t)buf;
 }

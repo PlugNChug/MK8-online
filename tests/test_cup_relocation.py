@@ -115,6 +115,12 @@ L_7000bbbb40:;
                 if match.group(1) in C.UNITS[unit][1]:
                     self.assertIsNone(C.CLAMP.search(match.group(2)))  # (no clamp left at 25)
         self.assertEqual(sites, 56)
+        sdk = GENERATED.parents[1]/'sdk'/'sdk_008.c'  # (nn::fs::OpenFile: the course music's path)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = C.patch_unit(sdk, Path(tmp)).read_text(encoding='utf-8')
+            self.assertEqual(out.count('    FN_ENTER(0x7004050080ull);\n    c->x[1] = mk8_stream_path(c->x[1]);'), 1)
+            with self.assertRaises(ValueError):
+                C.patch_sdk(out, 'sdk_008.c')
         hooks = Counter()  # (the cup screen: both button setups, both page turns, the state query)
         for unit in C.UI_UNITS:
             out = C.patch((folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n'), unit)
@@ -264,6 +270,32 @@ static int pages16(void) {  // (16 added cups, as CTGP Deluxe's: pages base, DLC
     if (page(0, 37)) return 57;
     return 0;
 }
+uint64_t mk8_stream_path(uint64_t path);
+static int music(void) {  // (MK8_ROMFS_OVERLAY with only Audio/Resource/Stream/CTGP01_N.bfstm)
+    game_cups();
+    uint64_t base = (uint64_t)(uintptr_t)object;
+    mk8_cups_built(base);
+    static uint8_t settings[0x200];
+    uint32_t id = 27;
+    memcpy(settings + 0x1a0, &id, 4);
+    uint64_t at = (uint64_t)(uintptr_t)settings, name = (uint64_t)(uintptr_t)"Gu_FirstCircuit";
+    const char *n = "content://Audio/Resource/Stream/pBGM_WU_FIRST_CIRCUIT_N.bfstm";
+    const char *f = "content://Audio/Resource/Stream/pBGM_WU_FIRST_CIRCUIT_F.bfstm";
+    const char *menu = "content://Audio/Resource/Stream/BGM_MENU_SINGLE_MULTI.bfstm";
+    uint64_t pn = (uint64_t)(uintptr_t)n, pf = (uint64_t)(uintptr_t)f, pm = (uint64_t)(uintptr_t)menu;
+    if (mk8_stream_path(pn) != pn) return 60;  // (no race of an added cup's course)
+    mk8_cup_select(base, 25);
+    mk8_course_folder(at, name);
+    const char *got = (const char *)(uintptr_t)mk8_stream_path(pn);
+    if (strcmp(got, "content://Audio/Resource/Stream/CTGP01_N.bfstm")) return 61;
+    if (mk8_stream_path(pf) != pf) return 62;  // (no _F for it in the overlay: the course's own)
+    if (mk8_stream_path(pm) != pm) return 63;  // (not a course's music)
+    id = 40;  // (the next race is a course the added cup does not have)
+    memcpy(settings + 0x1a0, &id, 4);
+    mk8_course_folder(at, name);
+    if (mk8_stream_path(pn) != pn) return 64;
+    return 0;
+}
 static int refused(void) {
     game_cups();
     static uint8_t entries[16 * 0x80];
@@ -287,6 +319,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "refused")) return refused();
     if (argc > 1 && !strcmp(argv[1], "pages")) return pages(getenv("MK8_CUPS_EXTRA") != NULL);
     if (argc > 1 && !strcmp(argv[1], "pages16")) return pages16();
+    if (argc > 1 && !strcmp(argv[1], "music")) return music();
     int off = argc > 1;  // (MK8_CUPS_RELOCATE=0 in the environment)
     for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
     uint64_t base = (uint64_t)(uintptr_t)object, other = 0x7200000000ull;
@@ -337,6 +370,12 @@ class CupRuntimeTests(unittest.TestCase):
                               for c in range(16))
             env16 = dict(os.environ, MK8_CUPS_EXTRA=cups16)
             self.assertEqual(subprocess.run([str(exe), 'pages16'], env=env16, timeout=60).returncode, 0)
+            overlay = out/'overlay'
+            (overlay/'Audio/Resource/Stream').mkdir(parents=True)
+            (overlay/'Audio/Resource/Stream/CTGP01_N.bfstm').write_bytes(b'FSTM')
+            env = dict(os.environ, MK8_CUPS_EXTRA='30000=27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04',
+                       MK8_ROMFS_OVERLAY=str(overlay))
+            self.assertEqual(subprocess.run([str(exe), 'music'], env=env, timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,5:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             run = subprocess.run([str(exe), 'added'], env=env, timeout=60, capture_output=True)
             self.assertEqual(run.returncode, 70)  # (a reserved ID: the game stops with the reason)

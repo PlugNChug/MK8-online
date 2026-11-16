@@ -90,6 +90,12 @@ UI = {
 UI_UNITS = {'main_099.c': {'7000494b44'}, 'main_100.c': {'7000495564', '70004966c8'}, 'main_182.c': {'7000863428'}, 'main_084.c': {'700041fd6c'}}
 
 
+# nn::fs::OpenFile(FileHandle *, const char *path, int mode) in the SDK (sdk+0x50080, by its exported name): the
+# course music's path is asked for first (runtime/mk8/support/cups.c mk8_stream_path).
+SDK_UNITS = {'sdk_008.c': ('67f6d5f3e751361429f4caae53ea0481e0897e0ea2da03c7b5638e81981b2f13', {'7004050080'})}
+UI['7004050080'] = [('    FN_ENTER(0x7004050080ull);', 'after', '    c->x[1] = mk8_stream_path(c->x[1]);' + _MARK)]
+
+
 def patch_ui(body, name):
     for anchor, where, line in UI[name]:
         if body.count(anchor + '\n') != 1:
@@ -103,6 +109,7 @@ DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 
                 'void mk8_cup_page_turn(uint64_t input);  // MK8 (toolchain/cup_relocation.py)\n'
                 'int64_t mk8_cup_owned(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'int64_t mk8_cup_label(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_stream_path(uint64_t path);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_select(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
@@ -236,8 +243,36 @@ def patch_paths(text, unit):
     return text[:first] + DECLARATIONS + text[first:]
 
 
+def patch_sdk(text, unit):
+    """The SDK unit with its hooks (each function once)."""
+    if 'mk8_stream_path' in text:
+        raise ValueError('SDK hook already applied')
+    out, pos, seen = [], 0, set()
+    for match in _functions(text):
+        if match.group(1) not in SDK_UNITS[unit][1]:
+            continue
+        out += [text[pos:match.start(2)], patch_ui(match.group(2), match.group(1))]
+        pos = match.end(2)
+        seen.add(match.group(1))
+    if seen != SDK_UNITS[unit][1]:
+        raise ValueError(f'SDK functions missing in {unit}')
+    out.append(text[pos:])
+    result = ''.join(out)
+    first = result.index('void f_')
+    return result[:first] + DECLARATIONS + result[first:]
+
+
 def patch_unit(src, output):
     """The build copy of a cup or path unit with the relocation; any other unit unchanged."""
+    if src.name in SDK_UNITS and src.parent.name == 'sdk':
+        raw = src.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != SDK_UNITS[src.name][0]:
+            raise ValueError(f'Course music hook requires the verified MK8 4.0.1 generated unit {src.name}')
+        target = output/'cups'/'sdk'/src.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(patch_sdk(re.sub(r'\r+\n', '\n', raw.decode('utf-8')), src.name))
+        return target
     if src.name in PATHS and src.parent.name == 'main':
         raw = src.read_bytes()
         if hashlib.sha256(raw).hexdigest() != PATHS[src.name][0]:
