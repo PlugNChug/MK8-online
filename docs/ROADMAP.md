@@ -4,6 +4,17 @@ O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rod
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
 
+## Prioridades após a 0.3.0 experimental
+
+A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. Veja as [notas bilíngues](releases/0.3.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.
+
+- **[bloqueia]** Renovar corretamente a sessão autenticada na reconexão Steam à mesma sala (#32), preservando proteção antirreplay, e validar retorno/corrida entre dois PCs.
+- **[bloqueia]** Investigar falha de inicialização SDL/Vulkan apesar do preflight aprovado (#5) e crashes de memória em Intel/AMD integradas (#11/#17).
+- **[visível]** Retestar os defeitos gráficos #8/#26 e perfis de desempenho #7; pausas de shaders ainda existem. Mais pistas CTGP, GPUs e três/quatro jogadores precisam de cobertura.
+- **[validação]** Upgrade 0.2.0 → 0.3.0, reconstrução do jogo, saves/reinício, peças Mii, DLC e bibliotecas locais em máquinas dos testadores. Corrida completa, áudio/controle/relógio e multiplayer permanecem sem qualificação global.
+
+Os registros por versão abaixo são históricos; a revisão atual de todas as Issues está em STATUS.
+
 Preparação 0.1.7: Python 3.12 x64 privado baixado automaticamente, com reparo de ambientes incompatíveis/incompletos e backup. Resta acompanhar instalações em outras máquinas; detalhes em STATUS.md.
 
 Preparação 0.1.8 (testes): recuperação de caches, isolamento Python/pip, coordenação de processos e tratamento de arquivos bloqueados/unidades indisponíveis. Carregador Vulkan incluído. Resta validar em máquinas dos relatos e com antivírus/dispositivos reais; não altera a qualificação de gameplay.

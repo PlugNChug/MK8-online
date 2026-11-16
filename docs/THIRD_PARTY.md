@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Revisão de compatibilidade — 16/11/2026
+
+Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.
+
 ## Investigação de geração de quadros — 16/11/2026
 
 Analisada a interpolação já existente em `runtime/nvn/framegen*` e no backend Vulkan do upstream fixado, com seus avisos de licença preservados. Não foi incorporado FSR Frame Generation. Consultadas a [documentação SDL3 de modos de vídeo](https://wiki.libsdl.org/SDL3/SDL_DisplayMode) e as [orientações AMD sobre taxa de entrada e latência da interpolação](https://gpuopen.com/fidelityfx-super-resolution-3/); os resultados de outros projetos não qualificam esta implementação.

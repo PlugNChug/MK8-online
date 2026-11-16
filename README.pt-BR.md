@@ -13,7 +13,7 @@
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.2.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.3.0-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Teste_público-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,42 +28,38 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **A 0.2.0 é uma release de teste público, ainda experimental.** Corridas solo são concluídas nos testes locais. Persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. O multijogador entre dois PCs diferentes ainda não foi qualificado: é justamente isso que esta release pede para os testadores experimentarem.
+> **A 0.3.0 é uma pré-release pública experimental, com bugs conhecidos.** Corridas solo são concluídas nos testes locais. Persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. O multijogador entre dois PCs diferentes ainda não foi qualificado: é justamente isso que esta release pede para os testadores experimentarem.
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
 
-## Novidades da 0.2.0
+## Novidades da 0.3.0
 
-- **Criador de Mii.** A aba **Perfil Mii** virou um criador. Dê um nome ao Mii e escolha cada parte (corpo, rosto, pele, cabelo, olhos, sobrancelhas, nariz, boca, barba, óculos, pinta) em botões que mostram o *seu* Mii com aquela opção. A prévia põe a cabeça no próprio corpo do MK8 usado nas salas, lido do seu jogo preparado: tipo, altura, porte e cor favorita ficam visíveis.
-- **Seu Mii no jogo.** Ao salvar um Mii, o launcher prepara sozinho os modelos Mii do jogo. O jogo então desenha seu Mii com o renderer original: retratos na seleção, Mii Suits, o piloto com capacete e o ícone no minimapa.
-- **Só salas pela Steam.** O **Multijogador** agora usa a Steam: crie uma sala e convide amigos da sua lista da Steam. Eles aceitam no launcher ou no chat da Steam, sem VPN e sem abrir portas. Você entra nas salas como seu Mii, e o nome dele é o nome que os outros veem.
-- **O jogo abre na sala.** Depois de criar ou entrar numa sala, o launcher abre o jogo sozinho. Uma entrada automática experimental leva cada jogador à sala LAN: o anfitrião cria a sala, e os convidados entram assim que ela existe. Personagem e regras continuam por sua conta.
-- **Correções:**
-  - os logs do jogo não ficam mais vazios quando o launcher abre o jogo, então os relatórios de suporte voltam a contê-los;
-  - a queda na votação de pista LAN (pedido de retrato Mii ausente) foi corrigida;
-  - os caminhos dos recursos Mii funcionam no Windows;
-  - pools de descritores e o histórico de cubemaps são liberados quando o jogo os finaliza.
+- **CTGP Deluxe no MK8 4.0.1:** importe os recursos das pistas do CTGP Deluxe 1.1.1 (originalmente para 3.0.3), incluindo 64 pistas em 16 copas adicionais com nomes, imagens, ícones e músicas. A adaptação não executa o plugin original; a compatibilidade é incompleta e ainda há bugs.
+- **Launcher redesenhado:** instalação horizontal em etapas, configurações em módulos, idioma do jogo acessível, criação guiada de Mii, amigos/salas Steam e relatórios de suporte mais claros.
+- **DLC opcional:** importe seu Booster Course Pass na preparação ou depois e ative/desative sem excluí-lo. Jogo, DLC e chaves nunca são distribuídos.
+- **Correções e melhorias:** congelamento ao carregar recursos Mii, óculos, verificação Vulkan, memória/texturas, miniaturas MKTV, manual local, fontes, shaders de partículas, áudio, seleção de controles e esperas de shaders na tela dividida em dois jogadores.
+- **Configurações e apresentação:** leitura CRLF do INI corrigida. A geração experimental de quadros pode apresentar cerca de 120 FPS nos trechos medidos, mantendo a simulação em 60 Hz; continua desligada por padrão.
 
-Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
+Leia as [notas da 0.3.0 em inglês ou português](docs/releases/0.3.0.md) e o [estado técnico](docs/STATUS.md). Reconexão Steam, inicialização Vulkan em alguns PCs, falhas de memória em GPUs integradas, defeitos gráficos e engasgos de shaders continuam pendentes. **É uma pré-release experimental, não uma build totalmente funcional ou estável.**
 
 ## Onde estamos
 
-**Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime em desenvolvimento também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
+**Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime da 0.3.0 também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
 
-As correções locais de desempenho na `fix-chore` usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.
+As correções de desempenho da 0.3.0 usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.
 
-A branch de desenvolvimento `fix-chore` integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. O commit `8202c32` também integrou a fase B do CTGP (copas adicionais e seus hooks de guest). Essas mudanças não são uma nova release publicada; verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
+A versão 0.3.0 integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. O commit `8202c32` também integrou a fase B do CTGP (copas adicionais e seus hooks de guest). Verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
 
-Correções ainda não publicadas sobre `fix-chore`: descoberta da DLL Steam em bibliotecas adicionais e pastas internas dos jogos, com acessores C versionados; busca de todos os amigos, inclusive offline; fragmentação confiável de datagramas LAN maiores; e liberação da sessão Steam ao fechar o jogo, permitindo aceitar outro convite sem reiniciar o launcher. Atualize os dois PCs; uma corrida completa entre máquinas ainda não foi qualificada.
+Melhorias Steam da 0.3.0: descoberta da DLL Steam em bibliotecas adicionais e pastas internas dos jogos, com acessores C versionados; busca de todos os amigos, inclusive offline; fragmentação confiável de datagramas LAN maiores; e liberação da sessão Steam ao fechar o jogo, permitindo aceitar outro convite sem reiniciar o launcher. Atualize os dois PCs; uma corrida completa entre máquinas ainda não foi qualificada.
 
 O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. Ambos criam a sala Steam do anfitrião; convidados aceitam um convite e escolhem navegação automática ou manual dentro do jogo. A automação mantém o Mii ativo selecionado. O conversor corrige os canais da textura dos óculos: regenere os recursos Mii derivados e recompile o runtime para aplicar essas correções Mii.
 
-**Instalar → Arquivos do jogo** aceita um NSP opcional do Booster Course Pass, importado após a build bem-sucedida na mesma preparação pelo importador verificado existente. Campo vazio preserva a DLC atual. A importação posterior continua em **Instalar → Conteúdo adicional**, com atalho em **Jogar**; ativar/desativar continua em **Configurações**. A Steam continua exigindo DLC e CTGP equivalentes. Esta contribuição não inclui DLL Valve, arquivos do jogo, novo instalador nem tag de lançamento.
+**Instalar → Arquivos do jogo** aceita um NSP opcional do Booster Course Pass, importado após a build bem-sucedida na mesma preparação pelo importador verificado existente. Campo vazio preserva a DLC atual. A importação posterior continua em **Instalar → Conteúdo adicional**, com atalho em **Jogar**; ativar/desativar continua em **Configurações**. A Steam continua exigindo DLC e CTGP equivalentes. Nenhuma DLL Valve ou arquivo do jogo é distribuído.
 
 | Área | Progresso atual | Próxima etapa |
 | --- | --- | --- |
-| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.1.8 → 0.2.0 por testadores reais |
+| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.2.0 → 0.3.0 em mais PCs |
 | Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
 | Multijogador | Salas Steam com convites; duas instâncias do jogo no mesmo PC entraram sozinhas na mesma sala LAN | Convidado entrando pela Steam a partir de outro PC, corridas completas entre dois PCs |
@@ -93,14 +89,14 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 
 ### Instalar e jogar
 
-1. Baixe `MK8-online-0.2.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem a 0.1.8? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
+1. Baixe `MK8-online-0.3.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
 2. Abra **Instalar**. Conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo** (o launcher encontra as chaves junto do jogo, ou selecione as suas).
 3. Rode a etapa **Build do jogo**. Depois de atualizar de uma versão anterior, rode de novo: o jogo é recompilado com o runtime novo.
 4. Escolha **Jogar solo**.
 
 A etapa **Ferramentas** do launcher prepara o Python privado diretamente, sem PowerShell ou carregamento de ZIP pelo .NET. O CPython vem do pacote oficial NuGet fixado; o arquivo e as dependências são conferidos por hash. Ambientes interrompidos são preservados antes do reparo. Mantenha a proteção do antivírus ativa.
 
-Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`): use **Já tenho o jogo extraído numa pasta**. O perfil ativo é o 4.0.1 AArch64; outras versões, DLC e importação de XCI/XCZ não foram validadas.
+Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`): use **Já tenho o jogo extraído numa pasta**. O perfil ativo é o 4.0.1 AArch64; outras versões do jogo e importação de XCI/XCZ não foram validadas. O DLC suportado é importado separadamente.
 
 A importação direta de NSP/NSZ aceita duas variantes verificadas do programa base, mantendo a conferência integral dos hashes e da atualização 4.0.1. Outros conteúdos base continuam sem suporte; nesse caso, use uma pasta extraída compatível. Os detalhes da validação estão no [estado técnico](docs/STATUS.md).
 
@@ -153,12 +149,12 @@ Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [i
 
 ## Pacote de pistas CTGP Deluxe (opcional, experimental)
 
-O CTGP Deluxe 1.1.1 é feito para o MK8 3.0.3 (32 bits); esta build é 4.0.1 (64 bits), então o código dele não roda
-aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP nas vagas de pista existentes, 48 nas
-12 copas do jogo base e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC.
+O CTGP Deluxe 1.1.1 foi feito para o MK8 3.0.3 (32 bits). A 0.3.0 adapta seus recursos de pistas ao MK8 4.0.1
+(64 bits), sem executar o plugin original. Escolha 16 copas adicionais com as 64 pistas ou um layout de substituição,
+descrito abaixo. A compatibilidade é incompleta: persistem bugs por pista, defeitos gráficos e quedas de desempenho.
 
 1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
-2. **Configurações → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
+2. **Instalar → Conteúdo adicional → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
    No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
    Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC), **no lugar das
    copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado) ou **em 16

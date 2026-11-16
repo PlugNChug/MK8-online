@@ -1,5 +1,5 @@
 # Builds the packaged launcher and its setup.exe for a version tag, and publishes them as a GitHub Release.
-# Tags with a suffix (v0.2.0-alpha.1) become pre-releases; the in-launcher updater offers both.
+# Suffixed tags and v0.3.0 are experimental pre-releases; the updater offers both release types.
 name: release
 
 on:
@@ -55,7 +55,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.title.outputs.text }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') || github.ref_name == 'v0.3.0' }}
           body_path: target/dist/release-notes.md
           files: |
             target/dist/*-setup.exe
