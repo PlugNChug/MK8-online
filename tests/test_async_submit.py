@@ -34,6 +34,10 @@ class AsyncSubmitTests(unittest.TestCase):
 #include <string.h>
 #include <windows.h>
 #include "nvn/nvn.h"
+#include "nvn/mk8_compute_prepare.h"
+int shader_mode(void) { return 0; }
+uint64_t renderer_present_count(void) { return 0; }
+void mk8_compute_prepare(Mk8ComputeSnapshot *s) { free(s); }
 void rt_log(const char *fmt, ...) { (void)fmt; }
 void rt_fatal_trace(void) { abort(); }
 static NvnSync syncs[4];
