@@ -87,6 +87,12 @@ def prepare_host_sources(source, output):
     if text.count(old) != 1:
         raise ValueError('Audio mix logging changed upstream')
     audio.write_text(text.replace(old, '    if (r->elapsed_frames >= 2 && !({ static int mk8_on = -1; if (mk8_on < 0) mk8_on = getenv("LARECOMP_AUDIO_LOG") != NULL; mk8_on; })) return;\n'+old), encoding='utf-8')
+    text = audio.read_text(encoding='utf-8')
+    old = '        if (g_nswap) swap_voice_new(v);\n        v->prev_volume = v->volume;\n'
+    if text.count(old) != 1:
+        raise ValueError('Audio new-voice gain boundary changed upstream')
+    # New voices start with zero previous volume; use the existing block ramp for their first samples.
+    audio.write_text(text.replace(old, '        if (g_nswap) swap_voice_new(v);\n        v->prev_volume = 0.f;\n'), encoding='utf-8')
     dispatch = runtime/'dispatch.c'
     text = dispatch.read_text(encoding='utf-8')
     old = '    Cpu *c = kernel_current_cpu();'
@@ -261,6 +267,16 @@ def prepare_host_sources(source, output):
     prepare_dlc(runtime)
     from shared_vram import prepare as prepare_shared_vram
     prepare_shared_vram(runtime)
+    from present_mode import prepare as prepare_present_mode
+    prepare_present_mode(runtime)
+    from translation_cache import prepare as prepare_translation_cache
+    prepare_translation_cache(runtime)
+    from vertex_cache_age import prepare as prepare_vertex_cache_age
+    prepare_vertex_cache_age(runtime)
+    from texture_retire import prepare as prepare_texture_retire
+    prepare_texture_retire(runtime)
+    from controller_applet import prepare as prepare_controller_applet
+    prepare_controller_applet(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
@@ -305,6 +321,8 @@ def prepare_host_sources(source, output):
                 kernel_dump_threads();
             }''')
     kernel.write_text(text, encoding='utf-8')
+    from core_preempt import prepare as prepare_core_preempt
+    prepare_core_preempt(runtime)
     windows = runtime/'platform/windows.c'
     text = windows.read_text(encoding='utf-8')
     boundary = 'static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
@@ -343,7 +361,7 @@ def build_host(source, output, workers=None):
     shim = output/'vk_shim.c'
     run([sys.executable, source/'tools/gen_vk_shim.py', DEPS/'include', source/'runtime/platform/vulkan-1.exports', shim], output/'vk-shim.log', env)
     # Export only the shared runtime ABI used by the generated game code.
-    exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm']
+    exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop']
     exports = output/'exports.def'
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'

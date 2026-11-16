@@ -1,4 +1,428 @@
-# Estado técnico — 13/11/2026
+# Estado técnico — 15/11/2026
+
+## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
+
+**O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
+
+**Partes:**
+- `toolchain/ctgp_pack.py` / `import_ctgp.py` montam `<dados>/ctgp/pack`:
+  - a partir da pasta extraída do ZIP oficial, com hardlinks no mesmo disco (4,6 s, sem cópia);
+  - CTGP fica só na pasta de dados do jogador; o repositório guarda apenas números (CT → rótulo de nome, lidos estaticamente do plugin 1.1.1, `PLUGIN_111`) e nomes de arquivo.
+- **Vagas:**
+  - copas 1–12 do CTGP nas 12 copas do jogo base (48 pistas);
+  - copas 13–16 nas 4 primeiras copas do Booster Course Pass (`Cnsw_11`–`28`), visíveis só com o DLC ativo, pois as pistas do BCP estão no RomFS base e o DLC só as libera.
+- **O que vai em cada vaga:**
+  - a pasta da pista (sem o banco de sons próprio do CTGP; fica o da vaga);
+  - as músicas N/F e variantes (LAP2, REPLAY);
+  - a imagem de seleção, os ícones de copa;
+  - os nomes de copa/pista no `message.sarc` 4.0.1 de 15 idiomas, com tags MSBT preservadas e os prefixos de plataforma (Wii, GBA…) vazios;
+  - as músicas de título/menu, os sons de menu e o Lakitu.
+  - Os `common.sarc`/`menu.sarc` do CTGP derrubam o menu do 4.0.1 e nunca são usados.
+- **Runtime:** `runtime/mk8/support/romfs_overlay.c` implementa o gancho fraco `game_romfs_overlay()` com `MK8_ROMFS_OVERLAY`. É uma segunda sobreposição depois de `RECOMP_MOD_DIR`, que segue para a cabeça Mii. Uma pasta inválida encerra o jogo em vez de abrir o jogo base calado.
+- **Launcher:**
+  - cartão **Configurações → CTGP Deluxe** com importar, liga/desliga, estado e log, em pt/en/es;
+  - `crates/installer/src/ctgp.rs` verifica o pacote antes de cada abertura (tamanho de cada arquivo, nada a mais);
+  - com o CTGP ligado o jogo usa `save-ctgp`, criado uma vez como cópia de `save`;
+  - build sem `pack_supported` recusa o pacote ligado.
+- **Steam:** a sala publica `mk8_ctgp` (identidade do pacote ou `0`) e quem entra precisa do mesmo estado (`check_pack`).
+
+**Problema encontrado e corrigido no runtime:**
+- **Sintoma:** VRAM a 7,3 GB e RAM do jogo a 7,8 GB no sobrevoo inicial do GP. Uma corrida terminou em `VK_ERROR_OUT_OF_DEVICE_MEMORY` (`race-grand-prix-oz51459d`).
+- **Bisseção** (GP, primeira corrida, até o sobrevoo):
+  - não é o Lakitu, a música nem um arquivo de modelo;
+  - é a lista de objetos `course_muunt.byaml` de `CT_00`, e nela os 7 `FireworksFc` (o Stadium original tem 2);
+  - sem os fogos o pico cai a 1.648 MB, igual ao jogo base.
+- **Mecanismo:** os fogos pesam a GPU, a resolução dinâmica do jogo refaz os alvos a cada poucos quadros em tamanhos novos (1499x843, 1546x870, 720x405…), e o runtime criava uma imagem por tamanho. `texture_retire` só liberava alvos substituídos depois de 60 s sem uso: ~700 imagens/s acumulavam.
+- **Correção** (`toolchain/texture_retire.py`): alvo substituído sai após `MK8_TARGET_GRACE_FRAMES` (30, meio segundo), com a varredura na mesma cadência. O conteúdo dele já não existe nem no console. Texturas com conteúdo continuam com os 60 s.
+
+| GP, 1ª corrida (quadros 3600–14000) | FPS médio | p99 | pior quadro | VRAM reservada / usada (pico) |
+|---|---|---|---|---|
+| jogo base (`race-grand-prix-x2kyzd8r`) | 59,89 | 17,7 ms | 72 ms | 1.648 / 1.459 MB |
+| CTGP antes (`-70aahhh4`) | 56,22 | 35,1 ms | 138 ms | 7.373 / 7.314 MB |
+| CTGP, carência 2 s (`-7dpwm7t1`) | 58,24 | 21,1 ms | 64 ms | 5.616 / 2.107 MB |
+| CTGP, carência 0,5 s (`-cgxrwi9u`) | 57,84 | 22,6 ms | 80 ms | 2.928 / 1.732 MB |
+
+Nessa corrida 6.043 imagens (17 GB) foram criadas e descartadas: a rotatividade da resolução dinâmica continua, só não acumula. Reaproveitar imagens entre tamanhos seria a próxima melhoria.
+
+**Grande Prêmio completo com o CTGP** (`race-grand-prix-tovnrm2s`, 64.000 quadros, 18 min, cache frio):
+- as quatro pistas do CTGP no lugar da copa Cogumelo:
+  - Omatsuri Circuit;
+  - Vanilla Lake 1;
+  - Broken Pier;
+  - Mystic Tangle.
+- 12 pilotos, CPUs no traçado, itens e minimapa próprios; saída 0, sem `FATAL`;
+- FPS médio por corrida: 58,2 / 59,2 / 59,8 / 59,8; p99 20,7 / 19,8 / 17,6 / 17,6 ms;
+- picos isolados de 230–600 ms nas trocas de pista: compilação de primeiro uso com cache frio, como no jogo base;
+- VRAM no pico: 3.696 MB reservados, 2.361 MB usados.
+
+**Jogo base com a mesma correção** (`race-grand-prix-bm9gt9k4`, 1ª corrida): 59,91 FPS e p99 17,6 ms, como antes. A VRAM reservada no pico caiu de 1.648 para 1.136 MB.
+
+**Validação:**
+- Rust: fmt, Clippy e testes, incluindo 3 do `ctgp.rs` e a regra Steam.
+- Python: 6 em `test_ctgp_pack.py`, só com dados sintéticos — SARC/MSBT ida e volta, mapeamento das vagas, nomes, montagem/verificação/importação e teste nativo de `romfs_overlay.c`.
+- `test_texture_retire` com os casos novos.
+- Navegador: `test_launcher_ctgp` (estados, importar, liga/desliga, bloqueio com o jogo aberto, en/es, 390 px), DLC e idiomas: 10 testes.
+
+**Ainda não testado:**
+- as copas do CTGP nas vagas do BCP (falta DLC importado aqui);
+- outras pistas além das 4 da primeira copa;
+- multijogador com o pacote em duas máquinas;
+- os fantasmas de staff do contra-relógio e o fundo da tela de prêmio, que continuam os da pista original;
+- os 5 nomes que a leitura do plugin não resolveu (`CT_08`, `0A`, `0D`, `37`, `3B`), que aparecem como "CTGP NN".
+
+`gameplay_verified=false`.
+
+### DLC importado e Fase B — 15/11/2026
+
+**Booster Course Pass importado:**
+- origem: `Downloads/…[0100152000023001][v65536].nsp`, 121 KB, com o `prod.keys` do `config.json`, por `toolchain/import_dlc.py`;
+- verificado e anexado ao candidato pela build `--runtime-only`.
+- **Pacote na disposição base:** a primeira copa do DLC mostrou "Moo Moo Mountain" (`CT_30`), correu a 60 FPS e trouxe o Lakitu do CTGP (`race-time-trial-ujfapcmy`).
+- **Tela de copas com DLC + CTGP:** "Boo Cup" no lugar da copa Cogumelo, com nomes e imagens das 4 pistas CTGP (`race-time-trial-f6_8i48_`).
+- **Os ícones das copas nessa tela continuam os originais.** Na tela de seleção eles vêm de dentro do `menu.sarc` do 4.0.1; os arquivos soltos `UI/cmn/race/ym_CupIcon*` que o pacote troca são os da corrida.
+
+**Segunda disposição: no lugar das copas do DLC** (`--layout dlc`, seletor no cartão do launcher):
+- as 12 copas do Booster Course Pass recebem as copas 1–12 do CTGP;
+- o jogo base fica 100% original, e com o DLC ativo há as 48 pistas originais e 48 do CTGP ao mesmo tempo;
+- as copas 13–16 do CTGP ficam de fora nessa disposição; trocar a disposição reimporta em segundos (hardlinks).
+- **Testado:**
+  - página do jogo base: copa Cogumelo e pistas originais, e a corrida carregou `Gu_FirstCircuit` original (`race-time-trial-m8_mnqio`);
+  - página do DLC (R): "Boo Cup" com as 4 pistas CTGP, e a corrida carregou `Cnsw_11` com os arquivos do CTGP (`race-time-trial-7b9v6o3a`).
+- **Limite visual dessa disposição:** os nomes do CTGP herdam o rótulo de plataforma da vaga ("Tour", "3DS", "N64", "Wii"). Esses rótulos (1461–1468) são os mesmos das pistas originais do jogo base, que nessa disposição continuam valendo.
+
+A ordem real das copas do DLC (imagem `DLCnn` ↔ pasta `Cnsw_xy`) não segue o número da pasta (Rock Cup = `Cnsw_31`, `33`, `34`, `62`). Ela vem da tabela do próprio jogo, repetida pelo plugin, e foi conferida com os nomes `117xx` do 4.0.1 (11717 London Loop … 11720 Maple Treeway). A disposição base, que só usa as 4 primeiras copas do DLC, não muda: lá a ordem coincide.
+
+**Fase B, parte sem código — concluída:**
+- **Ícones das copas na tela de seleção:**
+  - **Onde estão:** no 4.0.1 são texturas `ym_CupIcon<Nome>^h` de 200×200 em RGB565 tiled. Ficam num BNTX dentro de `menu.sarc` → `mn_L_CupSlctBtn_00.szs` (Yaz0, SARC de arquivos só com hash).
+  - **Conversão:** o pacote decodifica os ícones coloridos do CTGP (`ym_CupIcon*_130x130^h`, 210×210; 15 em BC3 e o Blooper em BC7), reduz por média de área e grava sobre os ícones das vagas numa cópia do `menu.sarc` 4.0.1. O resto do arquivo não muda e o Yaz0 é gravado sem compressão (válido).
+  - **Decodificador BC7:** modos 1 e 3–7; os modos de 3 subconjuntos (0 e 2) não são usados pelos ícones e são recusados. Um ícone ilegível mantém o original e a importação avisa.
+  - `*_Nml^l` são normal maps, não os ícones.
+  - **Na tela:** copas do jogo base com os 12 ícones do CTGP e as 4 primeiras do DLC com Life Mushroom, Ice Flower, Prankster Comet e Coin (`race-time-trial-x0ys7od8`).
+- **Terceira disposição `dlc-late`:** copas 5–16 do CTGP nas 12 copas do DLC. Com `dlc` e `dlc-late`, as 64 pistas do CTGP ficam acessíveis ao lado das originais.
+- **Testes:** 10 em `test_ctgp_pack`:
+  - ícone convertido conferido texel a texel;
+  - blocos BC3 e BC7 (modos 6 e 1, recusa do modo 0);
+  - disposição `dlc-late`;
+  - SARC de arquivos sem nome e Yaz0 de ida e volta.
+
+**Fase B, parte com código — não iniciada, por decisão de escopo:** copas além de 24, botão aleatório e menus próprios do CTGP. A estrutura de gancho entra junto com o primeiro limite real alterado, no padrão já usado (`yaz0_native.py`: patch da unidade gerada validado por hash), e não como infraestrutura sem uso.
+
+**Fase B (código) — mapa da engenharia reversa (16/11/2026), sem alteração no jogo:**
+- **Não há tabela estática copa → pista:** nenhuma permutação de 0–95 (nem de 0–47) em u8/u16/u32 nos segmentos de dados do `main`. O mapeamento é montado em tempo de execução.
+- **Caminho das pistas:** `Course/%s/%s` (`main+0xf0d209`) e `Course/%s` (`+0xf0d223`) são usados por `f_700089ed04` (`main_186.c`). Ela pega o objeto da corrida via `0x70012f9e98`, lê um índice com limite em `+0x58` (u16), lê um byte em `+0x6a` e chama um método virtual (`rt_dispatch`). O nome da pasta vem de um objeto, não de uma tabela.
+- **Inicialização da UI de menus:** `f_700040c5f4` (`main_083.c`) cria os pools de recursos do menu (tamanhos 0x35, 0x2a, 0x17, 0x10…) e usa as strings `*_00` de imagens de pista.
+- **Rótulo de plataforma:** 1461 (`0x5b5`) só aparece no código como aritmética de datas (dias em 4 anos, em `f_70005645f8`…); o rótulo vem de dados, ainda não localizados.
+- **Próximo passo para copas extras:** rastrear dinamicamente, com o jogo rodando, os objetos de pista e copa nos dois pontos acima (`FN_ENTER` com filtro de endereço, sem mudar comportamento). Só então decidir onde aumentar os limites, com testes de save.
+
+**Fase B (código) — o que a leitura do 4.0.1 mostrou:**
+- **Tabela de copas:** `main+0x12840b8` é a tabela estática de 24 ponteiros para os ícones (Mushroom…Thunder, DLC02–05, Charger00–11), com os ponteiros em relocações `R_AARCH64_RELATIVE` e não no dado.
+- **Limite fixo no código:** `f_700050ccc0` faz `min(copa, 0x17)` antes de ler essa tabela, ou seja, 24 copas fixas.
+- **Nomes de pistas:** `Gu_FirstCircuit_00`… em `main+0xee7de9` são montados por código (ADRP/ADD), sem tabela de ponteiros.
+- **O que acrescentar copas exige** (em vez de substituir vagas): ganchos em várias rotinas com limites fixos (24 copas, 96 pistas), nas tabelas de pista/copa, nos saves dimensionados para 96 pistas, nas páginas da tela de copas e no online. É engenharia reversa de semanas, com risco a saves.
+- **Plano:** antes, um teste nativo da tabela de ganchos em `FN_ENTER`; depois, cada limite com teste próprio.
+- **Ainda dependem desse trabalho:** botão aleatório, menus e copas extras do CTGP.
+
+## PRs #18, #19 e #25 integradas na fix-chore — 15/11/2026
+
+- **#18 (gráficos, oclusão antes da renderização condicional)** e **#19 (áudio, rampa no início das vozes)**: merges sem conflito. A build do runtime (`--runtime-only`, 216 unidades) contém `mk8_oq_wait_pair(q);` em `exec.c` e `v->prev_volume = 0.f;` em `audio.c`. Seções de cada PR mais abaixo.
+- **#25 (launcher em espanhol)**: a base era `master`.
+  - Conflitos em `en.json` e `tests/test_launcher_languages.py`: as entradas e os testes dos dois lados foram mantidos.
+  - `es.json` recebeu espanhol para as 120 mensagens da fix-chore (DLC, Configurações, regra de DLC nas salas Steam) e para `Volume`, que a aba Configurações mostrava em português.
+  - O seletor de NSP do DLC usa `language::pick` nos três idiomas.
+- **Teste corrigido, anterior às PRs:** `test_local_mii` não compilava desde a integração do DLC (#12) porque faltava o stub de `mk8_dlc_storage_path` no harness.
+
+**Validação:**
+- Rust: `cargo fmt --check`, Clippy `--workspace -D warnings` e 67 testes.
+- Python nativo/pipeline: 238 testes; as falhas restantes são de ambiente:
+  - módulos Playwright importados pelo Python do projeto, que não tem Playwright;
+  - `test_mii_native_head`, que exige PIL, ausente nos dois Pythons;
+  - testes do launcher real sem `MK8_LAUNCHER_EXE`; o alvo do Cargo é `D:/Project/MK8-online-build/target`.
+- Com o Python do sistema e `MK8_LAUNCHER_EXE`: idiomas, launcher real (resposta grande), DLC, e2e, Mii GLB/launcher e vida útil de processos aprovados (35 testes, 1 skip).
+- Launcher release real em Chromium, sem `pageerror`:
+  - espanhol pelo locale `es-ES`;
+  - seis abas;
+  - troca es/en/pt-BR e persistência após recarregar;
+  - 390 px sem rolagem horizontal.
+
+**Jogo não testado nesta integração.** A primeira corrida (Grande Prêmio) foi interrompida por mim: a suíte de testes disputava CPU e invalidaria o FPS. Na segunda tentativa (12:31), `local/imports` não existia mais, nem `local/game-data`, `local/cache` e as sessões `race-*`. A Lixeira mostra arquivos de `local` apagados às 12:30–12:31, o que indica limpeza manual; nenhum comando desta sessão usa a Lixeira. Builds, config, perfis, `user*` e saves estão intactos. Para testar é preciso reimportar o jogo (NSZ + chaves) e reconstruir os dados.
+
+**O que medir com o jogo de volta:**
+- **#18:** quantas esperas `conditional samples` aparecem em `LARECOMP_VK_PROF` e o FPS do GP contra `race-grand-prix-0so9vrpg` (60 FPS no texture retire, apagada). A espera faz `renderer_flush` quando o report está no trabalho ainda não enviado.
+- **#19:** audição em Electrodrome.
+- `gameplay_verified=false`.
+
+## Launcher congelado no criador Mii (issues #15 e #16) — 14/11/2026
+
+O servidor HTTP do launcher atende uma requisição por vez. O criador pedia a biblioteca AFL (4,5 MB) e entregava a resposta ainda não lida a `FFL.initWithResource`, que primeiro espera o módulo baixar `ffl-emscripten.wasm` desse mesmo servidor. Quando o corpo passava dos buffers do WebView/TCP, o laço ficava preso escrevendo a biblioteca e nunca atendia o `.wasm`: a tela ficava em "Carregando peças do Mii…" e **todas** as outras chamadas paravam (Procurar, Jogar, status). Isso explica os dois relatos, inclusive "Jogar solo não faz nada" depois de abrir o criador. Dependia do tamanho dos buffers de cada máquina; aqui os testes do criador passavam.
+
+Correção: respostas acima de 32 KiB são escritas em thread própria (`binary_response` em `apps/launcher/src/server.rs`), e o criador lê a AFL inteira antes de iniciar o módulo FFL. Reprodução com o `Launcher.exe` real e a AFL verificada: com a resposta da biblioteca sem leitura, o pedido do `.wasm` esperou 5 s sem resposta no binário anterior; no corrigido saiu na hora. O novo `tests/test_launcher_unread_response.py` faz o mesmo com um recurso público grande (`three.core.js`), sem arquivos privados: falha no launcher anterior e passa no novo.
+
+Validação: formatação, Clippy com `-D warnings` e 66 testes Rust; navegador com o launcher release: e2e (21, 1 pulado por relay), idiomas (3), Mii (1) e o teste novo; `scripts/test-mii-composer.py` com a AFL privada passou (biblioteca, miniaturas, corpo, salvamento e recursos do jogo). Sem novo setup nem release.
+
+## Engasgos e FPS oscilando nas corridas — 14/11/2026
+
+**Medição nesta máquina** (RX 580 8 GB, driver AMD 26.1.1; GP Mushroom Cup, corrida 1, quadros 3000–14000; `scripts/frame-stats.py`):
+
+| Execução | Cache | FPS | p99 | Pior | >25 ms |
+| --- | --- | --- | --- | --- | --- |
+| `race-grand-prix-odwx3qkw` | jogo vazio (driver aquecido) | 59,95 | 17,74 | 47,4 ms | 17 |
+| `xchoj6wg` / `oy047b4c` | aquecido, FIFO | 59,99 / 59,98 | 17,66 / 17,61 | 30,8 / 32,5 ms | 5 / 7 |
+| `a8nu0oou` / `59bxbx65` | aquecido, FIFO_RELAXED | 59,99 / 60,00 | 17,66 / 17,62 | 29,4 / 30,1 ms | 4 / 3 |
+
+Aqui a oscilação em corrida não se reproduz. Engasgos grandes ficam nas transições: fim da corrida, com 475–519 ms em `other` enquanto uma thread do jogo espera ~265 ms por um núcleo emulado ocupado por outra (`kernel.c` não tem preempção dentro do código guest), e carregamento de pista com centenas de compilações.
+
+**Modo de apresentação (`toolchain/present_mode.py`, padrão).** O driver AMD no Windows não oferece MAILBOX, então o runtime usava FIFO sem registrar isso. Agora a ordem é MAILBOX → FIFO_RELAXED → FIFO, o modo aparece no log (`[vk] present mode …`) e `LARECOMP_VK_PRESENT=fifo|relaxed|immediate|mailbox` continua escolhendo. Na tabela, FIFO e FIFO_RELAXED medem igual, porque aqui quase nenhum quadro perde o prazo. **O ganho em máquinas que perdem o prazo com frequência não está comprovado.** `tests/test_present_mode.py` compila a escolha preparada (AMD sem MAILBOX, MAILBOX disponível, só FIFO, escolhas explícitas e recusas). Runtime recompilado com `--runtime-only`, candidato `6dde4ee3…`.
+
+**Picos restantes em corrida (≤ 30 ms, cache aquecido).** Vêm principalmente do prefetch de shaders. Na primeira vez que um programa aparece *na sessão*, `scan_draw` espera a tradução Maxwell→GLSL dele no caminho do quadro (`job_run_or_wait(g_tq, …)`, um único tradutor), porque a chave do pipeline depende do texto traduzido. São 13–34 programas novos por janela, 3–7 ms cada. Isso se repete a cada sessão porque só SPIR-V e pipelines vão para o disco, não a tradução. Além disso, a varredura custa ~0,6–0,9 ms por quadro.
+
+**Cache de traduções (`toolchain/translation_cache.py`, `runtime/mk8/graphics/translation_cache.c`, padrão; `MK8_TRANSLATION_CACHE=0` desliga).**
+- **Onde atua:** as quatro traduções do backend Vulkan em `exec.c` (três estágios de programa e compute) passam por `mk8_translate_cached`. `translate.c` (que os testes compilam sozinho) e `ahead.c` ficam intactos.
+- **Chave:** cobre tudo que `maxwell_translate` lê: cabeçalho e as palavras de código até onde a própria varredura de fim para (reproduzida), `ShaderKey`, globais do tradutor e o executável do runtime (tamanho e data). Variáveis de depuração que mudam a saída desviam o cache.
+- **Formato:** um único `cache/xlate.pack`, aberto uma vez e indexado em memória. Cada registro tem um segundo hash da chave e um hash do conteúdo; um registro que não confere é traduzido de novo. Outro runtime começa um pack novo. Um final cortado (falha durante a escrita) encerra o índice ali e é sobrescrito.
+- **Por que pack:** a primeira versão, com um arquivo por shader, custava 0,2–0,6 ms só para abrir no Windows (medido), quase o mesmo que traduzir. No pack, uma leitura custa ~0,04 ms, contra ~0,9 ms de tradução.
+- **Ganho já na primeira sessão:** com o cache vazio, mais da metade das buscas já acerta, porque o mesmo shader era traduzido de novo para cada programa e chave.
+- **Tamanho:** a corrida 1 gravou ~11 MB (615 traduções).
+
+A/B no mesmo build (`cb567004…`), com o mesmo SPIR-V e os mesmos pipelines de `race-grand-prix-a_k0sjcc`, quadros 3000–14000:
+
+| Execução | Prefetch > 5 ms | > 10 ms | Prefetch antes da corrida | Pior quadro | FPS |
+| --- | --- | --- | --- | --- | --- |
+| `x_caqan8` / `rj4yge6a`, desligado | 22 / 27 | 10 / 14 | 1.629 / 1.506 ms | 34,8 / 41,2 ms | 59,97 / 59,97 |
+| `tnd1lp2e` / `7pfxb1qx`, ligado | 5 / 7 | 2 / 2 | 1.240 / 1.125 ms | 37,4 / 29,9 ms | 59,94 / 60,00 |
+
+Os picos de prefetch caíram ~75–85% e o carregamento ficou ~0,3–0,4 s mais curto. A média já era 60 FPS. O pior quadro e a contagem acima de 17,5 ms variam entre execuções idênticas (127–295) e não são atribuídos à mudança. Captura do quadro 14200 com o cache ligado inspecionada: chegada, 3/3, imagem correta.
+
+`tests/test_translation_cache.py` usa o tradutor real em vários processos sobre a mesma pasta: leitura igual campo a campo, bytes além do trecho lido, chave/código/global diferentes, registro danificado (segundo hash, texto GLSL e campo da `ShaderInfo`) nunca servido, final de lixo, runtime novo, `=0` e desvio de depuração. Sem a conferência do hash de conteúdo, o teste falha. Runtime recompilado com `--runtime-only`; 49 testes relacionados passaram. **Ainda não validado:** máquina mais fraca, em que a tradução pesa mais, e sessão com as 4 pistas.
+
+Ao repetir as corridas, o disco C: caiu abaixo da reserva de 4 GiB: cada sessão copia ~650 MB de cache, e o próprio roteiro interrompeu uma execução. Foram removidas só as cópias `data/cache` das 15 sessões criadas nesta rodada (sem junções, sem jogo aberto); logs e capturas ficaram.
+
+**Relatório de jogador (#8, 0.1.8, RTX 3060 notebook, 830 s):** média de 59,3 FPS em corrida, com 18 janelas abaixo de 57 FPS. Em 10 delas houve ≥ 10 compilações (até 759 na largada, cache frio). Num trecho de 8 s ficou travado em 30,0 FPS sem compilação, com espera pela GPU de 99–495 ms por janela, o que indica GPU no limite. O modo de apresentação não aparecia no log; numa NVIDIA ele provavelmente era MAILBOX. Faltam relatórios 0.2.x com a linha `[vk] present mode` e a GPU de quem vê a oscilação.
+
+## CTGP Deluxe — investigação, sem implementação — 14/11/2026
+
+**O que o projeto declara** (ctgpdx.com: download, FAQ e aviso): a versão 1.1.1 "only works on Mario Kart 8 Deluxe version 3.0.3", e o site não explica por quê. A instalação é um ZIP de 3,86 GB (4,52 GB extraído) colocado na raiz do SD de um Switch desbloqueado. O Online Play foi removido, e local/LAN continuam. Os termos dizem "fan creations intended for personal use only and are not for sale or distribution". O pacote não foi baixado: os termos proíbem redistribuição e a extração deixaria o C: abaixo da reserva de 4 GiB.
+
+**O que esta recompilação aceita hoje:**
+- **Arquivos:** `RECOMP_MOD_DIR` sobrepõe `romfs/` e dá saves próprios ao mod (`runtime/mods.c`). O próprio `mods.h` diz "no game code".
+- **Código:** só `main`, `sdk` e `subsdk0` do perfil 4.0.1 são recompilados, com hashes fixos.
+- **Ganchos:** `rt_dispatch` aceita substituições por endereço só em chamadas indiretas. As chamadas diretas entre funções recompiladas não passam por ele. Toda função guest começa com `FN_ENTER(endereço)`, hoje usado só pelo perfilador.
+
+**Por que um mod de código não funciona como no console.** Mods de código do Switch (exlaunch em `exefs/subsdk9` + `main.npdm`, ou patches IPS) fazem duas coisas, e as duas quebram aqui:
+- **Ganchos por endereço:** eles escrevem instruções de desvio no `.text` do `main` usando endereços fixos da versão que conhecem (daí a trava na 3.0.3).
+- **Código recompilado:** numa recompilação estática o código já virou C. Escrever instruções no `.text` em tempo de execução não muda nada, em qualquer versão.
+
+**Caminhos, do menor ao maior:**
+1. **Só arquivos sobre o 4.0.1** (já possível com `RECOMP_MOD_DIR`): substituições de pistas, música e interface podem funcionar. Copas e pistas extras, menus e opções novas dependem do código e não apareceriam. Formatos que mudaram entre 3.0.3 e 4.0.1 podem quebrar.
+2. **Portar o código do mod para o 4.0.1:**
+   - recompilar o módulo do mod como mais uma unidade do pipeline;
+   - capturar os ganchos que ele instala no boot (escritas no `.text` do `main`) e aplicá-los como desvio na entrada das funções, com um `FN_ENTER` que consulte uma tabela de ganchos (exige recompilar o jogo inteiro uma vez);
+   - mapear cada endereço 3.0.3 → 4.0.1 por comparação binária dos dois `main`, o que exige o `main` 3.0.3 do próprio usuário.
+   Ganchos no meio de funções precisariam de pontos inseridos na recompilação.
+3. **Recompilar o 3.0.3 como segundo perfil:** dispensa o mapeamento de endereços, mas todas as adaptações guest com endereço fixo (Mii, LAN, setjmp, Yaz0 e outras) teriam de ser refeitas para o 3.0.3. As do host em geral sobrevivem. A qualificação também teria de ser refeita.
+
+**Varredura do pacote extraído pelo usuário (15/11/2026, só leitura, fora do repositório em `Documents/CTGPDX`; nada foi executado nem copiado):**
+- **Tamanho e título:** 1.120 arquivos, 4,52 GB, tudo em `atmosphere/contents/0100152000022000/` (MK8 Deluxe).
+- **Código:** `exefs/subsdk1` (Skyline, 42.869 B, build id `782d51e7…`), `exefs/main.npdm` e o plugin `romfs/skyline/plugins/CTGPDX.nro` (548.864 B). Não há `exefs_patches`.
+- **Arquitetura — o fato decisivo:** o `main.npdm` do mod declara processo **32 bits** (flags `0x4`, espaço de endereço de 32 bits). O `main.npdm` do 4.0.1 deste projeto declara **64 bits** (`0x7`). `subsdk1` e o plugin são **ARM de 32 bits**: entrada `b` ARM `0xEA00001E`, `.dynamic` e símbolos ELF32 e importações `A32HookFunction`, `A32InlineHook` e `__aeabi_*`. O MK8 3.0.3 que o mod atende é, portanto, um executável de 32 bits, e o 4.0.1 é AArch64. Isso explica a trava na 3.0.3: a passagem para 64 bits mudou todo o código de máquina.
+- **O que o plugin faz:** não importa nenhum símbolo do jogo; instala ganchos por endereço no `main` de 32 bits. Pelas strings:
+  - 64 pistas `CT_00`–`CT_3F`, com música e arquivos lidos de `content://Course/` e `content://Audio/Resource/Stream/`;
+  - ícones de copa extras (`L_CupIcon_18`–`25`) e um botão aleatório (`Random_00`, `RandomBtnOnOff`);
+  - troca de fundo do menu;
+  - versão `CTGPDelux010101`.
+- **Arquivos (romfs):**
+  - **novos, sem efeito sem o plugin** (1.020 arquivos): 64 pistas novas em `Course/CT_xx` (816 arquivos, 3,4 GB), 128 músicas `pBGM_CT_xx`, 64 imagens `ym_CoursePict_CT_xx`. Nenhuma substitui pista original; o jogo só as carrega se o código registrar os nomes `CT_xx`.
+  - **substituem arquivos originais** (99): as músicas `BGM_MENU_*` e `BGM_TITLE*`, `StaticSysMenu.bars`, `JugemObj.bfres`, `message.sarc` de 15 idiomas, `common.sarc`, `menu.sarc`, `race.sarc`, telas de título e de carregamento, e 80 ícones de copa `ym_CupIcon*`.
+
+**Consequência para os três caminhos:**
+1. **Só arquivos sobre o 4.0.1:** aplicaria apenas os 99 arquivos que substituem originais. Não aparece nenhuma pista nova. As SARCs de mensagens e menus vêm da 3.0.3 e podem não corresponder às do 4.0.1, com textos ou layouts errados ou crash. Serve só como teste de compatibilidade de formato, não como "CTGP jogável".
+2. **Portar o código:** não há comparação binária possível entre um `main` de 32 bits e um de 64 bits. Seria reescrever a lógica do plugin (registro de 64 pistas, copas, menus, música) como ganchos próprios nas funções AArch64 do 4.0.1, com engenharia reversa do 4.0.1. É um projeto novo de mod, não uma conversão; os 1.020 arquivos de pista seriam reaproveitados se os formatos forem os mesmos.
+3. **Perfil 3.0.3:** o recompilador (LASRecomp/SMM2Recomp) traduz só AArch64; não há suporte a A32/Thumb. Exigiria um front-end ARM de 32 bits inteiro, mais a refação de todas as adaptações guest. É o caminho mais caro.
+
+Nenhum dos três dá o CTGP completo no 4.0.1 sem um projeto grande. O passo 4 do roteiro abaixo (caminho 1) só deve ser tentado como teste de formato, depois que o jogo for reimportado.
+
+**Roteiro para testar depois (caminho 1, só arquivos; nenhum passo altera código):**
+1. Baixar o ZIP pela página oficial, para uso pessoal. Nunca colocá-lo em `upstream`, testes, releases ou no setup.
+2. Listar sem extrair e guardar a lista fora do repositório:
+   `local/python/Scripts/python.exe -I -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); [print(i.file_size, i.filename) for i in z.infolist()]" "<CTGP.zip>" > local/ctgp-lista.txt`
+   Na lista, procurar o título (`atmosphere/contents/0100152000022000/`, MK8 Deluxe), a pasta `romfs/` e a parte de código (`exefs/subsdk*`, `main.npdm`, `exefs_patches/`). Isso decide entre os caminhos 1, 2 e 3.
+3. Extrair só a pasta do título num diretório novo e vazio, em disco com espaço para os ~4,5 GB **além** da reserva de 4 GiB, por exemplo `<disco>/ctgp/0100152000022000/`. Não executar nada de dentro dela.
+4. Rodar pelo roteiro de teste, que já força `LARECOMP_SAVE_DIR` para uma cópia isolada. Isso importa porque `RECOMP_MOD_DIR` sozinho redireciona os saves para a pasta do mod. Começar por menu e contra-relógio:
+   `local/python/Scripts/python.exe scripts/test-race.py time-trial --last-frame 4800 --shots 3 --shot-step 1400 --timeout 300 --env RECOMP_MOD_DIR=<disco>/ctgp/0100152000022000 --env LARECOMP_LOG_FILES=1`
+   O `RECOMP_MOD_DIR` deve apontar para a pasta que **contém** `romfs/`. O launcher recusa `RECOMP_MOD_DIR` quando um Mii do perfil está ativo (`mii_native.rs`), então nesse teste o perfil Mii fica desativado.
+5. Registrar como evidência:
+   - os arquivos lidos do mod (`LARECOMP_LOG_FILES`);
+   - erros de formato e crashes;
+   - imagens do menu, da seleção de copa e da corrida;
+   - quais pistas e menus mudaram e quais continuaram originais (o esperado sem o código do mod).
+   `gameplay_verified` continua falso.
+6. Depois da varredura de 15/11, o caminho 2 é uma reimplementação do plugin em AArch64, e o caminho 3 exige um front-end A32 (veja acima). Qualquer um deles precisa de decisão do usuário antes de começar. O caminho 2 começa com um teste nativo da tabela de ganchos em `FN_ENTER` com funções sintéticas; só depois vem a recompilação do jogo inteiro.
+
+**Caminho 1 testado — 15/11/2026.**
+
+*Condições:* jogo reimportado do NSZ (`Importação 4.0.1 verificada`), build completa, PRs #18/#19 incluídas. Contra-relógio de 4.800 quadros com `LARECOMP_LOG_FILES=1`. As sobreposições parciais são hardlinks em `local/ctgp-overlay-*`; a pasta `Documents/CTGPDX` não foi alterada e o plugin `skyline/` nunca foi usado.
+
+| Sessão | Sobreposição | Resultado |
+|---|---|---|
+| `race-time-trial-o33nrkca` | nenhuma (base) | 60 FPS até o fim |
+| `race-time-trial-m5um97f1` | romfs completo do CTGP | **crash** aos 16 s ao entrar no menu: `c0000005` em `0x90`, `f_70008bab3c`, logo após ler `UI/cmn/menu.sarc` |
+| `race-time-trial-n4fawqy7` | sem `UI/cmn/menu.sarc` | **crash** no mesmo ponto: `c0000005` em `0`, `f_70005908a8` (resta `common.sarc`) |
+| `race-time-trial-ssw00gbi` | sem `UI/` | 60 FPS até o fim; músicas de título/menu, `StaticSysMenu`, Lakitu do CTGP carregados |
+| `race-time-trial-lzz6p1u3` | sem `UI/`, só `message.sarc` | 60 FPS até o fim |
+| `race-time-trial-79ux_uty` | `CT_00` no lugar de `Gu_FirstCircuit`: arquivos da pista, `MapObj`, música e imagem; banco de sons da pista original | **pista CTGP correu**: modelo, cenário, objetos, minimapa e música próprios; 60 FPS, máximo 18 ms, sem erro |
+
+**Conclusões:**
+- O romfs do CTGP **como está** não funciona no 4.0.1: as SARCs de interface `common.sarc` e `menu.sarc`, montadas para 3.0.3 e para o plugin, derrubam o menu.
+- Os formatos de pista são os mesmos do 4.0.1: modelo `FRES 0.5.0.3`, KCL, AAMP, `VFXB`, BNTX e BYAML. A música `FSTM` v3 e o Lakitu `FRES 0.5.0.2` também carregaram.
+- **Uma pista CTGP corre no 4.0.1 sem nenhum código**, ocupando a vaga de uma pista existente.
+- `gameplay_verified=false`: o teste cobriu uma pista, uma volta parcial e só o contra-relógio.
+
+**Caminho 2 — plano, a decidir com o usuário (nada foi implementado):**
+- **Fase A — pistas em vagas, sem código.**
+  - Uma ferramenta local (`toolchain/ctgp_slots.py`) monta uma sobreposição privada em `local/`, com hardlinks quando o disco permite, a partir da cópia do usuário. Ela nunca vai para repositório, release ou setup.
+  - Mapeia `CT_xx` para vagas existentes: arquivos de `Course/<vaga>`, `pBGM_<vaga>_N/F`, `ym_CoursePict_<vaga>_00^u` e o nome da pista no `message.sarc` (MSBT dentro da SARC).
+  - Bancos de som da pista: cada `Course_CT_xx.barslist` (ARSL) aponta para o banco de uma pista original (`CT_00` → `Gu_DossunIseki`). A primeira versão usa o banco da vaga.
+  - Limite: 48 vagas originais, ou mais 48 do Booster Course Pass (`Cnsw_*`, mesma estrutura) com o DLC importado. As 64 pistas não cabem todas ao mesmo tempo; o usuário escolhe ou alterna conjuntos.
+  - Launcher: opção "Pacote de pistas" com ativação, como o DLC, e `RECOMP_MOD_DIR` só no processo filho. Nas salas da Steam, exigir o mesmo pacote (hash), como a regra de DLC.
+  - Testes: unidade da montagem com arquivos sintéticos, e GP completo com quatro pistas CTGP (imagem, áudio, voltas, reinício e save).
+- **Fase B — comportamento do CTGP, com código.** Copas e pistas extras além das vagas, botão aleatório e menus do CTGP.
+  - Engenharia reversa, no AArch64 do 4.0.1, da tabela de pistas e copas e das telas de seleção.
+  - Ganchos próprios aplicados pelo pipeline: por unidade gerada, como `yaz0_native.py`, ou por uma tabela de ganchos em `FN_ENTER`, com validação de hash.
+  - Layouts de menu refeitos sobre as SARCs do 4.0.1, porque as do CTGP derrubam o menu.
+  - Cada gancho com teste nativo e prova em corrida.
+- **Fase C — multijogador** com o pacote: validação em duas máquinas, como exige o projeto.
+- **Limites legais:** o CTGP é de uso pessoal e não pode ser redistribuído. A ferramenta só lê a cópia do próprio usuário; nada do pacote entra em fontes, testes públicos ou releases. Créditos e termos ficam em `docs/THIRD_PARTY.md` quando houver código.
+
+## Tela dividida local: a seleção de 2 jogadores congelava — 14/11/2026
+
+**Sintoma reproduzido.** Menu principal → Multiplayer → Grand Prix → 50cc → applet de controles (`[hid] controller support (players 2..2): 2 player(s)`) → seleção de personagens para 2 jogadores. A imagem ficava **parada**: sete capturas de 30 s, idênticas byte a byte. O jogo continuava desenhando o mesmo quadro (~80 desenhos por quadro) e suas threads rodavam a 60 Hz sem nenhuma ocupada (máximo 7% de CPU). Os botões dos dois jogadores chegavam ao runtime (`MK8_TRACE_PADS`), mas nem o cursor do jogador 1 andava, e o do jogador 2 nem aparecia. O gerenciador de controles do jogo (`f_70005fc03c`) lia estilo e estado dos IDs 0 e 1 normalmente, e o modo sem Mii não era a causa: com os recursos Mii reais a tela também congelava.
+
+**Causa.** No Switch, `nn::hid::ShowControllerSupport` abre um applet do sistema: o jogo sai do primeiro plano e, quando o applet fecha, o gerenciador de applets enfileira `FocusStateChanged`. O runtime respondia ao applet na hora e não enfileirava nada, e o MK8 deixava a cena pausada esperando o foco voltar.
+
+**Correção (`toolchain/controller_applet.py`, padrão; `MK8_NO_APPLET_FOCUS=1` desliga).** Ao responder ao applet, `am.c` ganha `mk8_am_push_message` e enfileira `FocusStateChanged`, como o fim do applet real. `GetCurrentFocusState` continua "em foco".
+
+**Prova, no mesmo build:**
+- **Desligado:** `race-grand-prix-10948eao`, quatro capturas idênticas.
+- **Ligado:** `race-grand-prix-v2nka2gx`. O jogador 1 levou o cursor amarelo a Luigi, o jogador 2 apareceu com o cursor ciano, escolheu e confirmou, e os dois foram para a seleção de kart, cada um no próprio painel.
+- **Corrida em tela dividida:** `race-grand-prix-esulv10d`, Mario Kart Stadium com dois Luigis, cada metade com câmera, itens, moedas e posição próprias (2º/3º no quadro 9600, 1º/4º no quadro 12000). Saída 0, sem `FATAL`.
+- **Desempenho:** 58,71 FPS na corrida dividida (quadros 8000–11990), p95 19,5 ms, p99 20,9 ms, um pico de 232 ms de tradução. São ~2× os desenhos por quadro do modo solo.
+
+**Teste:** `tests/test_controller_applet.py` roda a fila de mensagens real do `am.c` preparado: depois da mensagem do boot, o applet enfileira `FocusStateChanged`, sinaliza o evento, respeita o limite de 16 e recomeça no reboot. Também confere que o gancho fica em `ShowControllerSupport`, depois da resposta, e respeita `MK8_NO_APPLET_FOCUS`. Runtime `--runtime-only`; 40 testes relacionados passaram.
+
+**Limites:**
+- **Controles:** o jogador 1 é o teclado + o primeiro controle, e cada controle a mais é o próximo jogador. Com **teclado + 1 controle** não há jogador 2: os dois comandam o jogador 1, e o applet responde 1 jogador quando o jogo pede 2. Jogar a dois exige dois controles físicos. Uma opção "teclado é o jogador 1" fica como próximo passo.
+- **Não validado:** 3–4 jogadores, Batalha e VS dividido, controles físicos (o teste usou o jogador 2 roteirizado por `LARECOMP_INPUT2`), GP completo dividido e áudio. `gameplay_verified` continua falso.
+
+## VRAM em sessões longas — 14/11/2026
+
+**Medição.** `race-grand-prix-ov14d8nd`: 180.000 quadros, 50 min, 3 GPs da Copa Cogumelo (12 corridas) no mesmo processo, `MK8_TRACE_VRAM=1`. Saída 0, sem `FATAL`. **Não há crescimento exponencial.**
+- **1º GP:** o reservado da VMA sobe de 752 para 1.520 MB, o dobro, enquanto cada pista é vista pela primeira vez. No Gerenciador de Tarefas isso parece "exponencial".
+- **Depois:** o uso fica entre ~900 e 1.100 MB. O reservado sobe devagar, 1.520 → 1.904 MB nos GPs 2 e 3, por fragmentação.
+- **Cache de vértices:** subia sem parar, 31 → 130 MB, até o teto de 768 MB (`VC_BUDGET`). A cada carregamento os buffers do jogo mudam de endereço, e as faixas antigas só saíam ao atingir esse teto.
+- **Alocações:** 4.056 → 10.160.
+- **Texturas sem uso há mais de 1 minuto:** oscilam entre ~340 e 510 MB.
+
+**Texturas retidas.** As maiores são alvos de renderização em tamanhos variáveis (38 tamanhos distintos na sessão, de 1454×818 a 1905×1071) criados sobre os **mesmos endereços**, `refs 2`, `finalized 0`. O jogo reaproveita a memória para alvos de outro tamanho e abandona os objetos antigos sem finalizá-los. No console isso não custa nada; aqui cada objeto tem imagem Vulkan própria.
+
+**Liberação de imagens ociosas (`toolchain/texture_retire.py`, padrão; `MK8_TEXTURE_IDLE_S=<s>`, 60 por padrão, 0 desliga).**
+- **Quando:** a cada ~10 s, na thread de tradução, logo depois da submissão do quadro.
+- **O que sai:** imagens que nenhum uso tocou nos últimos 60 s e que se encaixam em um destes casos:
+  - conteúdo vindo da memória guest (não escrito pela GPU): o próximo uso recria e recarrega a imagem, como o console lê essa memória;
+  - alvo escrito pela GPU cujo endereço recebeu, depois do último uso, uma textura de outro formato: no console o conteúdo antigo também deixou de existir ali.
+- **O que nunca sai:** imagem apresentada, com vídeo pendente ou envolvida numa cópia de profundidade adiada.
+- **O que fica:** o registro do backend.
+
+**Por que é seguro (auditoria dos 47 acessos diretos a `->backend`):**
+- O passe de render, `copy_texture`, a amostragem e o memo por quadro passam antes por `vk_view`/`vk_tex` → `tex_backend`, cujo ramo "sem imagem" (`pool_release.py`) recria a imagem.
+- `pass_layout`, as flags e os logs leem só metadados.
+- Os aliases de cópia validam o handle.
+- A sombra de profundidade recopia a cada submissão.
+- Os descriptor sets são por submissão.
+- A liberação esquece as views (incrementa `vk_view_gen`), invalida os snapshots daquela imagem e adia a destruição até a GPU terminar as submissões que podiam lê-la.
+- O carimbo de uso passa a ser sempre registrado, não só com `MK8_TRACE_VRAM`, e o backend novo nasce carimbado.
+
+**A/B no mesmo build** (`bccd7dce…`), GP completo com o cache `xh0dhyxh`:
+
+| Execução | Reservado no fim | Pico em uso | Em uso nas corridas 2–4 | Ociosas > 1 min | FPS |
+| --- | --- | --- | --- | --- | --- |
+| `qa8ysx5_`, desligado | 1.776 MB | 1.249 MB | 731–869 MB | até 719 MB | 60 |
+| `0so9vrpg`, padrão 60 s | 1.392 MB | 834 MB | 561–690 MB | até 237 MB | 60 |
+| `xlgl6t9w`, estresse 10 s | 1.264 MB | 658 MB | 501–549 MB | até 180 MB | 60 |
+
+Nas três execuções: saída 0, sem `FATAL`/exceção/perda de dispositivo e p99 de 17,4–17,6 ms em todas as corridas.
+- **Estresse:** liberou 10.300 imagens, 2,3 GB somados com recriações; os alvos substituídos também foram liberados.
+- **Capturas** (Sweet Sweet Canyon, Thwomp Ruins e a 5ª corrida no Estádio): imagem correta, sem textura preta ou faltando.
+- **Custo:** todos os quadros acima de 100 ms continuam nas transições entre corridas. No modo padrão, algumas transições ganharam um quadro a mais de ~100–250 ms (16 quadros/3,4 s contra 13/2,9 s desligado), compatível com recriar texturas liberadas durante a corrida quando a tela volta. Para trocar VRAM por menos recriação, `MK8_TEXTURE_IDLE_S` pode ser maior.
+
+**Teste:** `tests/test_texture_retire.py` extrai `mk8_retire_image` do `textures.c` preparado e cobre: textura da CPU ociosa liberada, recente mantida, alvo não substituído mantido, substituído depois do último uso liberado e antes mantido, apresentada, com vídeo ou com alias mantidas, um único fim de passe, snapshots esquecidos. Também confere o carimbo sempre ativo e a recriação vindo antes em `tex_backend`. `tests/test_pool_release.py` ganhou o campo novo e extrai só até o código novo.
+
+**Não validado:** GPU de 4 GB ou integrada, onde o ganho importa mais; telas fora da corrida (menus, MKTV, multijogador); sessões de várias horas.
+
+**Hipótese descartada.** A resolução variável não vem da medição de GPU. Com `MK8_TIMESTAMP_TOP_GPU=1` (início e fim medidos na GPU, em vez de misturar relógio do host e GPU), `race-grand-prix-a_yjfgwl` usou os mesmos ~6 tamanhos de alvo que o padrão (`x0sdgcp3`), com a mesma VRAM e 60 FPS. O padrão não muda.
+
+**Cache de vértices por idade (`toolchain/vertex_cache_age.py`, padrão; `MK8_VCACHE_IDLE_S=<s>`, 60 por padrão, 0 desliga).**
+- **Como funciona:** a cada ~10 s, `vc_flush` marca a submissão pendente e descarta as faixas sem uso desde a marca de ~60 s antes. O descarte passa por `vc_drop`, que só libera o buffer depois que a GPU termina as submissões que podiam lê-lo. A varredura para antes de encher a lista de descarte, para não esperar a GPU.
+- **Medição** (GP completo `race-grand-prix-vunwgxoi`, contra `race-grand-prix-2avu_1go`): o cache ficou em ~21–26 MB em vez de subir até 98 MB, e as alocações caíram de ~8.350 para ~4.100. FPS de 59,99–60,00 nas quatro corridas, p99 de 17,5 ms, sem `FATAL`. A pista seguinte copia de novo só o que usa.
+- **Teste:** `tests/test_vertex_cache_age.py` usa a tabela real, `vc_drop` e `vc_free_dead` do `exec.c` preparado. A entrada ociosa sai entre 60 e 70 s após o último uso, a usada fica, a da submissão pendente nunca sai, os buffers só são destruídos depois da GPU e `=0` desliga.
+
+Runtime `--runtime-only`, candidato `ee1f252a…`.
+
+**Folga de CPU na corrida.** `MK8_SAMPLE=6000:8`, `race-grand-prix-ofuel2rl`, a 60 FPS nesta máquina (Xeon E5-2666 v3 Haswell, 2,9 GHz, por núcleo parecido com uma i7-3770). A thread de tradução, com desenhos e driver AMD, usa 43% de um núcleo, ~7 ms por quadro; a principal do jogo, 31%; as demais, 26% e 18%. Uma CPU com metade do desempenho por núcleo ainda caberia em 60 FPS na corrida. O relato de 1 FPS (#7: GTX 1070 + i7-3770) não se explica por CPU e precisa do log dele. `LARECOMP_LOG_PACE` não serve para isso: o "ocupado" sai igual ao período, porque a espera do ritmo nessa thread não é contada como bloqueio.
+
+## Congelamento ao cruzar a chegada: Yaz0 nativo e preempção de núcleo — 14/11/2026
+
+**Sintoma.** No fim de toda corrida (e no primeiro carregamento), quadros de 475–564 ms só em `other`, com o log mostrando uma thread do jogo esperando ~260 ms por um núcleo emulado. O `kernel.c` fixado entrega o núcleo apenas em chamadas de kernel (`core_check` em `rt_svc`), sem preempção dentro do código guest.
+
+**Duas inversões de prioridade:**
+- **Núcleo 2:** um worker de prioridade 52 descompactava os arquivos da próxima tela em `f_7000a88a44`, que é o decodificador **Yaz0** do jogo (constante `Yaz0`, retornos -1/-2). São dois arquivos de ~92 MB por fim de corrida. Como código recompilado, com registradores em memória e acessos pelas macros guest, o laço levava ~0,5 s com o núcleo preso.
+- **Núcleo 0:** um worker de prioridade 45 monta a próxima tela por ~0,5 s sem chamar o kernel, enquanto a thread principal (44) espera. `MK8_SAMPLE` na janela da transição não achou função dominante: é lógica de jogo espalhada.
+
+**Yaz0 nativo (`toolchain/yaz0_native.py`, `runtime/mk8/support/yaz0.c`; `MK8_YAZ0_GUEST=1` volta ao laço guest).**
+- **Patch:** uma linha antes do laço, na cópia de build de `main_230.c`, conferida por SHA-256 e com CRLF normalizado. O cabeçalho (magic e tamanho pelos helpers de ordem de bytes do próprio jogo, retornos -1/-2 e `size < 1`) continua no guest.
+- **Laço nativo:** faz as mesmas leituras e escritas, na mesma ordem, inclusive o excesso da última cópia, e deixa x8–x13 e as flags como o guest deixava. `mk8_yaz0_loop` foi exportado pelo executável.
+- **Medido:** 94.817 KB em 192 ms e 91.736 KB em 205 ms.
+- **Efeito:** a espera no núcleo 2 sumiu dos logs. O congelamento visível continuou, porque vinha do núcleo 0.
+- **Teste:** `tests/test_yaz0_native.py` extrai, no momento do teste, o laço do `main_230.c` gerado localmente (nada privado entra no repositório) e compara o laço do jogo com o nativo, junto de um decodificador independente em Python. Cobre literais, cópias curtas, longas e sobrepostas, e um tamanho menor que o fluxo. Com um erro de comprimento ou sem as flags, o teste falha.
+
+**Preempção nas chamadas indiretas (`toolchain/core_preempt.py`, padrão; `MK8_NO_PREEMPT=1` desliga).**
+- **Ponto de checagem:** `rt_dispatch`, por onde passa toda chamada indireta do guest (virtuais, ponteiros de função). Lê uma flag global, ligada só enquanto algum núcleo tem uma thread esperando com prioridade melhor que a do dono.
+- **Caminho lento:** faz o mesmo que `rt_svc` (`core_check` sob `g_klock`), com `trylock` para nunca esperar pelo lock ali.
+- **Por que é seguro:** continua uma thread por núcleo de cada vez. Uma thread de prioridade melhor tomar o núcleo numa chamada indireta é uma intercalação que o Horizon permite em qualquer instrução, e uma chamada guest já podia ceder o núcleo na próxima chamada de kernel.
+- **Teste:** `tests/test_core_preempt.py` roda as funções reais de núcleo do `kernel.c` preparado com threads reais. A espera da thread de prioridade melhor cai para 0,0 ms (era ~220 ms), sem sobreposição no núcleo. Com prioridade igual ou desligado, espera o trabalho inteiro.
+
+A/B no mesmo build (`b7180f73…`), cache `race-grand-prix-xh0dhyxh`, fim da corrida 1:
+
+| Execução | Pior quadro na transição | Quadros > 50 ms (soma) | Espera de núcleo | Corrida 3000–14000: > 20 ms |
+| --- | --- | --- | --- | --- |
+| `yscjaxvn` / `par8c_om`, desligada | 533 / 564 ms | 1.458 / 1.464 ms | 262 / 264 ms | 30 / 38 |
+| `5p3rtv2d` / `3c3pphsa`, ligada | 337 / 300 ms | 760 / 685 ms | nenhuma | 7 / 7 |
+
+O congelamento caiu pela metade e os pequenos tropeços de 20 ms+ durante a corrida também diminuíram. A média continua em 60 FPS. A captura do quadro 15600 mostra a corrida 2 iniciada normalmente.
+
+**Ainda resta:** ~190 ms de trabalho do jogo e o primeiro quadro da tela nova, ~300 ms, dos quais ~250 ms são tradução das listas e prefetch.
+
+**GP completo com tudo ligado** (preempção, Yaz0 nativo e cache de traduções), `race-grand-prix-2avu_1go`, contra o GP anterior `race-grand-prix-xh0dhyxh`:
+- **Estabilidade:** saída 0 em 1.086 s, sem `FATAL`/exceção e sem espera de núcleo registrada.
+- **Yaz0:** 142 arquivos descompactados nativamente, 579 MB em 1,3 s.
+- **Corridas:** 59,95–60,00 FPS e p99 17,56–17,59 ms nas quatro.
+- **Transições:** antes, cada uma tinha três quadros de 294–614 ms, com 455–613 ms parados em `other`. Agora são um ou dois quadros de 202–375 ms, com no máximo 219 ms em `other`. Os quadros 15999/31999/47999 são capturas do próprio teste e ficam fora da comparação.
+
+Runtime final `--runtime-only`, candidato `c9b9aaa4…`. Passaram 80 testes relacionados mais `test_native`, sem mudança em Rust. **Não validado:** máquina mais fraca, multijogador, áudio e controle manual durante as transições. `gameplay_verified` continua falso.
+
+## Crash relatado ao fim da terceira corrida seguida — 14/11/2026, não reproduzido
+
+Nenhum relatório com log desse caso chegou (GitHub ou `Downloads`). Reprodução local com o candidato atual (`f079dd11…`, RX 580 8 GB, saves copiados, `MK8_TRACE_VRAM=1`): `local/race-grand-prix-78bcqglg` correu o GP do Mushroom Cup inteiro e começou um quinto percurso no mesmo processo. A captura do quadro 44.000 mostra a largada de Thwomp Ruins, depois do fim da 3ª corrida, e a do quadro 64.000 mostra Mario Kart Stadium. O teste terminou com saída 0 em 1.102,7 s, sem `FATAL`, exceção ou `svcBreak`. A VMA passou de 880 para 1.904 MB reservados no heap 0, com pico de cerca de 1,2 GB em uso. Uma GPU de 4 GB ou uma iGPU pode esgotar memória numa transição de pista. Os relatórios #11 (Intel Iris Xe, `vmaCreateImage` -1 em `exec.c:2300`) e #17 (APU AMD, -2) mostram exatamente esse tipo de `FATAL`, mas ainda na primeira corrida. Isso é hipótese, não causa demonstrada: falta o `mk8drecomp.log` de quem viu o crash na terceira corrida.
+
+Achado na automação: `scripts/test-race.py grand-prix` segurava A sem soltar, e o jogo atual não sai do placar da primeira corrida assim (`race-grand-prix-3jar2huo`: quadros 20.000 a 52.000 no placar com 15/12 pontos). Os GPs "longos" com esse roteiro não passavam da corrida 1. Agora o modo GP solta A um quadro a cada 120; essa entrada é a do teste acima, e `tests/test_race_script.py` cobre o padrão. As duas execuções anteriores desta rodada terminaram com `window closed` (`SDL_EVENT_QUIT`) porque compartilhavam o console com outros comandos; num console próprio isso não ocorreu. Não contar essas execuções como crash.
+
+Triagem dos relatórios de jogadores que impedem jogar: (1) launcher congelado pelo criador Mii, corrigido acima; (2) memória de GPU esgotada em GPU integrada (#11, #17), com mitigação apenas para APU AMD (`shared_vram.py`), não validada em hardware real; a Intel Iris Xe já não importava o heap e falhou com -1 por volta de 186 s, depois de "type mismatch" repetido numa textura 4096×2936 e uploads de ~1 GB a cada 2 s; (3) MKTV/Info no menu (#8): applet 0x17 (web offline) termina sem dados, e o jogo chama `SetTerminateResult` e `svcBreak` em `70040b15d4`, ainda sem correção; (4) #13 (0.1.8, `0xc0000409`) veio com `game.log` vazio e não tem diagnóstico.
+
+## Rampa inicial das vozes de áudio — 13/11/2026
+
+Validação desta branch: **11 testes nativos/Python aprovados**, zero skips: sete do mixer e quatro de hot paths. Não foi refeita uma build do jogo nem reteste auditivo nesta separação de PR.
+
+Patch focado sobre fix-chore `15d1106`: na criação/reutilização de uma voz, inicializa prev_volume em 0.f em vez do volume atual. A rampa já existente cobre o primeiro bloco (240 amostras/48 kHz, 5 ms); decoder, resampling, ganho global e buffers SDL permanecem iguais. Testes nativos usam mixer/decoder preparados com PCM/ADPCM sintéticos, vozes novas/reutilizadas, estéreo, splitter, chegada tardia de buffers, pitches 1/1.498, loop contínuo, volume constante e mute. Evidência auditiva anterior é da branch integrada: usuário confirmou o reproducer em Electrodrome corrigido; não equivale a qualificação desta branch isolada. `gameplay_verified=false`.
+
 
 ## Importação de fontes no launcher — 13/11/2026
 
@@ -1144,11 +1568,11 @@ Testes com a build atual (todas as correções acima), roteiros automáticos e c
 | **Multijogador por relay/código** (`multiplayer-fw34pdw8`) | Dois jogos reais na mesma corrida (anfitrião Mario, convidado Luigi com a marca "Host"), 60 FPS nos dois, imagem correta, sem erro de comunicação. |
 | **Multijogador pela LAN direta** (`multiplayer-b99dbh6f`) | Sala com "Host" e "Guest", corrida iniciada nos dois, 60 FPS, sem erro de comunicação. No lobby do convidado, o nome "Guest" aparece **espelhado** (defeito de texto a investigar). |
 | **Online Play (menu do jogo)** | Usa os servidores da Nintendo, que esta build não acessa. A mensagem do runtime pedia login no Nextendo Network (serviço do SMM2). `toolchain/online_notice.py` passa a explicar o caminho certo: sala no launcher (Multijogador) + Wireless Play com L + R + analógico esquerdo (LAN). |
-| **Tela dividida (Multiplayer local)** | Ainda falha (detalhes abaixo). |
+| **Tela dividida (Multiplayer local)** | Corrigida em 14/11/2026 (seção "Tela dividida local" no topo); a investigação abaixo é histórica. |
 
 **Vídeos dos menus (verde sólido) — corrigido.** As prévias de modo nos menus (MovieMenu.mp4, 512×608 H.264) apareciam verdes. O decodificador produzia quadros corretos (média Y 123, UV 127), mas o jogo entrega a cada quadro um buffer **próprio** a `GetOutputBuffer` e lê o quadro dali. O upstream apontava o Buffer para o buffer interno, então o do jogo ficava zerado, e NV12 zerado é verde. `toolchain/movie_output.py` copia o quadro para o buffer do jogo quando ele tem capacidade. O modo textura (SMM2) e a ausência de buffer continuam como antes; `MK8_MOVIE_OWN_BUFFER=1` restaura o upstream. `tests/test_movie_output.py` exercita a função real com os quatro casos. Capturas: prévias do Grande Prêmio e do Contra o Relógio visíveis.
 
-**Tela dividida — investigação.** Main menu → Multiplayer → applet de controles ("2 player(s)") → seleção de personagens para 2 jogadores. Nessa tela, nenhum botão de nenhum dos dois jogadores tem efeito (cursor, confirmar, voltar), embora na tela anterior (cilindradas) o jogador 1 funcione. Com os diagnósticos novos de `toolchain/split_screen.py` (`MK8_TRACE_PADS`, `MK8_TRACE_IMPORTS`), o jogo continua lendo o estado FullKey dos ids 0 e 1 uma vez por quadro e recebe os botões dos dois jogadores, inclusive do jogador 2 por `LARECOMP_INPUT2`. Os dois imports `nn::hid` que leem botões são do host; vibração, sensor de movimento, atribuição de Joy-Con e `SetSupportedNpad*` ficam com o SDK guest e o serviço `hid` responde ok. Não resolveram, e foram retirados: sinalizar os eventos de estilo ao fechar o applet e gravar a contagem de jogadores como `int` de 32 bits. A causa está no estado do jogo depois do applet. Próximo passo: observar o objeto de controle do jogo (`LARECOMP_WATCH_PAD`) antes e depois do applet. Não houve teste com dois controles físicos.
+**Tela dividida — investigação (histórica; causa e correção na seção "Tela dividida local", 14/11/2026).** Main menu → Multiplayer → applet de controles ("2 player(s)") → seleção de personagens para 2 jogadores. Nessa tela, nenhum botão de nenhum dos dois jogadores tem efeito (cursor, confirmar, voltar), embora na tela anterior (cilindradas) o jogador 1 funcione. Com os diagnósticos novos de `toolchain/split_screen.py` (`MK8_TRACE_PADS`, `MK8_TRACE_IMPORTS`), o jogo continua lendo o estado FullKey dos ids 0 e 1 uma vez por quadro e recebe os botões dos dois jogadores, inclusive do jogador 2 por `LARECOMP_INPUT2`. Os dois imports `nn::hid` que leem botões são do host; vibração, sensor de movimento, atribuição de Joy-Con e `SetSupportedNpad*` ficam com o SDK guest e o serviço `hid` responde ok. Não resolveram, e foram retirados: sinalizar os eventos de estilo ao fechar o applet e gravar a contagem de jogadores como `int` de 32 bits. A causa está no estado do jogo depois do applet. Próximo passo: observar o objeto de controle do jogo (`LARECOMP_WATCH_PAD`) antes e depois do applet. Não houve teste com dois controles físicos.
 
 ### Pistas e personagens pretos; bateria de pistas (08/11/2026)
 
@@ -1388,3 +1812,9 @@ Launcher nativo (06/11/2026): 16 testes Rust (4 novos executam a sequência de e
 Cobertura existente: geometria/GLB e persistência, perfis/manifestos, transporte, API/navegador, layouts ABI, hooks por hash, eventos de vídeo, vida útil/atualização de texturas e tradução TLD4S→GLSL→SPIR-V. O teste privado do SDK aceita 62.208 combinações do editor e rejeita campo inválido; isso valida CharInfo, não o modelo no jogo.
 
 Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Prioridade atual do usuário: criar e editar Miis e integrar seus modelos 3D ao MK8 nativo e online na branch fix-chore. A investigação de VRAM permanece pendente. Acompanhar memória ativa e reservada, tempo de quadro e integridade da imagem em sessões prolongadas. Multiplayer segue pendente em duas máquinas e pela internet com relay público, incluindo mais de quatro jogos reais. Permanecem pendentes iluminação/frametime/relógio, qualificação completa da corrida e integração de modelos Mii. Sem ampliar versões, DLC, plataformas ou frequências antes de qualificar esse percurso. Atualize este arquivo com evidência nova; evite manter um diário duplicado de cada boot.
+
+## Reports de oclusão antes da comparação — 13/11/2026
+
+Validação desta branch: **11 testes nativos/Python aprovados**, zero skips, cobrindo oclusão, compute flush e runtime stalls. Não foi refeita uma build do jogo nem uma corrida nesta separação de PR.
+
+Patch focado sobre fix-chore `15d1106`: resolve reports pendentes dos dois operandos antes de CMD_SET_RENDER_ENABLE. Espera somente a maior sequência necessária, libera cq_lock antes de submit/wait e não faz flush sem dependência. Queries indisponíveis após conclusão conhecida e timeout com reports pendentes falham explicitamente. Mantém zeros legítimos, modos equal/not-equal, q nulo e enable/disable. Teste nativo executa helper/case preparados, com dependências atuais/anteriores, ambos os operandos, produtores distintos, reset, lock e falhas. Evidência manual anterior veio da branch integrada com recorder: usuário não observou flicker em Electrodrome, DK Jungle e Rainbow Road após o fix; não é qualificação desta branch isolada. Não inclui recorder nem outros patches gráficos. `gameplay_verified=false`.

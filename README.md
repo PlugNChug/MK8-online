@@ -30,6 +30,9 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 > [!NOTE]
 > **0.2.0 is a public test release, still experimental.** Solo races complete in local tests. Visual defects, first-use shader stutters and VRAM growth remain. Multiplayer between two separate PCs has not been qualified yet: that is exactly what this release asks testers to try.
 
+New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
+
+
 ## What's new in 0.2.0
 
 - **Mii creator.** The **Mii profile** tab is a creator now. Name your Mii, then pick every part (body, face, skin, hair, eyes, eyebrows, nose, mouth, beard, glasses, mole) from buttons that show *your* Mii with that option. The preview puts the head on MK8's own lobby body, read from your prepared game, so type, height, build and favorite color are visible.
@@ -44,7 +47,7 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
-| Launcher | Native window, guided preparation, installer, updates, reports; English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |
+| Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |
 | Solo racing | Mushroom Cup completed; battles, MKTV highlight reel and time trials reached | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Steam rooms with invites; two game instances on one PC entered the same LAN room automatically | A guest joining over Steam from another PC, full races between two PCs |
@@ -124,6 +127,25 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
+## CTGP Deluxe course pack (optional, experimental)
+
+CTGP Deluxe 1.1.1 is made for MK8 3.0.3 (32-bit); this build is 4.0.1 (64-bit), so its code cannot run here. Its
+courses, music and cups can: the launcher puts the 64 CTGP courses into existing course slots, 48 in the base game's
+12 cups and, with the Booster Course Pass enabled, 16 more in the DLC's first 4 cups.
+
+1. Download CTGP Deluxe from [ctgpdx.com](https://www.ctgpdx.com/download) (personal use) and extract the ZIP.
+2. **Settings → CTGP Deluxe**: choose the extracted folder (the one with `atmosphere/`) and click **Import CTGP…**.
+   On the same disk as the data folder it takes seconds and no extra space (hard links).
+   Choose where the courses go: **in place of the base game's cups** (48 courses, +16 with the DLC) or **in place
+   of the DLC's cups** (48 courses next to the 48 original ones; needs the Booster Course Pass imported and enabled).
+3. **Enable CTGP Deluxe** switches it on; turn it off to play the original game. The game, the DLC and your saves are
+   never changed; with CTGP on, the game uses its own saves, created once as a copy of yours.
+
+In Steam rooms everyone needs the same pack (the same CTGP enabled, or everyone without it). MK8-online does not
+distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus, extra cups and random
+button need its code (not available); time-trial staff ghosts are the original course's. See
+[STATUS.md](docs/STATUS.md).
+
 ## Build and contribute
 
 On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
@@ -160,3 +182,5 @@ Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a
 Project code is licensed under **[GPL-3.0-or-later](LICENSE)**. Dependencies keep their own licenses; the SMM2Recomp snapshot includes GPLv3, LASRecomp includes MIT notices, and the setup carries FFmpeg (LGPL 2.1) with its source attached to each release. The license grants no rights to Nintendo's game code, assets or trademarks.
 
 An independent community project, not affiliated with or endorsed by Nintendo or Valve. Mario Kart and related names belong to their respective owners.
+
+Conditional occlusion rendering waits for pending reports on either comparison operand before reading their actual sample counts. This addresses transient missing racers/objects during previews; it preserves legitimate hidden results. The fix is applied during runtime preparation and needs a game/runtime rebuild.

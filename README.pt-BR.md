@@ -30,6 +30,9 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 > [!NOTE]
 > **A 0.2.0 é uma release de teste público, ainda experimental.** Corridas solo são concluídas nos testes locais. Persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. O multijogador entre dois PCs diferentes ainda não foi qualificado: é justamente isso que esta release pede para os testadores experimentarem.
 
+Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
+
+
 ## Novidades da 0.2.0
 
 - **Criador de Mii.** A aba **Perfil Mii** virou um criador. Dê um nome ao Mii e escolha cada parte (corpo, rosto, pele, cabelo, olhos, sobrancelhas, nariz, boca, barba, óculos, pinta) em botões que mostram o *seu* Mii com aquela opção. A prévia põe a cabeça no próprio corpo do MK8 usado nas salas, lido do seu jogo preparado: tipo, altura, porte e cor favorita ficam visíveis.
@@ -48,7 +51,7 @@ Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
 
 | Área | Progresso atual | Próxima etapa |
 | --- | --- | --- |
-| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; inglês e PT-BR | Atualização 0.1.8 → 0.2.0 por testadores reais |
+| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.1.8 → 0.2.0 por testadores reais |
 | Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
 | Multijogador | Salas Steam com convites; duas instâncias do jogo no mesmo PC entraram sozinhas na mesma sala LAN | Convidado entrando pela Steam a partir de outro PC, corridas completas entre dois PCs |
@@ -134,6 +137,25 @@ As medições excluem as janelas de captura e não garantem 60 FPS em toda cena 
 
 Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
 
+## Pacote de pistas CTGP Deluxe (opcional, experimental)
+
+O CTGP Deluxe 1.1.1 é feito para o MK8 3.0.3 (32 bits); esta build é 4.0.1 (64 bits), então o código dele não roda
+aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP nas vagas de pista existentes, 48 nas
+12 copas do jogo base e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC.
+
+1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
+2. **Configurações → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
+   No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
+   Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC) ou **no lugar das
+   copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado).
+3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. O jogo, o DLC e os seus saves nunca são
+   alterados; com o CTGP ligado o jogo usa saves próprios, criados uma vez como cópia dos seus.
+
+Nas salas da Steam todos precisam do mesmo pacote (o mesmo CTGP ativado ou todos sem ele). O MK8-online não distribui
+o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios, copas extras e botão aleatório do
+CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original. Veja
+[STATUS.md](docs/STATUS.md).
+
 ## Compilar e contribuir
 
 No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
@@ -207,3 +229,5 @@ O código do projeto é licenciado sob **[GPL-3.0-or-later](LICENSE)**. As depen
 A licença não concede direitos sobre o código, os recursos ou as marcas da Nintendo.
 
 Projeto comunitário independente, sem afiliação nem endosso da Nintendo ou da Valve. Mario Kart e nomes relacionados pertencem aos respectivos donos.
+
+A renderização condicional aguarda reports de oclusão pendentes nos dois operandos antes de comparar as contagens reais. Corrige desaparecimentos transitórios nos previews, preservando resultados legítimos de objetos ocultos. A preparação aplica o patch; é necessário reconstruir o jogo/runtime.

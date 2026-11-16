@@ -3,9 +3,10 @@ import {GLTFLoader} from './vendor/three/GLTFLoader.js';
 import {OrbitControls} from './vendor/three/OrbitControls.js';
 import {inspectGlb} from './mii-glb.js';
 
-const $=id=>document.getElementById(id),pt=(document.documentElement.lang||navigator.language).startsWith('pt');
-const say=(a,b)=>pt?a:b;
-document.querySelectorAll('[data-pt]').forEach(e=>e.textContent=pt?e.dataset.pt:e.dataset.en);
+const $=id=>document.getElementById(id),browser=navigator.language.toLowerCase();
+const lang=document.documentElement.lang||(browser.startsWith('pt')?'pt-BR':browser.startsWith('en')?'en':'es'),pt=lang.startsWith('pt'),es=lang.startsWith('es');
+const say=(a,b,c)=>pt?a:es?c:b;
+document.querySelectorAll('[data-pt]').forEach(e=>e.textContent=pt?e.dataset.pt:es?e.dataset.es:e.dataset.en);
 let renderer,controls,model,bones,embedded=null,sequence=0;
 const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(35,1,.01,1000);
 scene.background=new THREE.Color('#10141e');
@@ -18,7 +19,7 @@ function frame(){
   if(!model)return;
   const head=$('model-view').value==='head';
   const headRoot=model.getObjectByName('miiHead')??model.getObjectByName('MiiHead')??model.getObjectByName('head');
-  if(head&&!headRoot){$('model-view').value='all';status.textContent=say('Grupo de cabeça não identificado.','Head group not identified.');return;}
+  if(head&&!headRoot){$('model-view').value='all';status.textContent=say('Grupo de cabeça não identificado.','Head group not identified.','No se identificó el grupo de la cabeza.');return;}
   model.traverse(o=>{if(o.isMesh){let inHead=false;for(let p=o;p;p=p.parent)if(p===headRoot)inHead=true;o.visible=!head||inHead;}});
   model.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(head?headRoot:model),center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
@@ -31,7 +32,7 @@ try{
   renderer=new THREE.WebGLRenderer({canvas:$('model-canvas'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   controls=new OrbitControls(camera,renderer.domElement);controls.addEventListener('change',render);
   new ResizeObserver(()=>{const {width,height}=$('model-viewport').getBoundingClientRect();renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();render();}).observe($('model-viewport'));
-}catch(error){status.textContent=say('WebGL 2 indisponível: ','WebGL 2 unavailable: ')+error.message;$('model-file').disabled=true;}
+}catch(error){status.textContent=say('WebGL 2 indisponível: ','WebGL 2 unavailable: ','WebGL 2 no disponible: ')+error.message;$('model-file').disabled=true;}
 async function load(buffer){
   let failed=false;
   const manager=new THREE.LoadingManager();manager.onError=()=>{failed=true;};
@@ -53,7 +54,7 @@ $('model-file').onchange=async()=>{
     frame();embedded=mii;
     let triangles=0;model.traverse(o=>{if(o.isMesh)triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;});
     $('model-info').textContent=JSON.stringify({file:file.name,meshes:doc.meshes?.length??0,triangles,textures:doc.images?.length??0,joints:(doc.skins??[]).reduce((n,s)=>n+s.joints.length,0),animations:doc.animations?.length??0,embedded_mii_bytes:mii?.length??0},null,2);
-    status.textContent=say('Modelo carregado. Arraste para girar; use a roda para aproximar.','Model loaded. Drag to rotate; scroll to zoom.');
+    status.textContent=say('Modelo carregado. Arraste para girar; use a roda para aproximar.','Model loaded. Drag to rotate; scroll to zoom.','Modelo cargado. Arrastra para girar; usa la rueda para acercar.');
     $('model-canvas').dataset.rendered='true';
   }catch(error){if(turn===sequence){scene.remove(model,bones);dispose(model);bones?.geometry.dispose();bones?.material.dispose();model=null;bones=null;embedded=null;$('model-info').textContent='';status.textContent=error.message;render();}}
 };
@@ -63,11 +64,11 @@ $('model-bones').onchange=()=>{if(bones)bones.visible=$('model-bones').checked;r
 $('model-data').onchange=async()=>{
   const file=$('model-data').files[0],turn=sequence;if(!file)return;
   try{
-    if(!embedded)throw Error(say('Carregue um GLB com dados Mii incorporados primeiro.','Load a GLB with embedded Mii data first.'));
+    if(!embedded)throw Error(say('Carregue um GLB com dados Mii incorporados primeiro.','Load a GLB with embedded Mii data first.','Primero carga un GLB con datos Mii incorporados.'));
     if(file.size>4096)throw Error('Mii data: maximum 4096 bytes.');
     const bytes=new Uint8Array(await file.arrayBuffer());if(turn!==sequence)return;
     const match=bytes.length===embedded.length&&bytes.every((v,i)=>v===embedded[i]);
-    $('model-match').textContent=match?say('Correspondência exata com os dados do GLB. Não é uma conversão para CharInfo.','Exact match with GLB data. This is not a conversion to CharInfo.'):say('Os dados não correspondem ao GLB.','Data does not match the GLB.');
+    $('model-match').textContent=match?say('Correspondência exata com os dados do GLB. Não é uma conversão para CharInfo.','Exact match with GLB data. This is not a conversion to CharInfo.','Coincidencia exacta con los datos del GLB. No es una conversión a CharInfo.'):say('Os dados não correspondem ao GLB.','Data does not match the GLB.','Los datos no coinciden con el GLB.');
   }catch(e){$('model-match').textContent=e.message;}
 };
 window.addEventListener('beforeunload',()=>{controls?.dispose();dispose(model);bones?.geometry.dispose();bones?.material.dispose();renderer?.dispose();});

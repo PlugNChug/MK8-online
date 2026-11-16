@@ -60,6 +60,31 @@ pub fn check_dlc(host: Option<&str>, local: bool) -> Result<()> {
     }
 }
 
+/// Lobby data key with the host's CTGP pack: its identity (64 hex digits), "0" or absent without one.
+pub const PACK_KEY: &str = "mk8_ctgp";
+
+/// Players must share the same course pack: its courses take the place of others, so a different pack (or none)
+/// would put players on different tracks. `local` is the local pack's identity, empty without one.
+pub fn check_pack(host: Option<&str>, local: &str) -> Result<()> {
+    let host = match host {
+        None | Some("") | Some("0") => "",
+        Some(id) if id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()) => id,
+        Some(_) => return Err("Sala da Steam com pacote CTGP inválido.".into()),
+    };
+    match (host.is_empty(), local.is_empty()) {
+        (false, true) => Err(
+            "A sala usa o CTGP Deluxe. Importe e ative o CTGP em Configurações para entrar.".into(),
+        ),
+        (true, false) => Err(
+            "A sala não usa o CTGP Deluxe. Desative o CTGP em Configurações para entrar.".into(),
+        ),
+        (false, false) if !host.eq_ignore_ascii_case(local) => Err(
+            "A sala usa outra versão do CTGP Deluxe. Importe a mesma versão para entrar.".into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
 #[repr(C, packed(8))]
 #[derive(Clone, Copy, Default)]
 struct LobbyCreated {
@@ -800,6 +825,7 @@ impl SteamRoom {
         identity: &str,
         name: &str,
         dlc: bool,
+        pack: &str,
     ) -> Result<(Self, Host, Invite)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
@@ -824,10 +850,14 @@ impl SteamRoom {
         let val_id = CString::new(identity).unwrap();
         let key_dlc = CString::new(DLC_KEY).unwrap();
         let val_dlc = CString::new(if dlc { "1" } else { "0" }).unwrap();
+        let key_pack = CString::new(PACK_KEY).unwrap();
+        let val_pack = CString::new(if pack.is_empty() { "0" } else { pack })
+            .map_err(|_| "Identidade do CTGP inválida.")?;
         unsafe {
             (api.set_lobby_data)(mm, created.lobby_id, key_code.as_ptr(), val_code.as_ptr());
             (api.set_lobby_data)(mm, created.lobby_id, key_id.as_ptr(), val_id.as_ptr());
             (api.set_lobby_data)(mm, created.lobby_id, key_dlc.as_ptr(), val_dlc.as_ptr());
+            (api.set_lobby_data)(mm, created.lobby_id, key_pack.as_ptr(), val_pack.as_ptr());
         }
         let friends = unsafe { (api.steam_friends)() };
         if !friends.is_null() {
@@ -959,6 +989,7 @@ impl SteamRoom {
         input: &str,
         identity: &str,
         dlc: bool,
+        pack: &str,
     ) -> Result<(Self, Gateway)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
@@ -996,7 +1027,13 @@ impl SteamRoom {
         let ptr = unsafe { (api.get_lobby_data)(mm, code.lobby, key.as_ptr()) };
         let host_dlc =
             (!ptr.is_null()).then(|| unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() });
-        if let Err(error) = check_dlc(host_dlc.as_deref(), dlc) {
+        let key = CString::new(PACK_KEY).unwrap();
+        let ptr = unsafe { (api.get_lobby_data)(mm, code.lobby, key.as_ptr()) };
+        let host_pack =
+            (!ptr.is_null()).then(|| unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() });
+        if let Err(error) = check_dlc(host_dlc.as_deref(), dlc)
+            .and_then(|()| check_pack(host_pack.as_deref(), pack))
+        {
             unsafe { (api.leave_lobby)(mm, code.lobby) };
             return Err(error);
         }
@@ -1122,6 +1159,25 @@ mod tests {
         assert!(check_dlc(None, true).is_err());
         assert!(check_dlc(Some("yes"), true).is_err());
         assert!(check_dlc(Some("yes"), false).is_err());
+    }
+
+    #[test]
+    fn course_pack_must_match_the_host_lobby() {
+        let id = "a".repeat(64);
+        assert!(check_pack(None, "").is_ok());
+        assert!(check_pack(Some("0"), "").is_ok());
+        assert!(check_pack(Some(&id), &id).is_ok());
+        assert!(check_pack(Some(&id.to_uppercase()), &id).is_ok());
+        assert!(check_pack(Some(&id), "")
+            .unwrap_err()
+            .contains("Importe e ative"));
+        assert!(check_pack(Some("0"), &id).unwrap_err().contains("Desative"));
+        assert!(check_pack(None, &id).is_err()); // an older launcher hosts without a pack
+        assert!(check_pack(Some(&"b".repeat(64)), &id)
+            .unwrap_err()
+            .contains("outra versão"));
+        assert!(check_pack(Some("sim"), "").is_err());
+        assert!(check_pack(Some(&"z".repeat(64)), &id).is_err());
     }
 
     type PacketQueue = HashMap<(u64, i32), VecDeque<(u64, Vec<u8>)>>;

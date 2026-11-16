@@ -132,6 +132,37 @@ impl Setup {
         self.start_steps_guarded(root, local, vec![step], &local.join("dlc.log"))
     }
 
+    pub fn start_ctgp(
+        &mut self,
+        root: &Path,
+        local: &Path,
+        source: &Path,
+        romfs: &Path,
+        reinstall: bool,
+        layout: &str,
+    ) -> Result<(), String> {
+        let mut step = Step::new(
+            "Importação do CTGP Deluxe",
+            local_python(root),
+            &[
+                &"-u",
+                &root.join("toolchain/import_ctgp.py"),
+                &"--source",
+                &source,
+                &"--romfs",
+                &romfs,
+                &"--local",
+                &local,
+                &"--layout",
+                &layout,
+            ],
+        );
+        if reinstall {
+            step.args.push("--reinstall".into());
+        }
+        self.start_steps_guarded(root, local, vec![step], &local.join("ctgp.log"))
+    }
+
     fn start_steps_guarded(
         &mut self,
         root: &Path,

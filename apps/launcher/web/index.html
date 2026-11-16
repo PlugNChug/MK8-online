@@ -20,7 +20,7 @@
       <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
       <span class="tag">experimental</span>
       <span class="spacer"></span>
-      <label class="language-picker"><span>Idioma</span><select id="language" aria-label="Idioma"><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select></label>
+      <label class="language-picker"><span>Idioma</span><select id="language" aria-label="Idioma"><option value="es">Español</option><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select></label>
       <button id="update-chip" class="chip accent" data-goto="support" hidden>Atualização disponível</button>
       <span id="version" class="chip">v—</span>
     </header>
@@ -248,6 +248,35 @@
             <p id="settings-dlc-hint" class="hint">Desativar mantém os arquivos e os saves.</p>
             <p class="fine">Nas salas da Steam, todos precisam do mesmo estado: com o DLC ativado ou todos sem ele.</p>
             <button type="button" class="ghost" data-goto="install">Importar ou reparar DLC</button>
+          </article>
+          <article id="ctgp-card" class="card settings-dlc" aria-labelledby="ctgp-title">
+            <div class="row"><h2 id="ctgp-title">CTGP Deluxe</h2><span id="ctgp-state" class="pill">Não instalado</span></div>
+            <p class="hint">Pacote de pistas opcional: as pistas, músicas e copas do CTGP Deluxe no lugar das do jogo base. Desative para voltar ao jogo original; o jogo, o DLC e os seus saves não são alterados.</p>
+            <label class="dlc-toggle"><input type="checkbox" id="ctgp-enabled" disabled />Ativar CTGP Deluxe</label>
+            <p id="ctgp-hint" class="hint">Importe a pasta extraída do ZIP oficial do CTGP Deluxe.</p>
+            <div id="ctgp-files" class="files">
+              <div class="file-tile" id="tile-ctgp-source">
+                <span class="ft-icon" aria-hidden="true">C</span>
+                <span class="ft-text"><strong>Pasta do CTGP Deluxe</strong><small>A pasta extraída do ZIP, com atmosphere/</small></span>
+                <input id="ctgp-source" aria-label="Pasta do CTGP Deluxe" spellcheck="false" placeholder="Caminho da pasta" />
+                <button type="button" class="ghost" data-browse="ctgp-source" data-kind="ctgp" aria-label="Escolher a pasta do CTGP Deluxe" hidden>Escolher</button>
+              </div>
+            </div>
+            <label class="ctgp-layout">Onde colocar as pistas do CTGP
+              <select id="ctgp-layout">
+                <option value="base">No lugar das copas do jogo base (48 pistas; +16 com o DLC)</option>
+                <option value="dlc">No lugar das copas do DLC (48 pistas; o jogo base fica original)</option>
+                <option value="dlc-late">No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)</option>
+              </select>
+            </label>
+            <div class="row">
+              <button type="button" id="ctgp-import" class="ghost" disabled>Importar CTGP…</button>
+              <button type="button" class="ghost" data-log="ctgp-log">Ver log</button>
+            </div>
+            <p id="ctgp-detail" class="hint" role="status"></p>
+            <pre id="ctgp-log" class="log" aria-label="Log do CTGP" hidden></pre>
+            <p class="fine">No lugar das copas do jogo base: 48 pistas nas 12 copas do jogo e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC. No lugar das copas do DLC: 48 pistas nas 12 copas do Booster Course Pass e o jogo base continua original (requer o DLC importado e ativado). Trocar a disposição importa o pacote de novo, em segundos. Com o CTGP ativado o jogo usa saves próprios, criados como cópia dos seus. Nas salas da Steam, todos precisam do mesmo pacote: o mesmo CTGP ativado ou todos sem ele.</p>
+            <p class="fine">Baixe o CTGP Deluxe em <a href="https://www.ctgpdx.com/download" target="_blank" rel="noopener">ctgpdx.com</a>, para uso pessoal. O MK8-online não distribui o pacote: ele é lido da sua cópia e fica só neste computador.</p>
           </article>
           <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
         </section>

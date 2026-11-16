@@ -170,6 +170,7 @@ mod tests {
             shader_root: local.join("shaders"),
             gameplay_verified: false,
             dlc_supported: true,
+            pack_supported: false,
             files: BTreeMap::from([
                 (
                     "dlc-manifest".into(),

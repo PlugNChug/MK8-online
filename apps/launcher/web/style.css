@@ -214,6 +214,8 @@ footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1
 .dlc-card .files { margin-bottom: 0.75rem; }
 .dlc-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 0.6rem; }
 .dlc-toggle input { width: auto; accent-color: var(--accent); }
+.ctgp-layout { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0 0.75rem; }
+.ctgp-layout select { max-width: 100%; }
 
 @media (max-width: 820px) {
   .shell { grid-template-columns: minmax(0, 1fr); }

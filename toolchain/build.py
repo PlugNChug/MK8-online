@@ -309,7 +309,8 @@ def finish(config, local, executable=None):
     executable = file_record(exe)
     identity = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
     candidate = {'schema': 2, 'identity': identity, 'profile': 'mk8d-smm2-experimental', 'executable': executable,
-                 'files': files, 'data_root': str(data), 'shader_root': str(local/'user/shaders'), 'gameplay_verified': False, 'dlc_supported': True}
+                 'files': files, 'data_root': str(data), 'shader_root': str(local/'user/shaders'), 'gameplay_verified': False, 'dlc_supported': True,
+                 'pack_supported': True}  # runtime/mk8/support/romfs_overlay.c: MK8_ROMFS_OVERLAY
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
@@ -342,6 +343,7 @@ def refresh_runtime(local):
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': candidate['files'], 'exe': candidate['executable']}, sort_keys=True).encode()).hexdigest()
     candidate['dlc_supported'] = True
+    candidate['pack_supported'] = True
     atomic_json(local/'candidate.json', candidate)
     print('Runtime atualizado; biblioteca do jogo preservada. Gameplay não qualificado.', flush=True)
 
