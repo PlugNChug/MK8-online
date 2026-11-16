@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Gradiente do ícone Settings — 15/11/2026
+
+Consultado [Pic1Pane.cs do SwitchThemeInjector](https://github.com/exelix11/SwitchThemeInjector/blob/master/SwitchThemesCommon/Bflyt/Pic1Pane.cs), de exelix11 e colaboradores, para confirmar a ordem dos quatro cantos de `pic1` (superior esquerdo/direito, inferior esquerdo/direito). Nenhum código foi copiado. O gradiente altera somente as cores dos vértices da cópia privada do layout já derivada pelo projeto; pixels comerciais permanecem em `local/`.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.

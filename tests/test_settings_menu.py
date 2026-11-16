@@ -61,16 +61,10 @@ int main() {
                 settings_menu.prepare(root)
 
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
-    def test_native_focus_filters_confirm_before_guest_activation_and_queues_once(self):
+    def test_native_button_routes_only_its_own_events_and_preserves_original_actions(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            original = root / 'main' / settings_menu.UNIT
-            original.parent.mkdir()
-            # Synthetic callback body: no commercial guest source in the fixture.
-            original.write_text(settings_menu.ENTRY + '\n    body_calls++;\n}\n', encoding='utf-8')
-            with patch.object(settings_menu, 'SOURCE_SHA256', hashlib.sha256(original.read_bytes()).hexdigest()):
-                adapted = settings_menu.patch_guest(original, original, root / 'out')
-            (root / 'rt.h').write_text(r'''
+            (root / 'rt.h').write_text(r"""
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -81,72 +75,69 @@ extern uint8_t memory[4096];
 #define GUEST_LO HEAP_BASE
 #define GUEST_HI (HEAP_BASE + HEAP_MAX)
 #define LD32(a) (*(uint32_t *)(uintptr_t)(a))
+#define LD8(a) (*(uint8_t *)(uintptr_t)(a))
 #define LOG(...) ((void)0)
 #define FATAL(...) abort()
 #define RT_ON_RESET(name) void name(void)
-''', encoding='utf-8')
-            source = root / 'test.c'
+bool plat_exe_path(char *, size_t);
+""", encoding='utf-8')
             (root / 'hle.h').write_text('', encoding='utf-8')
-            source.write_text(r'''
+            source = root / 'test.c'
+            source.write_text(r"""
 #include "rt.h"
 #include <assert.h>
 #include <string.h>
 uint8_t memory[4096];
-static unsigned body_calls;
-typedef struct { uint64_t x[32]; } Cpu;
-bool mk8_settings_take_open(void);
-bool mk8_settings_entry_visible(void);
-bool mk8_settings_entry_focused(void);
-uint64_t mk8_settings_filter_buttons(uint64_t, bool);
+static int constructions, openings, hovers;
+bool mk8_settings_top_event(uint64_t, uint64_t);
+uint64_t mk8_settings_navigation(uint64_t, uint64_t, uint64_t);
 void settings_menu_reset(void);
-''' + adapted.read_text(encoding='utf-8') + r'''
-static void event(Cpu *c, uint32_t id, uint32_t kind) {
-    uint32_t *data = (uint32_t *)(uintptr_t)c->x[1];
-    data[2] = id; data[10] = kind;
-    uint8_t before[4096]; memcpy(before, memory, sizeof memory);
-    Cpu saved = *c;
-    f_70004d92e8(c);
-    assert(!memcmp(&saved, c, sizeof saved) && !memcmp(before, memory, sizeof memory));
-}
+void mk8_settings_button_build(uint64_t page) { assert(page==HEAP_BASE); constructions++; }
+void mk8_settings_button_hover(uint64_t page, unsigned instant) { assert(page==HEAP_BASE && !instant); hovers++; }
+void mk8_settings_page_build(uint64_t page) { assert(page==HEAP_BASE); }
+void mk8_settings_page_tick(uint64_t page, bool open) { assert(page==HEAP_BASE); if(open) openings++; }
+bool plat_exe_path(char *p, size_t n) { return false; }
 int main(int argc, char **argv) {
-    Cpu c = {{HEAP_BASE, HEAP_BASE + 2048}};
-    if (argc > 1 && !strcmp(argv[1], "bad-event")) c.x[1] = GUEST_HI - 8;
-    if (argc > 1 && !strcmp(argv[1], "bad-page")) c.x[0] = GUEST_HI - 8;
-    if (argc > 1 && !strncmp(argv[1], "bad-", 4)) { f_70004d92e8(&c); return 99; }
-    const char *flag = getenv("MK8_SETTINGS_EXPERIMENT");
-    if (!flag || strcmp(flag, "1")) {
-        event(&c, 105, 2);
-        assert(body_calls == 1 && !mk8_settings_take_open() && !mk8_settings_entry_visible());
-        assert(mk8_settings_filter_buttons(0x8001, false) == 0x8001);
-        return 0;
+    uint64_t page=HEAP_BASE, event=HEAP_BASE+2048;
+    if (argc>1 && !strcmp(argv[1],"bad-page")) page=GUEST_HI-8;
+    if (argc>1 && !strcmp(argv[1],"bad-event")) event=GUEST_HI-8;
+    if (argc>1) { mk8_settings_top_event(page,event); return 99; }
+    const char *flag=getenv("MK8_SETTINGS_EXPERIMENT");
+    bool on=flag && !strcmp(flag,"1");
+    assert(!mk8_settings_top_event(page,0));
+    assert(constructions==(int)on);
+    const uint64_t handled=1ull<<32, owner=page+0x420;
+    assert(mk8_settings_navigation(owner,9,0x100)==(on ? handled|11 : 0));
+    assert(mk8_settings_navigation(owner,10,0x80)==(on ? handled|11 : 0));
+    assert(mk8_settings_navigation(owner,11,0x80)==(on ? handled|9 : 0));
+    assert(mk8_settings_navigation(owner,11,0x100)==(on ? handled|10 : 0));
+    assert(mk8_settings_navigation(owner,11,0x20)==(on ? handled|3 : 0));
+    assert(mk8_settings_navigation(owner,11,0x40)==(on ? handled : 0));
+    assert(!mk8_settings_navigation(owner,4,0x100));
+    assert(!mk8_settings_navigation(owner,9,0x120));
+    assert(!mk8_settings_navigation(owner+8,9,0x100));
+    assert(!mk8_settings_top_event(page,1));
+    assert(!openings);
+    for (unsigned id=0; id<=107; id++) for(unsigned kind=0;kind<=2;kind++) {
+        *(uint32_t *)(uintptr_t)(event+8)=id;
+        *(uint32_t *)(uintptr_t)(event+0x28)=kind;
+        uint8_t before[4096]; memcpy(before,memory,sizeof memory);
+        bool ours=on && id==107;
+        int before_hover=hovers;
+        assert(mk8_settings_top_event(page,event)==ours);
+        assert(hovers==before_hover+(ours && kind==0));
+        assert(!memcmp(before,memory,sizeof memory));
+        int before_open=openings;
+        assert(!mk8_settings_top_event(page,1));
+        assert(openings==before_open+(ours && kind==2));
+        assert(!mk8_settings_top_event(page,1));
+        assert(openings==before_open+(ours && kind==2));
     }
-    assert(!mk8_settings_entry_visible() && !mk8_settings_entry_focused());
-    event(&c, 105, 0);
-    assert(mk8_settings_entry_visible() && !mk8_settings_entry_focused());
-    assert(mk8_settings_filter_buttons(1, false) == 1 && !mk8_settings_take_open());
-    mk8_settings_filter_buttons(0, false);
-    assert(mk8_settings_filter_buttons(1ull<<14, false) == 0 && mk8_settings_entry_focused());
-    assert(mk8_settings_filter_buttons(1ull<<14, false) == 0);
-    mk8_settings_filter_buttons(0, false);
-    assert(mk8_settings_filter_buttons(0x8001, false) == 0x8000 && mk8_settings_take_open());
-    assert(!mk8_settings_take_open());
-    assert(mk8_settings_filter_buttons(1, true) == 0 && !mk8_settings_take_open());
-    assert(mk8_settings_filter_buttons(1ull<<12, false) == 0 && !mk8_settings_entry_focused());
-    assert(mk8_settings_filter_buttons(1ull<<12, false) == 0);
-    mk8_settings_filter_buttons(0, false);
-    assert(mk8_settings_filter_buttons(1, false) == 1);
-    event(&c, 105, 2); assert(!mk8_settings_entry_visible());
-    c.x[1] = GUEST_HI - 0x38; event(&c, 105, 0);
-    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1ull<<14, false);
-    mk8_settings_filter_buttons(0, false);
-    assert(mk8_settings_filter_buttons(2, false) == 0 && !mk8_settings_entry_focused());
-    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1ull<<14, false);
-    mk8_settings_filter_buttons(0, false); mk8_settings_filter_buttons(1, false);
     settings_menu_reset();
-    assert(!mk8_settings_take_open() && !mk8_settings_entry_visible());
+    assert(!mk8_settings_navigation(owner,9,0x100));
     return 0;
 }
-''', encoding='utf-8')
+""", encoding='utf-8')
             exe = root / 'test.exe'
             build = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu',
                                     '-O2', '-UNDEBUG', '-I' + str(root), str(source),

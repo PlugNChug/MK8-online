@@ -4,61 +4,70 @@
 #include <stdlib.h>
 #include <string.h>
 
-static _Atomic bool visible, focused, pending, selected;
-static _Atomic uint64_t previous, suppressed;
+static _Atomic bool pending;
+static _Atomic uint64_t policy;
+void mk8_settings_top_forget(void) { pending = false; policy = 0; }
+RT_ON_RESET(settings_menu_reset) { mk8_settings_top_forget(); }
 
-RT_ON_RESET(settings_menu_reset) { visible = false; focused = false; pending = false; selected = false; previous = 0; suppressed = 0; }
-
-static bool enabled(void) {
+bool mk8_settings_style_active(void) {
     const char *value = getenv("MK8_SETTINGS_EXPERIMENT");
     return value && !strcmp(value, "1");
 }
 
-// The verified top-menu callback reports focus (0/1) and confirmation (2).
-// The runtime-drawn slot follows the final native tile; the original tile retains its action.
-void mk8_settings_top_event(uint64_t page, uint64_t event) {
-    if (!enabled()) return;
-    if (page < HEAP_BASE || page >= HEAP_BASE + HEAP_MAX || 0x700 > HEAP_BASE + HEAP_MAX - page ||
-        event < GUEST_LO || event >= GUEST_HI || 0x38 > GUEST_HI - event)
-        FATAL("[mk8:settings] unexpected top-menu object/event\n");
-    uint32_t id = LD32(event + 8), kind = LD32(event + 0x28);
-    if (kind == 0 && (id <= 40 || (id >= 100 && id <= 106))) {
-        visible = true;
-        focused = id == 105;
-        if (id != 105) selected = false;
-    }
-    if (kind == 1 && id == 105) { focused = false; selected = false; }
-    if (kind == 2) { visible = false; focused = false; selected = false; }
+const char *game_romfs_overlay(void) {
+    static char path[4096];
+    if (!mk8_settings_style_active()) return NULL;
+    if (!plat_exe_path(path, sizeof path)) FATAL("[mk8:settings] executable path unavailable\n");
+    char *end = strrchr(path, '/'), *back = strrchr(path, '\\');
+    if (!end || (back && back > end)) end = back;
+    if (!end || sizeof path - (size_t)(end-path) < 32) FATAL("[mk8:settings] layout path too long\n");
+    strcpy(end, "/settings-menu/romfs");
+    char check[4200];
+    snprintf(check, sizeof check, "%s/UI/cmn/menu.sarc", path);
+    FILE *file = fopen(check, "rb");
+    if (!file) FATAL("[mk8:settings] build the private Settings layout before enabling the experiment\n");
+    fclose(file);
+    return path;
 }
 
-uint64_t mk8_settings_filter_buttons(uint64_t buttons, bool captured) {
-    if (!enabled()) return buttons;
-    uint64_t edge = buttons & ~atomic_exchange(&previous, buttons);
-    uint64_t held = atomic_load(&suppressed) & buttons;
-    suppressed = held;
-    uint64_t out = buttons & ~held;
-    if (captured) return selected ? out & ~1ull : out;
-    if (!atomic_load(&focused)) return out;
-    const uint64_t right = (1ull << 14) | (1ull << 18), left = (1ull << 12) | (1ull << 16);
-    if (!selected && (edge & right)) {
-        selected = true; suppressed = held | (buttons & right);
-        return out & ~right;
+void mk8_settings_button_build(uint64_t page);
+void mk8_settings_button_hover(uint64_t page, unsigned instant);
+void mk8_settings_page_build(uint64_t page);
+void mk8_settings_page_tick(uint64_t page, bool open);
+
+// Called only by hash-verified MK8 4.0.1 construction and top-menu event boundaries.
+bool mk8_settings_top_event(uint64_t page, uint64_t event) {
+    if (!mk8_settings_style_active()) return false;
+    if (page < HEAP_BASE || page >= HEAP_BASE + HEAP_MAX || 0x700 > HEAP_BASE + HEAP_MAX - page)
+        FATAL("[mk8:settings] unexpected top-menu object\n");
+    if (!event) { mk8_settings_button_build(page); mk8_settings_page_build(page); policy = page+0x420; return false; }
+    if (event == 1) {
+        if (policy == page+0x420) mk8_settings_page_tick(page, atomic_exchange(&pending,false));
+        return false;
     }
-    if (!selected) return out;
-    if (edge & (left | 2)) {
-        selected = false; suppressed = held | (buttons & (left | 2));
-        return out & ~(left | 2);
-    }
-    if (edge & ((1ull << 13) | (1ull << 17))) { selected = false; return out; }
-    if (buttons & 1) {
-        if (!atomic_exchange(&pending, true)) LOG("[mk8:settings] dedicated Settings entry confirmed\n");
-        out &= ~1ull;
-    }
-    return out & ~right;
+    if (event < GUEST_LO || event >= GUEST_HI || 0x38 > GUEST_HI - event)
+        FATAL("[mk8:settings] unexpected top-menu event\n");
+    if (LD32(event + 8) != 107) return false;
+    uint32_t kind = LD32(event + 0x28);
+    if (kind > 2) FATAL("[mk8:settings] unexpected Settings event\n");
+    if (kind == 0) mk8_settings_button_hover(page, LD8(event+0x34));
+    if (kind == 2 && !atomic_exchange(&pending, true))
+        LOG("[mk8:settings] native button confirmed\n");
+    return true;
 }
 
-bool mk8_settings_take_open(void) { return enabled() && atomic_exchange(&pending, false); }
-bool mk8_settings_entry_visible(void) { return enabled() && atomic_load(&visible); }
-bool mk8_settings_entry_focused(void) { return mk8_settings_entry_visible() && atomic_load(&selected); }
-
-bool mk8_settings_style_active(void) { return enabled(); }
+// Extend the native row's fixed wrap points; all other moves use the original policy.
+uint64_t mk8_settings_navigation(uint64_t owner, uint64_t index, uint64_t direction) {
+    if (!mk8_settings_style_active() || !policy || owner != policy) return 0;
+    uint32_t next;
+    if (index == 11) {
+        if (direction & 0x20) next=3;
+        else if (direction & 0x40) next=0;
+        else if (direction & 0x80) next=9;
+        else if (direction & 0x100) next=10;
+        else next=11;
+    } else if (index == 9 && !(direction & 0xe0) && (direction & 0x100)) next=11;
+    else if (index == 10 && !(direction & 0x60) && (direction & 0x80)) next=11;
+    else return 0;
+    return (1ull<<32) | next;
+}
