@@ -4,6 +4,7 @@ const token = document.querySelector('meta[name="mk8-token"]').content;
 // Only the three files of step 2 are edited here; the other paths (ExeFS, RomFS, fonts…) are found by the launcher.
 const fieldNames = ["base_package", "update_package", "prod_keys"];
 let savedConfig = {};
+let installationFilesDirty = false;
 let busy = false;
 async function api(path, body) {
   const response = await fetch("/api/" + path, {
@@ -50,6 +51,12 @@ function config() {
     ...Object.fromEntries(fieldNames.map((key) => [key, $(key).value.trim()])),
   };
 }
+async function saveGameFileConfig() {
+  const snapshot = config();
+  const result = await api("config", snapshot);
+  if (fieldNames.every(key => $(key).value.trim() === snapshot[key])) installationFilesDirty = false;
+  return result;
+}
 function showTab(name) {
   document.querySelectorAll("[data-tab]").forEach((item) => {
     const selected = item.dataset.tab === name;
@@ -58,8 +65,8 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
-  if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
-  if (name === "settings") loadFontSettings().catch((error) => notice(error.message, true));
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings()])
+    .catch((error) => notice(error.message, true));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -68,7 +75,10 @@ document
   );
 document
   .querySelectorAll("[data-goto]")
-  .forEach((el) => (el.onclick = () => showTab(el.dataset.goto)));
+  .forEach((el) => (el.onclick = async () => {
+    await showTab(el.dataset.goto);
+    if (el.dataset.anchor) $(el.dataset.anchor)?.scrollIntoView({ block: "start" });
+  }));
 
 /* ---------- Instalação: três passos ---------- */
 let settingsLoaded = false;
@@ -296,11 +306,16 @@ fieldNames.forEach((key) => {
   $(key).addEventListener("change", () =>
     action(async () => {
   await i18n.ready;
-      await api("config", config());
+      await saveGameFileConfig();
       return { message: "Arquivos salvos." };
     }),
   );
 });
+[...fieldNames, "game-folder"].forEach(key => $(key).addEventListener("input", () => {
+  installationFilesDirty = true;
+  window.dispatchEvent(new Event("installationfileschange"));
+}));
+$("game-folder").addEventListener("change", () => action(selectGameFolder));
 document.querySelectorAll("[data-browse]").forEach((button) => {
   button.onclick = () =>
     action(async () => {
@@ -321,13 +336,14 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       }
       if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
       if (input.id === "prepare-dlc-package") return { message: "Arquivo selecionado." };
-      await api("config", config());
+      await saveGameFileConfig();
       return { message: "Arquivo selecionado." };
     });
 });
 async function selectGameFolder() {
   const result = await api("game-folder", { path: $("game-folder").value.trim() });
   savedConfig = result.config;
+  installationFilesDirty = false;
   fieldNames.forEach((key) => ($(key).value = savedConfig[key] || ""));
   return result;
 }
@@ -673,6 +689,7 @@ function renderInstall(status) {
   if (status.installed) setStep(null, "play-state", "done", "Disponível");
   else if (status.candidate) setStep(null, "play-state", "partial", "Build experimental");
   else setStep(null, "play-state", "pending", "Bloqueado");
+  window.dispatchEvent(new CustomEvent("installationstatus", {detail: status}));
 }
 
 /* ---------- Multijogador (Steam) ---------- */
@@ -908,7 +925,9 @@ async function refresh() {
       $("game-folder").value = savedConfig.exefs.replace(/[\\/]exefs[\\/]?$/i, "");
     }
     const status = await refresh();
-    if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
+    const linkedTab = location.hash.slice(1);
+    if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
+    else if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");

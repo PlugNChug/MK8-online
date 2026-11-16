@@ -1505,6 +1505,34 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Pasta aberta."}))
             }
+            ("POST", "/api/support/github") => {
+                if self.window.is_none() {
+                    return Err("Na prévia web, use o link do GitHub diretamente.".into());
+                }
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let url = if value["list"] == true {
+                    tauri::Url::parse("https://github.com/Vnnc1/MK8-online/issues")
+                        .map_err(|e| e.to_string())?
+                } else {
+                    report::github_issue_url(
+                        value["title"].as_str().unwrap_or(""),
+                        value["body"].as_str().unwrap_or(""),
+                    )?
+                };
+                let executable = std::env::var_os("SystemRoot")
+                    .map(|root| PathBuf::from(root).join("System32/rundll32.exe"))
+                    .filter(|path| path.is_file())
+                    .ok_or("Não foi possível localizar o abridor de links do Windows.")?;
+                let mut command = std::process::Command::new(executable);
+                command.args(["url.dll,FileProtocolHandler", url.as_str()]);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    command.creation_flags(0x08000000);
+                }
+                command.spawn().map_err(|e| e.to_string())?;
+                Ok(json!({"message":"Abrindo o GitHub no navegador. Revise antes de publicar."}))
+            }
             ("POST", "/api/update/check") => update::check(),
             ("POST", "/api/update/install") => {
                 self.status();
@@ -1644,6 +1672,8 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
 }
 
 pub fn serve(mut app: App, server: Server, authority: String, url: String, token: String) {
+    #[cfg(debug_assertions)]
+    let web_root = std::env::var_os("MK8_WEB_ROOT").map(PathBuf::from);
     for mut req in server.incoming_requests() {
         let host = req
             .headers()
@@ -1656,6 +1686,18 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
         }
         let path = req.url().to_string();
         let method = req.method().clone();
+        #[cfg(debug_assertions)]
+        if let (Method::Get, Some(root)) = (&method, &web_root) {
+            if let Some(result) =
+                crate::debug_web::asset(root, &path, &token, &crate::language::read(&app.local))
+            {
+                match result {
+                    Ok((source, mime)) => response(req, 200, source, mime),
+                    Err(error) => response(req, 500, format!("Debug asset: {error}"), "text/plain"),
+                }
+                continue;
+            }
+        }
         if method == Method::Get && path == "/" {
             response(
                 req,
@@ -1691,6 +1733,42 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 200,
                 include_str!("../web/es.json").into(),
                 "application/json; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/workspace.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/workspace.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/installation.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/installation.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/workspace.css" {
+            response(
+                req,
+                200,
+                include_str!("../web/workspace.css").into(),
+                "text/css; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/installation.css" {
+            response(
+                req,
+                200,
+                include_str!("../web/installation.css").into(),
+                "text/css; charset=utf-8",
             );
             continue;
         }
@@ -1833,6 +1911,18 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 "{\"ok\":false,\"error\":\"Sessão local inválida\"}".into(),
                 "application/json",
             );
+            continue;
+        }
+        if method == Method::Get && path == "/api/report/download" {
+            match report::download(&app.local, app.last_report.as_deref()) {
+                Ok(bytes) => binary_response(req, 200, bytes, "application/zip"),
+                Err(error) => response(
+                    req,
+                    400,
+                    json!({"ok":false,"error":error}).to_string(),
+                    "application/json",
+                ),
+            }
             continue;
         }
         if method == Method::Get

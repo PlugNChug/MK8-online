@@ -25,6 +25,7 @@ class LauncherTests(unittest.TestCase):
                 'invites':[{'lobby':'123','friend':'Test host'}], 'friends':[], 'room':None}}))
             error = 'A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar.'
             page.route('**/api/steam/join', lambda route: route.fulfill(status=400,json={'ok':False,'error':error}))
+            page.locator("#mp-social-rooms").click()
             page.get_by_role('button', name='Aceitar', exact=True).click()
             expect(page.locator('#notice')).to_have_text(error)
             page.locator('#language').select_option('en')
@@ -84,7 +85,7 @@ class LauncherTests(unittest.TestCase):
     def test_optional_dlc_and_manual_room_controls(self):
         page = self.page()
         try:
-            page.locator('#stage-files').click()
+            self.show_files(page,ready=True)
             expect(page.locator('#prepare-dlc-package')).to_be_visible()
             page.locator('#prepare-dlc-package').fill('optional-owned-dlc.nsp')
             page.screenshot(path=str(ROOT/'local/screenshots/optional-dlc-install.png'),full_page=True)
@@ -93,14 +94,14 @@ class LauncherTests(unittest.TestCase):
                 requests.append(route.request.post_data_json)
                 route.fulfill(json={'ok':True, 'data':{'message':'Preparando o jogo.'}})
             page.route('**/api/prepare', prepare)
-            page.locator('#stage-build').click()
+            page.locator('#flow-step-2').click()
             page.locator('#build').click()
             expect(page.locator('#notice')).to_have_text('Preparando o jogo.')
             page.wait_for_function('() => !busy')
             self.assertEqual(requests, [{'dlc_package':'optional-owned-dlc.nsp'}])
-            page.locator('#stage-files').click()
+            page.locator('#flow-step-1').click()
             page.locator('#prepare-dlc-package').fill('')
-            page.locator('#stage-build').click()
+            page.locator('#flow-step-2').click()
             page.locator('#build').click()
             page.wait_for_function('() => !busy')
             self.assertEqual(requests[-1], {'dlc_package':''})
@@ -110,15 +111,19 @@ class LauncherTests(unittest.TestCase):
                 hosts.append(route.request.post_data_json)
                 route.fulfill(json={'ok':True,'data':{}})
             page.route('**/api/steam/host', host)
+            page.locator('#mp-host-mode [value=manual]').check()
             page.locator('#steam-host-manual').click()
             page.wait_for_function('() => !busy')
+            page.locator('#mp-host-mode [value=automatic]').check()
             page.locator('#steam-host').click()
             page.wait_for_function('() => !busy')
             self.assertEqual(hosts, [{'automatic':False}, {'automatic':True}])
+            page.locator('#mp-social-rooms').click()
             page.locator('#steam-navigation').select_option('manual')
             expect(page.locator('#notice')).to_have_text('Preferência de convites salva neste computador.')
             page.reload()
             page.locator('[data-tab="session"]').click()
+            page.locator('#mp-social-rooms').click()
             expect(page.locator('#steam-navigation')).to_have_value('manual')
             page.locator('#steam-navigation').select_option('automatic')
             page.wait_for_function('() => !busy')
@@ -256,6 +261,7 @@ class LauncherTests(unittest.TestCase):
         try:
             page.locator('#language').select_option('en')
             page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
             expect(page.locator('#font-mode')).to_have_value('system')
             expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
             page.locator('#font-folder').fill(str(source))
@@ -273,6 +279,7 @@ class LauncherTests(unittest.TestCase):
             page.wait_for_function('() => !busy')
             page.reload()
             page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
             expect(page.locator('#font-mode')).to_have_value('system')
             self.assertTrue(destination.is_file())
             page.locator('#font-mode').select_option('console')
@@ -312,6 +319,24 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#language')).to_be_enabled()
         return page
 
+    def show_files(self, page, index=0, ready=False):
+        def status(route):
+            response=route.fetch(); body=response.json()
+            body['data']['tools_ready']=True
+            if ready:
+                body['data']['files']['ready']=True
+                body['data']['candidate']=True
+            route.fulfill(response=response,json=body)
+        page.route('**/api/status',status)
+        page.evaluate('() => refresh()')
+        page.locator('#flow-step-1').click()
+
+    def prepare_error(self,page,index=0):
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        result=page.request.post(self.urls[index]+'/api/prepare',headers={'X-MK8-Token':token},data={}).json()
+        self.assertFalse(result['ok'])
+        return result['error']
+
     def test_notices_are_fixed_dismissible_and_respect_reduced_motion(self):
         page = self.page()
         try:
@@ -326,7 +351,7 @@ class LauncherTests(unittest.TestCase):
             top = popup.bounding_box()["y"]
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             self.assertAlmostEqual(popup.bounding_box()["y"], top, delta=1)
-            self.assertGreater(page.evaluate("window.scrollY"), 0)
+            # Modules can fit without document scrolling; the notification remains fixed.
             close.click()
             expect(popup).to_be_hidden()
             expect(page.locator("#notice")).to_have_text("")
@@ -372,6 +397,7 @@ class LauncherTests(unittest.TestCase):
             volume = page.locator('[data-key="volume"]')
             fps = page.locator('[data-key="show_fps"]')
             expect(volume).to_be_enabled()
+            page.locator("#config-sub-audio").click()
             volume.fill("70")
             page.route("**/api/settings", delay)
             page.locator("#settings-save").click()
@@ -394,6 +420,7 @@ class LauncherTests(unittest.TestCase):
             expect(volume).to_be_enabled()
             expect(volume).to_have_value("70")
             expect(fps).not_to_be_checked()
+            page.locator("#config-sub-image").click()
             fps.check()
             page.locator("#settings-save").click()
             expect(page.locator("#settings-pending")).to_have_text("")
@@ -419,6 +446,7 @@ class LauncherTests(unittest.TestCase):
             page.locator('[data-tab="settings"]').click()
             volume = page.locator('[data-key="volume"]')
             expect(volume).to_be_enabled()
+            page.locator("#config-sub-audio").click()
             volume.fill("70")
             page.route("**/api/settings", fail)
             page.locator("#settings-save").click()
@@ -450,10 +478,13 @@ class LauncherTests(unittest.TestCase):
         try:
             page.locator('[data-tab="settings"]').click()
             expect(page.locator("#settings input[data-key=volume]")).to_have_value("50")
+            page.locator("#config-sub-audio").click()
             page.locator("#settings input[data-key=volume]").fill("75")
             page.wait_for_timeout(2300)
             expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#config-sub-image").click()
             page.locator("#settings select[data-key=resolution]").select_option("75%")
+            page.locator("#config-sub-controls").click()
             page.get_by_text("Mapeamento do teclado", exact=True).click()
             page.locator("#settings select[data-key=bind_key_a]").select_option("J")
             expect(page.locator("#settings select[data-key=bind_key_b]")).to_have_value("K")
@@ -465,17 +496,19 @@ class LauncherTests(unittest.TestCase):
             page.reload()
             page.locator('[data-tab="settings"]').click()
             expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#config-sub-controls").click()
             page.get_by_text("Mapeamento do teclado", exact=True).click()
             expect(page.locator("#settings select[data-key=bind_key_a]")).to_have_value("Space")
             ini.write_text(ini.read_text() + "show_fps = 1\n", encoding="utf-8")
             expect(page.locator("#settings input[data-key=show_fps]")).to_be_checked(timeout=5000)
+            page.locator("#settings details[open] summary").click()
+            page.locator("#config-tab-content").click()
             expect(page.locator("#settings #dlc-enabled")).to_be_visible()
             self.assertEqual(page.locator("#install #dlc-enabled").count(), 0)
             page.locator("#language").select_option("en")
             expect(page.locator("#settings")).to_contain_text("Settings")
             screenshots = ROOT / "local/screenshots"
             screenshots.mkdir(parents=True, exist_ok=True)
-            page.locator("#settings details[open] summary").click()
             page.screenshot(path=str(screenshots / "launcher-settings-desktop.png"), full_page=True)
             page.set_viewport_size({"width":390, "height":844})
             self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
@@ -494,7 +527,7 @@ class LauncherTests(unittest.TestCase):
         # Only Steam rooms are offered; the other transports stay for scripts behind the API.
         for removed in ("#host", "#host-internet", "#invite-input", "#scan-rooms", "#username", "#invite", "#endpoint"):
             expect(page.locator(removed)).to_have_count(0)
-        expect(page.get_by_role("button", name="Criar Sala (Automático)", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Criar sala", exact=True)).to_be_visible()
         # Without a Mii the tab asks for one, and rooms are refused.
         expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
         refused = api("steam/host", {})
@@ -505,7 +538,7 @@ class LauncherTests(unittest.TestCase):
         page.get_by_role("button", name="Criar Mii agora", exact=True).click()
         expect(page.locator("#miis")).to_be_visible()
         page.locator("#mii-name").fill("João")
-        page.locator("#mii-save").click()
+        page.locator("#mii-continue").click()
         expect(page.locator("#mii-saved .mii-saved-item")).to_have_text(["João"])
         page.get_by_role("button", name="Multijogador", exact=True).click()
         expect(page.locator("#mp-mii-text")).to_have_text("Você entra nas salas como João.")
@@ -516,8 +549,8 @@ class LauncherTests(unittest.TestCase):
     def test_01_preparation_missing_files_and_disabled_play(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
         expect(page.get_by_role("heading",name="Instalação",exact=True)).to_be_visible()
-        page.locator('#stage-build').click();page.get_by_role("button",name="Iniciar build",exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("NPDM indisponível")
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        self.assertIn('NPDM indisponível', self.prepare_error(page))
         page.get_by_role("button",name="Jogar",exact=True).click()
         expect(page.get_by_role("button",name="Jogar solo",exact=True)).to_be_disabled()
         expect(page.locator('#game-log')).to_contain_text('Nenhum teste iniciado')
@@ -549,6 +582,7 @@ class LauncherTests(unittest.TestCase):
         # No ExeFS / RomFS / NACP fields any more: the launcher finds those itself.
         for gone in ('RomFS extraído', 'Pasta ExeFS do MK8', 'Metadados NACP'):
             expect(page.get_by_label(gone, exact=True)).to_have_count(0)
+        self.show_files(page)
         page.get_by_label('Jogo base', exact=True).fill('updated-base.nsz')
         page.get_by_label('Jogo base', exact=True).press('Tab')
         expect(page.locator('#notice')).to_contain_text('Arquivos salvos')
@@ -670,10 +704,13 @@ class LauncherTests(unittest.TestCase):
         (folder/'control/control.nacp').touch()
         (folder/'exefs/main.npdm').write_bytes(raw)
         page=self.page()
+        self.show_files(page)
         page.get_by_text('Já tenho o jogo extraído numa pasta', exact=True).click()
         page.get_by_label('Pasta do jogo extraído', exact=True).fill(str(folder))
-        page.locator('#stage-build').click();page.get_by_role('button',name='Iniciar build',exact=True).click()
-        expect(page.locator('#notice')).to_contain_text('AArch32')
+        page.locator('#game-folder').blur()
+        page.wait_for_function('() => !busy')
+        expect(page.locator('#architecture-state')).to_contain_text('AArch32')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         page.reload()
         # Reopened in folder mode, with the reason next to the folder.
         expect(page.locator('#architecture-state')).to_contain_text('AArch32')
@@ -688,13 +725,17 @@ class LauncherTests(unittest.TestCase):
         base, patch = source / "base.nsz", source / "update.nsz"
         base.touch()
         patch.touch()
+        self.show_files(page, 1)
         page.get_by_label("Jogo base", exact=True).fill(str(base))
-        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("Selecione dois arquivos")
+        page.get_by_label("Jogo base", exact=True).blur()
+        page.wait_for_function('() => !busy')
+        self.assertIn('Selecione dois arquivos',self.prepare_error(page,1))
         page.get_by_label("Atualização 4.0.1", exact=True).fill(str(patch))
         page.get_by_label("Arquivo prod.keys", exact=True).fill(str(source / "missing.keys"))
-        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("prod.keys não encontrado")
+        page.get_by_label("Arquivo prod.keys", exact=True).blur()
+        page.wait_for_function('() => !busy')
+        self.assertIn('prod.keys não encontrado',self.prepare_error(page,1))
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         # Two of the three files exist: the step counts them and is not ready.
         expect(page.locator("#files-state")).to_have_text("2 de 3")
         expect(page.locator("#tile-base")).to_have_attribute("data-ok", "true")
@@ -721,15 +762,11 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#prepare-state')).to_have_text('Pendente')
         expect(page.locator('#play-state')).to_have_text('Bloqueado')
         self.assertEqual(status['files']['ready'],False)
-        # Step 2 shows the three files; the extracted-folder option stays folded away.
+        # Incomplete prerequisites keep the build locked; file selection follows tools.
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        self.show_files(page)
         for label in ('Jogo base','Atualização 4.0.1','Arquivo prod.keys'):
             expect(page.get_by_label(label, exact=True)).to_be_visible()
-        # (open only when this data folder already uses an extracted folder: test_05 leaves one)
-        folder=page.get_by_label('Pasta do jogo extraído', exact=True)
-        expect(folder).to_be_visible() if status['files']['folder'] else expect(folder).to_be_hidden()
-        # The build screen: idle, with its live panel hidden until a build runs.
-        page.locator('#stage-build').click()
-        expect(page.get_by_role('button',name='Iniciar build',exact=True)).to_be_visible()
         expect(page.locator('#build-live')).to_be_hidden()
         # Headless server has no native window: pickers stay hidden and the API refuses
         # instead of pretending a path was chosen.
@@ -908,12 +945,15 @@ class LauncherTests(unittest.TestCase):
         env=dict(os.environ,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=f'--remote-debugging-port={port}',WEBVIEW2_USER_DATA_FOLDER=str(folder/'webview'))
         process=subprocess.Popen([os.environ.get('MK8_LAUNCHER_EXE',str(ROOT/"target/release/Launcher.exe")),"--data-dir",str(folder)],env=env)
         user32=ctypes.windll.user32
+        native_hwnds=[]
         def titles():
             found=[]
+            native_hwnds.clear()
             @ctypes.WINFUNCTYPE(ctypes.c_bool,ctypes.c_void_p,ctypes.c_void_p)
             def visit(hwnd,_):
                 pid=ctypes.c_ulong();user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd),ctypes.byref(pid))
                 if pid.value==process.pid and user32.IsWindowVisible(ctypes.c_void_p(hwnd)):
+                    native_hwnds.append(hwnd)
                     buf=ctypes.create_unicode_buffer(256);user32.GetWindowTextW(ctypes.c_void_p(hwnd),buf,256);found.append(buf.value)
                 return True
             user32.EnumWindows(visit,0)
@@ -935,12 +975,14 @@ class LauncherTests(unittest.TestCase):
             url=json.loads((folder/'launcher.json').read_text())['url']
             self.assertEqual(page.url.rstrip('/'),url)
             # Inside the native window the folder pickers are offered.
+            self.show_files(page)
             expect(page.locator('[data-browse="base_package"]')).to_be_visible()
             page.locator('#language').select_option('en')
             expect(page.locator('[data-browse="base_package"]')).to_have_attribute('aria-label', 'Choose base game')
             page.get_by_role('button',name='Play',exact=True).click()
             expect(page.get_by_role('heading',name='Play',exact=True)).to_be_visible()
             page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
             expect(page.locator('#font-mode')).to_be_enabled()
             expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
             expect(page.locator('[data-browse="font-folder"]')).to_be_visible()
@@ -948,9 +990,18 @@ class LauncherTests(unittest.TestCase):
             page.evaluate("location.href='https://example.invalid/'")
             time.sleep(1.5)
             self.assertEqual(page.url.rstrip('/'),url)
+            page.unroute_all(behavior='wait')
             browser.close()
         finally:
-            process.terminate();process.wait(timeout=10)
+            # Close this fixture's window normally so WebView2 can release its data folder.
+            titles()
+            for hwnd in native_hwnds:
+                user32.PostMessageW(ctypes.c_void_p(hwnd), 0x0010, 0, 0)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.terminate();process.wait(timeout=10)
+            time.sleep(2)
 
 
 if __name__=="__main__":unittest.main()

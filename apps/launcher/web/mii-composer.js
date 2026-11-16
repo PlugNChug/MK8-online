@@ -26,20 +26,23 @@ const TABS=[
   ['mole','Pinta',[[83,'Pinta','toggle'],[84,'Tamanho','range'],[85,'Posição horizontal','range'],[86,'Posição vertical','range']]],
 ];
 
-let schema=new Map(), data=null, profiles=[], active=null, creating=false, dirty=false, tab='body', menu=0;
+let schema=new Map(), data=null, profiles=[], active=null, creating=false, dirty=false, tab='body', menu=0, editorLoaded=false;
 let ffl=null, fflLoading=null, stage=null, thumbs=null, thumbScene=null, bodies=null, head=null, headY=10.56, redraw=0, thumbRun=0;
 const thumbCache=new Map();
-const status=text=>i18n.text(el('mii-status'),text);
+const status=text=>{i18n.text(el('mii-status'),text);notifyEditor();};
 const hex=id=>id.map(v=>v.toString(16).padStart(2,'0')).join('');
+function notifyEditor(){
+  window.dispatchEvent(new CustomEvent('miieditorchange',{detail:{loaded:editorLoaded,creating,hasData:!!data,dirty,tab,profile:active?hex(active.id):null}}));
+}
 
 // ---- stage: body + head --------------------------------------------------------------------------------------
 function setupStage(){
   const renderer=new THREE.WebGLRenderer({canvas:el('mii-stage'),antialias:true,preserveDrawingBuffer:true});
   renderer.setSize(560,640,false);renderer.outputColorSpace=THREE.SRGBColorSpace;
-  const scene=new THREE.Scene();scene.background=new THREE.Color('#c9d6e0');
+  const scene=new THREE.Scene();scene.background=new THREE.Color('#303033');
   scene.add(new THREE.HemisphereLight(0xffffff,0x6a7480,2.2));
   const sun=new THREE.DirectionalLight(0xffffff,1.6);sun.position.set(6,14,12);scene.add(sun);
-  const floor=new THREE.Mesh(new THREE.CircleGeometry(6,48),new THREE.MeshStandardMaterial({color:0xaeb9c4}));
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(6,48),new THREE.MeshStandardMaterial({color:0x242426}));
   floor.rotation.x=-Math.PI/2;scene.add(floor);
   const camera=new THREE.PerspectiveCamera(28,560/640,0.5,200);
   const controls=new OrbitControls(camera,renderer.domElement);controls.enablePan=false;controls.minDistance=8;controls.maxDistance=70;
@@ -173,6 +176,7 @@ function choice(offset,value,label){
 }
 function openTab(key){
   tab=key;
+  notifyEditor();
   for(const t of el('mii-tabs').children)t.setAttribute('aria-selected',String(t.dataset.part===key));
   const box=el('mii-options');box.replaceChildren();
   if(stage)frame(key==='body'?'body':'face');
@@ -251,7 +255,7 @@ async function load(){
   }else{creating=true;data=null;el('mii-name').value='';}
   dirty=false;
   i18n.text(el('mii-save'),creating?'Criar Mii':'Salvar Mii');
-  listProfiles();openTab(tab);scheduleStage();
+  editorLoaded=true;listProfiles();openTab(tab);scheduleStage();
   if(creating)status('Dê um nome ao Mii e toque em Criar Mii para começar.');
 }
 async function switchTo(p){

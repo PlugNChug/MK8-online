@@ -47,7 +47,7 @@ class LauncherDlcTests(unittest.TestCase):
 
     def test_unprepared_import_is_disabled_and_api_refuses_enable(self):
         page = self.page()
-        expect(page.locator("#dlc-card")).to_be_visible()
+        expect(page.locator("#flow-step-3")).to_be_disabled()
         expect(page.locator("#dlc-import")).to_be_disabled()
         expect(page.locator("#dlc-enabled")).to_be_disabled()
         token = page.locator('meta[name="mk8-token"]').get_attribute("content")
@@ -62,6 +62,12 @@ class LauncherDlcTests(unittest.TestCase):
         package.write_bytes(b"pacote autoral")
         keys.write_bytes(b"chaves autorais")
         page = self.page()
+        token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+        state = page.request.get(self.url+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+        state.update(candidate=True,candidate_stale=False)
+        page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':state}))
+        page.evaluate('() => refresh()')
+        page.locator('#flow-step-3').click()
         page.locator("#dlc-package").fill(str(package))
         page.locator("#dlc-keys").fill(str(keys))
         expect(page.locator("#tile-dlc-package")).to_have_attribute("data-ok", "true")
@@ -105,6 +111,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.route("**/api/dlc/import", run)
         page.reload()
         page.locator('[data-tab="install"]').click()
+        page.locator('#flow-step-3').click()
         expect(page.locator("#dlc-files")).to_be_hidden()
         expect(page.locator("#dlc-change")).to_be_visible()
         page.locator("#dlc-change").click()
@@ -119,6 +126,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.set_viewport_size({"width":390, "height":844})
         self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
         page.locator('[data-tab="settings"]').click()
+        page.locator('#config-tab-content').click()
         expect(page.locator("#dlc-enabled")).not_to_be_checked()
 
     def test_controls_translate_toggle_report_errors_and_lock_during_operations(self):
@@ -143,6 +151,7 @@ class LauncherDlcTests(unittest.TestCase):
         page.route("**/api/dlc/toggle", toggle)
         page.reload()
         page.locator('[data-tab="settings"]').click()
+        page.locator('#config-tab-content').click()
         expect(page.locator("#dlc-enabled")).to_be_checked()
         page.locator("#dlc-enabled").uncheck()
         expect(page.locator("#dlc-state")).to_have_text("Desativado")
@@ -167,6 +176,7 @@ class LauncherDlcTests(unittest.TestCase):
         state["dlc"]["state"] = "invalid"
         state["dlc"]["installed"] = False
         page.locator('[data-tab="install"]').click()
+        page.locator('#flow-step-3').click()
         expect(page.locator("#dlc-import")).to_have_text("Repair import…", timeout=5000)
         imports = []
         def import_package(route):
@@ -186,5 +196,6 @@ class LauncherDlcTests(unittest.TestCase):
         state["dlc"]["state"] = "unsupported"
         expect(page.locator("#dlc-import")).to_be_disabled()
         expect(page.locator("#dlc-hint")).to_have_text("Update the build to use DLC.", timeout=5000)
+        expect(page.locator("#flow-step-3")).to_be_disabled()
         expect(page.locator("#build-idle")).to_be_visible()
         expect(page.locator("#build")).to_have_text("Update build")

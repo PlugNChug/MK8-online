@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Relatos via GitHub Issues — 16/11/2026
+
+Consultados os guias oficiais de [criação de Issues por parâmetros de URL](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue) e [anexos](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files), para título/descrição preenchidos, anexação manual de ZIP e limite de 25 MB. Interface e integração próprias; nenhum código, imagem, token ou SDK externo foi incorporado.
+
 ## Guia local e OfflineWeb — 13/11/2026
 
 Consultados [web.h do libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/applets/web.h), para TLVs do shim Offline e layout de WebCommonReturnValue, e os guias oficiais Nintendo [fundamentos](https://www.nintendo.com/jp/ichikara/aabpa/index_en.html) e [técnicas](https://www.nintendo.com/jp/ichikara/aabpa/02_en.html), para conferir os controles/ações. A redação do guia local, UI, adapter e viewer são próprios; não incorporam HTML, imagens ou código de implementação dessas páginas. Licenças existentes de WebView/Tauri/SDL e dependências permanecem preservadas.

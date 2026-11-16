@@ -8,8 +8,12 @@
     <meta name="mk8-language" content="__LANGUAGE__" />
     <title>MK8-online</title>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/installation.css" />
+    <link rel="stylesheet" href="/workspace.css" />
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/workspace.js" defer></script>
+    <script src="/installation.js" defer></script>
   </head>
   <body>
     <div id="notice-popup" hidden>
@@ -27,12 +31,13 @@
 
     <div class="shell">
       <nav class="nav" aria-label="Seções">
-        <button class="tab active" data-tab="install" aria-selected="true">Instalar</button>
-        <button class="tab" data-tab="play" aria-selected="false">Jogar</button>
-        <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
-        <button class="tab" data-tab="settings" aria-selected="false">Configurações</button>
-        <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
-        <button class="tab" data-tab="miis" aria-selected="false">Perfil Mii</button>
+        <button class="tab" data-tab="play" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Jogar</span></button>
+        <button class="tab" data-tab="miis" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg><span>Perfil Mii</span></button>
+        <button class="tab" data-tab="session" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M2 21v-3a6 6 0 0 1 12 0v3m2-16a3 3 0 0 1 0 6m1 3a5 5 0 0 1 5 5v2"/></svg><span>Multijogador</span></button>
+        <hr class="nav-divider" />
+        <button class="tab active" data-tab="install" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg><span>Instalar</span></button>
+        <button class="tab" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16m8-16v16m8-16v16M1 8h6m2 8h6m2-7h6"/></svg><span>Configurações</span></button>
+        <button class="tab" data-tab="support" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 4 3c-1 .5-1 1-1 2m0 3h.01"/></svg><span>Suporte</span></button>
       </nav>
 
       <main>
@@ -231,6 +236,15 @@
             <div><h1>Configurações</h1><p class="muted">As mesmas opções do menu F1, compartilhadas com o jogo.</p></div>
           </div>
           <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
+          <nav class="settings-index" aria-label="Seções de configurações"><a href="#settings-groups">Vídeo e controles</a><a href="#font-title">Fontes do jogo</a><a href="#settings-dlc-title">Conteúdo adicional</a><a href="#ctgp-title">CTGP Deluxe</a></nav>
+          <form id="game-settings">
+            <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
+            <div class="row settings-actions">
+              <button type="submit" id="settings-save" class="primary" disabled>Salvar configurações</button>
+              <button type="button" id="settings-reload" class="ghost">Recarregar do jogo</button>
+              <span id="settings-pending" class="hint" role="status"></span>
+            </div>
+          </form>
           <article class="card" aria-labelledby="font-title">
             <h2 id="font-title">Fontes do jogo</h2>
             <fieldset id="font-fields" disabled>
@@ -241,14 +255,6 @@
             </fieldset>
             <p class="hint">Use fontes extraídas do seu console. A importação guarda uma cópia privada. Padrão do sistema mantém as fontes importadas para usar depois. As alterações valem ao iniciar o jogo.</p>
           </article>
-          <form id="game-settings">
-            <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
-            <div class="row settings-actions">
-              <button type="submit" id="settings-save" class="primary" disabled>Salvar configurações</button>
-              <button type="button" id="settings-reload" class="ghost">Recarregar do jogo</button>
-              <span id="settings-pending" class="hint" role="status"></span>
-            </div>
-          </form>
           <article class="card settings-dlc" aria-labelledby="settings-dlc-title">
             <div class="row"><h2 id="settings-dlc-title">Conteúdo adicional</h2><span id="settings-dlc-state" class="pill">Não instalado</span></div>
             <label class="dlc-toggle"><input type="checkbox" id="dlc-enabled" disabled />Ativar Booster Course Pass</label>
@@ -299,8 +305,13 @@
             <span id="play-state" class="pill">Bloqueado</span>
           </div>
           <div class="card hero">
-            <span class="big-eight" aria-hidden="true">8</span>
+            <svg class="race-circuit" viewBox="0 0 420 320" aria-hidden="true">
+              <path class="circuit-edge" d="M210 160C160 100 130 55 95 55C15 55 15 265 95 265C130 265 160 220 210 160C260 100 290 55 325 55C405 55 405 265 325 265C290 265 260 220 210 160Z"/>
+              <path class="circuit-lane" d="M210 160C160 100 130 55 95 55C15 55 15 265 95 265C130 265 160 220 210 160C260 100 290 55 325 55C405 55 405 265 325 265C290 265 260 220 210 160Z"/>
+              <circle class="circuit-marker" cx="95" cy="55" r="9"/><circle class="circuit-marker secondary" cx="325" cy="265" r="6"/>
+            </svg>
             <div class="hero-body">
+              <h2 class="game-title">Mario Kart 8<br /><span>Deluxe</span></h2>
               <p id="game-state">Prepare o jogo para habilitar a execução.</p>
               <p id="mii-preparation-state" role="status" aria-live="polite" hidden></p>
               <div class="cta">
@@ -310,6 +321,7 @@
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>
+          <div class="play-shortcuts"><button type="button" data-goto="miis"><span>Perfil Mii</span><small>Crie e personalize seu piloto</small></button><button type="button" data-goto="session"><span>Multijogador</span><small>Encontre sua próxima sala</small></button><button type="button" data-goto="settings" data-anchor="ctgp-title"><span>CTGP Deluxe</span><small>Configure suas pistas e copas</small></button></div>
           <article class="card"><h2>Booster Course Pass</h2><p class="hint">Você pode importar ou reparar o Booster Course Pass sem repetir a build.</p><button type="button" class="ghost" id="play-dlc-manage">Abrir importação de DLC</button></article>
           <details class="drawer">
             <summary>Log do jogo</summary>

@@ -54,6 +54,8 @@ class LauncherCtgpTests(unittest.TestCase):
     def test_unprepared_game_keeps_ctgp_off_and_the_api_refuses_it(self):
         page = self.page()
         page.locator('[data-tab="settings"]').click()
+        page.locator('#config-tab-content').click()
+        page.locator('[data-config-content="ctgp"]').click()
         expect(page.locator("#ctgp-card")).to_be_visible()
         expect(page.locator("#ctgp-import")).to_be_disabled()
         expect(page.locator("#ctgp-enabled")).to_be_disabled()
@@ -90,6 +92,8 @@ class LauncherCtgpTests(unittest.TestCase):
         page.route("**/api/ctgp/log", lambda route: route.fulfill(json={"ok": True, "data": {"text": "Montando 1088 arquivos (hardlinks)."}}))
         page.reload()
         page.locator('[data-tab="settings"]').click()
+        page.locator('#config-tab-content').click()
+        page.locator('[data-config-content="ctgp"]').click()
         expect(page.locator("#ctgp-state")).to_have_text("Não instalado")
         expect(page.locator("#ctgp-enabled")).to_be_disabled()
         expect(page.locator("#ctgp-import")).to_be_enabled()

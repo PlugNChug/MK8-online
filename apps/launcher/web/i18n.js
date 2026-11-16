@@ -33,8 +33,8 @@ window.i18n = (() => {
     patterns = loaded.patterns;
   }
   const dynamic = new Map();
-  const staticText = [];
-  const attributes = [];
+  const staticText = new WeakMap();
+  const registeredAttributes = new WeakMap();
   const picker = document.getElementById("language");
   const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   function t(value) {
@@ -56,7 +56,35 @@ window.i18n = (() => {
   }
   function text(element, value) {
     dynamic.set(element, [value == null ? "" : String(value)]);
-    element.textContent = t(value);
+    const translated = t(value);
+    if (element.textContent !== translated) element.textContent = translated;
+  }
+  // Register trusted interface templates when modules create them after page load.
+  function register(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (staticText.has(node) || !node.nodeValue.trim() || node.parentElement.closest('script, style, textarea, [data-user-content]') || dynamic.has(node.parentElement)) continue;
+      if (node.parentElement.tagName === 'OPTION' && !node.parentElement.hasAttribute('value')) node.parentElement.value = node.parentElement.textContent;
+      staticText.set(node, node.nodeValue);
+      node.nodeValue = t(node.nodeValue);
+    }
+    for (const element of [root, ...root.querySelectorAll('[aria-label], [placeholder], [title]')]) {
+      if (!element.getAttribute) continue;
+      const names = registeredAttributes.get(element) || new Map();
+      for (const name of ['aria-label', 'placeholder', 'title']) {
+        if (!element.hasAttribute(name) || names.has(name)) continue;
+        const source = element.getAttribute(name);
+        names.set(name, source);
+        element.setAttribute(name, t(source));
+      }
+      registeredAttributes.set(element, names);
+    }
+  }
+  function html(element, markup) {
+    // Callers supply only interface templates, never logs or user-entered markup.
+    element.innerHTML = markup;
+    register(element);
   }
   function append(element, value) {
     const parts = [...(dynamic.get(element) ?? [element.textContent]), String(value)];
@@ -66,21 +94,23 @@ window.i18n = (() => {
   function render() {
     document.documentElement.lang = language;
     picker.value = language;
-    for (const [node, source] of staticText) if (node.isConnected) node.nodeValue = t(source);
-    for (const [element, name, source] of attributes) element.setAttribute(name, t(source));
-    for (const [element, parts] of dynamic) if (element.isConnected) element.textContent = parts.map(t).join("");
+    const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (staticText.has(node)) node.nodeValue = t(staticText.get(node));
+    }
+    for (const element of document.querySelectorAll('[aria-label], [placeholder], [title]'))
+      for (const [name, source] of registeredAttributes.get(element) || []) element.setAttribute(name, t(source));
+    for (const [element, parts] of dynamic) {
+      if (!element.isConnected) { dynamic.delete(element); continue; }
+      const translated = parts.map(t).join("");
+      if (element.textContent !== translated) element.textContent = translated;
+    }
   }
   picker.disabled = true;
   const ready = load(language).then((loaded) => {
     use(language, loaded);
-    const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      if (!node.parentElement.closest("script, style, option") && node.nodeValue.trim()) staticText.push([node, node.nodeValue]);
-    }
-    document.querySelectorAll("[aria-label], [placeholder], [title]").forEach((element) => {
-      for (const name of ["aria-label", "placeholder", "title"]) if (element.hasAttribute(name)) attributes.push([element, name, element.getAttribute(name)]);
-    });
+    register(document.documentElement);
     render();
     picker.disabled = false;
   });
@@ -106,5 +136,5 @@ window.i18n = (() => {
       picker.disabled = false;
     }
   });
-  return { get language() { return language; }, t, text, append, ready };
+  return { get language() { return language; }, t, text, append, html, register, ready };
 })();

@@ -22,6 +22,61 @@ pub fn folder(local: &Path) -> PathBuf {
     local.join("reports")
 }
 
+pub fn github_issue_url(title: &str, body: &str) -> Result<tauri::Url> {
+    if title.trim().is_empty() || title.chars().count() > 120 {
+        return Err("Informe um título de até 120 caracteres.".into());
+    }
+    let mut url = tauri::Url::parse("https://github.com/Vnnc1/MK8-online/issues/new")
+        .map_err(|e| e.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("title", title)
+        .append_pair("body", body);
+    if url.as_str().len() > 7000 {
+        return Err("Relato longo: copie o texto e cole na Issue.".into());
+    }
+    Ok(url)
+}
+
+/// Only the report remembered by this launcher session can be downloaded.
+pub fn download(local: &Path, last: Option<&str>) -> Result<Vec<u8>> {
+    const LIMIT: u64 = 64 << 20;
+    let path = Path::new(last.ok_or("Gere um relatório antes de baixar o ZIP.")?);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let stamp = name
+        .strip_prefix("mk8-report-")
+        .and_then(|n| n.strip_suffix(".zip"));
+    if path.parent() != Some(folder(local).as_path())
+        || !stamp.is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err("Caminho de relatório inválido.".into());
+    }
+    for ancestor in path.ancestors() {
+        let meta = fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?;
+        let linked = meta.file_type().is_symlink();
+        #[cfg(windows)]
+        let linked = {
+            use std::os::windows::fs::MetadataExt;
+            linked || meta.file_attributes() & 0x400 != 0
+        };
+        if linked {
+            return Err("Relatório em caminho com link recusado.".into());
+        }
+    }
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > LIMIT {
+        return Err("Relatório excede o limite de download (64 MiB).".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > LIMIT {
+        return Err("Relatório excede o limite de download (64 MiB).".into());
+    }
+    Ok(bytes)
+}
+
 /// Removes the user's profile path and account name from text that leaves the machine.
 pub fn redact(text: &str) -> String {
     let mut out = text.to_owned();
@@ -221,6 +276,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn github_draft_keeps_destination_and_encodes_user_text() {
+        let title = "Controle & Mii? #1";
+        let body = "Erro\nhttps://example.com/?a=b&x=y";
+        let url = github_issue_url(title, body).unwrap();
+        assert_eq!(url.host_str(), Some("github.com"));
+        assert_eq!(url.path(), "/Vnnc1/MK8-online/issues/new");
+        let fields: Vec<_> = url.query_pairs().collect();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].1, title);
+        assert_eq!(fields[1].1, body);
+        assert!(github_issue_url("  ", "").is_err());
+        assert!(github_issue_url(&"x".repeat(121), "").is_err());
+        assert!(github_issue_url("Teste", &"á".repeat(2000)).is_err());
+    }
+
+    #[test]
     fn redaction_hides_profile_path_and_account() {
         let profile = std::env::var("USERPROFILE").unwrap_or_default();
         if profile.len() <= 3 {
@@ -254,6 +325,13 @@ mod tests {
         fs::write(runtime.join("private-save.bin"), "never include").unwrap();
         let zip = create(&local, Some(&runtime), "test", json!({"build":"idle"})).unwrap();
         assert!(zip.is_file());
+        assert_eq!(
+            download(&local, zip.to_str()).unwrap(),
+            fs::read(&zip).unwrap()
+        );
+        assert!(download(&local, None).is_err());
+        assert!(download(&local, local.join("game.log").to_str()).is_err());
+        assert!(download(&local, folder(&local).join("../game.log").to_str()).is_err());
         let listing =
             Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
                 .arg("-tf")
@@ -286,5 +364,21 @@ mod tests {
             ))
             .exists());
         fs::remove_dir_all(local).unwrap();
+    }
+
+    #[test]
+    fn report_download_rejects_oversized_files() {
+        let local = std::env::temp_dir().join(format!("mk8-report-limit-{}", std::process::id()));
+        fs::create_dir_all(folder(&local)).unwrap();
+        let path = folder(&local).join("mk8-report-1.zip");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len((64 << 20) + 1).unwrap();
+        drop(file);
+        assert!(download(&local, path.to_str())
+            .unwrap_err()
+            .contains("64 MiB"));
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(folder(&local)).unwrap();
+        fs::remove_dir(local).unwrap();
     }
 }

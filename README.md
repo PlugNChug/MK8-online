@@ -45,7 +45,7 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 ## Where it stands
 
-The development branch `fix-chore` integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. CTGP phase B (additional cups and its guest hooks) remains in `ctgp-recomp`. These changes are not a new installer release; integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
+The development branch `fix-chore` integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. Commit `8202c32` also merged CTGP phase B (additional cups and its guest hooks). These changes are not a new installer release; integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
 
 A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
 
@@ -181,6 +181,18 @@ Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7
 ```
 
 It downloads the pinned upstream sources, verifies their hashes, builds the launcher and opens it. To package the portable launcher: `python scripts/package-launcher.py` (output: `target/portable/Launcher.exe`). Release steps are in [RELEASING.md](docs/RELEASING.md).
+
+The launcher uses the approved charcoal/orange design in its embedded interface, including packaged builds. Installation progresses horizontally through **Tools → Game files → Build → optional DLC/CTGP**. Tool readiness and file checks come from the backend; incomplete prerequisites keep later actions locked. Existing tools and prepared files are reused. Downloads, compilation, cancellation, errors and logs use the existing pipeline. Select the base game, update 4.0.1 and console keys (automatically detected where supported), or an extracted game folder. An optional DLC package can accompany preparation. Additional content remains accessible after preparation and can be managed in Settings.
+
+**Settings** has freely selectable Video and controls (Image, Audio, Controls), Game fonts, and Additional content modules. Switching modules preserves drafts. Contextual previews illustrate menu theme, aspect ratio, fullscreen, audio, bindings and cup layouts; they are not game captures or performance measurements. The font example uses the browser font, not imported console files. **Game language** is available above Play and in Settings; it saves only that setting immediately, preserving other drafts and applying next launch. The launcher language remains independent; the interface supports Portuguese, English and Spanish.
+
+**Mii Profile** starts with a required name (1–10 characters), then separate Face and Body areas. Existing profiles open directly in customization; explicit saving and unsaved-change confirmations remain. Missing preview resources are identified, with numbered options available until the library loads. **Multiplayer** provides a short interactive guide, automatic/manual hosting, searchable/filterable friends and a separate invitations/rooms tab. The guide performs no Steam actions. Multiplayer remains experimental and requires separate validation on two machines.
+
+**Support** retains update checking and confirmed installer launch. A bug form prepares a GitHub Issue draft with a preview; users review and publish on GitHub, attaching the diagnostic ZIP manually if desired. Copy and Markdown export support other channels and long reports. No credentials, automatic Issue publication or automatic upload are introduced. The native window opens only the project's Issue URLs in the system browser. Authenticated ZIP download serves only the last generated report, with path, link and size checks. Review manually entered text and attachments before sharing.
+
+For isolated visual development, run `python scripts/preview-launcher.py`. It compiles debug and opens the real interface with separate data under `local/design-preview`. Use `--target-dir D:/path/to/target` to reuse a Cargo folder; `--no-build` skips compilation. Keep the terminal open; Ctrl+C stops the preview. Explicit `MK8_WEB_ROOT` enables an allowlist of live interface files only in debug builds. Edit HTML/CSS/JS and reload; **Ajustar visual** offers browser-local palette, spacing, corners and CSS export. Release builds use embedded assets and omit these debug controls.
+
+The earlier installation simulation is available only in the live debug preview at `/?storyboard=1#install`. It is labeled as a simulation, uses sample files and in-memory state, and invokes no installation/build API. Normal debug and packaged launchers use real operations. The isolated preview does not reuse installed profiles, resources or saves and does not qualify gameplay.
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter, the Nextendo prototype) are documented in the [technical status](docs/STATUS.md).
 
