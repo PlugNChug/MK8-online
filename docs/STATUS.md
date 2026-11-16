@@ -2,7 +2,7 @@
 
 ## Pré-release 0.3.0 — pacote validado em 16/11/2026
 
-Publicação solicitada pelo mantenedor, reunindo a `fix-chore` e suas PRs aceitas na branch principal **master** (o repositório não usa `main`). Versão de workspace/launcher `0.3.0`, tag prevista `v0.3.0`, marcada como pré-release mesmo sem sufixo. Notas em inglês e português, em seções expansíveis, em [releases/0.3.0.md](releases/0.3.0.md); README, README.pt-BR, ROADMAP e instruções de publicação atualizados.
+Publicação solicitada pelo mantenedor e concluída, reunindo a `fix-chore` e suas PRs aceitas na branch principal **master** (o repositório não usa `main`). Versão de workspace/launcher `0.3.0`, tag `v0.3.0` no commit `47b05c5`, marcada como pré-release mesmo sem sufixo. Merge `c2b4ee6`; branches sincronizadas. Notas em inglês e português, em seções expansíveis, em [releases/0.3.0.md](releases/0.3.0.md); README, README.pt-BR, ROADMAP e instruções de publicação atualizados.
 
 Escopo: CTGP Deluxe 1.1.1 adaptado do alvo 3.0.3 para os recursos da recompilação 4.0.1, incluindo 64 pistas/16 copas adicionais, novo launcher padrão, DLC opcional, Mii, contribuições #9/#12/#18/#19/#25/#27–31/#33, desempenho/controles e correção CRLF. O plugin original CTGP não é executado. A publicação assume explicitamente as limitações abaixo, inclusive reconexão Steam, falhas Vulkan/memória e gráficos ainda sem solução confirmada. Não se afirma compatibilidade 100%, corrida Steam qualificada nem simulação a 120 Hz. Dados privados e saves preservados; nenhuma alteração de gameplay nesta preparação.
 
@@ -12,7 +12,9 @@ Escopo: CTGP Deluxe 1.1.1 adaptado do alvo 3.0.3 para os recursos da recompilaç
 
 Após o merge local, o checkout normalizou fins de linha em oito fontes. O pacote foi reconstruído dessa árvore final: as 133 fontes embarcadas de runtime/pipeline permaneceram equivalentes além dos fins de linha. A auditoria passou com igualdade exata dos arquivos finais; dez testes INI/pré-compilados e a instalação/abertura/desinstalação isolada passaram novamente. O hash acima identifica esse pacote final, não a compilação anterior ao merge.
 
-Destino autorizado: [release v0.3.0](https://github.com/Vnnc1/MK8-online/releases/tag/v0.3.0), como pré-release, com o binário local validado. Os ensaios de UI usam operações longas/rede controladas; não houve nova corrida completa, teste em outra GPU ou multiplayer entre PCs nesta preparação. O histórico abaixo descreve o estado e os artefatos anteriores. `gameplay_verified=false`, `multiplayer_verified=false`.
+**Publicação verificada:** [release v0.3.0](https://github.com/Vnnc1/MK8-online/releases/tag/v0.3.0), publicada em 16/11 às 22:16 UTC, como pré-release, com o binário local validado. Título e notas conferidos; download público sem autenticação dos quatro anexos concluído com tamanhos e SHA-256 idênticos aos locais. Mais 15 testes essenciais de interface/janela nativa passaram no pacote final após o merge. A execução duplicada do workflow de release `43968119785` foi cancelada antes da publicação, preservando os anexos testados; o CI normal da master não foi cancelado. As PRs #9/#12/#25 antes abertas foram reconhecidas como integradas pelo GitHub, sem PR aberta ao fim desta publicação. Evidências de publicação permanecem privadas em `local/release-0.3.0-public-verification.json`.
+
+Os ensaios de UI usam operações longas/rede controladas; não houve nova corrida completa, teste em outra GPU ou multiplayer entre PCs nesta preparação. O histórico abaixo descreve o estado e os artefatos anteriores. `gameplay_verified=false`, `multiplayer_verified=false`.
 
 ## Revisão das Issues abertas e prontidão para testes — 16/11/2026
 
