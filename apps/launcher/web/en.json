@@ -876,5 +876,16 @@
   "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las.": "CTGP's cups take the DLC's places: import and enable the Booster Course Pass to see them.",
   "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo.": "{0} CTGP courses in the DLC's cups; the base game stays original. Applies when starting the game.",
   "Disposição das copas do CTGP inválida.": "Invalid CTGP cup layout.",
-  "No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)": "In place of the DLC's cups, CTGP cups 5–16 (the base game stays original)"
+  "No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)": "In place of the DLC's cups, CTGP cups 5–16 (the base game stays original)",
+  "Depuração": "Debugging",
+  "Salvando…": "Saving…",
+  "As opções são salvas automaticamente e valem ao iniciar o jogo. Não alteram a sessão em andamento.": "Options save automatically and apply the next time you start the game. The current session is unchanged.",
+  "Capturas gráficas (F7/F8)": "Graphics captures (F7/F8)",
+  "F7 captura uma sequência curta; F8 salva um relatório com imagem. As capturas podem pausar o jogo brevemente.": "F7 captures a short sequence; F8 saves a report with a screenshot. Captures may briefly pause the game.",
+  "Gravar áudio para diagnóstico": "Record diagnostic audio",
+  "Grava continuamente em WAV. Cada início pelo launcher cria um arquivo em user-no-mii/audio-recordings, na pasta de dados. Reiniciar pelo menu do jogo substitui a gravação da sessão atual.": "Records continuously to WAV. Each launcher start creates a new file in user-no-mii/audio-recordings, inside the data folder. Restarting from the in-game menu replaces the current session’s recording.",
+  "Menu nativo de configurações (experimental)": "Native settings menu (experimental)",
+  "Ativa o botão de chave e o menu nativo pelo F1. Requer uma build com o experimento incluído.": "Enables the wrench button and native F1 menu. Requires a game build that includes the experiment.",
+  "Depuração salva. As alterações valem ao iniciar o jogo.": "Debugging options saved. Changes apply when starting the game.",
+  "Não foi possível salvar a depuração.": "Could not save debugging options."
 }

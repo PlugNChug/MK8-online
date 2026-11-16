@@ -57,6 +57,7 @@ function showTab(name) {
     item.setAttribute("aria-selected", String(selected));
     $(item.dataset.tab).hidden = !selected;
   });
+  if (name === "settings") loadDebugOptions().catch((error) => notice(error.message, true));
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
   if (name === "settings") loadGameSettings().catch((error) => notice(error.message, true));
 }
@@ -71,6 +72,41 @@ document
 
 /* ---------- Instalação: três passos ---------- */
 let settingsLoaded = false;
+let debugSaving = false;
+let debugRequest = 0;
+async function loadDebugOptions() {
+  if (debugSaving) return;
+  const request = ++debugRequest;
+  const data = await api("debug-options");
+  if (debugSaving || request !== debugRequest) return;
+  $("debug-graphics").checked = data.graphics_capture;
+  $("debug-audio").checked = data.audio_recording;
+  $("debug-settings").checked = data.native_settings;
+  $("debug-fields").disabled = false;
+}
+for (const id of ["debug-graphics", "debug-audio", "debug-settings"]) {
+  $(id).onchange = async () => {
+    ++debugRequest;
+    debugSaving = true;
+    $("debug-fields").disabled = true;
+    i18n.text($("debug-status"), "Salvando…");
+    try {
+      const result = await api("debug-options", {
+        graphics_capture: $("debug-graphics").checked,
+        audio_recording: $("debug-audio").checked,
+        native_settings: $("debug-settings").checked,
+      });
+      i18n.text($("debug-status"), result.message);
+      return result;
+    } catch (error) {
+      i18n.text($("debug-status"), "Não foi possível salvar a depuração.");
+      notice(error.message, true);
+    } finally {
+      debugSaving = false;
+      await loadDebugOptions().catch((error) => notice(error.message, true));
+    }
+  };
+}
 let settingsDirty = false;
 let settingsBlocked = false;
 let settingsSaving = false;
