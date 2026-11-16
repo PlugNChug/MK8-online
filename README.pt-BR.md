@@ -158,6 +158,8 @@ CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-r
 
 ## Compilar e contribuir
 
+O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Controls. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
+
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
 
 ```powershell

@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Guia local e OfflineWeb — 13/11/2026
+
+Consultados [web.h do libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/applets/web.h), para TLVs do shim Offline e layout de WebCommonReturnValue, e os guias oficiais Nintendo [fundamentos](https://www.nintendo.com/jp/ichikara/aabpa/index_en.html) e [técnicas](https://www.nintendo.com/jp/ichikara/aabpa/02_en.html), para conferir os controles/ações. A redação do guia local, UI, adapter e viewer são próprios; não incorporam HTML, imagens ou código de implementação dessas páginas. Licenças existentes de WebView/Tauri/SDL e dependências permanecem preservadas.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.

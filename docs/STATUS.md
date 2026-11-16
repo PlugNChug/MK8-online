@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Rebase do guia local — 15/11/2026
+
+`fix/main-menu-manual` atualizada para `fix-chore d443092`. Dois testes nativos do retorno OfflineWeb e o teste real de navegador/viewer (conteúdo, origem e fechamento) passaram. Launcher compilado em debug, fmt e Clippy sem avisos aprovados. Sem assets adicionais de manual e sem nova qualificação de corrida completa nesta branch isolada.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
@@ -423,6 +427,14 @@ Validação desta branch: **11 testes nativos/Python aprovados**, zero skips: se
 
 Patch focado sobre fix-chore `15d1106`: na criação/reutilização de uma voz, inicializa prev_volume em 0.f em vez do volume atual. A rampa já existente cobre o primeiro bloco (240 amostras/48 kHz, 5 ms); decoder, resampling, ganho global e buffers SDL permanecem iguais. Testes nativos usam mixer/decoder preparados com PCM/ADPCM sintéticos, vozes novas/reutilizadas, estéreo, splitter, chegada tardia de buffers, pitches 1/1.498, loop contínuo, volume constante e mute. Evidência auditiva anterior é da branch integrada: usuário confirmou o reproducer em Electrodrome corrigido; não equivale a qualificação desta branch isolada. `gameplay_verified=false`.
 
+
+## Info → guia local — 13/11/2026
+
+Branch focada `fix/main-menu-manual` sobre fix-chore `15d1106`. Reproduzido abort em Info: OfflineWeb 0x17 encerrava sem output; SDK chamava svcBreak em 0x70040b15d4. Usuário preferiu guia local próprio em vez de extrair HTML Nintendo. O applet valida TLVs limitados a 0x2000/shim Offline/document path, abre viewer local e retorna WebCommonReturnValue de 0x1010 apenas após fechar com sucesso. Interrupção/entrada inválida e saída repetida são recusadas; outros applets permanecem iguais. O supervisor informa o próprio executável e o runtime usa CreateProcessW, sem shell. `--how-to-play` abre janela independente de conta/config/arquivos do jogo, com navegação restrita, Host/Origin e fechamento por caminho aleatório. CSP da janela permite somente o próprio formulário; a CSP do launcher não foi reduzida.
+
+Uma tentativa inicial de overlay no renderer reentrou o Vulkan e falhou no driver; removida integralmente. Solução final usa WebView2 separado e espera a janela encerrar, sem representar frames dentro do IPC. **17 testes nativos/Python aprovados**, incluindo protocolo real do accessor, fronteiras, ABI e Mii. Fixture Mii do upstream exigia stub para a resolução DLC já existente; corrigido somente no teste. Fmt/Clippy e suíte Rust aprovados, build debug e runtime-only **215 unidades** concluídos. Teste de janela real: conteúdo, 390/900 px, Origin inválido recusado e botão de retorno saindo 0.
+
+Fluxo real com saves copiados em `race-time-trial-_jol18cr`: **Info → How to Play → Back to game → menu**, saída **0**, captura final 2400 após retorno, sem FATAL/exceção. Viewer e capturas/logs privados em `manual-{from-game,viewer}*`; não houve corrida completa nem nova qualificação. `gameplay_verified=false`. Guia próprio inicial em inglês, sem assets Nintendo; precisa de launcher/runtime com suporte. Teste direto do runtime fornece MK8_MANUAL_VIEWER explicitamente; o launcher o define no supervisor.
 
 ## Salas da Steam exigem o mesmo estado de DLC — 13/11/2026
 
