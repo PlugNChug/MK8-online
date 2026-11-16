@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Gradiente do ícone Settings — 15/11/2026
+
+Consultado [Pic1Pane.cs do SwitchThemeInjector](https://github.com/exelix11/SwitchThemeInjector/blob/master/SwitchThemesCommon/Bflyt/Pic1Pane.cs), de exelix11 e colaboradores, para confirmar a ordem dos quatro cantos de `pic1` (superior esquerdo/direito, inferior esquerdo/direito). Nenhum código foi copiado. O gradiente altera somente as cores dos vértices da cópia privada do layout já derivada pelo projeto; pixels comerciais permanecem em `local/`.
+
 ## Comparação semântica de texturas — 15/11/2026
 
 A adaptação de `nvnTextureCompare` usa a comparação de propriedades, swizzle e armazenamento de [SavageWindRecomp, `runtime/nvn/objects.c`](https://github.com/Revivedx/SavageWindRecomp/blob/740b18025fe11ba03c117dbb56668db304b5043e/runtime/nvn/objects.c), commit `740b18025fe11ba03c117dbb56668db304b5043e`. Créditos: Revivedx e colaboradores de Savage Wind Recomp; Peiikai, pela base LAS Recomp. O [aviso MIT integral](licenses/SavageWindRecomp-MIT.txt) foi preservado, incluindo seus limites para propriedades Nintendo e componentes de terceiros. A adaptação fica na preparação própria do runtime; nenhum endereço, teste ou recurso de BOTW foi copiado.
