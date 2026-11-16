@@ -45,6 +45,8 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 ## Where it stands
 
+The development branch `fix-chore` integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. CTGP phase B (additional cups and its guest hooks) remains in `ctgp-recomp`. These changes are not a new installer release; integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
+
 A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
 
 Unreleased fixes on top of `fix-chore`: Steam DLL discovery supports additional libraries and nested game layouts, and loads versioned C interface exports. All friends are searchable, including offline friends. Oversized LAN datagrams use Steam's reliable fragmentation; smaller packets keep their previous mode. Closing the game releases its Steam session so another invitation can be accepted without restarting the launcher. Both PCs must update; a complete two-PC race is still unqualified.
@@ -160,7 +162,7 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
 
-This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. Six focused native regressions passed against `fix-chore d443092`. It does not establish a fix for Stadium flashing or a general VRAM leak.
+This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. It does not establish a fix for Stadium flashing or a general VRAM leak.
 
 On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
 

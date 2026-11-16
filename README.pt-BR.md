@@ -49,6 +49,8 @@ Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
 
 ## Onde estamos
 
+A branch de desenvolvimento `fix-chore` integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. A fase B do CTGP (copas adicionais e seus hooks de guest) continua na `ctgp-recomp`. Isso não é um novo lançamento do instalador; verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
+
 Correções ainda não publicadas sobre `fix-chore`: descoberta da DLL Steam em bibliotecas adicionais e pastas internas dos jogos, com acessores C versionados; busca de todos os amigos, inclusive offline; fragmentação confiável de datagramas LAN maiores; e liberação da sessão Steam ao fechar o jogo, permitindo aceitar outro convite sem reiniciar o launcher. Atualize os dois PCs; uma corrida completa entre máquinas ainda não foi qualificada.
 
 O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. Ambos criam a sala Steam do anfitrião; convidados aceitam um convite e escolhem navegação automática ou manual dentro do jogo. A automação mantém o Mii ativo selecionado. O conversor corrige os canais da textura dos óculos: regenere os recursos Mii derivados e recompile o runtime para aplicar essas correções Mii.

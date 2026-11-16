@@ -1,5 +1,26 @@
 # Estado técnico — 16/11/2026
 
+## Revisão e integração das PRs na fix-chore — 16/11/2026
+
+Integração sobre `d443092`, em worktree separada. Foram examinados os diffs, commits e discussões das nove PRs abertas, além da ancestralidade de `fix-chore`, `master` e `ctgp-recomp`. As PRs #9, #12 e #25 já eram ancestrais da base e não foram reaplicadas. Nenhuma alteração foi feita no checkout, nos artefatos de build ou nos dados privados da `ctgp-recomp`.
+
+| PR | Decisão e escopo |
+| --- | --- |
+| #27 | Integrada: guia local e retorno OfflineWeb validado. Removida a duplicação de `mk8_dlc_storage_path` no harness Mii: essa parte já existia desde `cec9eb0`. |
+| #28 | Integrada: readback limitado e síncrono pela fila do tradutor, com retenção de textura; não repara JPEGs antigos. |
+| #29 | Integrada: comparação semântica e finalização única de texturas copiadas; conserva retirement, descritores e licença MIT da referência. |
+| #30 | Integrada: TMML.B somente com proveniência estática demonstrada; variantes desconhecidas continuam recusadas. |
+| #31 | Integrada: importação privada de fontes, fallback do Windows e controles PT/EN/ES. Manual e fontes são configurados juntos no supervisor. |
+| #33 | Integrada: descoberta/API Steam, datagramas grandes, nova entrada após fechar o jogo, navegação manual/automática, DLC opcional e canais dos óculos Mii. Preservados os dois testes existentes de readiness/locks DLC que a PR removia, incluindo as novas verificações de fontes da #31. O fix anterior do congelamento Mii permanece; não foi duplicado. |
+
+**Verificação desta integração:** 81 testes Rust aprovados; um teste Steam real optativo ignorado. `cargo fmt --all -- --check`, Clippy workspace/all-targets com `-D warnings` e build debug do launcher concluídos. Foram aprovados 50 testes focados de runtime/conversor/idiomas, 42 regressões relacionadas (incluindo CTGP fase A, Mii, áudio, oclusão e pré-compilados), 37 testes de navegador/API/processos e dois de catálogos; o relay externo optativo ficou sem configuração. Nos 42 relacionados, o harness Mii duplicado foi corrigido e retestado; o teste de FFmpeg exigiu instalar o wheel Zstandard já fixado, somente no ambiente privado de testes, e passou no reteste. A primeira execução Rust compartilhava `MK8_NATIVE_TOOLS` entre testes de locks; retirar esse override do processo Cargo restaurou o isolamento esperado, sem mudar o produto.
+
+Runtime completo de host compilado e ligado: **218 unidades**, perfil 4.0.1, chave `c4048033cd1b61a239018714dea0b1cfc43eb2b252c220908409f9d99323c8be`. Nenhum guest foi regenerado e nenhuma ABI pública mudou. A primeira montagem isolada estava sem FFmpeg; as bibliotecas existentes foram copiadas com hashes conferidos e a build retomou os objetos compilados. Build/testes em pastas exclusivas da revisão, sem substituir o runtime instalado. Testes nativos executaram o comportamento e rejeições; UI cobriu fontes, guia WebView2, 724 amigos simulados, modos de sala, DLC, idiomas e convivência com CTGP. Capturas de fontes e sala mobile inspecionadas. Steam real foi isolada por fixture, sem enviar convites.
+
+**Convivência com o CTGP:** a simulação `git merge-tree` contra os commits de `ctgp-recomp` até `6bb8a5b` prevê conflitos aditivos em `web/en.json`, `web/es.json` e `toolchain/host.py`. No futuro merge, manter os textos de ambas as features e as chamadas de `prepare_entry_trace` e `prepare_texture_readback`. Isso não é validação das alterações ainda não commitadas naquela branch. Copas adicionais, relocação de tabelas e exports da fase B continuam exclusivamente na `ctgp-recomp`; a fix-chore mantém a fase A.
+
+**Limites:** sem nova corrida completa, validação visual dentro do jogo, teste de hardware/relógio ou corrida Steam entre duas máquinas. Os óculos corrigidos exigem regenerar os recursos derivados; arquivos existentes não são migrados automaticamente. DLLs Steam sem as interfaces exigidas continuam recusadas. `gameplay_verified=false` e multiplayer não qualificado. Sem novo setup, tag, release ou merge na master. Os relatos abaixo foram preservados como histórico das branches de origem; suas contagens e sessões privadas não substituem a evidência desta integração.
+
 ## Contribuição: Steam, navegação e Mii sobre fix-chore — 16/11/2026
 
 Base de integração: `d443092`. A contribuição preserva DLC verificada, configurações, espanhol, CTGP e correções de runtime já existentes nessa branch. A correção equivalente do congelamento Mii já incorporada pelo mantenedor foi mantida.

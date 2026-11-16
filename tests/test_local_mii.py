@@ -59,7 +59,6 @@ typedef struct { void *state; } Service;
 static char mounted[4096];
 static int calls;
 #define LOG(...) ((void)0)
-static int mk8_dlc_storage_path(uint64_t id,char *out,size_t size) { return 0; }
 static void data_storage(void) {}
 static int romfs_index(const char *dir, void *unused, RomfsIndex *ix, char *why, size_t n) {
     snprintf(mounted,sizeof mounted,"%s",dir); calls++; ix->nfiles=6; return 1;
