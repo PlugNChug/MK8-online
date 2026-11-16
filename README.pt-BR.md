@@ -49,7 +49,9 @@ Detalhes, evidências e limites: [estado técnico](docs/STATUS.md).
 
 ## Onde estamos
 
-A branch de desenvolvimento `fix-chore` integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. A fase B do CTGP (copas adicionais e seus hooks de guest) continua na `ctgp-recomp`. Isso não é um novo lançamento do instalador; verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
+As correções locais de desempenho na `fix-chore` usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.
+
+A branch de desenvolvimento `fix-chore` integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. O commit `8202c32` também integrou a fase B do CTGP (copas adicionais e seus hooks de guest). Essas mudanças não são uma nova release publicada; verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
 
 Correções ainda não publicadas sobre `fix-chore`: descoberta da DLL Steam em bibliotecas adicionais e pastas internas dos jogos, com acessores C versionados; busca de todos os amigos, inclusive offline; fragmentação confiável de datagramas LAN maiores; e liberação da sessão Steam ao fechar o jogo, permitindo aceitar outro convite sem reiniciar o launcher. Atualize os dois PCs; uma corrida completa entre máquinas ainda não foi qualificada.
 
@@ -187,6 +189,8 @@ O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x
 ```
 
 O script baixa as fontes upstream fixadas, confere os hashes, compila o launcher e o abre. Para empacotar o launcher portátil: `python scripts/package-launcher.py` (saída: `target/portable/Launcher.exe`). Os passos de release estão em [RELEASING.md](docs/RELEASING.md).
+
+Para gerar um instalador local de teste sem publicar uma release, execute `python scripts/release.py`. O setup fica em `<diretório target do Cargo>/dist/MK8-online-<versão>-setup.exe`. Instale manualmente builds de teste com a mesma versão; o atualizador só oferece versões mais novas. O pacote inclui o novo design padrão e as operações reais de instalação/build, sem o storyboard debug.
 
 Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplica a uma cópia verificada. Não edite os snapshots upstream nem o código gerado do jogo. Siga o [AGENTS.md](AGENTS.md) e rode os testes da área alterada. Caminhos só de desenvolvimento estão documentados no [estado técnico](docs/STATUS.md):
 

@@ -45,6 +45,8 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 ## Where it stands
 
+Local performance fixes on `fix-chore` use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. For keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
+
 The development branch `fix-chore` integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. Commit `8202c32` also merged CTGP phase B (additional cups and its guest hooks). These changes are not a new installer release; integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
 
 A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
@@ -181,6 +183,8 @@ Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7
 ```
 
 It downloads the pinned upstream sources, verifies their hashes, builds the launcher and opens it. To package the portable launcher: `python scripts/package-launcher.py` (output: `target/portable/Launcher.exe`). Release steps are in [RELEASING.md](docs/RELEASING.md).
+
+To build a local test installer without publishing a release, run `python scripts/release.py`. The setup is written to `<Cargo target directory>/dist/MK8-online-<version>-setup.exe`. Install same-version test builds manually; the updater only offers newer versions. The packaged launcher includes the default redesigned interface and real installation/build operations, without the debug storyboard.
 
 The launcher uses the approved charcoal/orange design in its embedded interface, including packaged builds. Installation progresses horizontally through **Tools → Game files → Build → optional DLC/CTGP**. Tool readiness and file checks come from the backend; incomplete prerequisites keep later actions locked. Existing tools and prepared files are reused. Downloads, compilation, cancellation, errors and logs use the existing pipeline. Select the base game, update 4.0.1 and console keys (automatically detected where supported), or an extracted game folder. An optional DLC package can accompany preparation. Additional content remains accessible after preparation and can be managed in Settings.
 

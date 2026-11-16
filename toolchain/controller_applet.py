@@ -6,6 +6,9 @@ again). The pinned runtime answers the call at once and queues nothing. MK8 4.0.
 multiplayer, after "2 player(s)") then stayed frozen: the game kept rendering the same frame, byte for byte, while its
 threads ran at 60 Hz and ignored both players' buttons (14/11/2026). The answer now also queues FocusStateChanged, as
 the applet's end does. MK8_NO_APPLET_FOCUS=1: off.
+
+With fewer players than requested, return ControllerSupportCanceled (2202-3101), not success with an invalid
+count: MK8 otherwise reopens the applet every few frames and its character screen appears frozen.
 """
 
 AM_BOUNDARY = 'static uint32_t new_event(void) {\n'
@@ -38,4 +41,16 @@ def prepare(runtime):
     text = hid.read_text(encoding='utf-8')
     if text.count(SUPPORT_LOG) != 1 or 'mk8_am_push_message' in text:
         raise ValueError('Controller support boundary changed: hle/input.c')
+    boundary = '         hid_show_controller_support) {\n'
+    if text.count(boundary) != 1:
+        raise ValueError('Controller support function boundary changed')
+    start = text.index(boundary)
+    end = text.index('\n}\n', start)
+    support = text[start:end]
+    if support.count('    if (out) {') != 1 or support.count('    c->x[0] = 0;') != 1:
+        raise ValueError('Controller support result boundary changed')
+    support = support.replace('    if (out) {', '    if (out && n >= min) {')
+    support = support.replace('    c->x[0] = 0;',
+        '    c->x[0] = n < min ? (3101u << 9) | 202u : 0;  // ControllerSupportCanceled (2202-3101)')
+    text = text[:start] + support + text[end:]
     hid.write_text(text.replace(SUPPORT_LOG, SUPPORT_FOCUS), encoding='utf-8')

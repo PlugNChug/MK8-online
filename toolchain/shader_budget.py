@@ -9,8 +9,8 @@ Compute dispatches still wait in full, because the game may read their results. 
 upstream behaviour. Full Grand Prix with async translation (07/11/2026): one draw skipped in 11,400 frames, no
 stall over 60 ms, against 158-368 ms stalls without the budget in the run before.
 
-Only draws whose targets are all screen-sized (textures.c `scalable`: redrawn every frame) may be skipped. The
-game draws some targets once: at race start, while the track's shaders still compile, it renders the lighting and
+Only draws whose targets are all screen-sized (textures.c `scalable`) or the validated two-player scene pair
+may be skipped. The game draws some targets once: at race start, while the track's shaders still compile, it renders the lighting and
 reflection probes (cubes, the BC3 cube array) a single time. Skipping those left them empty for the whole race,
 and the track and the karts were drawn black (Sweet Sweet Canyon and Thwomp Ruins on a cold shader cache,
 08/11/2026: mean luma 5 against 106 with the full wait). Draws into any other target wait in full, as upstream.
@@ -19,21 +19,21 @@ and the track and the karts were drawn black (Sweet Sweet Canyon and Thwomp Ruin
 WAIT_FOR = '''
 // MK8 (toolchain/shader_budget.py): wait for a queued or running job at most max_ms; 1 when it is done.
 // (never runs it inline: a build left queued is taken by a worker thread)
-#include <errno.h>
+#include "platform.h"
 int mk8_job_wait_for(BuildJob *j, double max_ms) {
     if (atomic_load(&j->state) == JOB_DONE) return 1;
     if (max_ms <= 0) return 0;
     double t0 = now_ms();
-    pthread_mutex_lock(&lock);
-    // (short slices against the monotonic clock: a timed wait here can overshoot a whole timer tick)
-    while (atomic_load(&j->state) != JOB_DONE && now_ms() - t0 < max_ms) {
-        struct timespec until;
-        clock_gettime(CLOCK_REALTIME, &until);
-        until.tv_nsec += 500000;
-        if (until.tv_nsec >= 1000000000) until.tv_sec++, until.tv_nsec -= 1000000000;
-        pthread_cond_timedwait(&done, &lock, &until);
+    uint64_t end = plat_now_ns() + (uint64_t)(max_ms * 1e6);
+    // Winpthreads' sub-millisecond timed waits can sleep a full 15.6 ms tick. Use the platform's monotonic,
+    // high-resolution sleep in short slices, without holding the workers' completion lock.
+    while (atomic_load(&j->state) != JOB_DONE) {
+        uint64_t now = plat_now_ns();
+        if (now >= end) break;
+        plat_sleep_until_ns(end - now > 500000 ? now + 500000 : end);
     }
     int ok = atomic_load(&j->state) == JOB_DONE;
+    pthread_mutex_lock(&lock);
     count_wait(now_ms() - t0, j, "job (bounded)");
     pthread_mutex_unlock(&lock);
     return ok;
@@ -51,9 +51,24 @@ static double mk8_shader_budget_ms(void) {
     if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : 4; }
     return v;
 }
+// MK8 4.0.1's two-player scene has a color/depth pair at 8:9, including dynamic resolution. It is redrawn each
+// frame but is not `scalable` (that flag only accepts 16:9). Do not extend this to arbitrary offscreen targets.
+static bool mk8_split_scene(void) {
+    if (st.rt.ncolor != 1) return false;
+    const NvnTexture *c = st.rt.color[0], *d = st.rt.depth;
+    if (!c || !d || !c->backend || !d->backend) return false;
+    if (c->target != 1 || d->target != 1 || c->samples > 1 || d->samples > 1 ||
+        c->flags != 8 || d->flags != 8 || c->format != 63 || d->format != 52) return false;
+    if (c->width != d->width || c->height != d->height ||
+        c->width < 640 || c->width > 960 || c->height < 720 || c->height > 1080) return false;
+    // Rounded dynamic dimensions can differ by one pixel from the exact 8:9 ratio.
+    int delta = (int)c->width * 9 - (int)c->height * 8;
+    return delta >= -8 && delta <= 8;
+}
 // Every target of the draw is screen-sized (redrawn each frame): skipping it costs a frame of one object. Targets
 // drawn once (probes, cube maps, baked maps) or not created yet are never skipped.
 static bool mk8_targets_redrawn(void) {
+    if (mk8_split_scene()) return true;
     int n = 0;
     for (int i = 0; i < st.rt.ncolor; i++) {
         const NvnTexture *t = st.rt.color[i];
@@ -71,7 +86,23 @@ static bool mk8_targets_redrawn(void) {
 }
 static bool mk8_job_ready(JobQueue *q, BuildJob *j) {
     double budget = mk8_shader_budget_ms();
-    if (budget < 0 || !mk8_targets_redrawn()) { job_run_or_wait(q, j); return true; }
+    if (budget < 0 || !mk8_targets_redrawn()) {
+        uint64_t t0 = SDL_GetTicksNS();
+        job_run_or_wait(q, j);
+        double ms = (SDL_GetTicksNS() - t0) / 1e6;
+        if (ms > 50 && getenv("MK8_TRACE_SHADER_TARGETS")) {
+            LOG("[mk8:shader-wait] frame %llu full wait %.1f ms\\n", (unsigned long long)vk_frame_counter(), ms);
+            for (int i = 0; i <= st.rt.ncolor; i++) {
+                const NvnTexture *t = i < st.rt.ncolor ? st.rt.color[i] : st.rt.depth;
+                if (!t) continue;
+                const TexBackend *b = t->backend;
+                LOG("[mk8:shader-wait] %s %d: %ux%u target %d samples %d flags %x format %d scalable %d\\n",
+                    i < st.rt.ncolor ? "color" : "depth", i, t->width, t->height, t->target, t->samples,
+                    t->flags, t->format, b ? b->scalable : 0);
+            }
+        }
+        return true;
+    }
     static uint64_t frame = ~0ull;
     static double spent;
     uint64_t f = vk_frame_counter();
