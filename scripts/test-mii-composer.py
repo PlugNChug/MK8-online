@@ -1,5 +1,6 @@
 """Mii creator with the real launcher, browser, private parts library and prepared game; disposable profiles."""
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,13 +10,16 @@ import time
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
-RESOURCE = ROOT / 'local/mii-library-research/AFLResHigh_2_3.dat'
+RESOURCE = Path(os.environ.get('MK8_TEST_MII_RESOURCE', ROOT / 'local/mii-library-research/AFLResHigh_2_3.dat'))
 
 
 def run():
-    metadata = json.loads(subprocess.check_output(
-        ['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT, text=True))
-    executable = Path(metadata['target_directory']) / 'debug/Launcher.exe'
+    if os.environ.get('MK8_LAUNCHER_EXE'):
+        executable = Path(os.environ['MK8_LAUNCHER_EXE'])
+    else:
+        metadata = json.loads(subprocess.check_output(
+            ['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT, text=True))
+        executable = Path(metadata['target_directory']) / 'debug/Launcher.exe'
     assert executable.is_file(), 'Build the launcher first'
     assert RESOURCE.is_file(), 'Private verified AFL resource required'
     assert shutil.disk_usage(tempfile.gettempdir()).free >= 4 * 1024**3
@@ -23,7 +27,7 @@ def run():
     output.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='mk8-composer-') as folder:
         local = Path(folder).resolve()
-        candidate = ROOT/'local/candidate.json'  # the prepared game provides the body (read in place)
+        candidate = Path(os.environ.get('MK8_TEST_CANDIDATE', ROOT/'local/candidate.json'))  # read in place
         assert candidate.is_file(), 'Prepared game required'
         shutil.copyfile(candidate, local/'candidate.json')
         assert local.parent == Path(tempfile.gettempdir()).resolve()
@@ -47,6 +51,7 @@ def run():
                 page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
                     'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste manual.'}}))
                 page.goto(url, wait_until='load')
+                page.locator('#language').select_option('pt-BR')
                 token = page.locator('meta[name="mk8-token"]').get_attribute('content')
 
                 def api(path, body=None, code=200):
@@ -103,6 +108,10 @@ def run():
                 assert page.request.get(url+'/api/mii/body').status == 403
                 page.reload(wait_until='load')
                 page.locator('[data-tab="miis"]').click()
+                # A configured library is fetched on startup. Its body must not stall
+                # the WASM load or the API while the creator is being initialized.
+                expect(page.locator('#mii-stage')).to_have_attribute('data-head', 'true', timeout=30000)
+                assert page.request.get(url+'/api/status', headers={'X-MK8-Token': token}, timeout=5000).json()['ok']
                 expect(page.locator('#mii-stage')).to_have_attribute('data-body', 'FemaleBody', timeout=30000)
                 expect(page.locator('#mii-name')).to_have_value('Editor A')
                 assert not errors, errors

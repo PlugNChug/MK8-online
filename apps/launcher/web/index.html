@@ -97,6 +97,12 @@
                   <input id="update_package" aria-label="Atualização 4.0.1" spellcheck="false" placeholder="Caminho do arquivo" />
                   <button type="button" class="ghost" data-browse="update_package" data-kind="package" aria-label="Escolher Atualização 4.0.1" hidden>Escolher</button>
                 </div>
+                <div class="file-tile" id="tile-dlc">
+                  <span class="ft-icon" aria-hidden="true">D</span>
+                  <span class="ft-text"><strong>DLC (opcional)</strong><small>Booster Course Pass v65536 · arquivo .nsp</small></span>
+                  <input id="prepare-dlc-package" aria-label="DLC opcional" spellcheck="false" placeholder="Deixe vazio para preparar sem importar DLC" />
+                  <button type="button" class="ghost" data-browse="prepare-dlc-package" data-kind="package" aria-label="Escolher DLC" hidden>Escolher</button>
+                </div>
                 <div class="file-tile" id="tile-keys">
                   <span class="ft-icon" aria-hidden="true">K</span>
                   <span class="ft-text"><strong>prod.keys</strong><small id="keys-hint">Encontrado sozinho ao lado do jogo ou em %USERPROFILE%\.switch</small></span>
@@ -104,6 +110,7 @@
                   <button type="button" class="ghost" data-browse="prod_keys" data-kind="keys" aria-label="Escolher prod.keys" hidden>Escolher</button>
                 </div>
               </div>
+              <p class="hint">A DLC selecionada será importada após a build, na mesma preparação. Se já instalou uma DLC, deixar o campo vazio mantém a configuração atual. Você também pode importar depois em Instalar → Conteúdo adicional.</p>
               <details id="folder-mode" class="alt">
                 <summary>Já tenho o jogo extraído numa pasta</summary>
                 <div class="path-field">
@@ -301,6 +308,7 @@
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>
+          <article class="card"><h2>Booster Course Pass</h2><p class="hint">Você pode importar ou reparar o Booster Course Pass sem repetir a build.</p><button type="button" class="ghost" id="play-dlc-manage">Abrir importação de DLC</button></article>
           <details class="drawer">
             <summary>Log do jogo</summary>
             <pre id="game-log" aria-label="Log do jogo">Nenhum teste iniciado.</pre>
@@ -325,11 +333,16 @@
             </div>
           </div>
           <p id="steam-state" class="hint" role="status"></p>
+          <p id="steam-dlc-hint" class="hint">Para jogar juntos, todos devem usar a mesma DLC ativada ou jogar com ela desativada. Altere isso em Configurações antes de criar ou entrar na sala.</p>
 
           <div class="grid2">
             <div class="card">
               <h2>Sua sala</h2>
-              <button id="steam-host" type="button" class="primary">Criar sala</button>
+              <div class="row">
+                <button id="steam-host" type="button" class="primary">Criar Sala (Automático)</button>
+                <button id="steam-host-manual" type="button" class="ghost">Jogar (Sala Manual)</button>
+              </div>
+              <p class="hint">Estes dois botões criam sua própria sala Steam. No modo manual, você escolhe o Mii e cria a sala LAN no jogo. Para entrar na sala de um amigo, aceite o convite ao lado.</p>
               <div id="steam-room" hidden>
                 <p id="peers">Sem participantes conectados.</p>
                 <div class="row">
@@ -340,6 +353,13 @@
             </div>
             <div class="card">
               <h2>Convites e salas de amigos</h2>
+              <label>Ao entrar na sala de um amigo
+                <select id="steam-navigation">
+                  <option value="automatic">Entrar automaticamente no jogo</option>
+                  <option value="manual">Navegar manualmente no jogo</option>
+                </select>
+              </label>
+              <p class="hint">Vale também para convites aceitos no chat da Steam. A escolha fica salva neste computador.</p>
               <ul id="steam-invites" class="mp-list"></ul>
               <ul id="steam-rooms" class="mp-list"></ul>
               <p id="steam-empty" class="hint">Nenhum convite nem sala de amigo aberta agora.</p>
@@ -348,6 +368,7 @@
 
           <div class="card">
             <div class="row mp-friends-head"><h2>Amigos da Steam</h2><input id="friend-filter" aria-label="Procurar amigo" placeholder="Procurar amigo" /></div>
+            <p class="hint">A busca inclui todos os amigos. Quem está invisível aparece como offline.</p>
             <ul id="steam-friends" class="mp-list mp-friends"></ul>
           </div>
 
@@ -356,8 +377,8 @@
             <ol class="howto">
               <li>Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.</li>
               <li>Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como "Spacewar", o aplicativo de testes da Steam.</li>
-              <li>O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.</li>
-              <li>O amigo aceita: no Launcher (Aceitar), no chat da Steam ou em Entrar na sala do amigo. O jogo dele abre e entra na sala sozinho.</li>
+              <li>O anfitrião usa Criar Sala (Automático) para abrir o jogo e criar a sala LAN sozinho, ou Jogar (Sala Manual) para navegar por conta própria. Depois usa Convidar ao lado do amigo ou Convidar pela Steam.</li>
+              <li>O amigo escolhe entrada automática ou manual acima e aceita no Launcher, no chat da Steam ou em Entrar na sala do amigo. O jogo abre conectado pela Steam.</li>
               <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
               <li>Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>

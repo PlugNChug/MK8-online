@@ -156,8 +156,8 @@ details.alt summary { padding: 0.3rem 0; font-size: 0.88rem; }
 
 /* forms */
 label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); }
-input, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 9px; padding: 0.55rem 0.7rem; width: 100%; min-width: 0; }
-input:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; border-color: transparent; }
+input, textarea, #steam-navigation { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 9px; padding: 0.55rem 0.7rem; width: 100%; min-width: 0; }
+input:focus, textarea:focus, #steam-navigation:focus { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; border-color: transparent; }
 textarea { resize: vertical; font-family: var(--mono); font-size: 0.85rem; }
 .path-field { display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.75rem; }
 .path-field label { flex: 1; }
@@ -267,6 +267,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1
 .mp-list li { display:flex; align-items:center; gap:.5rem; padding:.4rem .6rem; border:1px solid var(--line); border-radius:10px; }
 .mp-list li span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mp-friends { max-height:340px; overflow:auto; }
+.mp-presence { display:block; font-size:.75rem; color:var(--muted); }
 .mp-friends-head { align-items:center; }
 .mp-friends-head h2 { margin:0 auto 0 0; }
 .mp-friends-head input { max-width:14rem; }

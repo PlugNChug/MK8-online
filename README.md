@@ -47,6 +47,12 @@ Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Port
 
 A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
 
+Unreleased fixes on top of `fix-chore`: Steam DLL discovery supports additional libraries and nested game layouts, and loads versioned C interface exports. All friends are searchable, including offline friends. Oversized LAN datagrams use Steam's reliable fragmentation; smaller packets keep their previous mode. Closing the game releases its Steam session so another invitation can be accepted without restarting the launcher. Both PCs must update; a complete two-PC race is still unqualified.
+
+Multiplayer offers **Create Room (Automatic)** and **Play (Manual Room)**. Both create a Steam host lobby; guests accept an invite and can choose automatic or manual in-game navigation. Automatic entry keeps the active Mii selected. The Mii converter corrects the glasses texture channels: regenerate derived Mii resources and rebuild the runtime for these Mii fixes.
+
+**Install → Game files** accepts an optional Booster Course Pass NSP. It is imported after a successful build in the same preparation flow, using the existing verified importer. An empty field preserves existing DLC. Later import remains under **Install → Additional content**, with a shortcut from **Play**; enabling/disabling DLC remains under **Settings**. Steam still requires matching DLC and CTGP states. No Valve DLL, game assets, new installer or release tag is included in this contribution.
+
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
 | Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |

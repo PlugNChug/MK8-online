@@ -16,6 +16,123 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="session"]').click()
+            expect(page.locator('#steam-dlc-hint')).to_contain_text('mesma DLC')
+            page.route('**/api/steam/friends', lambda route: route.fulfill(json={'ok':True,'data':{
+                'invites':[{'lobby':'123','friend':'Test host'}], 'friends':[], 'room':None}}))
+            error = 'A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar.'
+            page.route('**/api/steam/join', lambda route: route.fulfill(status=400,json={'ok':False,'error':error}))
+            page.get_by_role('button', name='Aceitar', exact=True).click()
+            expect(page.locator('#notice')).to_have_text(error)
+            page.locator('#language').select_option('en')
+            expect(page.locator('#steam-dlc-hint')).to_contain_text('same DLC enabled')
+            page.get_by_role('button', name='Accept', exact=True).click()
+            expect(page.locator('#notice')).to_contain_text('Booster Course Pass')
+            page.locator('#language').select_option('pt-BR')
+        finally:
+            page.close()
+
+    def test_all_steam_friends_are_searchable_and_offline_invites_are_available(self):
+        page = self.page()
+        try:
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            status = page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+            status['session'].update(hosting=True, steam_active=True, connected=True, slot=0)
+            page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':status}))
+            # Backend ordering is exercised natively in the session crate; the page must preserve it.
+            friends = [dict(id=str(i),name=name,online=True,presence=presence,room=None)
+                       for i,(name,presence) in enumerate([('A busy','busy'),('Z online','online'),('A away','away')])]
+            friends += [dict(id=str(100+i),name=f'Offline {i:04}',online=False,presence='offline',room=None) for i in range(720)]
+            friends.append(dict(id='9999',name='Invisible Friend',online=False,presence='offline',room=None))
+            page.route('**/api/steam/friends',lambda route:route.fulfill(json={'ok':True,'data':dict(friends=friends,invites=[],room='123',persona='Test')}))
+            sent=[]
+            def invite(route):
+                sent.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{'message':'Convite enviado pela Steam.'}})
+            page.route('**/api/steam/invite',invite)
+            page.locator('[data-tab="session"]').click()
+            rows=page.locator('#steam-friends li')
+            expect(rows).to_have_count(724)
+            expect(rows.nth(0)).to_contain_text('Ocupado')
+            expect(rows.nth(2)).to_contain_text('Ausente')
+            page.locator('#friend-filter').fill('OFFLINE 0719')
+            expect(rows).to_have_count(1)
+            expect(rows.first).to_contain_text('Offline 0719')
+            page.locator('#friend-filter').fill('invisible')
+            expect(rows).to_have_count(1)
+            expect(rows.first).to_contain_text('Offline')
+            rows.first.get_by_role('button',name='Convidar',exact=True).click()
+            expect(page.locator('#notice')).to_have_text('Convite enviado pela Steam.')
+            self.assertEqual(sent,[{'friend':'9999'}])  # Intercepted: no real invite is sent.
+            page.locator('#friend-filter').fill('unmatched name')
+            expect(rows).to_have_text(['Nenhum amigo encontrado nesta busca.'])
+            page.locator('#language').select_option('en')
+            expect(rows).to_have_text(['No friends match your search.'])
+            page.locator('#friend-filter').fill('')
+            expect(rows).to_have_count(724)
+            expect(rows.nth(0)).to_contain_text('Busy')
+            expect(rows.nth(2)).to_contain_text('Away')
+            page.screenshot(path=str(ROOT/'local/screenshots/all-friends.png'),full_page=True)
+            page.locator('#language').select_option('pt-BR')
+            expect(page.locator('html')).to_have_attribute('lang','pt-BR')
+        finally:
+            page.close()
+
+    def test_optional_dlc_and_manual_room_controls(self):
+        page = self.page()
+        try:
+            page.locator('#stage-files').click()
+            expect(page.locator('#prepare-dlc-package')).to_be_visible()
+            page.locator('#prepare-dlc-package').fill('optional-owned-dlc.nsp')
+            page.screenshot(path=str(ROOT/'local/screenshots/optional-dlc-install.png'),full_page=True)
+            requests = []
+            def prepare(route):
+                requests.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True, 'data':{'message':'Preparando o jogo.'}})
+            page.route('**/api/prepare', prepare)
+            page.locator('#stage-build').click()
+            page.locator('#build').click()
+            expect(page.locator('#notice')).to_have_text('Preparando o jogo.')
+            page.wait_for_function('() => !busy')
+            self.assertEqual(requests, [{'dlc_package':'optional-owned-dlc.nsp'}])
+            page.locator('#stage-files').click()
+            page.locator('#prepare-dlc-package').fill('')
+            page.locator('#stage-build').click()
+            page.locator('#build').click()
+            page.wait_for_function('() => !busy')
+            self.assertEqual(requests[-1], {'dlc_package':''})
+            page.locator('[data-tab="session"]').click()
+            hosts = []
+            def host(route):
+                hosts.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{}})
+            page.route('**/api/steam/host', host)
+            page.locator('#steam-host-manual').click()
+            page.wait_for_function('() => !busy')
+            page.locator('#steam-host').click()
+            page.wait_for_function('() => !busy')
+            self.assertEqual(hosts, [{'automatic':False}, {'automatic':True}])
+            page.locator('#steam-navigation').select_option('manual')
+            expect(page.locator('#notice')).to_have_text('Preferência de convites salva neste computador.')
+            page.reload()
+            page.locator('[data-tab="session"]').click()
+            expect(page.locator('#steam-navigation')).to_have_value('manual')
+            page.locator('#steam-navigation').select_option('automatic')
+            page.wait_for_function('() => !busy')
+            page.screenshot(path=str(ROOT/'local/screenshots/manual-room-desktop.png'),full_page=True)
+            page.set_viewport_size({'width':390,'height':844})
+            self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+            page.screenshot(path=str(ROOT/'local/screenshots/manual-room-mobile.png'),full_page=True)
+            page.locator('[data-tab="play"]').click()
+            page.locator('#play-dlc-manage').click()
+            expect(page.locator('#install')).to_be_visible()
+            expect(page.locator('#dlc-card')).to_be_in_viewport()
+        finally:
+            page.close()
+
     @classmethod
     def setUpClass(cls):
         cls.temporary=tempfile.TemporaryDirectory(prefix="mk8-e2e-")
@@ -184,9 +301,15 @@ class LauncherTests(unittest.TestCase):
 
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
+        self.addCleanup(page.close)
         page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
             'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste offline.'}}))
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
+        # Language tests persist their choice on the shared server. Reset and
+        # await the save before a later reload, instead of relying on locale.
+        page.locator('#language').select_option('pt-BR')
+        expect(page.locator('html')).to_have_attribute('lang', 'pt-BR')
+        expect(page.locator('#language')).to_be_enabled()
         return page
 
     def test_notices_are_fixed_dismissible_and_respect_reduced_motion(self):
@@ -371,7 +494,7 @@ class LauncherTests(unittest.TestCase):
         # Only Steam rooms are offered; the other transports stay for scripts behind the API.
         for removed in ("#host", "#host-internet", "#invite-input", "#scan-rooms", "#username", "#invite", "#endpoint"):
             expect(page.locator(removed)).to_have_count(0)
-        expect(page.get_by_role("button", name="Criar sala", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Criar Sala (Automático)", exact=True)).to_be_visible()
         # Without a Mii the tab asks for one, and rooms are refused.
         expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
         refused = api("steam/host", {})
@@ -678,6 +801,39 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#prepare-state')).to_have_text('Atualizar')
         expect(page.locator('#build-done')).to_be_hidden()
         self.assertFalse(errors);page.close()
+
+    def test_mii_resource_stream_finishes_before_wasm_request(self):
+        # A slow response exposes the ordering even on browsers that eagerly buffer
+        # localhost downloads. No proprietary AFL data is needed for this regression.
+        page=self.browser.new_page()
+        self.addCleanup(page.close)
+        page.add_init_script("""(() => {
+          const fetch = window.fetch.bind(window);
+          let drained = false, chunks = 0;
+          window.fetch = (input, options) => {
+            const url = String(input);
+            if (url.endsWith('/api/mii/composer/resource')) {
+              return Promise.resolve(new Response(new ReadableStream({
+                async pull(controller) {
+                  await new Promise(resolve => setTimeout(resolve, 10));
+                  if (++chunks <= 16) controller.enqueue(new Uint8Array(65536));
+                  else { drained = true; controller.close(); }
+                }
+              }, {highWaterMark: 0})));
+            }
+            if (url.endsWith('/ffl-emscripten.wasm')) {
+              document.documentElement.dataset.miiStreamDrainedBeforeWasm = String(drained);
+              // Stop before interpreting the synthetic bytes as an AFL library.
+              return Promise.reject(new Error('Synthetic resource: stop before FFL initialization'));
+            }
+            return fetch(input, options);
+          };
+        })();""")
+        page.goto(self.urls[0])
+        expect(page.locator('html')).to_have_attribute('data-mii-stream-drained-before-wasm','true')
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        result=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token},timeout=5000)
+        self.assertTrue(result.json()['ok'])
 
     def test_mii_preparation_releases_play_and_clears_only_its_stale_notice(self):
         page=self.page()

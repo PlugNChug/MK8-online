@@ -18,6 +18,9 @@ Consultados [decodificadores](https://github.com/Leuconoe/Ryubing/blob/7231e00ea
 
 Consultados README, releases e [source/main.c do SharedFontDumper](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c), de simontime: nomes `FontStandard.ttf`, `FontNintendoExtended.ttf` e fontes regionais, extração com A e saída com +. Não houve cópia de código nem distribuição da ferramenta/fontes. A decodificação BFTTF segue o formato já implementado no loader upstream fixado. Importador e seletor são próprios; fontes/dumps permanecem privados, validação estrutural não autentica origem Nintendo. Compatibilidade da ferramenta com firmware atual e renderização de fontes autênticas aguardam evidência do usuário.
 
+## Integração Steam e transporte — contribuição de 16/11/2026
+
+Referências primárias Valve: [interface C e versionamento](https://partner.steamgames.com/doc/sdk/api#flat_interface_for_binding_to_other_languages), [ISteamNetworking — EP2PSend](https://partner.steamgames.com/doc/api/ISteamNetworking#EP2PSend), [ISteamFriends](https://partner.steamgames.com/doc/api/ISteamFriends) e [InviteUserToLobby](https://partner.steamgames.com/doc/api/ISteamMatchmaking#InviteUserToLobby). O limite de envio não confiável é 1200 bytes; mensagens maiores usam fragmentação confiável. A lista conserva amigos Immediate, incluindo offline; não tenta distinguir nem revelar quem escolheu ficar invisível. O carregador resolve acessores C versionados da biblioteca local e rejeita interfaces ausentes. Nenhuma DLL, SDK ou implementação proprietária Valve foi adicionada à contribuição; testes usam backends e arquivos autorais. O teste Steam real é optativo e não qualifica uma corrida entre máquinas.
 
 ## Controles nativos e Steam — 13/11/2026
 
