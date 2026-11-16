@@ -25,6 +25,8 @@ class ShaderBudgetTests(unittest.TestCase):
             budget = execute[execute.index('// MK8 (toolchain/shader_budget.py): MK8_SHADER_WAIT_MS'):
                              execute.index('static bool prog_ready(Prog *p) {')]
             source = out/'budget.c'
+            platform = (runtime/'platform/windows.c').read_text(encoding='utf-8')
+            timing = platform[platform.index('static LARGE_INTEGER qpf;'):platform.index('void plat_thread_realtime')]
             source.write_text(r'''
 #define LOG(...) ((void)0)
 #include <stdatomic.h>
@@ -50,12 +52,63 @@ static uint64_t SDL_GetTicksNS(void) {
 static uint64_t frame_no;
 uint64_t vk_frame_counter(void) { return frame_no; }
 static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
-''' + budget + r'''
+''' + timing + budget + r'''
 int main(int argc, char **argv) {
     (void)argv;
     screen_t.backend = &screen_b; probe_t.backend = &probe_b;
     target(&screen_t);
+    if (argc > 1 && !strcmp(argv[1], "timing")) {
+        JobQueue *q = jobq_create(1);
+        BuildJob a = {0};
+        jobq_submit(q, &a, slow, (void *)(uintptr_t)1000);
+        double samples[32];
+        for (int i = 0; i < 32; i++) {
+            uint64_t t0 = plat_now_ns();
+            if (mk8_job_wait_for(&a, 4)) return 12;
+            samples[i] = (plat_now_ns() - t0) / 1e6;
+        }
+        for (int i = 0; i < 32; i++) for (int j = i + 1; j < 32; j++)
+            if (samples[j] < samples[i]) { double t = samples[i]; samples[i] = samples[j]; samples[j] = t; }
+        printf("4ms shader waits: median %.2f ms, p95 %.2f ms\n", samples[16], samples[30]);
+        return samples[30] < 10 ? 0 : 13;
+    }
     if (argc > 1 && !strcmp(argv[1], "default")) return mk8_shader_budget_ms() == 4 ? 0 : 11;  /* unset: 4 ms */
+    if (argc > 1 && !strcmp(argv[1], "split")) {
+        NvnTexture color = {.backend = &probe_b, .target = 1, .flags = 8, .format = 63};
+        NvnTexture depth = {.backend = &probe_b, .target = 1, .flags = 8, .format = 52};
+        target(&color); st.rt.depth = &depth;
+        const int sizes[][2] = {{640,720}, {720,810}, {828,932}, {943,1061}, {960,1080}};
+        for (int i = 0; i < 5; i++) {
+            color.width = depth.width = sizes[i][0]; color.height = depth.height = sizes[i][1];
+            if (!mk8_targets_redrawn()) return 20;
+        }
+        // A split-screen draw really returns without waiting for a queued compilation.
+        JobQueue *q = jobq_create(1);
+        BuildJob busy = {0}, draw = {0};
+        jobq_submit(q, &busy, slow, (void *)(uintptr_t)120);
+        Sleep(10);
+        jobq_submit(q, &draw, slow, (void *)(uintptr_t)1);
+        if (mk8_job_ready(q, &draw) || atomic_load(&draw.state) != JOB_QUEUED) return 21;
+        color.target = 8; if (mk8_targets_redrawn()) return 22; color.target = 1;
+        color.samples = 4; if (mk8_targets_redrawn()) return 23; color.samples = 0;
+        color.flags = 0; if (mk8_targets_redrawn()) return 24; color.flags = 8;
+        color.format = 61; if (mk8_targets_redrawn()) return 25; color.format = 63;
+        depth.format = 63; if (mk8_targets_redrawn()) return 26; depth.format = 52;
+        depth.width--; if (mk8_targets_redrawn()) return 27; depth.width++;
+        st.rt.depth = NULL; if (mk8_targets_redrawn()) return 28; st.rt.depth = &depth;
+        depth.backend = NULL; if (mk8_targets_redrawn()) return 29; depth.backend = &probe_b;
+        color.width = depth.width = 128; color.height = depth.height = 144;
+        if (mk8_targets_redrawn()) return 30;
+        color.width = depth.width = 960; color.height = depth.height = 960;
+        if (mk8_targets_redrawn()) return 31;
+        color.height = depth.height = 1080;
+        st.rt.ncolor = 2; st.rt.color[1] = &probe_t;
+        if (mk8_targets_redrawn()) return 32;
+        // One-time targets still complete their jobs, even in the same frame with a spent budget.
+        target(&probe_t); st.rt.depth = NULL;
+        if (!mk8_job_ready(q, &draw) || atomic_load(&draw.state) != JOB_DONE) return 33;
+        return 0;
+    }
     if (argc > 1) {  /* negative budget: the upstream wait runs a queued job inline and returns ready */
         JobQueue *q = jobq_create(1);
         BuildJob a = {0}, b = {0};
@@ -103,6 +156,9 @@ int main(int argc, char **argv) {
                                     str(source), str(runtime/'nvn/buildsync.c'), '-o', str(exe)],
                                    env=env, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr[-3000:])
+            subprocess.run([str(exe), 'timing'], check=True, timeout=30)
+            subprocess.run([str(exe), 'split'], check=True, timeout=30,
+                           env=dict(os.environ, MK8_SHADER_WAIT_MS='4', MK8_TRACE_SHADER_TARGETS='1'))
             subprocess.run([str(exe)], check=True, timeout=30,
                            env=dict(os.environ, MK8_SHADER_WAIT_MS='8'))
             subprocess.run([str(exe), 'off'], check=True, timeout=30, env=dict(os.environ, MK8_SHADER_WAIT_MS='-1'))

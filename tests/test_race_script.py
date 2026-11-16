@@ -79,7 +79,13 @@ class RaceScriptTests(unittest.TestCase):
         script = race_input('grand-prix', 5200)
         self.assertNotIn('RIGHT', script)
         self.assertNotIn('880:DOWN', script)
-        self.assertTrue(script.endswith('2700:A:2510'))
+        steps = [entry.split(':') for entry in script.split(',')]
+        held = [(int(frame), int(length)) for frame, button, length in steps if int(frame) >= 2700]
+        self.assertTrue(all(button == 'A' for frame, button, _ in steps if int(frame) >= 2700))
+        self.assertEqual(held[0], (2700, 119))
+        # one released frame between presses, so the standings advance; the last press reaches the capture
+        self.assertTrue(all(b[0] == a[0] + 120 and a[1] == 119 for a, b in zip(held, held[1:])))
+        self.assertGreaterEqual(held[-1][0] + held[-1][1], 5200)
 
     def test_capture_monitor_preserves_exit_status(self):
         with subprocess.Popen([sys.executable, '-c', 'raise SystemExit(7)']) as child:

@@ -1,6 +1,6 @@
 """Build a release: the packaged launcher, its setup.exe and the SHA-256 the in-launcher updater checks.
 
-    python scripts/release.py --bump 0.2.0-alpha.1    # set the version (Cargo.toml, tauri.conf.json, Cargo.lock)
+    python scripts/release.py --bump 0.3.0    # set the version (Cargo.toml, tauri.conf.json, Cargo.lock)
     python scripts/release.py                         # build target/dist/MK8-online-<version>-setup.exe
 
 Set MK8_UPDATE_REPO=owner/name (the GitHub repository whose Releases the launcher reads) and, if there is one,
@@ -95,14 +95,14 @@ def build(args):
     (DIST / "release-title.txt").write_text(title + "\n", encoding="utf-8")
     notes.write_text(
         body +
-        f"## MK8-online {version} (experimental)\n\n"
-        "Instale com o setup abaixo; quem já tem o Launcher pode usar **Suporte → Atualizar agora**.\n"
-        "Cada máquina prepara o jogo com os próprios arquivos do console: nada do jogo é distribuído.\n\n"
-        "O setup inclui DLLs do FFmpeg 9.0.2 (LGPL 2.1) compiladas com `build-ffmpeg.sh`; o código-fonte "
-        "correspondente (`ffmpeg-9.0.2.tar.xz`) está anexado a esta release.\n\n"
-        f"Pendências conhecidas: veja [docs/STATUS.md](https://github.com/{os.environ.get('MK8_UPDATE_REPO', 'Vnnc1/MK8-online')}/blob/v{version}/docs/STATUS.md). "
-        "Ao relatar um problema, anexe o .zip de **Suporte → Gerar relatório**.\n\n"
-        f"SHA-256 de `{setup.name}`: `{digest}`\n",
+        f"## Download — MK8-online {version} (experimental)\n\n"
+        f"Install `{setup.name}`, or use **Support → Update now / Suporte → Atualizar agora**. "
+        "Each PC prepares the game from its owner's files; no game content is distributed.\n\n"
+        "The setup includes FFmpeg 9.0.2 DLLs (LGPL 2.1) built with `build-ffmpeg.sh`. "
+        "The corresponding source (`ffmpeg-9.0.2.tar.xz`) and build script are attached.\n\n"
+        f"Known issues / Limitações: [docs/STATUS.md](https://github.com/{os.environ.get('MK8_UPDATE_REPO', 'Vnnc1/MK8-online')}/blob/v{version}/docs/STATUS.md). "
+        "Attach the ZIP from **Support → Generate report / Suporte → Gerar relatório** when reporting a bug.\n\n"
+        f"SHA-256 — `{setup.name}`: `{digest}`\n",
         encoding="utf-8")
     print(f"{setup}\n{digest}")
 

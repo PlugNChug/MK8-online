@@ -13,7 +13,7 @@
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.2.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.3.0-ef795d)
 ![Status](https://img.shields.io/badge/Status-Public_test-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -28,29 +28,48 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **0.2.0 is a public test release, still experimental.** Solo races complete in local tests. Visual defects, first-use shader stutters and VRAM growth remain. Multiplayer between two separate PCs has not been qualified yet: that is exactly what this release asks testers to try.
+> **0.3.0 is an experimental public pre-release, with known bugs.** Solo races complete in local tests. Visual defects, first-use shader stutters and VRAM growth remain. Multiplayer between two separate PCs has not been qualified yet: that is exactly what this release asks testers to try.
 
-## What's new in 0.2.0
+New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
 
-- **Mii creator.** The **Mii profile** tab is a creator now. Name your Mii, then pick every part (body, face, skin, hair, eyes, eyebrows, nose, mouth, beard, glasses, mole) from buttons that show *your* Mii with that option. The preview puts the head on MK8's own lobby body, read from your prepared game, so type, height, build and favorite color are visible.
-- **Your Mii in the game.** Saving a Mii prepares the in-game Mii models automatically. The game then draws your Mii with its original renderer: character select portraits, Mii Suits, the driver with its helmet and the minimap icon.
-- **Steam rooms only.** **Multiplayer** now uses Steam: create a room and invite friends from your Steam friends list. They accept in the Launcher or in Steam chat, and nobody needs a VPN or open ports. You join rooms as your Mii, and its name is the name others see.
-- **The game opens in the room.** After a room is created or joined, the Launcher opens the game by itself. An experimental automatic entry then takes each player into the LAN room: the host creates it, and guests join once the host's room exists. You still choose your character and the rules.
-- **Fixes:** game logs are no longer empty when the game is started by the Launcher, so support reports contain them again. The crash on the LAN track vote (a missing Mii portrait request) is fixed. Mii resource paths work on Windows, and descriptor pools and cubemap history are released when the game finalizes them.
 
-Details, evidence and remaining limits: [technical status](docs/STATUS.md) (Portuguese).
+## What's new in 0.3.0
+
+- **CTGP Deluxe on MK8 4.0.1:** import the course resources of CTGP Deluxe 1.1.1 (originally for 3.0.3), including 64 courses in 16 additional cups with names, images, icons and music. This adaptation does not run the original CTGP plugin; compatibility is incomplete and bugs remain.
+- **Redesigned launcher:** horizontal installation stages, modular settings, accessible game language, guided Mii creation, clearer Steam rooms/friends and support reports.
+- **Optional DLC:** import your Booster Course Pass during preparation or later, then enable/disable it without deleting it. Game files, DLC and keys are never distributed.
+- **Fixes and improvements:** Mii resource-loading freezes and glasses, Vulkan dependency checks, memory/texture handling, MKTV thumbnails, local manual, fonts, particle shaders, audio, controller setup and shader waits in two-player split-screen.
+- **Settings and presentation:** CRLF INI parsing is fixed. Optional experimental frame generation can present about 120 FPS in measured sections while simulation stays at 60 Hz; it remains off by default.
+
+Read the [0.3.0 release notes in English or Portuguese](docs/releases/0.3.0.md) and [technical status](docs/STATUS.md). Steam reconnection, Vulkan startup on some PCs, integrated-GPU memory failures, graphical defects and shader stutters remain known limitations. **This is an experimental pre-release, not a fully working or stable build.**
 
 ## Where it stands
 
+**120 FPS presentation:** the existing experimental frame-generation option interpolates one image between real frames while the game remains at 60 Hz. It needs a high-refresh display and GPU headroom; it does not unlock native simulation or remove shader stutters. Local investigation measured about 120 presented frames per second in a stable solo section on an RX 580 2048SP / 180 Hz display. This is not full-race or multiplayer qualification. The 0.3.0 runtime also fixes CRLF INI parsing, which could silently disable `frame_gen = 120` and misread other text settings. Details and limitations are in [STATUS.md](docs/STATUS.md).
+
+Performance fixes in 0.3.0 use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. For keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
+
+Version 0.3.0 integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. Commit `8202c32` also merged CTGP phase B (additional cups and its guest hooks). Integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
+
+A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
+
+Steam improvements in 0.3.0: Steam DLL discovery supports additional libraries and nested game layouts, and loads versioned C interface exports. All friends are searchable, including offline friends. Oversized LAN datagrams use Steam's reliable fragmentation; smaller packets keep their previous mode. Closing the game releases its Steam session so another invitation can be accepted without restarting the launcher. Both PCs must update; a complete two-PC race is still unqualified.
+
+Multiplayer offers **Create Room (Automatic)** and **Play (Manual Room)**. Both create a Steam host lobby; guests accept an invite and can choose automatic or manual in-game navigation. Automatic entry keeps the active Mii selected. The Mii converter corrects the glasses texture channels: regenerate derived Mii resources and rebuild the runtime for these Mii fixes.
+
+**Install → Game files** accepts an optional Booster Course Pass NSP. It is imported after a successful build in the same preparation flow, using the existing verified importer. An empty field preserves existing DLC. Later import remains under **Install → Additional content**, with a shortcut from **Play**; enabling/disabling DLC remains under **Settings**. Steam still requires matching DLC and CTGP states. No Valve DLL or game assets are distributed.
+
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
-| Launcher | Native window, guided preparation, installer, updates, reports; English and Brazilian Portuguese | Update from 0.1.8 to 0.2.0 by real testers |
+| Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Upgrade from 0.2.0 to 0.3.0 on more PCs |
 | Solo racing | Mushroom Cup completed; battles, MKTV highlight reel and time trials reached | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Steam rooms with invites; two game instances on one PC entered the same LAN room automatically | A guest joining over Steam from another PC, full races between two PCs |
 | Performance | Around 60 FPS in measured race sections on the test PC | Repeated cups, VRAM stability and more hardware |
 
 These are observed milestones, not a percentage-complete estimate. `gameplay_verified` and `multiplayer_verified` stay `false` until full qualification passes.
+
+MKTV thumbnail readback now copies the rendered GPU image when recording a replay. Existing replay files can already contain corrupted thumbnail JPEGs; this change preserves those files and applies to newly recorded thumbnails.
 
 ## What this project does
 
@@ -72,18 +91,18 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 ### Install and play
 
-1. Download `MK8-online-0.2.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on 0.1.8? Use **Support → Update now**: your data folder and saves are kept.
+1. Download `MK8-online-0.3.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
 2. Open **Install**. Complete **Tools**, then select the base game and the update in **Game files** (the Launcher finds keys next to the game, or select your own).
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
 
 The Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
 
-An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other versions, DLC and XCI/XCZ import are not validated.
+An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other game versions and XCI/XCZ import are not validated. Supported DLC is imported separately.
 
 Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalling. To use another drive with the portable launcher: `.\Launcher.exe --data-dir E:\MK8-Local`, and keep using the same folder.
 
-**Language:** the Launcher and installer offer **English** and **Português (Brasil)** (**Language / Idioma**). The game's own language is separate.
+**Language:** the Launcher and installer offer **English**, **Português (Brasil)** and **Español** (**Language / Idioma**). The game's own language is separate.
 
 ### Create your Mii
 
@@ -124,7 +143,40 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
+## CTGP Deluxe course pack (optional, experimental)
+
+CTGP Deluxe 1.1.1 targets MK8 3.0.3 (32-bit). Version 0.3.0 adapts its course resources to MK8 4.0.1 (64-bit),
+without running the original plugin. Choose 16 additional cups with all 64 courses, or a replacement layout as
+described below. Compatibility is incomplete: track-specific bugs, graphical defects and performance drops remain.
+
+1. Download CTGP Deluxe from [ctgpdx.com](https://www.ctgpdx.com/download) (personal use) and extract the ZIP.
+2. **Install → Additional content → CTGP Deluxe**: choose the extracted folder (the one with `atmosphere/`) and click **Import CTGP…**.
+   On the same disk as the data folder it takes seconds and no extra space (hard links).
+   Choose where the courses go: **in place of the base game's cups** (48 courses, +16 with the DLC), **in place
+   of the DLC's cups** (48 courses next to the 48 original ones; needs the Booster Course Pass imported and enabled)
+   or **in 16 new cups** (all 64 courses on two more pages of the cup screen, L/R, with their own names, pictures,
+   music and cup icons; no original course moves).
+3. **Enable CTGP Deluxe** switches it on; turn it off to play the original game. The game, the DLC and your saves are
+   never changed; with CTGP on, the game uses its own saves, created once as a copy of yours.
+
+In Steam rooms everyone needs the same pack (the same CTGP enabled, or everyone without it). MK8-online does not
+distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus and random button need
+its code (not available); time-trial staff ghosts are the original course's; in the new cups, each CTGP course keeps
+its records together with those of the original course whose slot it borrows (in CTGP's own saves), and online
+sessions use the game's cups (each machine would otherwise decide on its own which races are a CTGP cup's). See
+[STATUS.md](docs/STATUS.md).
+
 ## Build and contribute
+
+The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
+
+This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. It does not establish a fix for Stadium flashing or a general VRAM leak.
+
+On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
+
+In **Settings → Game fonts**, use **Import Font Folder** to copy fonts dumped from your own Switch. Requires `FontStandard.ttf` or `nintendo_udsg-r_std_003.ttf/.bfttf`; regional/button fonts are optional. SharedFontDumper filenames are normalized automatically. Font controls follow the launcher’s English, Brazilian Portuguese, and Spanish language selection. The launcher checks TrueType table bounds and verifies hashes before launch; this does not authenticate Nintendo provenance. **System Default** disables imported fonts without deleting them; **Imported Console Fonts** re-enables them. Changes take effect next launch, without another game rebuild after installing the launcher/runtime with this support. Legacy folders and explicit `LARECOMP_FONT` overrides remain supported.
+
+With homebrew already working: get the `.nro` from [SharedFontDumper releases](https://github.com/simontime/SharedFontDumper/releases), place it under `switch/` on the SD card, and launch it from the Homebrew Menu. Press **A** for individual TTF files; **+** exits after completion. Copy the SD's `fonts` folder to your PC and import it. The [tool source](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c) documents these controls and filenames. This older tool's compatibility with current firmware/homebrew has not been tested here. Combined `shared_font.bin` dumps and firmware archives are not accepted.
 
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
@@ -133,6 +185,20 @@ Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7
 ```
 
 It downloads the pinned upstream sources, verifies their hashes, builds the launcher and opens it. To package the portable launcher: `python scripts/package-launcher.py` (output: `target/portable/Launcher.exe`). Release steps are in [RELEASING.md](docs/RELEASING.md).
+
+To build a local test installer without publishing a release, run `python scripts/release.py`. The setup is written to `<Cargo target directory>/dist/MK8-online-<version>-setup.exe`. Install same-version test builds manually; the updater only offers newer versions. The packaged launcher includes the default redesigned interface and real installation/build operations, without the debug storyboard.
+
+The launcher uses the approved charcoal/orange design in its embedded interface, including packaged builds. Installation progresses horizontally through **Tools → Game files → Build → optional DLC/CTGP**. Tool readiness and file checks come from the backend; incomplete prerequisites keep later actions locked. Existing tools and prepared files are reused. Downloads, compilation, cancellation, errors and logs use the existing pipeline. Select the base game, update 4.0.1 and console keys (automatically detected where supported), or an extracted game folder. An optional DLC package can accompany preparation. Additional content remains accessible after preparation and can be managed in Settings.
+
+**Settings** has freely selectable Video and controls (Image, Audio, Controls), Game fonts, and Additional content modules. Switching modules preserves drafts. Contextual previews illustrate menu theme, aspect ratio, fullscreen, audio, bindings and cup layouts; they are not game captures or performance measurements. The font example uses the browser font, not imported console files. **Game language** is available above Play and in Settings; it saves only that setting immediately, preserving other drafts and applying next launch. The launcher language remains independent; the interface supports Portuguese, English and Spanish.
+
+**Mii Profile** starts with a required name (1–10 characters), then separate Face and Body areas. Existing profiles open directly in customization; explicit saving and unsaved-change confirmations remain. Missing preview resources are identified, with numbered options available until the library loads. **Multiplayer** provides a short interactive guide, automatic/manual hosting, searchable/filterable friends and a separate invitations/rooms tab. The guide performs no Steam actions. Multiplayer remains experimental and requires separate validation on two machines.
+
+**Support** retains update checking and confirmed installer launch. A bug form prepares a GitHub Issue draft with a preview; users review and publish on GitHub, attaching the diagnostic ZIP manually if desired. Copy and Markdown export support other channels and long reports. No credentials, automatic Issue publication or automatic upload are introduced. The native window opens only the project's Issue URLs in the system browser. Authenticated ZIP download serves only the last generated report, with path, link and size checks. Review manually entered text and attachments before sharing.
+
+For isolated visual development, run `python scripts/preview-launcher.py`. It compiles debug and opens the real interface with separate data under `local/design-preview`. Use `--target-dir D:/path/to/target` to reuse a Cargo folder; `--no-build` skips compilation. Keep the terminal open; Ctrl+C stops the preview. Explicit `MK8_WEB_ROOT` enables an allowlist of live interface files only in debug builds. Edit HTML/CSS/JS and reload; **Ajustar visual** offers browser-local palette, spacing, corners and CSS export. Release builds use embedded assets and omit these debug controls.
+
+The earlier installation simulation is available only in the live debug preview at `/?storyboard=1#install`. It is labeled as a simulation, uses sample files and in-memory state, and invokes no installation/build API. Normal debug and packaged launchers use real operations. The isolated preview does not reuse installed profiles, resources or saves and does not qualify gameplay.
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter, the Nextendo prototype) are documented in the [technical status](docs/STATUS.md).
 
@@ -154,3 +220,5 @@ Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a
 Project code is licensed under **[GPL-3.0-or-later](LICENSE)**. Dependencies keep their own licenses; the SMM2Recomp snapshot includes GPLv3, LASRecomp includes MIT notices, and the setup carries FFmpeg (LGPL 2.1) with its source attached to each release. The license grants no rights to Nintendo's game code, assets or trademarks.
 
 An independent community project, not affiliated with or endorsed by Nintendo or Valve. Mario Kart and related names belong to their respective owners.
+
+Conditional occlusion rendering waits for pending reports on either comparison operand before reading their actual sample counts. This addresses transient missing racers/objects during previews; it preserves legitimate hidden results. The fix is applied during runtime preparation and needs a game/runtime rebuild.

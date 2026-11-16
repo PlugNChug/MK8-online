@@ -1,0 +1,19 @@
+.design-toggle { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20; box-shadow: 0 4px 24px #0006; }
+.design-panel { position: fixed; inset: auto 1.25rem 5rem auto; margin: 0; width: min(340px, calc(100vw - 2rem)); max-height: calc(100dvh - 7rem); overflow: auto; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 18px; padding: 1.4rem; box-shadow: 0 16px 60px #0009; z-index: 21; }
+.design-panel h2 { margin: 0; }
+.design-panel header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.design-panel header button { padding: .2rem .6rem; font-size: 1.2rem; }
+.design-panel label { margin-top: 1rem; }
+.design-panel input[type=color] { height: 42px; padding: 4px; cursor: pointer; }
+.design-panel input[type=range] { accent-color: var(--accent); padding: 0; }
+.design-panel select { padding: .6rem; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; font: inherit; }
+.design-panel .row button { flex: 1; font-size: .85rem; padding: .6rem; }
+.design-panel output { color: var(--text); }
+.design-badge { font-size: .75rem; color: var(--accent); border: 1px solid var(--line-2); padding: .2rem .6rem; border-radius: 6px; }
+@media (max-width: 650px) { .design-badge { display: none; } }
+
+
+/* Only the opt-in storyboard hides the real installation controls. */
+.install-storyboard > :not(.panel-head):not(#install-flow), .install-storyboard #build-state { display: none !important; }
+.install-storyboard { gap: 1rem; }
+.install-storyboard .panel-head { padding-bottom: 0; }

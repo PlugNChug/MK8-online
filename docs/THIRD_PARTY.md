@@ -1,5 +1,41 @@
 # Dependências e atribuições
 
+## Revisão de compatibilidade — 16/11/2026
+
+Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.
+
+## Investigação de geração de quadros — 16/11/2026
+
+Analisada a interpolação já existente em `runtime/nvn/framegen*` e no backend Vulkan do upstream fixado, com seus avisos de licença preservados. Não foi incorporado FSR Frame Generation. Consultadas a [documentação SDL3 de modos de vídeo](https://wiki.libsdl.org/SDL3/SDL_DisplayMode) e as [orientações AMD sobre taxa de entrada e latência da interpolação](https://gpuopen.com/fidelityfx-super-resolution-3/); os resultados de outros projetos não qualificam esta implementação.
+
+Medição externa com [PresentMon Console 2.6.0](https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0), Intel, licença [MIT](https://github.com/GameTechDev/PresentMon/blob/v2.6.0/LICENSE.txt). Executável oficial verificado pelo SHA-256 publicado `b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af`, usado apenas como ferramenta local, com licença preservada; não incluído no launcher. CSVs privados analisados conforme a [documentação das métricas](https://github.com/GameTechDev/PresentMon/blob/v2.6.0/README-ConsoleApplication.md), com as limitações da instrumentação Vulkan. Taxa de apresentação não é taxa da simulação nem medição de latência física do controle.
+
+## Relatos via GitHub Issues — 16/11/2026
+
+Consultados os guias oficiais de [criação de Issues por parâmetros de URL](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue) e [anexos](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files), para título/descrição preenchidos, anexação manual de ZIP e limite de 25 MB. Interface e integração próprias; nenhum código, imagem, token ou SDK externo foi incorporado.
+
+## Guia local e OfflineWeb — 13/11/2026
+
+Consultados [web.h do libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/applets/web.h), para TLVs do shim Offline e layout de WebCommonReturnValue, e os guias oficiais Nintendo [fundamentos](https://www.nintendo.com/jp/ichikara/aabpa/index_en.html) e [técnicas](https://www.nintendo.com/jp/ichikara/aabpa/02_en.html), para conferir os controles/ações. A redação do guia local, UI, adapter e viewer são próprios; não incorporam HTML, imagens ou código de implementação dessas páginas. Licenças existentes de WebView/Tauri/SDL e dependências permanecem preservadas.
+
+## Comparação semântica de texturas — 15/11/2026
+
+A adaptação de `nvnTextureCompare` usa a comparação de propriedades, swizzle e armazenamento de [SavageWindRecomp, `runtime/nvn/objects.c`](https://github.com/Revivedx/SavageWindRecomp/blob/740b18025fe11ba03c117dbb56668db304b5043e/runtime/nvn/objects.c), commit `740b18025fe11ba03c117dbb56668db304b5043e`. Créditos: Revivedx e colaboradores de Savage Wind Recomp; Peiikai, pela base LAS Recomp. O [aviso MIT integral](licenses/SavageWindRecomp-MIT.txt) foi preservado, incluindo seus limites para propriedades Nintendo e componentes de terceiros. A adaptação fica na preparação própria do runtime; nenhum endereço, teste ou recurso de BOTW foi copiado.
+
+A motivação local vem do probe privado MK8 `1267wfvj`: 18 pares de cubemaps de ambiente com descrições registradas iguais retornaram 0 e houve duplicação do slot 8036→8054; a primeira comparação entre textura 2D e cubemap era corretamente desigual. Essa evidência identifica o falso negativo; a validação local e seus limites são registrados em [STATUS.md](STATUS.md). Resultados de SavageWindRecomp em BOTW não qualificam MK8-online nem demonstram que os clarões deste jogo estejam resolvidos.
+
+## Consulta de mip TMML.B — 15/11/2026
+
+Consultados [decodificadores](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/src/Ryujinx.Graphics.Shader/Decoders/InstDecoders.cs) e [semântica de texturas](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/src/Ryujinx.Graphics.Shader/Instructions/InstEmitTexture.cs) do Ryubing, revisão `7231e00ea0302dd61b617b4edc29672b3dbcda30`, [MIT](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/LICENSE.txt): campos de TMML.B, NODEP, condição EXIT e origem do handle. Nenhum código C# foi copiado; a implementação própria prova a origem estática e reutiliza o emissor SMM2Recomp já atribuído. Os resultados de outro renderer não qualificam esta build, e shaders comerciais usados na comparação continuam privados.
+
+## Importação de fontes do console — 13/11/2026
+
+Consultados README, releases e [source/main.c do SharedFontDumper](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c), de simontime: nomes `FontStandard.ttf`, `FontNintendoExtended.ttf` e fontes regionais, extração com A e saída com +. Não houve cópia de código nem distribuição da ferramenta/fontes. A decodificação BFTTF segue o formato já implementado no loader upstream fixado. Importador e seletor são próprios; fontes/dumps permanecem privados, validação estrutural não autentica origem Nintendo. Compatibilidade da ferramenta com firmware atual e renderização de fontes autênticas aguardam evidência do usuário.
+
+## Integração Steam e transporte — contribuição de 16/11/2026
+
+Referências primárias Valve: [interface C e versionamento](https://partner.steamgames.com/doc/sdk/api#flat_interface_for_binding_to_other_languages), [ISteamNetworking — EP2PSend](https://partner.steamgames.com/doc/api/ISteamNetworking#EP2PSend), [ISteamFriends](https://partner.steamgames.com/doc/api/ISteamFriends) e [InviteUserToLobby](https://partner.steamgames.com/doc/api/ISteamMatchmaking#InviteUserToLobby). O limite de envio não confiável é 1200 bytes; mensagens maiores usam fragmentação confiável. A lista conserva amigos Immediate, incluindo offline; não tenta distinguir nem revelar quem escolheu ficar invisível. O carregador resolve acessores C versionados da biblioteca local e rejeita interfaces ausentes. Nenhuma DLL, SDK ou implementação proprietária Valve foi adicionada à contribuição; testes usam backends e arquivos autorais. O teste Steam real é optativo e não qualifica uma corrida entre máquinas.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.
@@ -123,3 +159,32 @@ Referência TLS adicional, 09/11/2026: [CA pública do Prelude no commit baff45e
 [BfresLibrary](https://github.com/KillzXGaming/BfresLibrary), pacote [NuGet 1.6.0](https://www.nuget.org/packages/BfresLibrary/1.6.0), MIT. Pacote consultado/usado localmente, SHA-256 `f246476ee5329a635a202b183083e6b4fe6833fccce1c8560806ae0ac726fae7`; o nuspec aponta revis?o `29c05602e6e8ce8f0b53bfc858f63ae6d9a50f74`. Foram usadas as APIs de leitura/grava??o Switch BFRES, VertexBufferHelper, BNTX e swizzle, com as DLLs Syroot inclu?das no pacote. O arquivo LICENSE e os demais avisos permanecem na extra??o integral privada; as DLLs n?o foram copiadas para fontes nem pacote de distribui??o. Preservar esses avisos se a ferramenta vier a ser distribu?da.
 
 `toolchain/mii_head_builder.cs` e `toolchain/mii_head_bake.py` s?o adapta??es pr?prias. A malha e as imagens v?m da exporta??o pessoal j? fornecida; o modelo do corpo, esqueleto e shader v?m do jogo local do usu?rio, validado por hash. Nenhum desses dados foi incorporado a fixtures/fontes p?blicas. A proje??o da m?scara ? est?tica e calibrada para esta exporta??o; n?o incorpora um renderer FFL nem comprova express?es, retratos ou compatibilidade online.
+
+## Investigação de DLC
+
+Referências consultadas em 10/11/2026: [Switchbrew — serviço `aoc:u`](https://switchbrew.org/wiki/NS_services#aoc:u), para descoberta, preparação e notificações de conteúdo adicional, e [Nintendo — acesso ao Booster Course Pass](https://www.nintendo.com/en-gb/Support/Purchases-Subscriptions/Games/How-to-Access-Mario-Kart-8-Deluxe-Booster-Course-Pass-DLC-Content-2178331.html), para o fluxo oficial de acesso ao conteúdo. São referências de protocolo e uso, não evidência de compatibilidade deste runtime. A inspeção local reutilizou o LibHac 0.18.0 já atribuído acima; nenhum código dessas páginas foi incorporado. NSP, tickets, chaves e arquivos do DLC permanecem privados.
+
+O protótipo consulta também as assinaturas IPC de [`nn::aocsrv::detail::IAddOnContentManager` no SwIPC](https://reswitched.github.io/SwIPC/ifaces.html#nn::aocsrv::detail::IAddOnContentManager): comandos, argumentos e descritores de saída. A implementação própria fica em `runtime/mk8/services/dlc.c` e é aplicada às cópias de build por `toolchain/dlc.py`; não houve cópia de implementação de outros emuladores.
+
+## Applet de controles — 16/11/2026
+
+Controle local (16/11/2026): consultados o [contrato do applet HID em libnx](https://github.com/switchbrew/libnx/blob/master/nx/source/applets/hid_la.c) e o [registro técnico de ControllerSupportCanceled em nxnative_patch](https://git.dukantic.fr/dukantic/nxnative_patch/src/commit/7249ee9f95ed728aff9a86395330d10d4c91fb5c/docs/reference/services.md), para identificar o resultado `2202-3101` quando a configuração é cancelada. A adaptação própria em `toolchain/controller_applet.py` recusa sucesso com menos jogadores que o mínimo solicitado. Nenhum código dessas referências foi copiado; resultados de testes externos não qualificam este runtime.
+
+## CTGP Deluxe — pacote de pistas opcional, 15/11/2026
+
+[CTGP Deluxe](https://www.ctgpdx.com/download) (CTGP Deluxe Team e autores de cada pista e música, creditados no
+próprio pacote) é um mod de uso pessoal, sem venda nem redistribuição. Nada dele está neste repositório, em testes
+públicos, releases ou no setup: `toolchain/import_ctgp.py` lê a cópia que o jogador baixou e monta a sobreposição só na
+pasta de dados dele. O repositório guarda apenas números (qual rótulo de nome cada pista CT usa, obtidos lendo
+estaticamente o plugin 1.1.1 do usuário, sem executá-lo) e nomes de arquivo. Os formatos SARC, MSBT e BYAML foram
+lidos/escritos por implementação própria (`toolchain/ctgp_pack.py`); os testes usam somente arquivos sintéticos.
+
+## Áudio — volume inicial de vozes, 12/11/2026
+
+Referências de comportamento do renderer Ryujinx, consultadas no histórico publicado, sem incorporar código C# ou dependência nova:
+
+- [StateUpdater, revisão `9f1cf6458c78a42256b1f390f5b3b9159b00a7cb`](https://www.git.axenov.dev/Museum/ryujinx/src/commit/9f1cf6458c78a42256b1f390f5b3b9159b00a7cb/Ryujinx.Audio/Renderer/Server/StateUpdater.cs): reinicialização do estado para `IsNew` antes dos parâmetros atuais.
+- [VoiceState, histórico na revisão `a5ff0024fb33964c802e1712e5b11a52390603e7`](https://www.git.axenov.dev/Museum/ryujinx/commit/a5ff0024fb33964c802e1712e5b11a52390603e7?files=Ryujinx.Audio): volume anterior inicial zero e volume atual recebido dos parâmetros.
+- [CommandGenerator, revisão `f556c80d0230056335632b60c71f1567e177239e`](https://git.axenov.dev/Museum/ryujinx/commit/f556c80d0230056335632b60c71f1567e177239e?files=Ryujinx.Audio%2FRenderer%2FServer): rampa de volume da voz, atualização do anterior após uso e ramps de routing separados. O mixer local já possuía ramps; a adaptação própria em `toolchain/host.py` corrige somente a inicialização do volume anterior de uma voz nova. Isso não estabelece equivalência integral ao renderer/hardware, nem atribui por si só a causa do estalo ouvido.
+
+As tentativas de baixar os arquivos inteiros receberam HTML de desafio anti-bot e não foram usadas como fonte C#. Os trechos consultados são os históricos indexados acima. Recursos `Ground_Tcroad.bars`, WAVs e coeficientes comerciais analisados permanecem privados em `local/`; os testes públicos usam somente PCM/ADPCM sintéticos. Avisos/licenças dos fontes upstream existentes foram preservados.

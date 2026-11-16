@@ -20,10 +20,14 @@ class ShaderStorageTests(unittest.TestCase):
             source = out/'test.c'
             if callable(body):
                 body = body((runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8'))
+            if '#include "buildsync.c"' in body:
+                # These queue/storage cases never use bounded waits; latency uses real platform timing in test_shader_budget.
+                body += '\nuint64_t plat_now_ns(void) { abort(); }\n'
+                body += 'void plat_sleep_until_ns(uint64_t t) { (void)t; abort(); }\n'
             source.write_text('#ifdef NDEBUG\n#error Assertions must be enabled\n#endif\n' + body, encoding='utf-8')
             exe = out/'test.exe'
             result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
-                                     '-I'+str(runtime/'nvn'), '-I'+str(ROOT/'runtime/mk8/graphics'),
+                                     '-I'+str(runtime/'nvn'), '-I'+str(runtime), '-I'+str(ROOT/'runtime/mk8/graphics'),
                                      str(source), '-o', str(exe)], env=compiler_env(), capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
             result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=30)

@@ -6,7 +6,8 @@ descriptor slots, and the game's slot allocator hands those IDs to per-frame ren
 The lighting pass of every other frame still samples the first ID as a cube: a 2D render target there could only be
 bound as an empty view ("[tex] type mismatch: want 3 have 1"), so those frames lost the environment light and the
 whole scene alternated between two brightness levels at 30 Hz (automated captures: mean luma 111 vs 99, tunnel 69
-vs 43). Why the console keeps the cube there was not found in the game's code (its slots are reference counted).
+vs 43). O jogo preserva o descritor quando nvnTextureCompare reconhece a recriação equivalente; comparar apenas
+os endereços guest devolvia falso. A adaptação abaixo compara o estado da textura e preserva esse caminho.
 
 So a cube sampler whose ID now holds a texture that is not a cube map reads the last cube map registered under that
 ID instead of an empty view (logged; MK8_TEXPOOL_CUBE_HISTORY=0 restores the empty view).
@@ -23,6 +24,23 @@ frame, before the next pass): mean / peak RGB and non-finite texels per mip, for
 
 REGISTER_OLD = '''    NvnTexEntry *e = &((NvnTexEntry *)d->entries)[id];
     NvnTexture *next = mk8_texture_retain(HOST(NvnTexture, A(2)));
+'''
+
+COMPARE_OLD = 'NVN(nvnTextureCompare) { RET(A(0) == A(1)); }'
+COMPARE = '''
+// Comparação adaptada de SavageWindRecomp (MIT); origem e licença: docs/THIRD_PARTY.md.
+NVN(nvnTextureCompare) {
+    const NvnTexture *a = A(0) ? HOST(NvnTexture, A(0)) : NULL;
+    const NvnTexture *b = A(1) ? HOST(NvnTexture, A(1)) : NULL;
+    if (a == b) { RET(a != NULL || A(0) == A(1)); return; }
+    if (!a || !b) { RET(0); return; }
+    RET(a->target == b->target && a->format == b->format && a->flags == b->flags && a->width == b->width &&
+        a->height == b->height && a->depth == b->depth && a->levels == b->levels && a->samples == b->samples &&
+        a->ds_mode == b->ds_mode && !memcmp(a->swizzle, b->swizzle, sizeof a->swizzle) && a->stride == b->stride &&
+        a->addr == b->addr && a->pool == b->pool && a->pool_offset == b->pool_offset &&
+        a->layout.layers == b->layout.layers && a->layout.block_height_log2 == b->layout.block_height_log2 &&
+        a->layout.block_depth_log2 == b->layout.block_depth_log2);
+}
 '''
 
 SUPPORT = '''
@@ -324,7 +342,8 @@ def replace(text, old, new):
 
 def prepare(runtime):
     objects = runtime/'nvn/objects.c'
-    text = replace(objects.read_text(encoding='utf-8'), REGISTER_OLD, REGISTER_NEW)
+    text = replace(objects.read_text(encoding='utf-8'), COMPARE_OLD, COMPARE)
+    text = replace(text, REGISTER_OLD, REGISTER_NEW)
     text = replace(text, 'static void register_texture(Cpu *c) {\n', SUPPORT + 'static void register_texture(Cpu *c) {\n')
     objects.write_text(replace(text, STORE_OLD, STORE_NEW), encoding='utf-8')
     commands = runtime/'nvn/cmdbuf.c'

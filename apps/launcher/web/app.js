@@ -4,6 +4,7 @@ const token = document.querySelector('meta[name="mk8-token"]').content;
 // Only the three files of step 2 are edited here; the other paths (ExeFS, RomFS, fonts…) are found by the launcher.
 const fieldNames = ["base_package", "update_package", "prod_keys"];
 let savedConfig = {};
+let installationFilesDirty = false;
 let busy = false;
 async function api(path, body) {
   const response = await fetch("/api/" + path, {
@@ -17,9 +18,20 @@ async function api(path, body) {
 }
 function notice(text, error = false) {
   $("notice").dataset.message = text;
+  const popup = $("notice-popup");
+  popup.getAnimations().forEach((animation) => animation.cancel());
+  popup.hidden = !text;
   i18n.text($("notice"), text);
   $("notice").classList.toggle("error", error);
+  popup.classList.toggle("error", error);
+  if (text && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    popup.animate([
+      { opacity: 0, transform: "translate(-50%, -24px)" },
+      { opacity: 1, transform: "translate(-50%, 0)" },
+    ], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
 }
+$("notice-close").onclick = () => notice("");
 async function action(fn) {
   if (busy) return;
   busy = true;
@@ -39,6 +51,12 @@ function config() {
     ...Object.fromEntries(fieldNames.map((key) => [key, $(key).value.trim()])),
   };
 }
+async function saveGameFileConfig() {
+  const snapshot = config();
+  const result = await api("config", snapshot);
+  if (fieldNames.every(key => $(key).value.trim() === snapshot[key])) installationFilesDirty = false;
+  return result;
+}
 function showTab(name) {
   document.querySelectorAll("[data-tab]").forEach((item) => {
     const selected = item.dataset.tab === name;
@@ -47,6 +65,8 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings()])
+    .catch((error) => notice(error.message, true));
 }
 document
   .querySelectorAll("[data-tab]")
@@ -55,9 +75,180 @@ document
   );
 document
   .querySelectorAll("[data-goto]")
-  .forEach((el) => (el.onclick = () => showTab(el.dataset.goto)));
+  .forEach((el) => (el.onclick = async () => {
+    await showTab(el.dataset.goto);
+    if (el.dataset.anchor) $(el.dataset.anchor)?.scrollIntoView({ block: "start" });
+  }));
 
 /* ---------- Instalação: três passos ---------- */
+let settingsLoaded = false;
+let settingsDirty = false;
+let settingsBlocked = false;
+let settingsSaving = false;
+let settingsBaseline = {};
+let fontsLoaded = false;
+let fontsSaving = false;
+async function loadFontSettings() {
+  const data = await api("fonts");
+  i18n.text($("font-mode").querySelector('[value="system"]'), "Padrão do sistema");
+  i18n.text($("font-mode").querySelector('[value="console"]'), "Fontes do console importadas");
+  $("font-mode").querySelector('[value="console"]').disabled = !data.imported;
+  $("font-mode").value = data.enabled ? "console" : "system";
+  i18n.text($("font-status"), data.imported ? "Fontes importadas disponíveis." : "Nenhuma fonte do console importada.");
+  fontsLoaded = true;
+  updateSettingsLock();
+}
+async function saveFonts(body) {
+  fontsSaving = true;
+  updateSettingsLock();
+  try { return await api("fonts", body); }
+  finally {
+    try { await loadFontSettings(); }
+    finally { fontsSaving = false; updateSettingsLock(); }
+  }
+}
+$("font-import").onclick = () => action(() => saveFonts({directory: $("font-folder").value.trim()}));
+$("font-mode").onchange = () => action(() => saveFonts({enabled: $("font-mode").value === "console"}));
+function updateSettingsLock() {
+  $("font-fields").disabled = settingsBlocked || fontsSaving || !fontsLoaded;
+  const locked = settingsBlocked || settingsSaving;
+  $("settings-fields").disabled = locked || !settingsLoaded;
+  $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty;
+  $("settings-reload").disabled = locked;
+}
+function markSettingsDirty() {
+  settingsDirty = true;
+  updateSettingsLock();
+  i18n.text($("settings-pending"), "Alterações não salvas.");
+}
+async function loadGameSettings(force = false) {
+  if ((settingsDirty || settingsSaving) && !force) return;
+  const data = await api("settings");
+  if ((settingsDirty || settingsSaving) && !force) return;
+  if (!settingsLoaded) {
+    for (const group of data.groups) {
+      const card = document.createElement(group.binding ? "details" : "article");
+      card.className = "card settings-group";
+      const title = document.createElement(group.binding ? "summary" : "h2");
+      i18n.text(title, group.title);
+      card.append(title);
+      if (group.binding) {
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "link";
+        i18n.text(reset, "Restaurar mapeamento padrão");
+        reset.onclick = () => {
+          for (const field of group.fields) {
+            const input = document.querySelector('[data-key="' + field.key + '"]');
+            input.value = field.default;
+            input.dataset.previous = input.value;
+          }
+          markSettingsDirty();
+        };
+        card.append(reset);
+      }
+      const grid = document.createElement("div");
+      grid.className = "settings-grid";
+      for (const field of group.fields) {
+        const label = document.createElement("label");
+        const caption = document.createElement("span");
+        i18n.text(caption, field.label);
+        const input = document.createElement(field.kind === "select" ? "select" : "input");
+        input.dataset.key = field.key;
+        input.dataset.kind = field.kind;
+        input.dataset.choices = field.choices || "";
+        if (field.kind === "select") {
+          for (const [value, text] of field.options || data.choices[field.choices]) {
+            const option = document.createElement("option");
+            option.value = value;
+            if (field.choices === "keyboard" && value !== "none") option.textContent = text;
+            else i18n.text(option, text);
+            input.append(option);
+          }
+        } else if (field.kind === "bool") {
+          input.type = "checkbox";
+          label.className = "settings-check";
+        } else {
+          input.type = "number";
+          input.min = "0"; input.max = "200"; input.step = "5";
+          const hint = document.createElement("small");
+          i18n.text(hint, "Volume em porcentagem, de 0% a 200%.");
+          label.append(hint);
+        }
+        input.oninput = markSettingsDirty;
+        input.onchange = () => {
+          if (field.choices && input.value !== "none") {
+            const other = Array.from(grid.querySelectorAll("[data-key]")).find(
+              (item) => item !== input && item.value === input.value);
+            if (other) {
+              other.value = input.dataset.previous;
+              other.dataset.previous = other.value;
+            }
+          }
+          input.dataset.previous = input.value;
+          updateSettingsDependencies();
+          markSettingsDirty();
+        };
+        label.prepend(caption);
+        label.append(input);
+        grid.append(label);
+      }
+      card.append(grid);
+      $("settings-groups").append(card);
+    }
+    settingsLoaded = true;
+  }
+  settingsBaseline = data.values;
+  for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+    const value = data.values[input.dataset.key];
+    if (input.type === "checkbox") input.checked = value !== "0";
+    else {
+      if (input.tagName === "SELECT" && !Array.from(input.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value; option.textContent = value;
+        input.append(option);
+      }
+      input.value = input.dataset.kind === "volume" ? Number(value) * 100 : value;
+      input.dataset.previous = input.value;
+    }
+  }
+  settingsDirty = false;
+  updateSettingsDependencies();
+  updateSettingsLock();
+  i18n.text($("settings-pending"), "");
+}
+function updateSettingsDependencies() {
+  const scaler = document.querySelector('[data-key="upscaler"]');
+  const resolution = document.querySelector('[data-key="resolution"]');
+  if (scaler && resolution) scaler.disabled = resolution.value === "match";
+}
+$("game-settings").onsubmit = (event) => {
+  event.preventDefault();
+  action(async () => {
+    const patch = {};
+    for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+      const value = input.type === "checkbox" ? input.checked ? "1" : "0"
+        : input.dataset.kind === "volume" ? String(Number(input.value) / 100) : input.value;
+      const previous = settingsBaseline[input.dataset.key];
+      if (input.dataset.kind === "volume" ? Number(value) !== Number(previous) : value !== previous)
+        patch[input.dataset.key] = value;
+    }
+    settingsSaving = true;
+    updateSettingsLock();
+    try {
+      const result = await api("settings", patch);
+      await loadGameSettings(true);
+      return result;
+    } finally {
+      settingsSaving = false;
+      updateSettingsLock();
+    }
+  });
+};
+$("settings-reload").onclick = () => action(async () => {
+  if (settingsDirty && !confirm(i18n.t("Descartar alterações não salvas?"))) return;
+  await loadGameSettings(true);
+});
 const steps = ["step-tools", "step-files", "step-build"];
 const userOpened = new Set();
 function openStep(id, open) {
@@ -115,11 +306,16 @@ fieldNames.forEach((key) => {
   $(key).addEventListener("change", () =>
     action(async () => {
   await i18n.ready;
-      await api("config", config());
+      await saveGameFileConfig();
       return { message: "Arquivos salvos." };
     }),
   );
 });
+[...fieldNames, "game-folder"].forEach(key => $(key).addEventListener("input", () => {
+  installationFilesDirty = true;
+  window.dispatchEvent(new Event("installationfileschange"));
+}));
+$("game-folder").addEventListener("change", () => action(selectGameFolder));
 document.querySelectorAll("[data-browse]").forEach((button) => {
   button.onclick = () =>
     action(async () => {
@@ -132,14 +328,22 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       });
       if (!result.path) return { message: "Nenhum arquivo selecionado." };
       input.value = result.path;
+      if (input.id === "font-folder") return { message: "Pasta selecionada." };
       if (input.id === "game-folder") return selectGameFolder();
-      await api("config", config());
+      if (input.id.startsWith("dlc-")) {
+        await refreshDlcFiles();
+        return { message: "Arquivo selecionado." };
+      }
+      if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
+      if (input.id === "prepare-dlc-package") return { message: "Arquivo selecionado." };
+      await saveGameFileConfig();
       return { message: "Arquivo selecionado." };
     });
 });
 async function selectGameFolder() {
   const result = await api("game-folder", { path: $("game-folder").value.trim() });
   savedConfig = result.config;
+  installationFilesDirty = false;
   fieldNames.forEach((key) => ($(key).value = savedConfig[key] || ""));
   return result;
 }
@@ -153,7 +357,7 @@ $("build").onclick = () =>
       await api("config", { ...config(), base_package: "", update_package: "" });
     else await api("config", config());
     samples = [];
-    const result = await api("prepare", {});
+    const result = await api("prepare", { dlc_package: $("prepare-dlc-package").value.trim() });
     userOpened.delete("step-build");
     openStep("step-build", true);
     return result;
@@ -164,6 +368,107 @@ $("cancel").onclick = () =>
     return api("build/cancel", {});
   });
 $("go-play").onclick = () => showTab("play");
+let dlcReplace = false;
+let lastDlcImport = "idle";
+let dlcFilesVersion = 0;
+let dlcFilesTimer;
+async function refreshDlcFiles() {
+  const version = ++dlcFilesVersion;
+  const packagePath = $("dlc-package").value.trim();
+  const keys = $("dlc-keys").value.trim();
+  const files = await api("dlc/files", { package: packagePath, keys });
+  if (version !== dlcFilesVersion || packagePath !== $("dlc-package").value.trim()
+      || keys !== $("dlc-keys").value.trim()) return;
+  $("tile-dlc-package").dataset.ok = String(files.package_ok);
+  $("tile-dlc-keys").dataset.ok = String(files.keys_ok);
+  i18n.text($("dlc-keys-hint"), files.keys_ok && files.keys_detected
+    ? "Encontrado automaticamente: " + files.keys : "Chaves do seu console para importar o DLC");
+}
+for (const id of ["dlc-package", "dlc-keys"]) {
+  $(id).addEventListener("input", () => {
+    ++dlcFilesVersion;
+    $("tile-dlc-package").dataset.ok = "false";
+    $("tile-dlc-keys").dataset.ok = "false";
+    clearTimeout(dlcFilesTimer);
+    dlcFilesTimer = setTimeout(() => refreshDlcFiles().catch((error) => notice(error.message, true)), 200);
+  });
+}
+$("dlc-change").onclick = () => action(async () => {
+  dlcReplace = true;
+});
+$("dlc-import").onclick = () => action(async () => {
+  const result = await api("dlc/import", {
+    package: $("dlc-package").value.trim(), keys: $("dlc-keys").value.trim(), reinstall: dlcReplace,
+  });
+  lastDlcImport = "running";
+  return result;
+});
+$("ctgp-import").onclick = () => action(async () => {
+  const source = $("ctgp-source").value.trim();
+  if (!source) throw new Error(i18n.t("Selecione a pasta extraída do CTGP Deluxe."));
+  const layout = $("ctgp-layout").value;
+  const result = await api("ctgp/import", { source, reinstall: !!lastCtgp?.installed, layout });
+  lastCtgpImport = "running";
+  return result;
+});
+$("ctgp-enabled").onchange = () => action(async () => {
+  try {
+    return await api("ctgp/toggle", { enabled: $("ctgp-enabled").checked });
+  } finally {
+    await refresh();
+  }
+});
+let lastCtgp = null;
+$("ctgp-layout").addEventListener("change", () => { $("ctgp-layout").dataset.touched = "1"; });
+let lastCtgpImport = "idle";
+$("dlc-enabled").onchange = () => action(async () => {
+  try {
+    return await api("dlc/toggle", { enabled: $("dlc-enabled").checked });
+  } finally {
+    await refresh();
+  }
+});
+
+// CTGP Deluxe: an optional course pack, imported from the player's own copy and switched on or off here.
+function renderCtgp(status, busyNow, running) {
+  const ctgp = status.ctgp || { state: "unprepared", installed: false, enabled: false };
+  lastCtgp = ctgp;
+  if (lastCtgpImport === "running" && status.ctgp_import?.state === "done") $("ctgp-source").value = "";
+  lastCtgpImport = status.ctgp_import?.state || "idle";
+  $("ctgp-enabled").checked = ctgp.enabled;
+  $("ctgp-enabled").disabled = busyNow || !ctgp.installed;
+  $("ctgp-source").disabled = busyNow;
+  $("ctgp-layout").disabled = busyNow || ctgp.state === "unprepared" || ctgp.state === "unsupported";
+  if (ctgp.installed && ctgp.layout && document.activeElement !== $("ctgp-layout") && !$("ctgp-layout").dataset.touched)
+    $("ctgp-layout").value = ctgp.layout;
+  const dlcOn = !!status.dlc?.enabled;
+  $("ctgp-import").disabled = busyNow || ctgp.state === "unprepared" || ctgp.state === "unsupported";
+  i18n.text($("ctgp-import"), ctgp.state === "ready" ? "Importar novamente…"
+    : ctgp.state === "invalid" ? "Reparar importação…" : "Importar CTGP…");
+  i18n.text($("ctgp-state"), running ? "Importando…"
+    : ctgp.state === "invalid" || ctgp.state === "unsupported" ? "Requer atenção"
+    : ctgp.installed ? ctgp.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("ctgp-hint"), status.game_pid ? "Feche o jogo para alterar o CTGP."
+    : running ? "Montando o pacote de pistas. Aguarde."
+    : ctgp.state === "unsupported" ? "Atualize a build para usar o CTGP."
+    : ctgp.state === "unprepared" ? "Prepare o jogo antes de importar o CTGP."
+    : ctgp.state === "invalid" ? ctgp.detail
+    : ctgp.installed && ctgp.layout === "added" ? (ctgp.enabled
+      ? "{0} pistas do CTGP em 16 copas novas; as originais continuam nas copas delas. Vale ao iniciar o jogo."
+      : "Jogo original. Ative para jogar as {0} pistas do CTGP em copas novas.").replace("{0}", String(ctgp.courses))
+    : ctgp.installed && ctgp.enabled && ctgp.layout?.startsWith("dlc") && !dlcOn
+      ? "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las."
+    : ctgp.installed && ctgp.layout?.startsWith("dlc") ? (ctgp.enabled
+      ? "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo."
+      : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
+    : ctgp.installed ? (ctgp.enabled ? "{0} pistas do CTGP no lugar das originais. Vale ao iniciar o jogo."
+      : "Jogo original. Ative para jogar as {0} pistas do CTGP.").replace("{0}", String(ctgp.courses))
+    : "Importe a pasta extraída do ZIP oficial do CTGP Deluxe.");
+  const failed = status.ctgp_import?.state === "failed";
+  i18n.text($("ctgp-detail"), failed ? status.ctgp_import.detail
+    : ctgp.installed && !ctgp.names_verified ? "Versão do CTGP diferente da 1.1.1: os nomes das pistas podem não corresponder." : "");
+  $("ctgp-detail").classList.toggle("error", failed || ctgp.state === "invalid");
+}
 
 // Progress of the running build: smoothed estimate from the recent rate and the average rate so far.
 let samples = [];
@@ -196,7 +501,43 @@ function renderInstall(status) {
   const files = status.files;
   const setupRunning = setup.state === "running";
   const buildRunning = build.state === "running";
-  const busyNow = setupRunning || buildRunning || !!status.game_pid;
+  const dlcRunning = status.dlc_import?.state === "running";
+  const ctgpRunning = status.ctgp_import?.state === "running";
+  const busyNow = setupRunning || buildRunning || dlcRunning || ctgpRunning || !!status.game_pid || status.session.steam_active;
+  settingsBlocked = busyNow;
+  const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
+  if (lastDlcImport === "running" && status.dlc_import?.state === "done") dlcReplace = false;
+  lastDlcImport = status.dlc_import?.state || "idle";
+  $("dlc-enabled").checked = dlc.enabled;
+  $("dlc-enabled").disabled = busyNow || !dlc.installed;
+  updateSettingsLock();
+  $("dlc-import").disabled = busyNow || !(status.candidate || status.installed) || dlc.state === "unsupported";
+  $("dlc-import").hidden = dlc.state === "ready" && !dlcReplace;
+  $("dlc-change").hidden = dlc.state !== "ready" || dlcReplace;
+  $("dlc-change").disabled = busyNow;
+  i18n.text($("dlc-import"), dlc.state === "ready" ? "Reinstalar DLC…"
+    : dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
+  $("dlc-files").hidden = dlc.state === "ready" && !dlcReplace;
+  for (const id of ["dlc-package", "dlc-keys"]) $(id).disabled = busyNow;
+  document.querySelectorAll("[data-browse]").forEach((button) => (button.disabled = busyNow));
+  i18n.text($("dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-state"), dlcRunning ? "Importando…"
+    : dlc.state === "invalid" || dlc.state === "unsupported" ? "Requer atenção"
+    : dlc.installed ? dlc.enabled ? "Ativado" : "Desativado" : "Não instalado");
+  i18n.text($("settings-dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.detail || "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
+  i18n.text($("dlc-hint"), status.game_pid ? "Feche o jogo para alterar o conteúdo adicional."
+    : dlcRunning ? "Verificando e importando o DLC. Aguarde."
+    : setupRunning || buildRunning ? "Aguarde a operação atual terminar."
+    : dlc.state === "unsupported" ? "Atualize a build para usar DLC."
+    : dlc.state === "unprepared" ? "Prepare o jogo antes de importar DLC."
+    : "A preferência vale ao iniciar o jogo. Desativar mantém os arquivos e os saves.");
+  i18n.text($("dlc-detail"), status.dlc_import?.state === "failed" ? status.dlc_import.detail : dlc.detail || "");
+  $("dlc-detail").classList.toggle("error", status.dlc_import?.state === "failed" || dlc.state === "invalid");
+  renderCtgp(status, busyNow, ctgpRunning);
   lastBuild = build;
   document
     .querySelectorAll("[data-browse]")
@@ -265,23 +606,27 @@ function renderInstall(status) {
         ? "Pasta do jogo extraído."
         : "Jogo base, atualização e chaves selecionados."
       : "Jogo base, atualização 4.0.1 e chaves do seu console.");
-  fieldNames.forEach((key) => ($(key).disabled = buildRunning));
+  [...fieldNames, "prepare-dlc-package", "game-folder"].forEach((key) => ($(key).disabled = busyNow));
+  document.querySelectorAll('#step-files [data-browse]').forEach(button => { button.disabled = busyNow; });
   const architecture = status.checks.find((c) => c.name === "Arquitetura do executável");
   i18n.text($("architecture-state"), files.folder ? architecture?.detail || "" : "");
 
   // 3. Build
   // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
-  const stale = !!status.candidate_stale && build.state !== "running";
-  const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
+  const dlcUpgrade = status.candidate && dlc.state === "unsupported";
+  const stale = (!!status.candidate_stale || dlcUpgrade) && build.state !== "running";
+  const done = !stale && !dlcRunning && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
-    i18n.text($("build-stale"), "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+    i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." : "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
       " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
       ": o que já foi feito é reaproveitado e leva poucos minutos.");
   $("build-idle").hidden = buildRunning || done;
   $("build-live").hidden = !buildRunning && !(build.state === "failed" && build.started_ms);
   $("build-done").hidden = !done || buildRunning;
-  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : "Iniciar build");
+  $("build-actions").hidden = buildRunning;
+  $("go-play").hidden = !done;
+  i18n.text($("build"), build.state === "failed" || build.state === "cancelled" ? "Tentar de novo" : stale ? "Atualizar a build" : done ? "Recompilar jogo" : "Iniciar build");
   $("build").disabled = busyNow;
   $("cancel").disabled = !buildRunning;
   $("cancel").hidden = !buildRunning;
@@ -307,10 +652,13 @@ function renderInstall(status) {
   i18n.text($("build-took"), build.duration_s && build.state === "candidate"
     ? "Concluída em " + clock(build.duration_s) + ". Gameplay ainda experimental."
     : "Build experimental; gameplay ainda em validação.");
-  i18n.text($("build-detail"), build.state === "failed" || build.state === "cancelled" ? build.detail : "");
+  i18n.text($("build-detail"), dlcRunning ? status.dlc_import.detail : build.state === "failed" || build.state === "cancelled" ? build.detail : "");
   $("build-detail").classList.toggle("error", build.state === "failed");
   let buildStep = "pending";
-  if (buildRunning) {
+  if (dlcRunning) {
+    setStep("stage-build", "prepare-state", "running", "Importando DLC…");
+    buildStep = "running";
+  } else if (buildRunning) {
     setStep("stage-build", "prepare-state", "running", percentText(build.percent || 0));
     buildStep = "running";
   } else if (build.state === "failed") {
@@ -341,6 +689,7 @@ function renderInstall(status) {
   if (status.installed) setStep(null, "play-state", "done", "Disponível");
   else if (status.candidate) setStep(null, "play-state", "partial", "Build experimental");
   else setStep(null, "play-state", "pending", "Bloqueado");
+  window.dispatchEvent(new CustomEvent("installationstatus", {detail: status}));
 }
 
 /* ---------- Multijogador (Steam) ---------- */
@@ -378,12 +727,19 @@ function renderSteam() {
     ])));
   $("steam-empty").hidden = !!(data?.invites?.length || rooms.length);
   const filter = $("friend-filter").value.trim().toLowerCase();
-  const friends = (data?.friends ?? []).filter((friend) => friend.online && friend.name.toLowerCase().includes(filter));
-  $("steam-friends").replaceChildren(...friends.slice(0, 60).map((friend) =>
-    listItem(friend.name, hosting ? [steamButton("Convidar", () => api("steam/invite", { friend: friend.id }))] : [])));
+  const friends = (data?.friends ?? []).filter((friend) => friend.name.toLowerCase().includes(filter));
+  $("steam-friends").replaceChildren(...friends.map((friend) => {
+    const row = listItem(friend.name, hosting ? [steamButton("Convidar", () => api("steam/invite", { friend: friend.id }))] : []);
+    const presence = document.createElement("small");
+    presence.className = "mp-presence";
+    i18n.text(presence, { online: "Online", busy: "Ocupado", away: "Ausente", offline: "Offline" }[friend.presence]
+      || (friend.online ? "Online" : "Offline"));
+    row.querySelector("span").append(presence);
+    return row;
+  }));
   if (!friends.length) {
     const empty = document.createElement("li");
-    i18n.text(empty, data ? "Nenhum amigo online agora." : "Abra a Steam para ver seus amigos.");
+    i18n.text(empty, data ? (filter ? "Nenhum amigo encontrado nesta busca." : "Nenhum amigo disponível na lista da Steam.") : "Abra a Steam para ver seus amigos.");
     $("steam-friends").replaceChildren(empty);
   }
 }
@@ -405,7 +761,13 @@ async function loadSteam() {
   }
   renderSteam();
 }
-$("steam-host").onclick = () => action(() => api("steam/host", {}));
+$("steam-host").onclick = () => action(() => api("steam/host", { automatic: true }));
+$("steam-host-manual").onclick = () => action(() => api("steam/host", { automatic: false }));
+i18n.text($("steam-navigation").options[0], "Entrar automaticamente no jogo");
+i18n.text($("steam-navigation").options[1], "Navegar manualmente no jogo");
+$("steam-navigation").onchange = () => action(() => api("steam/navigation", {
+  automatic: $("steam-navigation").value === "automatic",
+}));
 $("steam-overlay").onclick = () => action(() => api("session/steam-overlay-invite", {}));
 $("friend-filter").oninput = renderSteam;
 $("leave").onclick = () => action(() => api("session/stop", {}));
@@ -450,6 +812,7 @@ $("open-data").onclick = () => action(() => api("open", { what: "data" }));
 
 async function refresh() {
   const status = await api("status");
+  const dlcBusy = status.dlc_import?.state === "running" || status.ctgp_import?.state === "running";
   if (status.room_menu !== roomMenu) {
     roomMenu = status.room_menu;
     showTab("session");
@@ -473,6 +836,8 @@ async function refresh() {
       cancelled: "Cancelado",
     }[status.build.state] || status.build.state);
   renderInstall(status);
+  if (!$("dlc-files").hidden) await refreshDlcFiles();
+  if (!$("settings").hidden && !settingsDirty) await loadGameSettings();
   i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."
     : "Nenhuma instalação de jogo ativada.");
@@ -495,12 +860,17 @@ async function refresh() {
     notice(miiText, !!miiFailure);
   }
   $("play-solo").disabled =
-    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy;
+    !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
-  $("steam-host").hidden = active;
-  $("steam-host").disabled = !!status.game_pid;
+  for (const id of ["steam-host", "steam-host-manual"]) {
+    $(id).hidden = active;
+    $(id).disabled = !!status.game_pid || running || status.setup.state === "running" || miiBusy || dlcBusy;
+  }
+  if (!busy && document.activeElement !== $("steam-navigation")) {
+    $("steam-navigation").value = session.steam_auto_join === false ? "manual" : "automatic";
+  }
   $("steam-room").hidden = !active;
   $("leave").disabled = !!status.game_pid;
   i18n.text($("network-state"), session.connected ? "Na sala" : active ? "Conectando" : "Sem sala");
@@ -536,6 +906,14 @@ async function refresh() {
     const setupLog = await api("setup/log");
     $("setup-log").textContent = setupLog.text || status.setup.detail;
   }
+  if (status.dlc_import && status.dlc_import.state !== "idle") {
+    const log = await api("dlc/log");
+    $("dlc-log").textContent = log.text || status.dlc_import.detail;
+  }
+  if (status.ctgp_import && status.ctgp_import.state !== "idle") {
+    const log = await api("ctgp/log");
+    $("ctgp-log").textContent = log.text || status.ctgp_import.detail;
+  }
   return status;
 }
 (async () => {
@@ -547,7 +925,9 @@ async function refresh() {
       $("game-folder").value = savedConfig.exefs.replace(/[\\/]exefs[\\/]?$/i, "");
     }
     const status = await refresh();
-    if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
+    const linkedTab = location.hash.slice(1);
+    if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
+    else if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");
@@ -558,3 +938,8 @@ async function refresh() {
 })();
 
 window.addEventListener("languagechange", () => refresh().catch((error) => notice(error.message, true)));
+
+$("play-dlc-manage").onclick = () => {
+  showTab("install");
+  $("dlc-card").scrollIntoView({ block: "center" });
+};

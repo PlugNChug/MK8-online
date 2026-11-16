@@ -44,6 +44,14 @@ pub struct Installation {
     pub data_root: PathBuf,
     pub shader_root: PathBuf,
     pub gameplay_verified: bool,
+    #[serde(default)]
+    pub dlc_supported: bool,
+    /// The runtime serves an optional course pack (`MK8_ROMFS_OVERLAY`, CTGP Deluxe).
+    #[serde(default)]
+    pub pack_supported: bool,
+    /// The game library takes added cups (`MK8_CUPS_EXTRA`, toolchain/cup_relocation.py): CTGP's "added" layout.
+    #[serde(default)]
+    pub cups_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

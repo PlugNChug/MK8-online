@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using LibHac.Common;
 using LibHac.Common.Keys;
@@ -10,10 +12,14 @@ using LibHac.Fs.Fsa;
 using LibHac.FsSystem;
 using LibHac.Tools.FsSystem;
 using LibHac.Tools.FsSystem.NcaUtils;
+using LibHac.Tools.Es;
+using LibHac.Tools.Ncm;
 using Extractor = LibHac.Tools.FsSystem.FileSystemExtensions;
 using Path = System.IO.Path;
 
 // base.nca patch.nca control.nca prod.keys output [workers]; title keys arrive on standard input.
+if (args.Length == 4 && args[0] == "--dlc")
+    return Dlc.Import(args[1], args[2], args[3]);
 if (args.Length is < 5 or > 6)
     return 2;
 int workers = 1;
@@ -124,4 +130,62 @@ catch (Exception error)
         error = aggregate.InnerException;
     Console.Error.WriteLine($"{stage}: {error.GetType().FullName} (0x{error.HResult:x8})");
     return stage;
+}
+
+static class Dlc
+{
+    public static int Import(string input, string keyPath, string output)
+    {
+        try
+        {
+            var keys = KeySet.CreateDefaultKeySet();
+            ExternalKeyReader.ReadKeyFile(keys, keyPath, null, null, null);
+            string[] tickets = Directory.GetFiles(input, "*.tik");
+            if (tickets.Length != 1) throw new InvalidDataException();
+            using (var stream = File.OpenRead(tickets[0]))
+            {
+                var ticket = new Ticket(stream);
+                string entry = Convert.ToHexString(ticket.RightsId).ToLowerInvariant() + " = "
+                             + Convert.ToHexString(ticket.GetTitleKey(keys)).ToLowerInvariant() + "\n";
+                ExternalKeyReader.ReadTitleKeys(keys, new MemoryStream(Encoding.ASCII.GetBytes(entry)), null);
+            }
+            const ulong title = 0x0100152000023001UL;
+            const IntegrityCheckLevel check = IntegrityCheckLevel.ErrorOnInvalid;
+            using var metadataStorage = new LocalStorage(Path.Combine(input, "1fa7f2036e3aabdede91fa1cd78705ca.cnmt.nca"), FileAccess.Read);
+            var metadata = new Nca(keys, metadataStorage);
+            if (metadata.Header.TitleId != title || metadata.Header.ContentType != NcaContentType.Meta)
+                throw new InvalidDataException();
+            using var metaFs = metadata.OpenFileSystem(NcaSectionType.Data, check);
+            string metaOutput = Path.Combine(output, "meta");
+            Extractor.Extract(metaFs, metaOutput, null);
+            string[] cnmtFiles = Directory.GetFiles(metaOutput, "*.cnmt", SearchOption.AllDirectories);
+            if (cnmtFiles.Length != 1) throw new InvalidDataException();
+            using var cnmtStream = File.OpenRead(cnmtFiles[0]);
+            var cnmt = new Cnmt(cnmtStream);
+            if (cnmt.Type != LibHac.Ncm.ContentMetaType.AddOnContent || cnmt.TitleId != title ||
+                cnmt.ApplicationTitleId != 0x0100152000022000UL || cnmt.TitleVersion.Version != 65536 ||
+                cnmt.MinimumApplicationVersion.Version > 1507328 || cnmt.ContentEntries.Length != 1)
+                throw new InvalidDataException();
+            var content = cnmt.ContentEntries[0];
+            string id = Convert.ToHexString(content.NcaId).ToLowerInvariant();
+            if (content.Type != LibHac.Ncm.ContentType.Data || id != "a3e030a30e112d39de059a24f7c80b63" || content.Size != 114688)
+                throw new InvalidDataException();
+            string contentPath = Path.Combine(input, id + ".nca");
+            if (new FileInfo(contentPath).Length != content.Size ||
+                !SHA256.HashData(File.ReadAllBytes(contentPath)).SequenceEqual(content.Hash))
+                throw new InvalidDataException();
+            using var dataStorage = new LocalStorage(contentPath, FileAccess.Read);
+            var data = new Nca(keys, dataStorage);
+            if (data.Header.TitleId != title || data.Header.ContentType != NcaContentType.PublicData)
+                throw new InvalidDataException();
+            using var romfs = data.OpenFileSystem(NcaSectionType.Data, check);
+            Extractor.Extract(romfs, Path.Combine(output, "romfs"), null);
+            return 0;
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"DLC: {error.GetType().FullName} (0x{error.HResult:x8})");
+            return 20;
+        }
+    }
 }

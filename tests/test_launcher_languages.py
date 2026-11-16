@@ -62,12 +62,19 @@ class LanguageTests(unittest.TestCase):
                 expect(page.locator("html")).to_have_attribute("lang", "pt-BR")
                 expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
                 expect(page.locator("#friend-filter")).to_have_value("literal-private-value")
+                page.get_by_label("Idioma", exact=True).select_option("es")
+                expect(page.locator("html")).to_have_attribute("lang", "es")
+                expect(page.locator("#mp-mii-text")).to_have_text("Crea tu Mii para abrir salas o unirte a ellas.")
+                expect(page.get_by_role("button", name="Crear sala", exact=True)).to_be_visible()
+                expect(page.locator("#friend-filter")).to_have_value("literal-private-value")
                 page.get_by_label("Idioma", exact=True).select_option("en")
                 expect(page.get_by_role("button", name="Create room", exact=True)).to_be_visible()
+                expect(page.locator('#steam-host-manual')).to_have_text('Create manual room')
+                expect(page.locator('#steam-navigation option[value="manual"]')).to_have_text('Navigate manually in game')
                 page.get_by_role("button", name="Install", exact=True).click()
-                page.locator("#stage-build").click()
-                page.get_by_role("button", name="Start build", exact=True).click()
-                expect(page.locator("#notice")).to_contain_text("NPDM unavailable:")
+                expect(page.locator('#prepare-dlc-package')).to_have_attribute('placeholder', 'Leave empty to build without importing DLC')
+                expect(page.locator("#flow-step-2")).to_be_disabled()
+                expect(page.locator("#flow-guidance")).to_have_text("Install the tools to unlock game file selection.")
                 response = page.request.post(url + "/api/language", headers={"X-MK8-Token": token}, data=json.dumps({"language": "fr"}))
                 self.assertEqual(response.status, 400)
                 self.assertEqual(json.loads((folder / "language.json").read_text()), "en")
@@ -83,6 +90,11 @@ class LanguageTests(unittest.TestCase):
                 page.get_by_label("Language", exact=True).select_option("pt-BR")
                 page.reload()
                 expect(page.get_by_role("heading", name="Instalação", exact=True)).to_be_visible()
+                page.get_by_label("Idioma", exact=True).select_option("es")
+                expect(page.locator("html")).to_have_attribute("lang", "es")
+                page.reload()
+                expect(page.get_by_role("heading", name="Instalación", exact=True)).to_be_visible()
+                self.assertEqual(json.loads((folder / "language.json").read_text()), "es")
                 page.get_by_label("Idioma", exact=True).select_option("en")
                 expect(page.locator("html")).to_have_attribute("lang", "en")
                 token = page.locator('meta[name="mk8-token"]').get_attribute("content")
@@ -93,6 +105,9 @@ class LanguageTests(unittest.TestCase):
                 expect(page.locator("#build-summary")).to_have_text("Compiling for your PC · 42%")
                 page.get_by_label("Language", exact=True).select_option("pt-BR")
                 expect(page.locator("#build-phase")).to_have_text("Compilando para o seu PC")
+                page.get_by_label("Idioma", exact=True).select_option("es")
+                expect(page.locator("#build-phase")).to_have_text("Compilando para tu PC")
+                expect(page.locator("#build-summary")).to_have_text("Compilando para tu PC · 42%")
                 page.get_by_label("Idioma", exact=True).select_option("en")
                 expect(page.locator("#build-phase")).to_have_text("Compiling for your PC")
                 page.unroute("**/api/status")
@@ -110,6 +125,140 @@ class LanguageTests(unittest.TestCase):
                 if process.poll() is None:
                     process.terminate()
                 process.wait(timeout=10)
+
+    def test_rebuild_control_uses_existing_preparation(self):
+        """Recompilação visível, bilíngue e bloqueada durante operações, sem arquivos comerciais."""
+        page = self.browser.new_page(locale="en-US", viewport={"width": 1365, "height": 1024})
+        self.addCleanup(page.close)
+        errors, requests = [], []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        status = {
+            "version": "0.1.8", "room_menu": 0, "windowed": False, "last_report": None,
+            "data_dir": "C:/fixture", "native_dialogs": False, "tools_ready": True,
+            "setup": {"state": "idle"}, "files": {"folder": True, "ready": True},
+            "checks": [], "candidate": True, "candidate_stale": False, "installed": False,
+            "game_pid": None, "game_exit": None, "updates": {"configured": False},
+            "session": {"hosting": False, "slot": None, "connected": False, "internet_available": False},
+            "build": {"state": "candidate", "detail": "", "percent": 100,
+                      "started_ms": None, "duration_s": 20},
+        }
+        config = {"exefs": "C:/fixture/exefs", "base_package": "", "update_package": "", "prod_keys": ""}
+        language = "en"
+
+        def route(request):
+            nonlocal language
+            path = request.request.url.split("mk8.test", 1)[1]
+            if path.startswith("/api/"):
+                body = request.request.post_data_json if request.request.method == "POST" else None
+                requests.append((path, body))
+                data = {}
+                if path == "/api/status":
+                    data = status
+                elif path == "/api/config":
+                    data = config
+                elif path == "/api/game-folder":
+                    data = {"config": config}
+                elif path == "/api/username":
+                    data = "Teste"
+                elif path == "/api/language":
+                    language = body["language"]
+                request.fulfill(json={"ok": True, "data": data})
+            else:
+                file = WEB / ("index.html" if path == "/" else path.split("?", 1)[0][1:])
+                text = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".cjs": "text/javascript",
+                        ".json": "application/json", ".css": "text/css"}
+                if file.suffix in text:
+                    body = file.read_text(encoding="utf-8").replace("__TOKEN__", "test").replace("__LANGUAGE__", language)
+                    # Same rewrite as apps/launcher/src/server.rs for the vendored FFL.js modules.
+                    body = body.replace("from 'three'", "from '/vendor/three/three.module.js'")
+                    request.fulfill(body=body, content_type=text[file.suffix] + "; charset=utf-8")
+                else:  # The Mii editor's FFL.js also loads binary assets such as its .wasm module.
+                    binary = {".wasm": "application/wasm", ".png": "image/png", ".svg": "image/svg+xml"}[file.suffix]
+                    request.fulfill(body=file.read_bytes(), content_type=binary)
+
+        page.route("http://mk8.test/**", route)
+        page.goto("http://mk8.test/")
+        page.get_by_role("button", name="Install", exact=True).click()
+        rebuild = page.locator("#build")
+        expect(rebuild).to_have_text("Rebuild game")
+        expect(rebuild).to_be_visible()
+        expect(rebuild).to_be_enabled()
+        expect(page.locator("#build-done")).to_be_visible()
+        expect(page.locator("#go-play")).to_be_visible()
+        screenshots = ROOT / "local/screenshots"
+        screenshots.mkdir(parents=True, exist_ok=True)
+        for width, height in ((1365, 1024), (390, 844)):
+            page.set_viewport_size({"width": width, "height": height})
+            banner = page.locator("#build-done").bounding_box()
+            for button in (rebuild, page.locator("#go-play")):
+                expect(button).to_be_visible()
+                box = button.bounding_box()
+                self.assertGreaterEqual(box["y"], banner["y"] + banner["height"])
+                self.assertGreaterEqual(box["x"], 0)
+                self.assertLessEqual(box["x"] + box["width"], width)
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            page.screenshot(path=str(screenshots / f"launcher-rebuild-{width}.png"), full_page=True, animations="disabled")
+        page.set_viewport_size({"width": 1365, "height": 1024})
+        page.get_by_label("Language", exact=True).select_option("pt-BR")
+        expect(rebuild).to_have_text("Recompilar jogo")
+        page.get_by_label("Idioma", exact=True).select_option("en")
+        rebuild.click()
+        expect(page.locator("#build-done")).to_be_visible()
+        page.wait_for_function("!busy")
+        self.assertEqual([body for path, body in requests if path == "/api/prepare"], [{"dlc_package": ""}])
+        self.assertEqual([body for path, body in requests if path == "/api/game-folder"], [{"path": "C:/fixture"}])
+
+        # Ao reabrir, o manifesto existe e o supervisor começa no estado idle.
+        status["build"].update(state="idle")
+        page.reload()
+        page.get_by_role("button", name="Install", exact=True).click()
+        expect(rebuild).to_have_text("Rebuild game")
+        expect(rebuild).to_be_visible()
+        for field, value in (("game_pid", 123), ("setup", {"state": "running", "steps": [], "total": 0})):
+            previous = status[field]
+            status[field] = value
+            page.evaluate("refresh()")
+            expect(rebuild).to_be_disabled()
+            status[field] = previous
+        status["build"].update(state="running")
+        page.evaluate("refresh()")
+        expect(rebuild).to_be_disabled()
+        expect(rebuild).to_be_hidden()
+        for state in ("failed", "cancelled"):
+            status["build"].update(state=state)
+            page.evaluate("refresh()")
+            expect(rebuild).to_have_text("Try again")
+            expect(rebuild).to_be_visible()
+            expect(rebuild).to_be_enabled()
+        status["build"].update(state="idle")
+        status["candidate_stale"] = True
+        page.evaluate("refresh()")
+        expect(rebuild).to_have_text("Update build")
+        status.update(candidate=False, candidate_stale=False)
+        page.evaluate("refresh()")
+        expect(rebuild).to_have_text("Start build")
+        self.assertEqual(errors, [])
+
+    def test_installer_defaults_to_spanish_for_other_locales(self):
+        page = self.browser.new_page(locale="es-MX", viewport={"width": 880, "height": 620})
+
+        def route(request):
+            path = request.request.url.split("mk8.test", 1)[1]
+            if path.startswith("/api/"):
+                request.fulfill(json={"ok": True, "data": {"version": "0.2.0", "app": "C:\\Apps\\MK8-online", "data": "D:\\Games\\MK8-online", "desktop": True, "update": False, "needed_gib": 30}})
+                return
+            file = WEB / ("setup.html" if path == "/" else path[1:])
+            mime = {".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css"}[file.suffix]
+            request.fulfill(body=file.read_text(encoding="utf-8").replace("__TOKEN__", "test").replace("__LANGUAGE__", ""), content_type=mime + "; charset=utf-8")
+
+        try:
+            page.route("http://mk8.test/**", route)
+            page.goto("http://mk8.test/")
+            expect(page.get_by_role("heading", name="Bienvenido a MK8-online")).to_be_visible()
+            expect(page.locator("html")).to_have_attribute("lang", "es")
+            expect(page.locator("#language")).to_have_value("es")
+        finally:
+            page.close()
 
     def test_installer_switches_language_and_keeps_paths(self):
         page = self.browser.new_page(locale="pt-BR", viewport={"width": 880, "height": 620})
@@ -141,6 +290,8 @@ class LanguageTests(unittest.TestCase):
             page.route("http://mk8.test/**", route)
             page.goto("http://mk8.test/")
             expect(page.get_by_role("heading", name="Bem-vindo ao MK8-online")).to_be_visible()
+            page.get_by_label("Idioma", exact=True).select_option("es")
+            expect(page.get_by_role("heading", name="Bienvenido a MK8-online")).to_be_visible()
             page.get_by_label("Idioma", exact=True).select_option("en")
             expect(page.get_by_role("heading", name="Welcome to MK8-online")).to_be_visible()
             page.get_by_role("button", name="Get started").click()
@@ -154,6 +305,10 @@ class LanguageTests(unittest.TestCase):
             expect(page.locator("#space")).to_contain_text("Só 21,5 GB")
             expect(page.locator("#paths-error")).to_have_text("A instalação já está em andamento.")
             expect(page.locator("#data")).to_have_value("E:\\Instalar\\MK8-online")
+            page.get_by_label("Idioma", exact=True).select_option("es")
+            expect(page.locator("#space")).to_contain_text("Solo hay 21,5 GB libres")
+            expect(page.locator("#space")).to_contain_text("disco duro")
+            expect(page.locator("#paths-error")).to_have_text("La instalación ya está en curso.")
             page.get_by_label("Idioma", exact=True).select_option("en")
             expect(page.locator("html")).to_have_attribute("lang", "en")
             self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))

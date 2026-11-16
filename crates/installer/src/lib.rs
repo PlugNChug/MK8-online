@@ -1,4 +1,6 @@
 use mk8_manifest::{verify, Config, Installation, Result};
+pub mod ctgp;
+pub mod dlc;
 use serde::Serialize;
 pub mod avatar;
 pub mod mii;
@@ -212,8 +214,21 @@ fn spawn_game(
         return Err("Desative os recursos MiiModel antes de usar a cabeça convertida.".into());
     }
     mii::read(local)?;
+    let dlc_root = dlc::launch_root(local, install)?;
+    let pack = ctgp::launch_overlay(local, install)?;
+    // Online, the added cups stay off: each machine would decide alone which races are a CTGP cup's (the game sends
+    // course IDs, which the added cups borrow), so all play the game's cups and courses with the pack's files.
+    let cups = match network {
+        Some(_) => String::new(),
+        None => ctgp::launch_cups(local, install)?,
+    };
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
+    // The CTGP pack keeps its own saves (records and ghosts of its courses), seeded once from the regular ones.
+    let save_dir = match &pack {
+        Some(_) => ctgp::save_folder(&saves)?,
+        None => saves.join("save"),
+    };
     rotate_game_log(local)?;
     let log = fs::File::create(local.join("game.log")).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&install.executable.path);
@@ -228,7 +243,7 @@ fn spawn_game(
         .env("RECOMP_USER_NAME", username)
         .env("MK8_ROOM_MENU_SIGNAL", local.join("open-rooms"))
         .env("LARECOMP_DATA_ROOT", &saves)
-        .env("LARECOMP_SAVE_DIR", saves.join("save"))
+        .env("LARECOMP_SAVE_DIR", &save_dir)
         .env("LARECOMP_GAME_LIB", &install.files["gamelib"].path)
         .env(
             "SDL_VULKAN_LIBRARY",
@@ -239,6 +254,15 @@ fn spawn_game(
                 .ok_or("Pasta do runtime ausente")?
                 .join("vulkan-1.dll"),
         )
+        .env(
+            "MK8_DLC_ROOT",
+            dlc_root.as_deref().unwrap_or_else(|| Path::new("")),
+        )
+        .env(
+            "MK8_ROMFS_OVERLAY",
+            pack.as_deref().unwrap_or_else(|| Path::new("")),
+        )
+        .env("MK8_CUPS_EXTRA", &cups)
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
@@ -327,6 +351,9 @@ mod tests {
             data_root: root.clone(),
             shader_root: root.clone(),
             gameplay_verified: false,
+            dlc_supported: false,
+            pack_supported: false,
+            cups_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

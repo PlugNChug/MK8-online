@@ -211,8 +211,10 @@ def prepare(runtime):
     if text.count(POOL) != 1:
         raise ValueError('Memory pool boundary changed upstream')
     text = text.replace(POOL, POOL_TRACED)
-    text = replace(text, 'game_texture_final(t->addr); mk8_texture_release(t);',
-                   'game_texture_final(t->addr); __atomic_store_n(&t->mk8_finalized, 1, __ATOMIC_RELAXED); mk8_texture_release(t);')
+    # Cópias guest compartilham a única referência de Initialize; descritores/comandos mantêm as suas.
+    text = replace(text, 'if (t) { game_texture_final(t->addr); mk8_texture_release(t); }',
+                   'if (t && !__atomic_exchange_n(&t->mk8_finalized, 1, __ATOMIC_ACQ_REL)) '
+                   '{ game_texture_final(t->addr); mk8_texture_release(t); }')
     for kind in ('Texture', 'Sampler'):
         text = replace(text, f'NVN(nvn{kind}PoolFinalize) {{\n',
                        f'NVN(nvn{kind}PoolFinalize) {{\n    if (getenv("MK8_TRACE_VRAM")) LOG("[mk8:vram] {kind}PoolFinalize %llx\\n", (unsigned long long)A(0));\n')

@@ -8,15 +8,15 @@ Para as versões seguintes, aumente a versão compilada e publique a tag corresp
 
 ## Versões
 
-O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.2.0-alpha.1`). A 0.2.0 é uma release pública de testes, sem sufixo; o estado experimental, principalmente do multiplayer Steam, permanece explícito no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
+O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.3.0-alpha.1`). A 0.3.0 usa a tag sem sufixo `v0.3.0`, mas é marcada explicitamente como **pré-release** no GitHub e no workflow. Seu estado experimental e as limitações CTGP/Steam permanecem explícitos no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
 
 ## Pelo GitHub Actions (recomendado)
 
 ```powershell
-python scripts/release.py --bump 0.2.0-alpha.1   # altera Cargo.toml, tauri.conf.json e Cargo.lock
-git commit -am "Release 0.2.0-alpha.1"
-git tag v0.2.0-alpha.1
-git push origin master v0.2.0-alpha.1
+python scripts/release.py --bump 0.3.0   # altera Cargo.toml, tauri.conf.json e Cargo.lock
+git commit -am "Release 0.3.0"
+git tag v0.3.0
+git push origin master v0.3.0
 ```
 
 A tag dispara `.github/workflows/release.yml`, que:
@@ -24,7 +24,7 @@ A tag dispara `.github/workflows/release.yml`, que:
 1. roda `cargo fmt`, Clippy e os testes Rust;
 2. empacota o Launcher com `MK8_UPDATE_REPO` igual ao repositório, para que a build saiba onde procurar atualizações. Se a variável de repositório `MK8_RELAY_URL` existir, ela também entra na build;
 3. gera `MK8-online-<versão>-setup.exe`, o `.sha256` e as notas;
-4. publica o Release. Uma tag com `-` (por exemplo `-alpha.1`) vira pré-release.
+4. publica o Release. Uma tag com `-` (por exemplo `-alpha.1`) ou a tag `v0.3.0` vira pré-release.
 
 Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
 

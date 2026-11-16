@@ -27,12 +27,26 @@ use crate::{
 /// Window used as parent of native file dialogs; empty in headless mode.
 pub type DialogParent = Arc<OnceLock<tauri::WebviewWindow>>;
 
+#[derive(Clone, Copy)]
+struct PendingPlay {
+    role: &'static str,
+    automatic: bool,
+}
+
+impl PendingPlay {
+    fn auto_lan(self) -> Option<&'static str> {
+        self.automatic.then_some(self.role)
+    }
+}
+
 pub struct App {
     root: PathBuf,
     local: PathBuf,
     config: Config,
     build: Manager,
     setup: setup::Setup,
+    dlc_import: setup::Setup,
+    ctgp_import: setup::Setup,
     tools: Vec<Value>,
     host: Option<Host>,
     internet_room: Option<InternetRoom>,
@@ -42,6 +56,8 @@ pub struct App {
     game_exit: Option<String>,
     username: String,
     prepare_after_setup: bool,
+    prepare_dlc: Option<PathBuf>,
+    prepare_dlc_running: bool,
     room_menu: u64,
     mii_menu: u64,
     window: Option<DialogParent>,
@@ -58,7 +74,8 @@ pub struct App {
     /// Steam lobby invites received from friends (lobby, friend), until accepted or the room is gone.
     steam_invites: Vec<(u64, u64)>,
     /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
-    pending_play: Option<&'static str>,
+    pending_play: Option<PendingPlay>,
+    steam_auto_join: bool,
     /// The last Steam failure that happened outside a request (an accepted invite that could not be joined).
     steam_error: Option<String>,
     /// Steam was used before on this PC: connect again at start, so invites reach the launcher.
@@ -77,6 +94,30 @@ fn detect_keys(config: &Config) -> Option<PathBuf> {
     .into_iter()
     .flatten()
     .find(|p| p.is_file())
+}
+
+fn dlc_keys(config: &Config, package: &str, keys: &str) -> Option<PathBuf> {
+    if !keys.is_empty() {
+        return Some(keys.into());
+    }
+    if !config.prod_keys.is_empty() {
+        return Some((&config.prod_keys).into());
+    }
+    let mut config = config.clone();
+    config.base_package = package.into();
+    detect_keys(&config)
+}
+
+fn dlc_files(config: &Config, package: &str, keys: &str) -> Value {
+    let selected = dlc_keys(config, package, keys);
+    let package_path = Path::new(package);
+    json!({
+        "package_ok": !package.is_empty() && package_path.is_file()
+            && package_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("nsp")),
+        "keys_ok": selected.as_ref().is_some_and(|path| path.is_file()),
+        "keys_detected": keys.is_empty(),
+        "keys": selected.map(|path| path.to_string_lossy().into_owned()),
+    })
 }
 
 /// The three files of step 2 of the install screen, as the page shows them.
@@ -118,6 +159,7 @@ impl App {
         window: Option<DialogParent>,
     ) -> Self {
         let tools = setup::tool_checks(&root);
+        let steam_auto_join = load(&local.join("steam-navigation.json")).unwrap_or(true);
         let username = load(&local.join("username.json"))
             .ok()
             .filter(|name: &String| valid_username(name))
@@ -128,6 +170,8 @@ impl App {
             config,
             build: Manager::default(),
             setup: setup::Setup::default(),
+            dlc_import: setup::Setup::default(),
+            ctgp_import: setup::Setup::default(),
             tools,
             host: None,
             internet_room: None,
@@ -137,6 +181,8 @@ impl App {
             game_exit: None,
             username,
             prepare_after_setup: false,
+            prepare_dlc: None,
+            prepare_dlc_running: false,
             room_menu: 0,
             mii_menu: 0,
             window,
@@ -151,6 +197,7 @@ impl App {
             mii_download: Default::default(),
             steam_invites: Vec::new(),
             pending_play: None,
+            steam_auto_join,
             steam_error: None,
             steam_retry: None,
         }
@@ -176,41 +223,124 @@ impl App {
             || self.game.is_some()
     }
 
-    fn steam_host(&mut self) -> Result<Value> {
+    fn imports_running(&self) -> bool {
+        self.dlc_import.running() || self.ctgp_import.running()
+    }
+
+    /// The course pack the game receives at launch: its identity, empty with the pack off.
+    fn pack_active(&self) -> Result<String> {
+        match self.installation().or_else(|| self.candidate()) {
+            Some(install) => Ok(
+                mk8_installer::ctgp::launch_identity(&self.local, &install)?.unwrap_or_default()
+            ),
+            None => Ok(String::new()),
+        }
+    }
+
+    /// Same Booster Course Pass state the game receives at launch (installed and enabled).
+    fn dlc_active(&self) -> Result<bool> {
+        match self.installation().or_else(|| self.candidate()) {
+            Some(install) => Ok(mk8_installer::dlc::launch_root(&self.local, &install)?.is_some()),
+            None => Ok(false),
+        }
+    }
+
+    fn steam_host(&mut self, automatic: bool) -> Result<Value> {
+        self.poll_game();
+        self.check_room_preparation()?;
         if self.session_busy() {
             return Err("Encerre o jogo e a sessão atual antes de criar uma sala.".into());
         }
         self.mii_name()?;
-        let (room, host, invite) =
-            SteamRoom::host_live(&self.local, &self.identity(), &self.username)?;
+        let (room, host, invite) = SteamRoom::host_live(
+            &self.local,
+            &self.identity(),
+            &self.username,
+            self.dlc_active()?,
+            &self.pack_active()?,
+        )?;
         let gateway = Gateway::start(invite)?;
         let code = room.code.clone();
         let lobby_id = room.lobby_id.to_string();
         self.gateway = Some(gateway);
         self.host = Some(host);
         self.steam_room = Some(room);
-        self.pending_play = Some("host");
+        self.pending_play = Some(PendingPlay {
+            role: "host",
+            automatic,
+        });
         self.steam_error = None;
         let _ = fs::write(self.local.join("steam-enabled"), b"1");
         Ok(
-            json!({"code":code,"lobby_id":lobby_id,"message":"Sala criada! Convide seus amigos da Steam. O jogo abre sozinho na sala."}),
+            json!({"code":code,"lobby_id":lobby_id,"message": if automatic {
+                "Sala criada! Convide seus amigos da Steam. O jogo abre sozinho na sala."
+            } else {
+                "Sala Steam criada. No jogo, escolha seu Mii e abra LAN Play → Create Room. Depois convide seus amigos."
+            }}),
         )
     }
 
     fn steam_join(&mut self, lobby: &str) -> Result<()> {
-        if self.session_busy() {
-            return Err("Feche o jogo e encerre a sala atual antes de entrar em outra.".into());
-        }
+        self.check_room_preparation()?;
+        self.prepare_steam_join()?;
         self.mii_name()?;
         let identity = self.identity();
-        let (room, gateway) = SteamRoom::join_live(&self.local, lobby, &identity)?;
+        let (room, gateway) = SteamRoom::join_live(
+            &self.local,
+            lobby,
+            &identity,
+            self.dlc_active()?,
+            &self.pack_active()?,
+        )?;
         self.steam_invites
             .retain(|(l, _)| l.to_string() != lobby.trim());
         self.steam_room = Some(room);
         self.gateway = Some(gateway);
-        self.pending_play = Some("guest");
+        self.pending_play = Some(PendingPlay {
+            role: "guest",
+            automatic: self.steam_auto_join,
+        });
         self.steam_error = None;
         let _ = fs::write(self.local.join("steam-enabled"), b"1");
+        Ok(())
+    }
+
+    fn clear_steam_session(&mut self) {
+        self.pending_play = None;
+        self.gateway = None;
+        self.steam_room = None;
+        self.host = None;
+    }
+
+    fn prepare_steam_join(&mut self) -> Result<()> {
+        self.poll_game();
+        // A closed game can leave an idle guest transport behind when the host
+        // recreates its lobby. Stop its packet reader before joining the new one.
+        if self.game.is_none()
+            && self.pending_play.is_none()
+            && self.host.is_none()
+            && self.steam_room.is_some()
+        {
+            self.clear_steam_session();
+        }
+        if self.session_busy() {
+            return Err("Feche o jogo e encerre a sala atual antes de entrar em outra.".into());
+        }
+        Ok(())
+    }
+
+    fn check_room_preparation(&mut self) -> Result<()> {
+        if self.setup.running()
+            || self.build.poll().state == "running"
+            || self.imports_running()
+            || self.native_job.is_some()
+            || self.resources_job.is_some()
+            || self.prepare_dlc.is_some()
+        {
+            return Err(
+                "Aguarde a preparação terminar antes de abrir ou entrar em uma sala.".into(),
+            );
+        }
         Ok(())
     }
 
@@ -246,12 +376,12 @@ impl App {
                 }
             }
         }
-        if let Some(role) = self.pending_play {
+        if let Some(play) = self.pending_play {
             if self.game.is_some() {
                 self.pending_play = None;
             } else if self.gateway.as_ref().is_some_and(|g| g.connected()) {
                 self.pending_play = None;
-                if let Err(error) = self.start_game(true, Some(role)) {
+                if let Err(error) = self.start_game(true, play.auto_lan()) {
                     self.steam_error = Some(error);
                 }
             }
@@ -260,6 +390,11 @@ impl App {
 
     /// Starts the game (in the connected room when `online`); `auto_lan` makes it enter the LAN room by itself.
     fn start_game(&mut self, online: bool, auto_lan: Option<&str>) -> Result<u32> {
+        self.dlc_import.poll();
+        self.ctgp_import.poll();
+        if self.imports_running() {
+            return Err("Aguarde a importação do DLC ou do CTGP.".into());
+        }
         self.poll_native();
         self.poll_resources();
         if self.native_job.is_some() || self.resources_job.is_some() {
@@ -268,7 +403,7 @@ impl App {
         if self.game.is_some() {
             return Err("O jogo já está aberto.".into());
         }
-        if self.setup.running() || self.build.poll().state == "running" {
+        if self.setup.running() || self.imports_running() || self.build.poll().state == "running" {
             return Err("Aguarde a preparação.".into());
         }
         let install = self.installation();
@@ -304,11 +439,9 @@ impl App {
     }
 
     pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
-        let identity = self.identity();
-        if let Ok((room, gateway)) = SteamRoom::join_live(&self.local, lobby_id, &identity) {
-            self.steam_room = Some(room);
-            self.gateway = Some(gateway);
-            self.room_menu += 1;
+        match self.steam_join(lobby_id) {
+            Ok(()) => self.room_menu += 1,
+            Err(error) => self.steam_error = Some(error),
         }
     }
 
@@ -407,7 +540,10 @@ impl App {
     }
 
     fn store_config(&mut self, config: Config) -> Result<()> {
-        if self.prepare_after_setup || self.build.poll().state == "running" {
+        if self.prepare_after_setup
+            || self.build.poll().state == "running"
+            || self.imports_running()
+        {
             return Err("Aguarde a preparação para alterar os caminhos.".into());
         }
         let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
@@ -416,7 +552,50 @@ impl App {
         Ok(())
     }
 
+    /// The upstream DLC importer verifies and updates a completed candidate.
+    /// Keep optional import in this preparation flow, after a successful build.
+    fn finish_optional_dlc(&mut self, state: &str) {
+        if self.prepare_after_setup || self.setup.running() {
+            return;
+        }
+        if self.prepare_dlc_running && !self.dlc_import.running() {
+            self.prepare_dlc_running = false;
+            if self.dlc_import.status()["state"] != "done" {
+                self.build.record_start(Err(
+                    "Falha na importação opcional de DLC. Confira o log de DLC em Instalar.".into(),
+                ));
+            }
+        }
+        if matches!(state, "failed" | "cancelled") {
+            self.prepare_dlc = None;
+        }
+        if state != "candidate" {
+            return;
+        }
+        let Some(package) = self.prepare_dlc.take() else {
+            return;
+        };
+        let result = (|| {
+            let keys = dlc_keys(
+                &self.config,
+                package.to_str().ok_or("Caminho do DLC inválido.")?,
+                "",
+            )
+            .filter(|p| p.is_file())
+            .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+            self.dlc_import
+                .start_dlc(&self.root, &self.local, &package, &keys, false)
+        })();
+        match result {
+            Ok(()) => self.prepare_dlc_running = true,
+            Err(error) => self.build.record_start(Err(error)),
+        }
+    }
+
     fn start_build(&mut self) -> Result<()> {
+        if self.imports_running() {
+            return Err("Aguarde a importação do DLC ou do CTGP.".into());
+        }
         {
             let _guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
             save(&self.local.join("config.json"), &self.config)?;
@@ -471,16 +650,13 @@ impl App {
                     && !install.gameplay_verified
             })
     }
-    fn status(&mut self) -> Value {
-        self.poll_native();
-        self.poll_resources();
-        let mii_preparation = json!({
-            "native": {"state": self.native_state, "detail": self.native_detail},
-            "resources": {"state": self.resources_state, "detail": self.resources_detail}
-        });
+    fn poll_game(&mut self) {
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
             self.game_exit = Some(exit.to_string());
             self.game = None;
+            if self.steam_room.is_some() {
+                self.clear_steam_session();
+            }
             if !exit.success() {
                 // A crash leaves its report ready to send, before the next launch rotates the log.
                 let summary =
@@ -492,6 +668,18 @@ impl App {
                     .map(|p| p.display().to_string());
             }
         }
+    }
+
+    fn status(&mut self) -> Value {
+        self.dlc_import.poll();
+        self.ctgp_import.poll();
+        self.poll_native();
+        self.poll_resources();
+        let mii_preparation = json!({
+            "native": {"state": self.native_state, "detail": self.native_detail},
+            "resources": {"state": self.resources_state, "detail": self.resources_detail}
+        });
+        self.poll_game();
         self.poll_steam();
         let signal = self.local.join("open-rooms");
         if self.game.is_some() && fs::remove_file(self.local.join("open-miis")).is_ok() {
@@ -518,9 +706,14 @@ impl App {
                 let started = self.start_build();
                 self.build.record_start(started);
             }
+            if self.setup.status()["state"] != "done" {
+                self.prepare_dlc = None;
+            }
         }
         // A build records the launcher version that made it: the runtime fixes come with each version, so a game built
         // by an earlier one (an update kept the data folder) is offered for a rebuild, which reuses the finished stages.
+        let build = self.build.poll();
+        self.finish_optional_dlc(&build.state);
         let build = self.build.poll();
         let built_with = self.local.join("built-with.json");
         if build.state == "candidate"
@@ -538,6 +731,12 @@ impl App {
         let candidate_stale =
             candidate_exists && candidate_version.as_deref() != Some(update::CURRENT);
         let install = self.installation();
+        let dlc =
+            mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
+        let ctgp = mk8_installer::ctgp::status(
+            &self.local,
+            install.as_ref().or(self.candidate().as_ref()),
+        );
         let package_import =
             !self.config.base_package.is_empty() || !self.config.update_package.is_empty();
         let imported = self.local.join("imports/mk8-4.0.1");
@@ -564,10 +763,175 @@ impl App {
             .map(|room| room.code.clone())
             .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
             .or(p2p_code);
-        json!({"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
+        self.dlc_import.poll();
+        self.ctgp_import.poll();
+        if method == &Method::Post
+            && self.imports_running()
+            && !matches!(path, "/api/language" | "/api/browse" | "/api/dlc/files")
+        {
+            return Err("Aguarde a importação do DLC ou do CTGP.".into());
+        }
         match (method.as_str(), path) {
+            ("POST", "/api/dlc/files") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                Ok(dlc_files(
+                    &self.config,
+                    value["package"].as_str().unwrap_or(""),
+                    value["keys"].as_str().unwrap_or(""),
+                ))
+            }
+            ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/fonts") => crate::fonts::status(&self.local),
+            ("POST", "/api/settings")
+            | ("POST", "/api/fonts")
+            | ("POST", "/api/dlc/toggle")
+            | ("POST", "/api/dlc/import")
+            | ("POST", "/api/ctgp/toggle")
+            | ("POST", "/api/ctgp/import") => {
+                self.status();
+                if self.session_busy()
+                    || self.setup.running()
+                    || self.imports_running()
+                    || self.build.poll().state == "running"
+                {
+                    return Err("Feche o jogo ou aguarde a operação atual.".into());
+                }
+                let guards = mk8_build_manager::acquire_operation(&self.root, &self.local)?;
+                let pipeline = fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .read(true)
+                    .write(true)
+                    .open(self.local.join(".build.lock"))
+                    .map_err(|e| e.to_string())?;
+                pipeline
+                    .try_lock()
+                    .map_err(|_| "Já existe uma preparação usando esta pasta de dados.")?;
+                if path == "/api/fonts" {
+                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    let result = if let Some(directory) = value["directory"].as_str() {
+                        crate::fonts::import(&self.local, Path::new(directory))?
+                    } else {
+                        crate::fonts::select(
+                            &self.local,
+                            value["enabled"]
+                                .as_bool()
+                                .ok_or("Preferência de fontes inválida.")?,
+                        )?
+                    };
+                    return Ok(
+                        json!({"fonts":result,"message":"Fontes salvas. As alterações valem ao iniciar o jogo."}),
+                    );
+                }
+                if path == "/api/settings" {
+                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    crate::game_settings::write(&self.local, &value)?;
+                    return Ok(
+                        json!({"message":"Configurações salvas. As alterações valem ao iniciar o jogo."}),
+                    );
+                }
+                let install = self.installation().or_else(|| self.candidate()).ok_or(
+                    if path.starts_with("/api/ctgp/") {
+                        "Prepare o jogo antes de importar o CTGP."
+                    } else {
+                        "Prepare o jogo antes de importar DLC."
+                    },
+                )?;
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                if path == "/api/ctgp/toggle" {
+                    let enabled = value["enabled"]
+                        .as_bool()
+                        .ok_or("Preferência do CTGP inválida.")?;
+                    mk8_installer::ctgp::set_enabled(&self.local, &install, enabled)?;
+                    return Ok(json!({"message": "Preferência do CTGP salva."}));
+                }
+                if path == "/api/ctgp/import" {
+                    if !install.pack_supported {
+                        return Err("Atualize a build para usar o CTGP.".into());
+                    }
+                    let source = value["source"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(PathBuf::from)
+                        .filter(|p| p.is_dir())
+                        .ok_or("Selecione a pasta extraída do CTGP Deluxe.")?;
+                    let romfs = install.data_root.join("extracted/romfs");
+                    if !romfs.join("Course").is_dir() {
+                        return Err("Prepare o jogo antes de importar o CTGP.".into());
+                    }
+                    let reinstall = value
+                        .get("reinstall")
+                        .map(|value| value.as_bool().ok_or("Opção de reinstalação inválida."))
+                        .transpose()?
+                        .unwrap_or(false);
+                    let layout = match value
+                        .get("layout")
+                        .and_then(Value::as_str)
+                        .unwrap_or("base")
+                    {
+                        "base" => "base",
+                        "dlc" => "dlc",
+                        "dlc-late" => "dlc-late",
+                        "added" => "added",
+                        _ => return Err("Disposição das copas do CTGP inválida.".into()),
+                    };
+                    drop(guards);
+                    drop(pipeline);
+                    self.ctgp_import.start_ctgp(
+                        &self.root,
+                        &self.local,
+                        &source,
+                        &romfs,
+                        reinstall,
+                        layout,
+                    )?;
+                    return Ok(json!({"message": "Importação do CTGP iniciada."}));
+                }
+                if path == "/api/dlc/toggle" {
+                    let enabled = value["enabled"]
+                        .as_bool()
+                        .ok_or("Preferência de DLC inválida.")?;
+                    mk8_installer::dlc::set_enabled(&self.local, &install, enabled)?;
+                    return Ok(json!({"message": "Preferência de DLC salva."}));
+                }
+                let package = value["package"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("Selecione o NSP do DLC.")?;
+                if !install.dlc_supported {
+                    return Err("Atualize a build para usar DLC.".into());
+                }
+                let package = Path::new(package);
+                if !package.is_file()
+                    || !package
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp"))
+                {
+                    return Err("Selecione o NSP do DLC.".into());
+                }
+                let keys = dlc_keys(
+                    &self.config,
+                    package.to_str().ok_or("Caminho do DLC inválido.")?,
+                    value["keys"].as_str().unwrap_or(""),
+                )
+                .filter(|p| p.is_file())
+                .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+                let reinstall = value
+                    .get("reinstall")
+                    .map(|value| value.as_bool().ok_or("Opção de reinstalação inválida."))
+                    .transpose()?
+                    .unwrap_or(false);
+                drop(guards);
+                drop(pipeline);
+                self.dlc_import
+                    .start_dlc(&self.root, &self.local, package, &keys, reinstall)?;
+                Ok(json!({"message": "Importação do DLC iniciada."}))
+            }
+            ("GET", "/api/dlc/log") => Ok(json!({"text":self.log_tail("dlc.log")?})),
+            ("GET", "/api/ctgp/log") => Ok(json!({"text":self.log_tail("ctgp.log")?})),
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
@@ -764,9 +1128,12 @@ impl App {
             }
             ("POST", "/api/prepare") => {
                 self.status();
-                if self.game.is_some()
+                if self.session_busy()
                     || self.setup.running()
+                    || self.imports_running()
                     || self.build.poll().state == "running"
+                    || self.native_job.is_some()
+                    || self.resources_job.is_some()
                 {
                     return Err("Feche o jogo ou aguarde a operação atual.".into());
                 }
@@ -792,12 +1159,30 @@ impl App {
                         return Err("prod.keys não encontrado. Selecione as chaves do seu console no campo da importação.".into());
                     }
                 }
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let package = value["dlc_package"].as_str().unwrap_or("").trim();
+                let dlc = if package.is_empty() {
+                    None
+                } else {
+                    if !Path::new(package).is_file() {
+                        return Err(
+                            "Selecione um NSP válido para a DLC opcional ou deixe o campo vazio."
+                                .into(),
+                        );
+                    }
+                    dlc_keys(&self.config, package, "")
+                        .filter(|p| p.is_file())
+                        .ok_or("Selecione as chaves do seu console para importar o DLC.")?;
+                    Some(PathBuf::from(package))
+                };
                 self.tools = setup::tool_checks(&self.root);
                 if self.tools.iter().all(|tool| tool["ok"] == true) {
                     self.start_build()?;
+                    self.prepare_dlc = dlc;
                     Ok(json!({"message":"Preparando o jogo."}))
                 } else {
                     self.setup.start_guarded(&self.root, &self.local)?;
+                    self.prepare_dlc = dlc;
                     self.prepare_after_setup = true;
                     Ok(json!({"message":"Instalando ferramentas. A preparação começa em seguida."}))
                 }
@@ -807,7 +1192,7 @@ impl App {
                 if self.game.is_some() {
                     return Err("Feche o jogo antes de instalar ferramentas.".into());
                 }
-                if self.build.poll().state == "running" {
+                if self.build.poll().state == "running" || self.imports_running() {
                     return Err(
                         "Aguarde ou cancele a preparação antes de instalar ferramentas.".into(),
                     );
@@ -818,12 +1203,13 @@ impl App {
             ("POST", "/api/setup/cancel") => {
                 self.setup.cancel()?;
                 self.prepare_after_setup = false;
+                self.prepare_dlc = None;
                 self.tools = setup::tool_checks(&self.root);
                 Ok(json!({"message":"Instalação de ferramentas cancelada."}))
             }
             ("POST", "/api/setup/check") => {
-                if self.setup.running() {
-                    return Err("Aguarde a instalação de ferramentas terminar.".into());
+                if self.setup.running() || self.imports_running() {
+                    return Err("Aguarde a operação atual terminar.".into());
                 }
                 self.tools = setup::tool_checks(&self.root);
                 let missing = self.tools.iter().filter(|c| c["ok"] != true).count();
@@ -838,8 +1224,8 @@ impl App {
                 if self.game.is_some() {
                     return Err("Feche o jogo antes de preparar uma instalação.".into());
                 }
-                if self.setup.running() {
-                    return Err("Aguarde a instalação de ferramentas terminar.".into());
+                if self.setup.running() || self.imports_running() {
+                    return Err("Aguarde a operação atual terminar.".into());
                 }
                 self.start_build()?;
                 Ok(json!({"message":"Preparação iniciada. Acompanhe o diagnóstico."}))
@@ -933,7 +1319,20 @@ impl App {
                     json!({"code":code,"message":"Sala P2P criada! Código único copiado — envie aos seus amigos."}),
                 )
             }
-            ("POST", "/api/session/host-steam" | "/api/steam/host") => self.steam_host(),
+            ("POST", "/api/session/host-steam" | "/api/steam/host") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                self.steam_host(value["automatic"].as_bool().unwrap_or(true))
+            }
+            ("GET", "/api/steam/navigation") => Ok(json!({"automatic":self.steam_auto_join})),
+            ("POST", "/api/steam/navigation") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let automatic = value["automatic"].as_bool().ok_or("Opção inválida.")?;
+                save(&self.local.join("steam-navigation.json"), &automatic)?;
+                self.steam_auto_join = automatic;
+                Ok(
+                    json!({"automatic":automatic,"message":"Preferência de convites salva neste computador."}),
+                )
+            }
             ("GET", "/api/steam/friends") => {
                 let friends = steam::friends(&self.local)?;
                 let _ = fs::write(self.local.join("steam-enabled"), b"1");
@@ -976,9 +1375,11 @@ impl App {
                     return Err("Sala inválida.".into());
                 }
                 self.steam_join(&lobby)?;
-                Ok(
-                    json!({"message":"Conectado à sala do seu amigo. O jogo abre sozinho e entra na sala."}),
-                )
+                Ok(json!({"message": if self.steam_auto_join {
+                    "Conectado à sala do seu amigo. O jogo abre sozinho e entra na sala."
+                } else {
+                    "Conectado pela Steam. No jogo, escolha seu Mii e abra LAN Play → Lobby para entrar na sala do amigo."
+                }}))
             }
             ("POST", "/api/steam/dismiss") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -1024,7 +1425,13 @@ impl App {
                     .trim();
                 let identity = self.identity();
                 if text.starts_with("MK8S-") || text.starts_with("steam://") {
-                    let (room, gateway) = SteamRoom::join_live(&self.local, text, &identity)?;
+                    let (room, gateway) = SteamRoom::join_live(
+                        &self.local,
+                        text,
+                        &identity,
+                        self.dlc_active()?,
+                        &self.pack_active()?,
+                    )?;
                     self.steam_room = Some(room);
                     self.gateway = Some(gateway);
                     return Ok(
@@ -1098,11 +1505,40 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Pasta aberta."}))
             }
+            ("POST", "/api/support/github") => {
+                if self.window.is_none() {
+                    return Err("Na prévia web, use o link do GitHub diretamente.".into());
+                }
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                let url = if value["list"] == true {
+                    tauri::Url::parse("https://github.com/Vnnc1/MK8-online/issues")
+                        .map_err(|e| e.to_string())?
+                } else {
+                    report::github_issue_url(
+                        value["title"].as_str().unwrap_or(""),
+                        value["body"].as_str().unwrap_or(""),
+                    )?
+                };
+                let executable = std::env::var_os("SystemRoot")
+                    .map(|root| PathBuf::from(root).join("System32/rundll32.exe"))
+                    .filter(|path| path.is_file())
+                    .ok_or("Não foi possível localizar o abridor de links do Windows.")?;
+                let mut command = std::process::Command::new(executable);
+                command.args(["url.dll,FileProtocolHandler", url.as_str()]);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    command.creation_flags(0x08000000);
+                }
+                command.spawn().map_err(|e| e.to_string())?;
+                Ok(json!({"message":"Abrindo o GitHub no navegador. Revise antes de publicar."}))
+            }
             ("POST", "/api/update/check") => update::check(),
             ("POST", "/api/update/install") => {
                 self.status();
-                if self.game.is_some()
+                if self.session_busy()
                     || self.setup.running()
+                    || self.imports_running()
                     || self.build.poll().state == "running"
                 {
                     return Err("Feche o jogo e aguarde a preparação antes de atualizar.".into());
@@ -1128,52 +1564,69 @@ pub(crate) fn response(req: Request, code: u16, text: String, mime: &str) {
 fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
     let mut res = Response::from_data(bytes).with_status_code(code);
     for (key,value) in [("Content-Type",mime),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Referrer-Policy","no-referrer"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {res.add_header(Header::from_bytes(key,value).unwrap());}
-    let _ = req.respond(res);
+    // The loop serves one request at a time. A body larger than the socket buffers waits for the page to read
+    // it; the Mii creator reads the AFL only after FFL's wasm arrives from this same loop, so writing it here
+    // froze every launcher request (issues #15/#16). Large bodies are written on their own thread.
+    if res.data_length().unwrap_or(0) > 32 * 1024 {
+        std::thread::spawn(move || {
+            let _ = req.respond(res);
+        });
+    } else {
+        let _ = req.respond(res);
+    }
 }
 /// Opens a native folder/file picker on its own thread so the API keeps
 /// answering status requests while the dialog is open.
 fn browse(req: Request, body: &str, parent: &DialogParent) {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
-    let english = value["language"] == "en";
+    let language = value["language"].as_str().unwrap_or("pt-BR").to_string();
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
+        Some("dlc") => Some((
+            crate::language::pick(&language, "NSP do DLC", "DLC NSP", "NSP del DLC"),
+            &["nsp"][..],
+        )),
         Some("nacp") => Some((
-            if english {
-                "NACP metadata"
-            } else {
-                "Metadados NACP"
-            },
+            crate::language::pick(
+                &language,
+                "Metadados NACP",
+                "NACP metadata",
+                "Metadatos NACP",
+            ),
             &["nacp"][..],
         )),
         Some("package") => Some((
-            if english {
-                "MK8 packages"
-            } else {
-                "Pacotes MK8"
-            },
+            crate::language::pick(&language, "Pacotes MK8", "MK8 packages", "Paquetes de MK8"),
             &["nsz", "nsp"][..],
         )),
         Some("keys") => Some((
-            if english {
-                "Console keys"
-            } else {
-                "Chaves do console"
-            },
+            crate::language::pick(
+                &language,
+                "Chaves do console",
+                "Console keys",
+                "Claves de la consola",
+            ),
             &["keys"][..],
         )),
         Some("afl") => Some((
-            if english {
-                "Mii parts library"
-            } else {
-                "Biblioteca de peças Mii"
-            },
+            crate::language::pick(
+                &language,
+                "Biblioteca de peças Mii",
+                "Mii parts library",
+                "Biblioteca de partes Mii",
+            ),
             &["dat"][..],
         )),
         _ => None,
     };
     let title = value["title"]
         .as_str()
-        .unwrap_or(if english { "Select" } else { "Selecionar" })
+        .unwrap_or(crate::language::pick(
+            &language,
+            "Selecionar",
+            "Select",
+            "Seleccionar",
+        ))
         .chars()
         .take(120)
         .collect::<String>();
@@ -1196,11 +1649,12 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
             dialog
                 .add_filter(name, extensions)
                 .add_filter(
-                    if english {
-                        "All files"
-                    } else {
-                        "Todos os arquivos"
-                    },
+                    crate::language::pick(
+                        &language,
+                        "Todos os arquivos",
+                        "All files",
+                        "Todos los archivos",
+                    ),
                     &["*"],
                 )
                 .pick_file()
@@ -1218,6 +1672,8 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
 }
 
 pub fn serve(mut app: App, server: Server, authority: String, url: String, token: String) {
+    #[cfg(debug_assertions)]
+    let web_root = std::env::var_os("MK8_WEB_ROOT").map(PathBuf::from);
     for mut req in server.incoming_requests() {
         let host = req
             .headers()
@@ -1230,6 +1686,18 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
         }
         let path = req.url().to_string();
         let method = req.method().clone();
+        #[cfg(debug_assertions)]
+        if let (Method::Get, Some(root)) = (&method, &web_root) {
+            if let Some(result) =
+                crate::debug_web::asset(root, &path, &token, &crate::language::read(&app.local))
+            {
+                match result {
+                    Ok((source, mime)) => response(req, 200, source, mime),
+                    Err(error) => response(req, 500, format!("Debug asset: {error}"), "text/plain"),
+                }
+                continue;
+            }
+        }
         if method == Method::Get && path == "/" {
             response(
                 req,
@@ -1256,6 +1724,51 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 200,
                 include_str!("../web/en.json").into(),
                 "application/json; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/es.json" {
+            response(
+                req,
+                200,
+                include_str!("../web/es.json").into(),
+                "application/json; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/workspace.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/workspace.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/installation.js" {
+            response(
+                req,
+                200,
+                include_str!("../web/installation.js").into(),
+                "text/javascript; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/workspace.css" {
+            response(
+                req,
+                200,
+                include_str!("../web/workspace.css").into(),
+                "text/css; charset=utf-8",
+            );
+            continue;
+        }
+        if method == Method::Get && path == "/installation.css" {
+            response(
+                req,
+                200,
+                include_str!("../web/installation.css").into(),
+                "text/css; charset=utf-8",
             );
             continue;
         }
@@ -1400,6 +1913,18 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
+        if method == Method::Get && path == "/api/report/download" {
+            match report::download(&app.local, app.last_report.as_deref()) {
+                Ok(bytes) => binary_response(req, 200, bytes, "application/zip"),
+                Err(error) => response(
+                    req,
+                    400,
+                    json!({"ok":false,"error":error}).to_string(),
+                    "application/json",
+                ),
+            }
+            continue;
+        }
         if method == Method::Get
             && matches!(
                 path.as_str(),
@@ -1483,6 +2008,255 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dlc_file_readiness_uses_real_files_and_the_importers_key_selection() {
+        let root = std::env::temp_dir().join(format!("mk8-dlc-fields-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let package = root.join("dlc.nsp");
+        let keys = root.join("prod.keys");
+        fs::write(&package, b"pacote autoral").unwrap();
+        fs::write(&keys, b"chaves autorais").unwrap();
+        let config = Config {
+            prod_keys: keys.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        let state = dlc_files(&config, package.to_str().unwrap(), "");
+        assert_eq!(state["package_ok"], true);
+        assert_eq!(state["keys_ok"], true);
+        assert_eq!(state["keys_detected"], true);
+        assert_eq!(state["keys"], config.prod_keys);
+        let detected = dlc_files(&Config::default(), package.to_str().unwrap(), "");
+        assert_eq!(detected["keys_ok"], true);
+        assert_eq!(detected["keys"], config.prod_keys);
+        let missing = root.join("missing.keys");
+        assert_eq!(
+            dlc_files(
+                &config,
+                package.to_str().unwrap(),
+                missing.to_str().unwrap()
+            )["keys_ok"],
+            false
+        );
+        fs::remove_file(&package).unwrap();
+        fs::remove_file(&keys).unwrap();
+        let state = dlc_files(&config, package.to_str().unwrap(), "");
+        assert_eq!(state["package_ok"], false);
+        assert_eq!(state["keys_ok"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn dlc_changes_refuse_resources_owned_by_another_session() {
+        let root = std::env::temp_dir().join(format!("mk8-dlc-lock-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let guards = mk8_build_manager::acquire_game(&root, &root).unwrap();
+        let error = app
+            .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        let error = app
+            .handle(&Method::Post, "/api/fonts", r#"{"enabled":false}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("font-library.json").exists());
+        let error = app
+            .handle(&Method::Post, "/api/settings", r#"{"volume":"0.5"}"#)
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("user-no-mii/mk8d.ini").exists());
+        let error = app
+            .handle(
+                &Method::Post,
+                "/api/dlc/import",
+                r#"{"package":"fixture.nsp"}"#,
+            )
+            .unwrap_err();
+        assert!(error.contains("Outra instância"), "{error}");
+        assert!(!root.join("dlc.json").exists());
+        drop(guards);
+        let pipeline = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(".build.lock"))
+            .unwrap();
+        pipeline.try_lock().unwrap();
+        let error = app
+            .handle(&Method::Post, "/api/dlc/toggle", r#"{"enabled":true}"#)
+            .unwrap_err();
+        assert!(error.contains("Já existe uma preparação"), "{error}");
+        drop(pipeline);
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    struct LocalSteamFixture;
+    impl steam::P2PBackend for LocalSteamFixture {
+        fn local_user(&self) -> u64 {
+            42
+        }
+        fn tick(&self) {}
+        fn send(&self, _: u64, _: i32, _: &[u8], _: bool) -> bool {
+            false
+        }
+        fn recv(&self, _: i32, _: &mut [u8]) -> Option<(usize, u64)> {
+            None
+        }
+    }
+
+    #[test]
+    fn closed_game_and_idle_guest_release_steam_workers_before_next_join() {
+        let root = std::env::temp_dir().join(format!("mk8-rejoin-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        for host_role in [false, true] {
+            let (room, host, invite) = SteamRoom::host_with_backend(
+                Arc::new(LocalSteamFixture),
+                17,
+                42,
+                "fixture",
+                "Test",
+            )
+            .unwrap();
+            let gateway = Gateway::start(invite).unwrap();
+            let address = gateway.local_addr;
+            app.gateway = Some(gateway);
+            app.steam_room = Some(room);
+            if host_role {
+                app.host = Some(host);
+            } else {
+                drop(host);
+            }
+            let mut child = std::process::Command::new("cmd.exe")
+                .args(["/C", "exit 0"])
+                .spawn()
+                .unwrap();
+            child.wait().unwrap();
+            app.game = Some(child);
+            app.prepare_steam_join().unwrap();
+            assert!(!app.session_busy());
+            assert!(app.pending_play.is_none());
+            // Joining Drop waits for both socket workers. On Windows, release of
+            // the port can complete just after the worker handles are closed.
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                match std::net::UdpSocket::bind(address) {
+                    Ok(_) => break,
+                    Err(error) if Instant::now() >= deadline => {
+                        panic!("gateway port stayed open: {error}")
+                    }
+                    Err(_) => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+        }
+        // Idle guest without a tracked game (e.g. failed startup) is also replaceable.
+        let (room, host, invite) =
+            SteamRoom::host_with_backend(Arc::new(LocalSteamFixture), 18, 42, "fixture", "Test")
+                .unwrap();
+        app.gateway = Some(Gateway::start(invite).unwrap());
+        app.steam_room = Some(room);
+        app.prepare_steam_join().unwrap();
+        assert!(!app.session_busy());
+        drop(host);
+        // A running game must never be stopped or detached by a new invitation.
+        app.game = Some(
+            std::process::Command::new("cmd.exe")
+                .args(["/C", "set /p value="])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let rejected = app.prepare_steam_join().is_err();
+        let still_running = app.game.as_mut().unwrap().try_wait().unwrap().is_none();
+        app.game.as_mut().unwrap().kill().unwrap();
+        app.game.as_mut().unwrap().wait().unwrap();
+        app.game = None;
+        assert!(rejected && still_running);
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manual_launch_keeps_a_pending_role_without_auto_lan() {
+        for role in ["host", "guest"] {
+            assert_eq!(
+                PendingPlay {
+                    role,
+                    automatic: true
+                }
+                .auto_lan(),
+                Some(role)
+            );
+            let manual = PendingPlay {
+                role,
+                automatic: false,
+            };
+            assert_eq!(manual.role, role);
+            assert_eq!(manual.auto_lan(), None);
+        }
+    }
+
+    #[test]
+    fn invite_navigation_is_persisted_and_invalid_choice_is_rejected() {
+        let root = std::env::temp_dir().join(format!("mk8-navigation-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        assert!(app.steam_auto_join);
+        app.handle(
+            &Method::Post,
+            "/api/steam/navigation",
+            r#"{"automatic":false}"#,
+        )
+        .unwrap();
+        assert!(!app.steam_auto_join);
+        assert!(app
+            .handle(
+                &Method::Post,
+                "/api/steam/navigation",
+                r#"{"automatic":"false"}"#
+            )
+            .is_err());
+        drop(app);
+        let app = App::new(root.clone(), root.clone(), Config::default(), None);
+        assert!(!app.steam_auto_join);
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_or_cancelled_build_clears_optional_dlc_without_changing_preference() {
+        let root = std::env::temp_dir().join(format!("mk8-prepare-dlc-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("dlc.json"), b"previous preference").unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        // A previous candidate must not start the new import while tools install.
+        app.prepare_after_setup = true;
+        app.prepare_dlc = Some(root.join("optional.nsp"));
+        app.finish_optional_dlc("candidate");
+        assert!(app.prepare_dlc.is_some());
+        app.prepare_after_setup = false;
+        // Missing keys fail visibly after build completion and consume the request once.
+        app.finish_optional_dlc("candidate");
+        assert!(app.prepare_dlc.is_none());
+        assert_eq!(app.build.poll().state, "failed");
+        assert!(!app.imports_running());
+        for state in ["failed", "cancelled"] {
+            app.prepare_dlc = Some(root.join("optional.nsp"));
+            app.finish_optional_dlc("running");
+            assert!(app.prepare_dlc.is_some());
+            app.finish_optional_dlc(state);
+            assert!(app.prepare_dlc.is_none());
+            assert!(!app.imports_running());
+        }
+        assert_eq!(
+            fs::read(root.join("dlc.json")).unwrap(),
+            b"previous preference"
+        );
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn candidate_network_identity_uses_content_and_launch_still_checks_hashes() {
         let root =
@@ -1503,6 +2277,9 @@ mod tests {
             data_root: root.clone(),
             shader_root: root.clone(),
             gameplay_verified: false,
+            dlc_supported: false,
+            pack_supported: false,
+            cups_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

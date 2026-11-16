@@ -16,9 +16,10 @@ from native import compiler_path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "e1ace5248218fa6393ec1637ce8c2c7943fb1d126c2dea93135d641cfd692183"
+BASE_VARIANTS = (BASE, "6d1fd4733f0e29b754081d2bf0c56d702ad89a86ea30e67b69bb84a0a66c8b0d")
 PATCH = "9b5ca1863da58ddfa3012591878ef6704cc1f39525d50b6c4252c550233a83b5"
 CONTROL = "796606c9e2b371b4a3692fb7125dc01f143b26de237a4969f73db5dfe60ba1ce"
-SIZES = {BASE: 7242874880, PATCH: 4848707072, CONTROL: 1521152}
+SIZES = {**dict.fromkeys(BASE_VARIANTS, 7242874880), PATCH: 4848707072, CONTROL: 1521152}
 ROMFS_BUDGET = 12 * GIB
 HEADER = 0x4000
 CHUNK = 1024 * 1024
@@ -131,6 +132,17 @@ def ncz_chunks(entry, size):
                 i += 1
 
 
+def base_content(index):
+    matches = [digest for digest in BASE_VARIANTS
+               if any(digest[:32].encode() + extension in index for extension in (b".nca", b".ncz"))]
+    if not matches:
+        raise ValueError("Conteúdo do jogo base não corresponde às variantes verificadas do perfil. "
+                         "Selecione um pacote compatível ou uma pasta já extraída.")
+    if len(matches) != 1:
+        raise ValueError("Pacote base ambíguo: contém mais de uma variante de programa suportada.")
+    return matches[0]
+
+
 def write_nca(stream, index, digest, target):
     stem = digest[:32].encode()
     member = next((name for name in (stem + b".nca", stem + b".ncz") if name in index), None)
@@ -223,7 +235,8 @@ def prepare(config, local, validate_game_identity):
             remove_owned(target, local / "imports")
     if not packages:
         raise ValueError("Selecione os pacotes base e atualização 4.0.1 e o prod.keys.")
-    reserve = 4 * GIB + sum(SIZES.values()) + ROMFS_BUDGET + 128 * 1024**2
+    reserve = (4 * GIB + max(SIZES[digest] for digest in BASE_VARIANTS) + SIZES[PATCH] + SIZES[CONTROL]
+               + ROMFS_BUDGET + 128 * 1024**2)
     try:
         require_space(local, reserve)
     except ValueError as error:
@@ -247,12 +260,13 @@ def prepare(config, local, validate_game_identity):
         output.mkdir()
         a, b = (stack.enter_context(path.open("rb")) for path in (base, patch))
         base_index, patch_index = entries(a, base.stat().st_size), entries(b, patch.stat().st_size)
+        base_digest = base_content(base_index)
         title_keys = [*tickets(a, base_index), *tickets(b, patch_index)]
         print("Importação: reconstruindo os arquivos NCA dos pacotes.", flush=True)
         files = [scratch / name for name in ("base.nca", "patch.nca", "control.nca")]
         # The three NCAs at once, each through its own file handle (Zstandard, AES and SHA-256 release the GIL):
         # the base no longer waits for the update.
-        jobs = list(zip((base, patch, patch), (base_index, patch_index, patch_index), (BASE, PATCH, CONTROL), files))
+        jobs = list(zip((base, patch, patch), (base_index, patch_index, patch_index), (base_digest, PATCH, CONTROL), files))
 
         def rebuild(job):
             package, index, digest, file = job

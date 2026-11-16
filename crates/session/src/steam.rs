@@ -27,6 +27,9 @@ const LOBBY_ENTER_CALLBACK: c_int = 504;
 const ELOBBY_TYPE_FRIENDS_ONLY: c_int = 1;
 const EP2P_SEND_UNRELIABLE_NO_DELAY: c_int = 1;
 const EP2P_SEND_RELIABLE: c_int = 2;
+// Steam rejects unreliable packets above this size. Larger encrypted datagrams
+// need its reliable fragmentation/reassembly; small game packets keep low latency.
+const STEAM_UNRELIABLE_MAX: usize = 1200;
 const P2P_CHANNEL_CONTROL: c_int = 0;
 const P2P_CHANNEL_DATA: c_int = 1;
 const DEFAULT_APP_ID: &str = "480";
@@ -36,6 +39,54 @@ const GAME_RICH_PRESENCE_JOIN_REQUESTED: c_int = 337; // "Join game" on a friend
 const LOBBY_INVITE: c_int = 503; // a friend invited us
 const P2P_SESSION_REQUEST: c_int = 1202;
 const FRIEND_FLAG_IMMEDIATE: c_int = 4;
+/// Lobby data key with the host's effective Booster Course Pass state ("1" installed and enabled).
+pub const DLC_KEY: &str = "mk8_dlc";
+
+/// Players must share the same DLC state: otherwise the vote can offer tracks one game lacks.
+/// A lobby without the key comes from a launcher without DLC support, so its host has none.
+pub fn check_dlc(host: Option<&str>, local: bool) -> Result<()> {
+    let host = match host {
+        None | Some("") | Some("0") => false,
+        Some("1") => true,
+        Some(_) => return Err("Sala da Steam com estado de DLC inválido.".into()),
+    };
+    match (host, local) {
+        (true, false) => Err(
+            "A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar."
+                .into(),
+        ),
+        (false, true) => Err(
+            "A sala não usa o Booster Course Pass. Desative o DLC em Configurações para entrar."
+                .into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// Lobby data key with the host's CTGP pack: its identity (64 hex digits), "0" or absent without one.
+pub const PACK_KEY: &str = "mk8_ctgp";
+
+/// Players must share the same course pack: its courses take the place of others, so a different pack (or none)
+/// would put players on different tracks. `local` is the local pack's identity, empty without one.
+pub fn check_pack(host: Option<&str>, local: &str) -> Result<()> {
+    let host = match host {
+        None | Some("") | Some("0") => "",
+        Some(id) if id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()) => id,
+        Some(_) => return Err("Sala da Steam com pacote CTGP inválido.".into()),
+    };
+    match (host.is_empty(), local.is_empty()) {
+        (false, true) => Err(
+            "A sala usa o CTGP Deluxe. Importe e ative o CTGP em Configurações para entrar.".into(),
+        ),
+        (true, false) => Err(
+            "A sala não usa o CTGP Deluxe. Desative o CTGP em Configurações para entrar.".into(),
+        ),
+        (false, false) if !host.eq_ignore_ascii_case(local) => Err(
+            "A sala usa outra versão do CTGP Deluxe. Importe a mesma versão para entrar.".into(),
+        ),
+        _ => Ok(()),
+    }
+}
 
 #[repr(C, packed(8))]
 #[derive(Clone, Copy, Default)]
@@ -53,10 +104,24 @@ struct LobbyEnter {
     response: u32,
 }
 
+struct Library(isize);
+
+impl Drop for Library {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::Foundation::FreeLibrary(self.0 as _);
+        }
+    }
+}
+
+type InterfaceAccessor = unsafe extern "C" fn() -> *mut c_void;
+
 struct Api {
-    _handle: isize,
+    _library: Library,
     is_steam_running: unsafe extern "C" fn() -> bool,
     init: unsafe extern "C" fn() -> bool,
+    shutdown: unsafe extern "C" fn(),
     run_callbacks: unsafe extern "C" fn(),
     steam_user: unsafe extern "C" fn() -> *mut c_void,
     steam_friends: unsafe extern "C" fn() -> *mut c_void,
@@ -270,6 +335,27 @@ fn load_symbol<T>(_handle: isize, name: &CStr) -> Result<T> {
     ))
 }
 
+// Flat C accessors are versioned exports; SteamUser() and friends are normally
+// C++ header helpers, not DLL exports. Keep legacy exports for existing adapters.
+// Do not guess newer ABI versions or substitute an unrelated interface.
+fn resolve_interface(
+    versioned: &CStr,
+    legacy: &CStr,
+    mut lookup: impl FnMut(&CStr) -> Result<InterfaceAccessor>,
+) -> Result<InterfaceAccessor> {
+    lookup(versioned).or_else(|_| lookup(legacy)).map_err(|_| {
+        format!(
+            "DLL Steam incompatível: interface exigida {} (ou {}) ausente.",
+            versioned.to_string_lossy(),
+            legacy.to_string_lossy()
+        )
+    })
+}
+
+fn load_interface(handle: isize, versioned: &CStr, legacy: &CStr) -> Result<InterfaceAccessor> {
+    resolve_interface(versioned, legacy, |name| load_symbol(handle, name))
+}
+
 pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(env_path) = std::env::var("MK8_STEAM_DLL") {
@@ -284,23 +370,154 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
             paths.push(parent.join("steam_api64.dll"));
         }
     }
-    // Check common Steam install folder for any user-installed game's redistributable steam_api64.dll
-    for base in [
-        r"C:\Program Files (x86)\Steam\steamapps\common",
-        r"C:\Program Files\Steam\steamapps\common",
-    ] {
-        let dir = Path::new(base);
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten().take(40) {
-                let candidate = entry.path().join("steam_api64.dll");
-                if candidate.is_file() {
-                    paths.push(candidate);
-                    break;
+    // An explicit/local DLL takes priority, including when Steam has no games installed.
+    if paths.iter().any(|path| path.is_file()) {
+        return paths;
+    }
+    // Status polls every two seconds; do not rescan installed games on each poll.
+    static CACHE: Mutex<Option<(Instant, Vec<PathBuf>)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap();
+    if cache
+        .as_ref()
+        .is_none_or(|(at, _)| at.elapsed() > Duration::from_secs(30))
+    {
+        *cache = Some((Instant::now(), library_dll_paths(&steam_roots())));
+    }
+    if let Some((_, found)) = cache.as_ref() {
+        paths.extend(found.iter().cloned());
+    }
+    paths
+}
+
+fn steam_roots() -> Vec<PathBuf> {
+    let mut roots = vec![
+        PathBuf::from(r"C:\Program Files (x86)\Steam"),
+        PathBuf::from(r"C:\Program Files\Steam"),
+    ];
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Registry::{
+            RegGetValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+        };
+        for (key, subkey, name) in [
+            (HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+            (
+                HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\WOW6432Node\Valve\Steam",
+                "InstallPath",
+            ),
+            (HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath"),
+        ] {
+            let subkey: Vec<u16> = subkey.encode_utf16().chain(Some(0)).collect();
+            let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+            let mut buffer = [0u16; 32768];
+            let mut bytes = std::mem::size_of_val(&buffer) as u32;
+            let code = unsafe {
+                RegGetValueW(
+                    key,
+                    subkey.as_ptr(),
+                    name.as_ptr(),
+                    RRF_RT_REG_SZ,
+                    std::ptr::null_mut(),
+                    buffer.as_mut_ptr().cast(),
+                    &mut bytes,
+                )
+            };
+            if code == 0 {
+                let length = buffer.iter().position(|v| *v == 0).unwrap_or(buffer.len());
+                if length > 0 {
+                    roots.push(PathBuf::from(String::from_utf16_lossy(&buffer[..length])));
                 }
             }
         }
     }
-    paths
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut libraries = roots.to_vec();
+    for root in roots {
+        for file in ["steamapps/libraryfolders.vdf", "config/libraryfolders.vdf"] {
+            if let Ok(text) = fs::read_to_string(root.join(file)) {
+                for line in text.lines() {
+                    let parts: Vec<_> = line.split('"').collect();
+                    if parts.len() >= 4
+                        && (parts[1] == "path" || parts[1].chars().all(|c| c.is_ascii_digit()))
+                    {
+                        let path = PathBuf::from(parts[3].replace("\\\\", "\\"));
+                        if path.is_absolute() && !libraries.contains(&path) {
+                            libraries.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut games = Vec::new();
+    for library in libraries {
+        if let Ok(entries) = fs::read_dir(library.join("steamapps/common")) {
+            games.extend(
+                entries
+                    .flatten()
+                    .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+                    .map(|entry| entry.path()),
+            );
+        }
+    }
+    games.sort();
+    games.dedup();
+    let mut found = Vec::new();
+    // Prefer the game-root layout used by previous releases, before nested layouts.
+    for game in &games {
+        let path = game.join("steam_api64.dll");
+        if path.is_file() {
+            found.push(path);
+        }
+    }
+    for game in games {
+        for relative in [
+            "bin/steam_api64.dll",
+            "bin/win64/steam_api64.dll",
+            "game/bin/win64/steam_api64.dll",
+            "bin64/steam_api64.dll",
+            "x64/steam_api64.dll",
+            "Binaries/Win64/steam_api64.dll",
+        ] {
+            let path = game.join(relative);
+            if path.is_file() {
+                found.push(path);
+            }
+        }
+        // Unreal titles (including Dead by Daylight) keep the redistributable under
+        // a Steamworks version directory. The version is not fixed by our launcher.
+        if let Ok(versions) = fs::read_dir(game.join("Engine/Binaries/ThirdParty/Steamworks")) {
+            let mut versions: Vec<_> = versions.flatten().map(|entry| entry.path()).collect();
+            versions.sort();
+            for version in versions {
+                let path = version.join("Win64/steam_api64.dll");
+                if path.is_file() {
+                    found.push(path);
+                }
+            }
+        }
+        // Unity keeps its native plugins beneath a game-specific *_Data directory.
+        if let Ok(entries) = fs::read_dir(&game) {
+            for entry in entries
+                .flatten()
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with("_Data"))
+            {
+                for relative in ["Plugins/steam_api64.dll", "Plugins/x86_64/steam_api64.dll"] {
+                    let path = entry.path().join(relative);
+                    if path.is_file() {
+                        found.push(path);
+                    }
+                }
+            }
+        }
+    }
+    found
 }
 
 pub fn find_dll(local: &Path) -> Option<PathBuf> {
@@ -394,18 +611,33 @@ impl Api {
                     std::io::Error::last_os_error()
                 ));
             }
+            // Release the DLL if any required export is absent, including retries.
+            let library = Library(handle);
             let init = load_symbol::<unsafe extern "C" fn() -> bool>(handle, c"SteamAPI_Init")
                 .or_else(|_| load_symbol(handle, c"SteamAPI_InitSafe"))?;
             Ok(Self {
-                _handle: handle,
+                _library: library,
                 is_steam_running: load_symbol(handle, c"SteamAPI_IsSteamRunning")?,
                 init,
+                shutdown: load_symbol(handle, c"SteamAPI_Shutdown")?,
                 run_callbacks: load_symbol(handle, c"SteamAPI_RunCallbacks")?,
-                steam_user: load_symbol(handle, c"SteamUser")?,
-                steam_friends: load_symbol(handle, c"SteamFriends")?,
-                steam_matchmaking: load_symbol(handle, c"SteamMatchmaking")?,
-                steam_networking: load_symbol(handle, c"SteamNetworking")?,
-                steam_utils: load_symbol(handle, c"SteamUtils")?,
+                steam_user: load_interface(handle, c"SteamAPI_SteamUser_v023", c"SteamUser")?,
+                steam_friends: load_interface(
+                    handle,
+                    c"SteamAPI_SteamFriends_v017",
+                    c"SteamFriends",
+                )?,
+                steam_matchmaking: load_interface(
+                    handle,
+                    c"SteamAPI_SteamMatchmaking_v009",
+                    c"SteamMatchmaking",
+                )?,
+                steam_networking: load_interface(
+                    handle,
+                    c"SteamAPI_SteamNetworking_v006",
+                    c"SteamNetworking",
+                )?,
+                steam_utils: load_interface(handle, c"SteamAPI_SteamUtils_v010", c"SteamUtils")?,
                 get_steam_id: load_symbol(handle, c"SteamAPI_ISteamUser_GetSteamID")?,
                 get_persona_name: load_symbol(handle, c"SteamAPI_ISteamFriends_GetPersonaName")?,
                 activate_invite_dialog: load_symbol(
@@ -508,7 +740,7 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
         return Ok(api.clone());
     }
     let dll = find_dll(local).ok_or(
-        "steam_api64.dll não encontrada. Abra um jogo na Steam ou copie steam_api64.dll para a pasta de dados (local/).",
+        "steam_api64.dll não encontrada. Instalar ou abrir apenas a Steam não fornece essa biblioteca. Coloque a DLL Steamworks de 64 bits ao lado do Launcher.exe e reabra o Launcher. Não é necessário refazer a build do jogo.",
     )?;
     let api = Api::load(&dll, local)?;
     if !unsafe { (api.is_steam_running)() } {
@@ -516,6 +748,20 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
     }
     if !unsafe { (api.init)() } {
         return Err("Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.".into());
+    }
+    for (name, accessor) in [
+        ("ISteamUser", api.steam_user),
+        ("ISteamFriends", api.steam_friends),
+        ("ISteamMatchmaking", api.steam_matchmaking),
+        ("ISteamNetworking", api.steam_networking),
+        ("ISteamUtils", api.steam_utils),
+    ] {
+        if unsafe { accessor() }.is_null() {
+            unsafe { (api.shutdown)() };
+            return Err(format!(
+                "Interface Steam indisponível após inicialização: {name}."
+            ));
+        }
     }
     let net = unsafe { (api.steam_networking)() };
     if !net.is_null() {
@@ -553,11 +799,32 @@ pub struct Friend {
     pub id: String,
     pub name: String,
     pub online: bool,
+    pub presence: &'static str,
     /// The friend's open MK8-online room (the Steam lobby they are in, marked by our rich presence), if any.
     pub room: Option<String>,
 }
 
-/// Connects to the Steam client (once) and lists the player's friends, open MK8-online rooms first.
+fn friend_presence(state: i32) -> &'static str {
+    match state {
+        1 | 5 | 6 => "online",
+        2 => "busy",
+        3 | 4 => "away",
+        _ => "offline",
+    }
+}
+
+fn sort_friends(list: &mut [Friend]) {
+    list.sort_by_cached_key(|friend| {
+        let group = match friend.presence {
+            "online" | "busy" => 0,
+            "away" => 1,
+            _ => 2,
+        };
+        (group, friend.name.to_lowercase(), friend.id.clone())
+    });
+}
+
+/// Lists all immediate friends: online, away, then offline; names break ties.
 pub fn friends(local: &Path) -> Result<Vec<Friend>> {
     let api = ensure_api(local)?;
     let friends = unsafe { (api.steam_friends)() };
@@ -568,7 +835,7 @@ pub fn friends(local: &Path) -> Result<Vec<Friend>> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(480);
-    let count = unsafe { (api.friend_count)(friends, FRIEND_FLAG_IMMEDIATE) }.clamp(0, 500);
+    let count = unsafe { (api.friend_count)(friends, FRIEND_FLAG_IMMEDIATE) }.max(0);
     let key = CString::new("mk8_room").unwrap();
     let mut list = Vec::new();
     for i in 0..count {
@@ -584,7 +851,8 @@ pub fn friends(local: &Path) -> Result<Vec<Friend>> {
                 .to_string_lossy()
                 .into_owned()
         };
-        let online = unsafe { (api.friend_state)(friends, id) } != 0;
+        let presence = friend_presence(unsafe { (api.friend_state)(friends, id) });
+        let online = presence != "offline";
         let mut game = FriendGame::default();
         let playing = unsafe { (api.friend_game)(friends, id, &mut game) };
         let marked = {
@@ -598,14 +866,11 @@ pub fn friends(local: &Path) -> Result<Vec<Friend>> {
             id: id.to_string(),
             name,
             online,
+            presence,
             room,
         });
     }
-    list.sort_by(|a, b| {
-        (b.room.is_some(), b.online)
-            .cmp(&(a.room.is_some(), a.online))
-            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    sort_friends(&mut list);
     Ok(list)
 }
 
@@ -772,7 +1037,13 @@ pub struct SteamRoom {
 }
 
 impl SteamRoom {
-    pub fn host_live(local: &Path, identity: &str, name: &str) -> Result<(Self, Host, Invite)> {
+    pub fn host_live(
+        local: &Path,
+        identity: &str,
+        name: &str,
+        dlc: bool,
+        pack: &str,
+    ) -> Result<(Self, Host, Invite)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
         if mm.is_null() {
@@ -794,9 +1065,16 @@ impl SteamRoom {
         let val_code = CString::new(room.code.as_str()).unwrap();
         let key_id = CString::new("mk8_identity").unwrap();
         let val_id = CString::new(identity).unwrap();
+        let key_dlc = CString::new(DLC_KEY).unwrap();
+        let val_dlc = CString::new(if dlc { "1" } else { "0" }).unwrap();
+        let key_pack = CString::new(PACK_KEY).unwrap();
+        let val_pack = CString::new(if pack.is_empty() { "0" } else { pack })
+            .map_err(|_| "Identidade do CTGP inválida.")?;
         unsafe {
             (api.set_lobby_data)(mm, created.lobby_id, key_code.as_ptr(), val_code.as_ptr());
             (api.set_lobby_data)(mm, created.lobby_id, key_id.as_ptr(), val_id.as_ptr());
+            (api.set_lobby_data)(mm, created.lobby_id, key_dlc.as_ptr(), val_dlc.as_ptr());
+            (api.set_lobby_data)(mm, created.lobby_id, key_pack.as_ptr(), val_pack.as_ptr());
         }
         let friends = unsafe { (api.steam_friends)() };
         if !friends.is_null() {
@@ -859,12 +1137,11 @@ impl SteamRoom {
                     }
                     let req_id = std::str::from_utf8(&buf[20..n]).unwrap_or("");
                     if req_id != identity_owned {
-                        let _ = b.send(
-                            remote_steam_id,
-                            P2P_CHANNEL_CONTROL,
-                            b"MK8EInstala\xc3\xa7\xc3\xa3o incompat\xc3\xadvel com a sala Steam.",
-                            true,
+                        let mut error = b"MK8E".to_vec();
+                        error.extend_from_slice(
+                            "Instalação incompatível com a sala Steam.".as_bytes(),
                         );
+                        let _ = b.send(remote_steam_id, P2P_CHANNEL_CONTROL, &error, true);
                         continue;
                     }
                     if let std::collections::hash_map::Entry::Vacant(e) =
@@ -904,7 +1181,12 @@ impl SteamRoom {
                 // 3. Local Host UDP -> Steam P2P
                 for (remote_steam_id, proxy) in &assigned {
                     while let Ok(n) = proxy.socket.recv(&mut buf) {
-                        let _ = b.send(*remote_steam_id, P2P_CHANNEL_DATA, &buf[..n], false);
+                        let _ = b.send(
+                            *remote_steam_id,
+                            P2P_CHANNEL_DATA,
+                            &buf[..n],
+                            n > STEAM_UNRELIABLE_MAX,
+                        );
                     }
                 }
                 thread::sleep(Duration::from_millis(2));
@@ -923,40 +1205,67 @@ impl SteamRoom {
         ))
     }
 
-    pub fn join_live(local: &Path, input: &str, identity: &str) -> Result<(Self, Gateway)> {
+    pub fn join_live(
+        local: &Path,
+        input: &str,
+        identity: &str,
+        dlc: bool,
+        pack: &str,
+    ) -> Result<(Self, Gateway)> {
         let api = ensure_api(local)?;
         let mm = unsafe { (api.steam_matchmaking)() };
         if mm.is_null() {
             return Err("ISteamMatchmaking indisponível.".into());
         }
-        let code = if input.trim().starts_with("MK8S-") {
-            let parsed = SteamCode::decode(input)?;
-            let call = unsafe { (api.join_lobby)(mm, parsed.lobby) };
-            let _ = api.wait_call::<LobbyEnter>(call, LOBBY_ENTER_CALLBACK);
-            parsed
-        } else if let Ok(lobby_id) = input
-            .trim()
-            .strip_prefix("steam://")
-            .unwrap_or(input.trim())
-            .parse::<u64>()
-        {
+        let supplied = if input.trim().starts_with("MK8S-") {
+            Some(SteamCode::decode(input)?)
+        } else {
+            None
+        };
+        let lobby_id = match &supplied {
+            Some(code) => code.lobby,
+            None => input
+                .trim()
+                .strip_prefix("steam://")
+                .unwrap_or(input.trim())
+                .parse::<u64>()
+                .map_err(|_| "Informe um código MK8S-… ou ID de lobby da Steam.")?,
+        };
+        let backend = Arc::new(LiveSteamBackend { api: api.clone() });
+        let result = (|| {
             let call = unsafe { (api.join_lobby)(mm, lobby_id) };
             let entered: LobbyEnter = api.wait_call(call, LOBBY_ENTER_CALLBACK)?;
-            if entered.lobby_id == 0 {
+            if entered.lobby_id != lobby_id || entered.response != 1 || lobby_id == 0 {
                 return Err("Não foi possível entrar no lobby da Steam.".into());
             }
-            let key = CString::new("mk8_code").unwrap();
-            let ptr = unsafe { (api.get_lobby_data)(mm, lobby_id, key.as_ptr()) };
-            if ptr.is_null() {
-                return Err("Lobby da Steam não contém código de sala do MK8-online.".into());
+            let metadata = |key: &CStr| -> Result<String> {
+                let ptr = unsafe { (api.get_lobby_data)(mm, lobby_id, key.as_ptr()) };
+                if ptr.is_null() {
+                    return Err("Lobby da Steam não contém código de sala do MK8-online.".into());
+                }
+                Ok(unsafe { CStr::from_ptr(ptr) }
+                    .to_string_lossy()
+                    .into_owned())
+            };
+            let host_identity = metadata(c"mk8_identity")?;
+            if host_identity != identity {
+                return Err("Instalação incompatível com a sala Steam.".into());
             }
-            let code_str = unsafe { CStr::from_ptr(ptr).to_string_lossy() };
-            SteamCode::decode(&code_str)?
-        } else {
-            return Err("Informe um código MK8S-… ou ID de lobby da Steam.".into());
-        };
-        let backend = Arc::new(LiveSteamBackend { api });
-        Self::join_with_backend(backend, code, identity)
+            check_dlc(Some(&metadata(c"mk8_dlc")?), dlc)?;
+            check_pack(Some(&metadata(c"mk8_ctgp")?), pack)?;
+            let code = match supplied {
+                Some(code) => code,
+                None => SteamCode::decode(&metadata(c"mk8_code")?)?,
+            };
+            if code.lobby != lobby_id {
+                return Err("Código Steam incompatível.".into());
+            }
+            Self::join_with_backend(backend.clone(), code, identity)
+        })();
+        if result.is_err() {
+            backend.leave_lobby(lobby_id);
+        }
+        result
     }
 
     pub fn join_with_backend(
@@ -1017,7 +1326,12 @@ impl SteamRoom {
                 b.tick();
                 while let Ok((n, from)) = proxy.recv_from(&mut pkt) {
                     gateway_addr = Some(from);
-                    let _ = b.send(host_steam_id, P2P_CHANNEL_DATA, &pkt[..n], false);
+                    let _ = b.send(
+                        host_steam_id,
+                        P2P_CHANNEL_DATA,
+                        &pkt[..n],
+                        n > STEAM_UNRELIABLE_MAX,
+                    );
                 }
                 while let Some((n, from)) = b.recv(P2P_CHANNEL_DATA, &mut pkt) {
                     if from == host_steam_id {
@@ -1062,6 +1376,186 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
 
+    #[test]
+    fn dlc_state_must_match_the_host_lobby() {
+        // Same state on both sides is allowed, with or without the Booster Course Pass.
+        assert!(check_dlc(Some("1"), true).is_ok());
+        assert!(check_dlc(Some("0"), false).is_ok());
+        // A lobby without the key comes from a launcher without DLC support.
+        assert!(check_dlc(None, false).is_ok());
+        assert!(check_dlc(Some(""), false).is_ok());
+        let missing = check_dlc(Some("1"), false).unwrap_err();
+        assert!(missing.contains("Importe e ative"), "{missing}");
+        let extra = check_dlc(Some("0"), true).unwrap_err();
+        assert!(extra.contains("Desative"), "{extra}");
+        assert!(check_dlc(None, true).is_err());
+        assert!(check_dlc(Some("yes"), true).is_err());
+        assert!(check_dlc(Some("yes"), false).is_err());
+    }
+
+    #[test]
+    fn course_pack_must_match_the_host_lobby() {
+        let id = "a".repeat(64);
+        assert!(check_pack(None, "").is_ok());
+        assert!(check_pack(Some("0"), "").is_ok());
+        assert!(check_pack(Some(&id), &id).is_ok());
+        assert!(check_pack(Some(&id.to_uppercase()), &id).is_ok());
+        assert!(check_pack(Some(&id), "")
+            .unwrap_err()
+            .contains("Importe e ative"));
+        assert!(check_pack(Some("0"), &id).unwrap_err().contains("Desative"));
+        assert!(check_pack(None, &id).is_err()); // an older launcher hosts without a pack
+        assert!(check_pack(Some(&"b".repeat(64)), &id)
+            .unwrap_err()
+            .contains("outra versão"));
+        assert!(check_pack(Some("sim"), "").is_err());
+        assert!(check_pack(Some(&"z".repeat(64)), &id).is_err());
+    }
+
+    #[test]
+    fn dll_search_reads_extra_libraries_and_common_nested_layouts() {
+        let root = std::env::temp_dir().join(format!("mk8-dll-discovery-{}", std::process::id()));
+        let steam = root.join("Steam custom");
+        let library = root.join("Games drive");
+        fs::create_dir_all(steam.join("steamapps/common")).unwrap();
+        fs::create_dir_all(library.join("steamapps/common")).unwrap();
+        // More than forty games: the old scan stopped before later entries.
+        for i in 0..60 {
+            fs::create_dir_all(steam.join(format!("steamapps/common/Game {i:03}"))).unwrap();
+        }
+        let direct = steam.join("steamapps/common/Game 059/steam_api64.dll");
+        fs::write(&direct, b"authored path fixture, never loaded").unwrap();
+        let nested = library.join("steamapps/common/Test/Binaries/Win64/steam_api64.dll");
+        fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        fs::write(&nested, b"authored path fixture, never loaded").unwrap();
+        let unity = library.join("steamapps/common/Unity/Test_Data/Plugins/x86_64/steam_api64.dll");
+        fs::create_dir_all(unity.parent().unwrap()).unwrap();
+        fs::write(&unity, b"authored path fixture, never loaded").unwrap();
+        let unreal = library.join("steamapps/common/Unreal/Engine/Binaries/ThirdParty/Steamworks/Steamv161/Win64/steam_api64.dll");
+        fs::create_dir_all(unreal.parent().unwrap()).unwrap();
+        fs::write(&unreal, b"authored path fixture, never loaded").unwrap();
+        let escaped = library.to_string_lossy().replace('\\', "\\\\");
+        for vdf in [
+            format!("\"libraryfolders\"\n{{\n\"1\"\n{{\n\"path\" \"{escaped}\"\n}}\n}}"),
+            format!("\"1\" \"{escaped}\""),
+        ] {
+            fs::write(steam.join("steamapps/libraryfolders.vdf"), vdf).unwrap();
+            assert_eq!(
+                library_dll_paths(std::slice::from_ref(&steam)),
+                [
+                    direct.clone(),
+                    nested.clone(),
+                    unity.clone(),
+                    unreal.clone()
+                ]
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn all_friends_are_sorted_by_availability_then_name() {
+        let mut friends: Vec<Friend> = (0..720)
+            .map(|i| Friend {
+                id: i.to_string(),
+                name: format!("Friend {i:04}"),
+                online: false,
+                presence: "offline",
+                room: Some("old-room".into()),
+            })
+            .collect();
+        for (name, state) in [("Z online", 1), ("B away", 3), ("A busy", 2), ("A away", 4)] {
+            let presence = friend_presence(state);
+            friends.push(Friend {
+                id: state.to_string(),
+                name: name.into(),
+                online: true,
+                presence,
+                room: None,
+            });
+        }
+        friends.reverse();
+        sort_friends(&mut friends);
+        assert_eq!(friends.len(), 724);
+        assert_eq!(
+            friends[..4]
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            ["A busy", "Z online", "A away", "B away"]
+        );
+        assert_eq!(friends[4].name, "Friend 0000");
+        assert_eq!(friends.last().unwrap().name, "Friend 0719");
+        for state in [0, -1, 7, 99] {
+            assert_eq!(friend_presence(state), "offline");
+        }
+        for state in [1, 5, 6] {
+            assert_eq!(friend_presence(state), "online");
+        }
+    }
+
+    #[test]
+    fn versioned_steam_accessor_is_called_and_legacy_is_only_a_fallback() {
+        unsafe extern "C" fn current() -> *mut c_void {
+            std::ptr::dangling_mut::<u8>().cast()
+        }
+        unsafe extern "C" fn legacy() -> *mut c_void {
+            std::ptr::null_mut()
+        }
+        let mut looked_up = Vec::new();
+        let accessor = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |name| {
+            looked_up.push(name.to_owned());
+            Ok(if name == c"SteamAPI_SteamUser_v023" {
+                current
+            } else {
+                legacy
+            })
+        })
+        .unwrap();
+        assert!(!unsafe { accessor() }.is_null());
+        assert_eq!(looked_up, [c"SteamAPI_SteamUser_v023".to_owned()]);
+        let accessor = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |name| {
+            if name == c"SteamUser" {
+                Ok(legacy)
+            } else {
+                Err("absent".into())
+            }
+        })
+        .unwrap();
+        assert!(unsafe { accessor() }.is_null());
+        let error = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |_| {
+            Err("absent".into())
+        })
+        .unwrap_err();
+        assert!(error.contains("SteamAPI_SteamUser_v023") && error.contains("SteamUser"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an installed Steam DLL and a signed-in Steam client; creates a temporary friends-only lobby"]
+    fn live_steam_dll_creates_and_leaves_lobby() {
+        let dll = std::env::var("MK8_TEST_STEAM_DLL").expect("Set MK8_TEST_STEAM_DLL explicitly");
+        std::env::set_var("MK8_STEAM_DLL", dll);
+        let local = std::env::temp_dir().join(format!("mk8-steam-live-{}", std::process::id()));
+        fs::create_dir_all(&local).unwrap();
+        let api = ensure_api(&local).unwrap();
+        assert!(probe_status(&local).ready);
+        assert!(unsafe { (api.get_steam_id)((api.steam_user)()) } != 0);
+        let _friends = friends(&local).unwrap();
+        let (room, _host, _invite) =
+            SteamRoom::host_live(&local, "loader-regression", "Teste", false, "").unwrap();
+        assert_ne!(room.lobby_id, 0);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !callbacks_delivered() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let delivered = callbacks_delivered();
+        drop(room); // Leave the test lobby and clear its rich presence even if the assertion fails.
+        assert!(delivered, "Steam must deliver its native lobby callback");
+        fs::remove_file(local.join("steam_appid.txt")).unwrap();
+        fs::remove_dir(local).unwrap();
+    }
+
     type PacketQueue = HashMap<(u64, i32), VecDeque<(u64, Vec<u8>)>>;
 
     struct MockSteamBus {
@@ -1086,7 +1580,11 @@ mod tests {
             self.steam_id
         }
         fn tick(&self) {}
-        fn send(&self, remote: u64, channel: i32, data: &[u8], _reliable: bool) -> bool {
+        fn send(&self, remote: u64, channel: i32, data: &[u8], reliable: bool) -> bool {
+            // Match Steam's real datagram limit; the previous mock hid dropped large packets.
+            if !reliable && data.len() > 1200 {
+                return false;
+            }
             let mut queues = self.bus.queues.lock().unwrap();
             queues
                 .entry((remote, channel))
@@ -1166,6 +1664,46 @@ mod tests {
     }
 
     #[test]
+    fn steam_handshake_rejects_different_game_identities() {
+        for (host_id, guest_id, allowed) in [
+            ("fixture-a", "fixture-a", true),
+            ("fixture-b", "fixture-b", true),
+            ("fixture-a", "fixture-b", false),
+            ("fixture-b", "fixture-a", false),
+            ("fixture-a", "fixture", false),
+            ("fixture", "fixture-a", false),
+        ] {
+            let bus = MockSteamBus::new();
+            let host_node = Arc::new(MockSteamNode {
+                steam_id: 1,
+                bus: bus.clone(),
+            });
+            let guest_node = Arc::new(MockSteamNode { steam_id: 2, bus });
+            let (room, host, _) =
+                SteamRoom::host_with_backend(host_node, 10, 1, host_id, "Host").unwrap();
+            let result = SteamRoom::join_with_backend(
+                guest_node,
+                SteamCode::decode(&room.code).unwrap(),
+                guest_id,
+            );
+            if allowed {
+                let (_room, gateway) = result.unwrap();
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while !gateway.connected() && Instant::now() < deadline {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                assert!(gateway.connected());
+            } else {
+                let error = result
+                    .err()
+                    .expect("incompatible peer must not get a gateway");
+                assert_eq!(error, "Instalação incompatível com a sala Steam.");
+                assert_eq!(host.connected(), 0);
+            }
+        }
+    }
+
+    #[test]
     fn steam_p2p_relay_connects_and_forwards_bidirectional_game_packets() {
         let bus = MockSteamBus::new();
         let host_node = Arc::new(MockSteamNode {
@@ -1239,5 +1777,23 @@ mod tests {
             .unwrap();
         let (n, _) = g_host.recv_from(&mut recv_buf).unwrap();
         assert_eq!(&recv_buf[..n], pkt_from_guest.as_slice());
+
+        // Encryption adds 70 bytes: exercise both sides of Steam's 1200-byte
+        // unreliable limit and the largest datagram supported by our transport.
+        let mut recv_buf = [0u8; MAX_PACKET];
+        for length in [1130, 1131, mk8_transport::MAX_PAYLOAD] {
+            for (packet, sender, gateway, receiver) in [
+                (&pkt_from_host, &g_host, &host_gateway, &g_guest),
+                (&pkt_from_guest, &g_guest, &guest_gateway, &g_host),
+            ] {
+                let mut packet = packet.clone();
+                packet.resize(length, 0x5a);
+                sender.send_to(&packet, gateway.local_addr).unwrap();
+                let (n, _) = receiver.recv_from(&mut recv_buf).unwrap_or_else(|error| {
+                    panic!("Steam datagram of {length} bytes lost: {error}")
+                });
+                assert_eq!(&recv_buf[..n], packet.as_slice());
+            }
+        }
     }
 }

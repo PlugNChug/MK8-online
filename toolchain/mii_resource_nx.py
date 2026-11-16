@@ -135,7 +135,7 @@ def deswizzle(data, width, height, bpp, bh_log2):
     return bytes(out)
 
 
-def convert_texture(data):
+def convert_texture(data, kind=None):
     """AFL texture (linear level 0 + mips, 12-byte BE footer) -> (block-linear level 0, footer fields)."""
     if len(data) < 12:
         raise ValueError('Truncated AFL texture')
@@ -146,9 +146,18 @@ def convert_texture(data):
     level0 = width * height * bpp
     if level0 > len(data) - 12:
         raise ValueError('AFL texture level exceeds data')
+    pixels = data[:level0]
+    if kind == 'glass':
+        # Verified AFL glasses store coverage in R and luminance in G. MK8's
+        # Mii shader expects the opposite RG order; copying it made the entire
+        # quad opaque. Keep RG8 and the selected style/color, including lenses.
+        if fmt != 1:
+            raise ValueError('Unsupported AFL glasses format; expected RG8')
+        pixels = bytearray(pixels)
+        pixels[0::2], pixels[1::2] = pixels[1::2], pixels[0::2]
     bh = default_block_height_log2(height)
     # One level: the AFL mip layout is not yet decoded, and nn::gfx accepts a single-level texture.
-    return swizzle(data[:level0], width, height, bpp, bh), (width, height, fmt)
+    return swizzle(pixels, width, height, bpp, bh), (width, height, fmt)
 
 
 def _half(values):
@@ -223,7 +232,7 @@ def build_textures(afl):
             index = first + i
             info = afl.textures[source][index] if index < len(afl.textures[source]) else None
             if info:
-                texture, (width, height, fmt) = convert_texture(afl.part(info))
+                texture, (width, height, fmt) = convert_texture(afl.part(info), source)
                 packed = _pack(texture)
                 pos = len(header) + len(payload)
                 struct.pack_into('<IIIBBBB', header, entry, pos, len(texture), len(packed), 9, 15, 8, 0)
@@ -294,7 +303,7 @@ def convert(afl_path, output):
         data = shapes if name.startswith('Shape') else textures
         (output / name).write_bytes(data)
         files[name] = hashlib.sha256(data).hexdigest()
-    manifest = dict(schema=1, afl_sha256=AFL_SHA256, files=files, textures=texture_report, shapes=shape_report,
+    manifest = dict(schema=1, converter_revision=2, afl_sha256=AFL_SHA256, files=files, textures=texture_report, shapes=shape_report,
                     texture_levels=1, inferred_types=['shape 3-8 hat/forehead/hair grouping', 'shape 10-11 nose/noseline'],
                     rendering_verified=False, gameplay_verified=False, multiplayer_verified=False)
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')

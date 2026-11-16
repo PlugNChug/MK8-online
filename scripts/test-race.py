@@ -53,6 +53,10 @@ def race_input(mode, last_frame, course='stadium', cup=0, track=None, character=
             start += f',{frame}:A:6'
     else:
         start += ''.join(f',{frame}:A:6' for frame in range(920, 2401, 160))
+        # A held without a release never leaves the first race's standings (14/11/2026: frames 20000-52000 there).
+        # Release it one frame in 120 so the results and the next race start; still accelerating while racing.
+        return start + ''.join(f',{frame}:A:{min(119, last_frame + 10 - frame)}'
+                               for frame in range(2700, last_frame + 10, 120))
     return start + f',2700:A:{max(last_frame - 2690, 10)}'
 
 

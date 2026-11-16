@@ -16,6 +16,128 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="session"]').click()
+            expect(page.locator('#steam-dlc-hint')).to_contain_text('mesma DLC')
+            page.route('**/api/steam/friends', lambda route: route.fulfill(json={'ok':True,'data':{
+                'invites':[{'lobby':'123','friend':'Test host'}], 'friends':[], 'room':None}}))
+            error = 'A sala usa o Booster Course Pass. Importe e ative o DLC em Configurações para entrar.'
+            page.route('**/api/steam/join', lambda route: route.fulfill(status=400,json={'ok':False,'error':error}))
+            page.locator("#mp-social-rooms").click()
+            page.get_by_role('button', name='Aceitar', exact=True).click()
+            expect(page.locator('#notice')).to_have_text(error)
+            page.locator('#language').select_option('en')
+            expect(page.locator('#steam-dlc-hint')).to_contain_text('same DLC enabled')
+            page.get_by_role('button', name='Accept', exact=True).click()
+            expect(page.locator('#notice')).to_contain_text('Booster Course Pass')
+            page.locator('#language').select_option('pt-BR')
+        finally:
+            page.close()
+
+    def test_all_steam_friends_are_searchable_and_offline_invites_are_available(self):
+        page = self.page()
+        try:
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            status = page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+            status['session'].update(hosting=True, steam_active=True, connected=True, slot=0)
+            page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':status}))
+            # Backend ordering is exercised natively in the session crate; the page must preserve it.
+            friends = [dict(id=str(i),name=name,online=True,presence=presence,room=None)
+                       for i,(name,presence) in enumerate([('A busy','busy'),('Z online','online'),('A away','away')])]
+            friends += [dict(id=str(100+i),name=f'Offline {i:04}',online=False,presence='offline',room=None) for i in range(720)]
+            friends.append(dict(id='9999',name='Invisible Friend',online=False,presence='offline',room=None))
+            page.route('**/api/steam/friends',lambda route:route.fulfill(json={'ok':True,'data':dict(friends=friends,invites=[],room='123',persona='Test')}))
+            sent=[]
+            def invite(route):
+                sent.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{'message':'Convite enviado pela Steam.'}})
+            page.route('**/api/steam/invite',invite)
+            page.locator('[data-tab="session"]').click()
+            rows=page.locator('#steam-friends li')
+            expect(rows).to_have_count(724)
+            expect(rows.nth(0)).to_contain_text('Ocupado')
+            expect(rows.nth(2)).to_contain_text('Ausente')
+            page.locator('#friend-filter').fill('OFFLINE 0719')
+            expect(rows).to_have_count(1)
+            expect(rows.first).to_contain_text('Offline 0719')
+            page.locator('#friend-filter').fill('invisible')
+            expect(rows).to_have_count(1)
+            expect(rows.first).to_contain_text('Offline')
+            rows.first.get_by_role('button',name='Convidar',exact=True).click()
+            expect(page.locator('#notice')).to_have_text('Convite enviado pela Steam.')
+            self.assertEqual(sent,[{'friend':'9999'}])  # Intercepted: no real invite is sent.
+            page.locator('#friend-filter').fill('unmatched name')
+            expect(rows).to_have_text(['Nenhum amigo encontrado nesta busca.'])
+            page.locator('#language').select_option('en')
+            expect(rows).to_have_text(['No friends match your search.'])
+            page.locator('#friend-filter').fill('')
+            expect(rows).to_have_count(724)
+            expect(rows.nth(0)).to_contain_text('Busy')
+            expect(rows.nth(2)).to_contain_text('Away')
+            page.screenshot(path=str(ROOT/'local/screenshots/all-friends.png'),full_page=True)
+            page.locator('#language').select_option('pt-BR')
+            expect(page.locator('html')).to_have_attribute('lang','pt-BR')
+        finally:
+            page.close()
+
+    def test_optional_dlc_and_manual_room_controls(self):
+        page = self.page()
+        try:
+            self.show_files(page,ready=True)
+            expect(page.locator('#prepare-dlc-package')).to_be_visible()
+            page.locator('#prepare-dlc-package').fill('optional-owned-dlc.nsp')
+            page.screenshot(path=str(ROOT/'local/screenshots/optional-dlc-install.png'),full_page=True)
+            requests = []
+            def prepare(route):
+                requests.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True, 'data':{'message':'Preparando o jogo.'}})
+            page.route('**/api/prepare', prepare)
+            page.locator('#flow-step-2').click()
+            page.locator('#build').click()
+            expect(page.locator('#notice')).to_have_text('Preparando o jogo.')
+            page.wait_for_function('() => !busy')
+            self.assertEqual(requests, [{'dlc_package':'optional-owned-dlc.nsp'}])
+            page.locator('#flow-step-1').click()
+            page.locator('#prepare-dlc-package').fill('')
+            page.locator('#flow-step-2').click()
+            page.locator('#build').click()
+            page.wait_for_function('() => !busy')
+            self.assertEqual(requests[-1], {'dlc_package':''})
+            page.locator('[data-tab="session"]').click()
+            hosts = []
+            def host(route):
+                hosts.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{}})
+            page.route('**/api/steam/host', host)
+            page.locator('#mp-host-mode [value=manual]').check()
+            page.locator('#steam-host-manual').click()
+            page.wait_for_function('() => !busy')
+            page.locator('#mp-host-mode [value=automatic]').check()
+            page.locator('#steam-host').click()
+            page.wait_for_function('() => !busy')
+            self.assertEqual(hosts, [{'automatic':False}, {'automatic':True}])
+            page.locator('#mp-social-rooms').click()
+            page.locator('#steam-navigation').select_option('manual')
+            expect(page.locator('#notice')).to_have_text('Preferência de convites salva neste computador.')
+            page.reload()
+            page.locator('[data-tab="session"]').click()
+            page.locator('#mp-social-rooms').click()
+            expect(page.locator('#steam-navigation')).to_have_value('manual')
+            page.locator('#steam-navigation').select_option('automatic')
+            page.wait_for_function('() => !busy')
+            page.screenshot(path=str(ROOT/'local/screenshots/manual-room-desktop.png'),full_page=True)
+            page.set_viewport_size({'width':390,'height':844})
+            self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+            page.screenshot(path=str(ROOT/'local/screenshots/manual-room-mobile.png'),full_page=True)
+            page.locator('[data-tab="play"]').click()
+            page.locator('#play-dlc-manage').click()
+            expect(page.locator('#install')).to_be_visible()
+            expect(page.locator('#dlc-card')).to_be_in_viewport()
+        finally:
+            page.close()
+
     @classmethod
     def setUpClass(cls):
         cls.temporary=tempfile.TemporaryDirectory(prefix="mk8-e2e-")
@@ -91,12 +213,310 @@ class LauncherTests(unittest.TestCase):
         finally:
             process.terminate(); process.wait(timeout=10)
 
+    @unittest.skipUnless(os.name=='nt','Native WebView2 required')
+    def test_local_manual_window_content_origin_and_close(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
+        env=dict(os.environ,WEBVIEW2_USER_DATA_FOLDER=str(Path(self.temporary.name)/'manual-webview'),
+                 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=f'--remote-debugging-port={port} --remote-allow-origins=http://127.0.0.1:{port}')
+        process=subprocess.Popen([os.environ.get('MK8_LAUNCHER_EXE',str(ROOT/'target/release/Launcher.exe')),'--how-to-play'],env=env)
+        try:
+            deadline=time.monotonic()+40
+            while True:
+                try:
+                    browser=self.pw.chromium.connect_over_cdp(f'http://127.0.0.1:{port}',timeout=1000);break
+                except Exception:
+                    self.assertIsNone(process.poll());self.assertLess(time.monotonic(),deadline);time.sleep(.2)
+            page=browser.contexts[0].pages[0]
+            errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+            expect(page.get_by_role('heading',name='How to Play',exact=True)).to_be_visible()
+            expect(page.get_by_role('heading',name='Basic controls')).to_be_visible()
+            close=page.locator('form').get_attribute('action')
+            origin=page.url.rstrip('/')
+            self.assertEqual(page.request.post(origin+close,headers={'Origin':'https://example.invalid'}).status,403)
+            self.assertIsNone(process.poll())
+            for width in (900,390):
+                page.set_viewport_size({'width':width,'height':780})
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+            page.get_by_role('button',name='Back to game').click(no_wait_after=True)
+            self.assertEqual(process.wait(timeout=10),0)
+            self.assertFalse(errors,errors)
+        finally:
+            if process.poll() is None:process.terminate();process.wait(timeout=10)
+
+    def test_console_font_import_and_system_default_persist_without_touching_saves(self):
+        source=Path(self.temporary.name)/'font-source'
+        source.mkdir()
+        raw=bytearray(12+7*16+7*4)
+        raw[:4]=b'\x00\x01\x00\x00'
+        struct.pack_into('>H',raw,4,7)
+        for i,tag in enumerate((b'cmap',b'glyf',b'head',b'hhea',b'hmtx',b'loca',b'maxp')):
+            struct.pack_into('>4sIII',raw,12+i*16,tag,0,12+7*16+i*4,4)
+        (source/'FontStandard.ttf').write_bytes(raw)
+        local=Path(self.temporary.name)/'0'
+        save=local/'user-no-mii/save/font-test-marker'
+        save.parent.mkdir(parents=True,exist_ok=True)
+        save.write_bytes(b'keep-save')
+        page=self.page()
+        try:
+            page.locator('#language').select_option('en')
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
+            expect(page.locator('#font-mode')).to_have_value('system')
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
+            page.locator('#font-folder').fill(str(source))
+            page.locator('#font-import').click()
+            expect(page.locator('#font-mode')).to_have_value('console')
+            expect(page.locator('#font-status')).to_have_text('Imported fonts available.')
+            imported=json.loads((local/'font-library.json').read_text())
+            destination=Path(imported['files'][0]['path'])
+            self.assertEqual(destination.read_bytes(),raw)
+            (source/'FontStandard.ttf').write_bytes(b'broken')
+            page.locator('#font-import').click()
+            expect(page.locator('#notice-popup')).to_have_class('error')
+            self.assertEqual(json.loads((local/'font-library.json').read_text()),imported)
+            page.locator('#font-mode').select_option('system')
+            page.wait_for_function('() => !busy')
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
+            expect(page.locator('#font-mode')).to_have_value('system')
+            self.assertTrue(destination.is_file())
+            page.locator('#font-mode').select_option('console')
+            page.wait_for_function('() => !busy')
+            self.assertTrue(json.loads((local/'font-library.json').read_text())['enabled'])
+            self.assertEqual(save.read_bytes(),b'keep-save')
+            token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+            state=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
+            state['game_pid']=123
+            page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':state}))
+            page.evaluate('refresh()')
+            expect(page.locator('#font-mode')).to_be_disabled()
+            expect(page.locator('#font-import')).to_be_disabled()
+            page.unroute('**/api/status')
+            page.locator('#language').select_option('es')
+            expect(page.locator('#font-title')).to_have_text('Fuentes del juego')
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('Predeterminada del sistema')
+            expect(page.locator('#font-mode option[value="console"]')).to_have_text('Fuentes de consola importadas')
+            expect(page.locator('#font-status')).to_have_text('Fuentes importadas disponibles.')
+            page.locator('#language').select_option('pt-BR')
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('Padrão do sistema')
+            page.screenshot(path=str(ROOT/'local/graphics-diagnostics-work/font-import-ui.png'),full_page=True)
+        finally:
+            page.locator('#language').select_option('pt-BR')
+            page.close()
+
     def page(self,index=0,viewport=None):
         page=self.browser.new_page(locale="pt-BR", viewport=viewport or {"width":1365,"height":1024})
+        self.addCleanup(page.close)
         page.route('**/api/mii/composer/download', lambda route: route.fulfill(json={
             'ok':True,'data':{'state':'failed','detail':'Download indisponível no teste offline.'}}))
         page.goto(self.urls[index]);page.wait_for_load_state("networkidle")
+        # Language tests persist their choice on the shared server. Reset and
+        # await the save before a later reload, instead of relying on locale.
+        page.locator('#language').select_option('pt-BR')
+        expect(page.locator('html')).to_have_attribute('lang', 'pt-BR')
+        expect(page.locator('#language')).to_be_enabled()
         return page
+
+    def show_files(self, page, index=0, ready=False):
+        def status(route):
+            response=route.fetch(); body=response.json()
+            body['data']['tools_ready']=True
+            if ready:
+                body['data']['files']['ready']=True
+                body['data']['candidate']=True
+            route.fulfill(response=response,json=body)
+        page.route('**/api/status',status)
+        page.evaluate('() => refresh()')
+        page.locator('#flow-step-1').click()
+
+    def prepare_error(self,page,index=0):
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        result=page.request.post(self.urls[index]+'/api/prepare',headers={'X-MK8-Token':token},data={}).json()
+        self.assertFalse(result['ok'])
+        return result['error']
+
+    def test_notices_are_fixed_dismissible_and_respect_reduced_motion(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator('[data-key="volume"]')).to_be_enabled()
+            page.evaluate("notice('Aviso de teste')")
+            popup = page.locator("#notice-popup")
+            close = page.locator("#notice-close")
+            expect(popup).to_be_visible()
+            expect(page.locator("#notice")).to_have_text("Aviso de teste")
+            page.wait_for_timeout(260)
+            top = popup.bounding_box()["y"]
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            self.assertAlmostEqual(popup.bounding_box()["y"], top, delta=1)
+            # Modules can fit without document scrolling; the notification remains fixed.
+            close.click()
+            expect(popup).to_be_hidden()
+            expect(page.locator("#notice")).to_have_text("")
+            page.emulate_media(reduced_motion="reduce")
+            page.evaluate("notice('Falha de teste', true)")
+            expect(popup).to_be_visible()
+            self.assertEqual(popup.evaluate("el => el.getAnimations().length"), 0)
+            expect(page.locator("#notice")).to_have_class("error")
+            close.focus()
+            page.keyboard.press("Enter")
+            expect(popup).to_be_hidden()
+            page.set_viewport_size({"width":390, "height":844})
+            page.evaluate("notice('Mensagem longa: ' + 'arquivo/'.repeat(50))")
+            expect(popup).to_be_visible()
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            box = popup.bounding_box()
+            self.assertGreaterEqual(box["x"], 0)
+            self.assertLessEqual(box["x"] + box["width"], 390)
+            page.locator("#language").select_option("en")
+            expect(close).to_have_attribute("aria-label", "Close notification")
+            close.click()
+            page.locator("#language").select_option("pt-BR")
+            expect(popup).to_be_hidden()
+        finally:
+            page.close()
+
+    def test_settings_save_locks_edits_through_delayed_response_and_reload(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\nshow_fps = 0\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        phase, held_post, held_get = ["post"], [], []
+        def delay(route):
+            if phase[0] == "post" and route.request.method == "POST":
+                held_post.append((route, route.fetch()))
+            elif phase[0] == "reload" and route.request.method == "GET":
+                held_get.append((route, route.fetch()))
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            fps = page.locator('[data-key="show_fps"]')
+            expect(volume).to_be_enabled()
+            page.locator("#config-sub-audio").click()
+            volume.fill("70")
+            page.route("**/api/settings", delay)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-save")).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held_post), 1)
+            phase[0] = "reload"
+            held_post[0][0].fulfill(response=held_post[0][1])
+            page.wait_for_timeout(2300)
+            self.assertEqual(len(held_get), 1)
+            expect(volume).to_be_disabled()
+            expect(fps).to_be_disabled()
+            expect(page.locator("#settings-reload")).to_be_disabled()
+            phase[0] = "pass"
+            held_get[0][0].fulfill(response=held_get[0][1])
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(fps).not_to_be_checked()
+            page.locator("#config-sub-image").click()
+            fps.check()
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+            self.assertIn("show_fps = 1", ini.read_text())
+            self.assertIn("unknown_future = preserve", ini.read_text())
+        finally:
+            page.close()
+
+    def test_settings_save_failure_unlocks_form_and_keeps_edits_for_retry(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("volume = 1\n", encoding="utf-8")
+        page = self.page()
+        held = []
+        def fail(route):
+            if route.request.method == "POST":
+                held.append(route)
+            else:
+                route.continue_()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            volume = page.locator('[data-key="volume"]')
+            expect(volume).to_be_enabled()
+            page.locator("#config-sub-audio").click()
+            volume.fill("70")
+            page.route("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(volume).to_be_disabled()
+            page.wait_for_timeout(2300)
+            expect(volume).to_be_disabled()
+            self.assertEqual(len(held), 1)
+            held[0].fulfill(status=500, json={"ok":False, "error":"Falha simulada ao salvar."})
+            expect(page.locator("#notice")).to_contain_text("Falha simulada ao salvar.")
+            expect(volume).to_be_enabled()
+            expect(volume).to_have_value("70")
+            expect(page.locator("#settings-save")).to_be_enabled()
+            expect(page.locator("#settings-reload")).to_be_enabled()
+            expect(page.locator("#settings-pending")).to_have_text("Alterações não salvas.")
+            self.assertEqual(ini.read_text(), "volume = 1\n")
+            page.unroute("**/api/settings", fail)
+            page.locator("#settings-save").click()
+            expect(page.locator("#settings-pending")).to_have_text("")
+            self.assertIn("volume = 0.7", ini.read_text())
+        finally:
+            page.close()
+
+    def test_settings_tab_updates_shared_ini_and_keeps_unsaved_edits_during_polling(self):
+        folder = Path(self.temporary.name) / "0/user-no-mii"
+        folder.mkdir(exist_ok=True)
+        ini = folder / "mk8d.ini"
+        ini.write_text("# teste\nvolume = 0.50\nunknown_future = preserve\n", encoding="utf-8")
+        page = self.page()
+        try:
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("50")
+            page.locator("#config-sub-audio").click()
+            page.locator("#settings input[data-key=volume]").fill("75")
+            page.wait_for_timeout(2300)
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#config-sub-image").click()
+            page.locator("#settings select[data-key=resolution]").select_option("75%")
+            page.locator("#config-sub-controls").click()
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            page.locator("#settings select[data-key=bind_key_a]").select_option("J")
+            expect(page.locator("#settings select[data-key=bind_key_b]")).to_have_value("K")
+            page.locator("#settings select[data-key=bind_key_a]").select_option("Space")
+            page.locator("#settings-save").click()
+            expect(page.locator("#notice")).to_contain_text("Configurações salvas.")
+            self.assertIn("unknown_future = preserve", ini.read_text())
+            self.assertIn("bind_key_a = Space", ini.read_text())
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            expect(page.locator("#settings input[data-key=volume]")).to_have_value("75")
+            page.locator("#config-sub-controls").click()
+            page.get_by_text("Mapeamento do teclado", exact=True).click()
+            expect(page.locator("#settings select[data-key=bind_key_a]")).to_have_value("Space")
+            ini.write_text(ini.read_text() + "show_fps = 1\n", encoding="utf-8")
+            expect(page.locator("#settings input[data-key=show_fps]")).to_be_checked(timeout=5000)
+            page.locator("#settings details[open] summary").click()
+            page.locator("#config-tab-content").click()
+            expect(page.locator("#settings #dlc-enabled")).to_be_visible()
+            self.assertEqual(page.locator("#install #dlc-enabled").count(), 0)
+            page.locator("#language").select_option("en")
+            expect(page.locator("#settings")).to_contain_text("Settings")
+            screenshots = ROOT / "local/screenshots"
+            screenshots.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(screenshots / "launcher-settings-desktop.png"), full_page=True)
+            page.set_viewport_size({"width":390, "height":844})
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            page.screenshot(path=str(screenshots / "launcher-settings-mobile.png"), full_page=True)
+            page.locator("#language").select_option("pt-BR")
+            expect(page.locator("html")).to_have_attribute("lang", "pt-BR")
+        finally:
+            page.close()
 
     def test_multiplayer_uses_the_mii_and_only_steam_rooms(self):
         page = self.page()
@@ -118,7 +538,7 @@ class LauncherTests(unittest.TestCase):
         page.get_by_role("button", name="Criar Mii agora", exact=True).click()
         expect(page.locator("#miis")).to_be_visible()
         page.locator("#mii-name").fill("João")
-        page.locator("#mii-save").click()
+        page.locator("#mii-continue").click()
         expect(page.locator("#mii-saved .mii-saved-item")).to_have_text(["João"])
         page.get_by_role("button", name="Multijogador", exact=True).click()
         expect(page.locator("#mp-mii-text")).to_have_text("Você entra nas salas como João.")
@@ -129,8 +549,8 @@ class LauncherTests(unittest.TestCase):
     def test_01_preparation_missing_files_and_disabled_play(self):
         page=self.page();errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
         expect(page.get_by_role("heading",name="Instalação",exact=True)).to_be_visible()
-        page.locator('#stage-build').click();page.get_by_role("button",name="Iniciar build",exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("NPDM indisponível")
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        self.assertIn('NPDM indisponível', self.prepare_error(page))
         page.get_by_role("button",name="Jogar",exact=True).click()
         expect(page.get_by_role("button",name="Jogar solo",exact=True)).to_be_disabled()
         expect(page.locator('#game-log')).to_contain_text('Nenhum teste iniciado')
@@ -162,6 +582,7 @@ class LauncherTests(unittest.TestCase):
         # No ExeFS / RomFS / NACP fields any more: the launcher finds those itself.
         for gone in ('RomFS extraído', 'Pasta ExeFS do MK8', 'Metadados NACP'):
             expect(page.get_by_label(gone, exact=True)).to_have_count(0)
+        self.show_files(page)
         page.get_by_label('Jogo base', exact=True).fill('updated-base.nsz')
         page.get_by_label('Jogo base', exact=True).press('Tab')
         expect(page.locator('#notice')).to_contain_text('Arquivos salvos')
@@ -283,10 +704,13 @@ class LauncherTests(unittest.TestCase):
         (folder/'control/control.nacp').touch()
         (folder/'exefs/main.npdm').write_bytes(raw)
         page=self.page()
+        self.show_files(page)
         page.get_by_text('Já tenho o jogo extraído numa pasta', exact=True).click()
         page.get_by_label('Pasta do jogo extraído', exact=True).fill(str(folder))
-        page.locator('#stage-build').click();page.get_by_role('button',name='Iniciar build',exact=True).click()
-        expect(page.locator('#notice')).to_contain_text('AArch32')
+        page.locator('#game-folder').blur()
+        page.wait_for_function('() => !busy')
+        expect(page.locator('#architecture-state')).to_contain_text('AArch32')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         page.reload()
         # Reopened in folder mode, with the reason next to the folder.
         expect(page.locator('#architecture-state')).to_contain_text('AArch32')
@@ -301,13 +725,17 @@ class LauncherTests(unittest.TestCase):
         base, patch = source / "base.nsz", source / "update.nsz"
         base.touch()
         patch.touch()
+        self.show_files(page, 1)
         page.get_by_label("Jogo base", exact=True).fill(str(base))
-        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("Selecione dois arquivos")
+        page.get_by_label("Jogo base", exact=True).blur()
+        page.wait_for_function('() => !busy')
+        self.assertIn('Selecione dois arquivos',self.prepare_error(page,1))
         page.get_by_label("Atualização 4.0.1", exact=True).fill(str(patch))
         page.get_by_label("Arquivo prod.keys", exact=True).fill(str(source / "missing.keys"))
-        page.locator('#stage-build').click();page.get_by_role("button", name="Iniciar build", exact=True).click()
-        expect(page.locator("#notice")).to_contain_text("prod.keys não encontrado")
+        page.get_by_label("Arquivo prod.keys", exact=True).blur()
+        page.wait_for_function('() => !busy')
+        self.assertIn('prod.keys não encontrado',self.prepare_error(page,1))
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         # Two of the three files exist: the step counts them and is not ready.
         expect(page.locator("#files-state")).to_have_text("2 de 3")
         expect(page.locator("#tile-base")).to_have_attribute("data-ok", "true")
@@ -334,15 +762,11 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#prepare-state')).to_have_text('Pendente')
         expect(page.locator('#play-state')).to_have_text('Bloqueado')
         self.assertEqual(status['files']['ready'],False)
-        # Step 2 shows the three files; the extracted-folder option stays folded away.
+        # Incomplete prerequisites keep the build locked; file selection follows tools.
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        self.show_files(page)
         for label in ('Jogo base','Atualização 4.0.1','Arquivo prod.keys'):
             expect(page.get_by_label(label, exact=True)).to_be_visible()
-        # (open only when this data folder already uses an extracted folder: test_05 leaves one)
-        folder=page.get_by_label('Pasta do jogo extraído', exact=True)
-        expect(folder).to_be_visible() if status['files']['folder'] else expect(folder).to_be_hidden()
-        # The build screen: idle, with its live panel hidden until a build runs.
-        page.locator('#stage-build').click()
-        expect(page.get_by_role('button',name='Iniciar build',exact=True)).to_be_visible()
         expect(page.locator('#build-live')).to_be_hidden()
         # Headless server has no native window: pickers stay hidden and the API refuses
         # instead of pretending a path was chosen.
@@ -414,6 +838,39 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#prepare-state')).to_have_text('Atualizar')
         expect(page.locator('#build-done')).to_be_hidden()
         self.assertFalse(errors);page.close()
+
+    def test_mii_resource_stream_finishes_before_wasm_request(self):
+        # A slow response exposes the ordering even on browsers that eagerly buffer
+        # localhost downloads. No proprietary AFL data is needed for this regression.
+        page=self.browser.new_page()
+        self.addCleanup(page.close)
+        page.add_init_script("""(() => {
+          const fetch = window.fetch.bind(window);
+          let drained = false, chunks = 0;
+          window.fetch = (input, options) => {
+            const url = String(input);
+            if (url.endsWith('/api/mii/composer/resource')) {
+              return Promise.resolve(new Response(new ReadableStream({
+                async pull(controller) {
+                  await new Promise(resolve => setTimeout(resolve, 10));
+                  if (++chunks <= 16) controller.enqueue(new Uint8Array(65536));
+                  else { drained = true; controller.close(); }
+                }
+              }, {highWaterMark: 0})));
+            }
+            if (url.endsWith('/ffl-emscripten.wasm')) {
+              document.documentElement.dataset.miiStreamDrainedBeforeWasm = String(drained);
+              // Stop before interpreting the synthetic bytes as an AFL library.
+              return Promise.reject(new Error('Synthetic resource: stop before FFL initialization'));
+            }
+            return fetch(input, options);
+          };
+        })();""")
+        page.goto(self.urls[0])
+        expect(page.locator('html')).to_have_attribute('data-mii-stream-drained-before-wasm','true')
+        token=page.locator('meta[name="mk8-token"]').get_attribute('content')
+        result=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token},timeout=5000)
+        self.assertTrue(result.json()['ok'])
 
     def test_mii_preparation_releases_play_and_clears_only_its_stale_notice(self):
         page=self.page()
@@ -488,12 +945,15 @@ class LauncherTests(unittest.TestCase):
         env=dict(os.environ,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=f'--remote-debugging-port={port}',WEBVIEW2_USER_DATA_FOLDER=str(folder/'webview'))
         process=subprocess.Popen([os.environ.get('MK8_LAUNCHER_EXE',str(ROOT/"target/release/Launcher.exe")),"--data-dir",str(folder)],env=env)
         user32=ctypes.windll.user32
+        native_hwnds=[]
         def titles():
             found=[]
+            native_hwnds.clear()
             @ctypes.WINFUNCTYPE(ctypes.c_bool,ctypes.c_void_p,ctypes.c_void_p)
             def visit(hwnd,_):
                 pid=ctypes.c_ulong();user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd),ctypes.byref(pid))
                 if pid.value==process.pid and user32.IsWindowVisible(ctypes.c_void_p(hwnd)):
+                    native_hwnds.append(hwnd)
                     buf=ctypes.create_unicode_buffer(256);user32.GetWindowTextW(ctypes.c_void_p(hwnd),buf,256);found.append(buf.value)
                 return True
             user32.EnumWindows(visit,0)
@@ -515,18 +975,33 @@ class LauncherTests(unittest.TestCase):
             url=json.loads((folder/'launcher.json').read_text())['url']
             self.assertEqual(page.url.rstrip('/'),url)
             # Inside the native window the folder pickers are offered.
+            self.show_files(page)
             expect(page.locator('[data-browse="base_package"]')).to_be_visible()
             page.locator('#language').select_option('en')
             expect(page.locator('[data-browse="base_package"]')).to_have_attribute('aria-label', 'Choose base game')
             page.get_by_role('button',name='Play',exact=True).click()
             expect(page.get_by_role('heading',name='Play',exact=True)).to_be_visible()
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-fonts').click()
+            expect(page.locator('#font-mode')).to_be_enabled()
+            expect(page.locator('#font-mode option[value="system"]')).to_have_text('System Default')
+            expect(page.locator('[data-browse="font-folder"]')).to_be_visible()
             # The window refuses to navigate away from the local launcher.
             page.evaluate("location.href='https://example.invalid/'")
             time.sleep(1.5)
             self.assertEqual(page.url.rstrip('/'),url)
+            page.unroute_all(behavior='wait')
             browser.close()
         finally:
-            process.terminate();process.wait(timeout=10)
+            # Close this fixture's window normally so WebView2 can release its data folder.
+            titles()
+            for hwnd in native_hwnds:
+                user32.PostMessageW(ctypes.c_void_p(hwnd), 0x0010, 0, 0)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.terminate();process.wait(timeout=10)
+            time.sleep(2)
 
 
 if __name__=="__main__":unittest.main()

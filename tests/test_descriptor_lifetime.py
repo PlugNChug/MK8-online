@@ -90,6 +90,8 @@ void backend_execute(uint64_t handle) {
 void renderer_prefetch_verify(void) {}
 uint64_t renderer_fence_seq(void) { return 1; }
 void renderer_submit(void) {}
+void mk8_texture_readback(NvnTexture *t, const NvnTextureView *view, const int32_t *region,
+                          uint64_t destination, int64_t row, int64_t image) { abort(); }
 ''' + queue + sync_hook + r'''
 typedef struct { int ncolor; NvnTexture *color[8], *depth; } RtState;
 typedef struct { NvnDescPool *tpool, *spool; RtState rt; } ExecState;

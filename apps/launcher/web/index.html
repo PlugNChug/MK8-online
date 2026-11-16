@@ -8,31 +8,39 @@
     <meta name="mk8-language" content="__LANGUAGE__" />
     <title>MK8-online</title>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/installation.css" />
+    <link rel="stylesheet" href="/workspace.css" />
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/workspace.js" defer></script>
+    <script src="/installation.js" defer></script>
   </head>
   <body>
+    <div id="notice-popup" hidden>
+      <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button id="notice-close" type="button" class="ghost" aria-label="Fechar aviso"><span aria-hidden="true">×</span></button>
+    </div>
     <header class="topbar">
       <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
       <span class="tag">experimental</span>
       <span class="spacer"></span>
-      <label class="language-picker"><span>Idioma</span><select id="language" aria-label="Idioma"><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select></label>
+      <label class="language-picker"><span>Idioma</span><select id="language" aria-label="Idioma"><option value="es">Español</option><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select></label>
       <button id="update-chip" class="chip accent" data-goto="support" hidden>Atualização disponível</button>
       <span id="version" class="chip">v—</span>
     </header>
 
     <div class="shell">
       <nav class="nav" aria-label="Seções">
-        <button class="tab active" data-tab="install" aria-selected="true">Instalar</button>
-        <button class="tab" data-tab="play" aria-selected="false">Jogar</button>
-        <button class="tab" data-tab="session" aria-selected="false">Multijogador</button>
-        <button class="tab" data-tab="support" aria-selected="false">Suporte</button>
-        <button class="tab" data-tab="miis" aria-selected="false">Perfil Mii</button>
+        <button class="tab" data-tab="play" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Jogar</span></button>
+        <button class="tab" data-tab="miis" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg><span>Perfil Mii</span></button>
+        <button class="tab" data-tab="session" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M2 21v-3a6 6 0 0 1 12 0v3m2-16a3 3 0 0 1 0 6m1 3a5 5 0 0 1 5 5v2"/></svg><span>Multijogador</span></button>
+        <hr class="nav-divider" />
+        <button class="tab active" data-tab="install" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg><span>Instalar</span></button>
+        <button class="tab" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16m8-16v16m8-16v16M1 8h6m2 8h6m2-7h6"/></svg><span>Configurações</span></button>
+        <button class="tab" data-tab="support" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 4 3c-1 .5-1 1-1 2m0 3h.01"/></svg><span>Suporte</span></button>
       </nav>
 
       <main>
-        <div id="notice" role="status" aria-live="polite"></div>
-
         <!-- Instalar -->
         <section id="install" class="panel">
           <div class="panel-head">
@@ -94,6 +102,12 @@
                   <input id="update_package" aria-label="Atualização 4.0.1" spellcheck="false" placeholder="Caminho do arquivo" />
                   <button type="button" class="ghost" data-browse="update_package" data-kind="package" aria-label="Escolher Atualização 4.0.1" hidden>Escolher</button>
                 </div>
+                <div class="file-tile" id="tile-dlc">
+                  <span class="ft-icon" aria-hidden="true">D</span>
+                  <span class="ft-text"><strong>DLC (opcional)</strong><small>Booster Course Pass v65536 · arquivo .nsp</small></span>
+                  <input id="prepare-dlc-package" aria-label="DLC opcional" spellcheck="false" placeholder="Deixe vazio para preparar sem importar DLC" />
+                  <button type="button" class="ghost" data-browse="prepare-dlc-package" data-kind="package" aria-label="Escolher DLC" hidden>Escolher</button>
+                </div>
                 <div class="file-tile" id="tile-keys">
                   <span class="ft-icon" aria-hidden="true">K</span>
                   <span class="ft-text"><strong>prod.keys</strong><small id="keys-hint">Encontrado sozinho ao lado do jogo ou em %USERPROFILE%\.switch</small></span>
@@ -101,6 +115,7 @@
                   <button type="button" class="ghost" data-browse="prod_keys" data-kind="keys" aria-label="Escolher prod.keys" hidden>Escolher</button>
                 </div>
               </div>
+              <p class="hint">A DLC selecionada será importada após a build, na mesma preparação. Se já instalou uma DLC, deixar o campo vazio mantém a configuração atual. Você também pode importar depois em Instalar → Conteúdo adicional.</p>
               <details id="folder-mode" class="alt">
                 <summary>Já tenho o jogo extraído numa pasta</summary>
                 <div class="path-field">
@@ -124,7 +139,6 @@
               <div id="build-idle">
                 <p class="muted">A primeira build leva de 15 a 40 minutos, conforme o computador; as seguintes reaproveitam o que já foi feito. Dá para usar o PC normalmente enquanto isso.</p>
                 <p id="build-stale" class="stale" hidden></p>
-                <div class="cta"><button type="button" id="build" class="primary big">Iniciar build</button></div>
               </div>
               <div id="build-live" class="live" hidden>
                 <div class="live-top">
@@ -145,11 +159,45 @@
               <div id="build-done" class="done" hidden>
                 <span class="done-mark" aria-hidden="true">✓</span>
                 <div><strong>Jogo pronto para jogar</strong><small id="build-took"></small></div>
-                <button type="button" id="go-play" class="primary">Jogar agora</button>
+              </div>
+              <div id="build-actions" class="cta">
+                <button type="button" id="build" class="primary big">Iniciar build</button>
+                <button type="button" id="go-play" class="primary big" hidden>Jogar agora</button>
               </div>
               <p id="build-detail" class="hint" role="status"></p>
               <pre id="build-log" class="log" aria-label="Log da preparação" hidden>Nenhuma preparação iniciada.</pre>
             </div>
+          </article>
+          <article id="dlc-card" class="card dlc-card" aria-labelledby="dlc-title">
+            <div class="row">
+              <h2 id="dlc-title">Conteúdo adicional</h2>
+              <span id="dlc-state" class="pill">Não instalado</span>
+            </div>
+            <p>Booster Course Pass</p>
+            <p class="hint">Opcional. Importe o NSP do DLC do seu console após preparar o jogo.</p>
+            <div id="dlc-files" class="files">
+              <div class="file-tile" id="tile-dlc-package">
+                <span class="ft-icon" aria-hidden="true">D</span>
+                <span class="ft-text"><strong>NSP do DLC</strong><small>Arquivo .nsp do Booster Course Pass</small></span>
+                <input id="dlc-package" aria-label="NSP do DLC" spellcheck="false" placeholder="Caminho do arquivo" />
+                <button type="button" class="ghost" data-browse="dlc-package" data-kind="dlc" aria-label="Escolher NSP do DLC" hidden>Escolher</button>
+              </div>
+              <div class="file-tile" id="tile-dlc-keys">
+                <span class="ft-icon" aria-hidden="true">K</span>
+                <span class="ft-text"><strong>prod.keys</strong><small id="dlc-keys-hint">Chaves do seu console para importar o DLC</small></span>
+                <input id="dlc-keys" aria-label="Chaves para importar DLC" spellcheck="false" placeholder="Automático" />
+                <button type="button" class="ghost" data-browse="dlc-keys" data-kind="keys" aria-label="Escolher chaves para DLC" hidden>Escolher</button>
+              </div>
+            </div>
+            <div class="row">
+              <button type="button" class="ghost" data-goto="settings">Configurar conteúdo adicional</button>
+              <button type="button" id="dlc-change" class="ghost" hidden>Reinstalar ou selecionar outro NSP</button>
+              <button type="button" id="dlc-import" class="ghost" disabled>Importar DLC NSP…</button>
+              <button type="button" class="ghost" data-log="dlc-log">Ver log</button>
+            </div>
+            <p id="dlc-hint" class="hint">Prepare o jogo antes de importar DLC.</p>
+            <p id="dlc-detail" class="hint" role="status"></p>
+            <pre id="dlc-log" class="log" aria-label="Log do DLC" hidden></pre>
           </article>
           <p class="fine">O MK8-online nunca baixa nem distribui o jogo ou chaves. Tudo é feito com os arquivos do seu console, neste computador.</p>
         </section>
@@ -183,6 +231,70 @@
           <p class="fine">Fonte do download das peças: Internet Archive, cópia do antigo CDN Miitomo.</p>
         </section>
 
+        <section id="settings" class="panel" hidden>
+          <div class="panel-head">
+            <div><h1>Configurações</h1><p class="muted">As mesmas opções do menu F1, compartilhadas com o jogo.</p></div>
+          </div>
+          <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
+          <nav class="settings-index" aria-label="Seções de configurações"><a href="#settings-groups">Vídeo e controles</a><a href="#font-title">Fontes do jogo</a><a href="#settings-dlc-title">Conteúdo adicional</a><a href="#ctgp-title">CTGP Deluxe</a></nav>
+          <form id="game-settings">
+            <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
+            <div class="row settings-actions">
+              <button type="submit" id="settings-save" class="primary" disabled>Salvar configurações</button>
+              <button type="button" id="settings-reload" class="ghost">Recarregar do jogo</button>
+              <span id="settings-pending" class="hint" role="status"></span>
+            </div>
+          </form>
+          <article class="card" aria-labelledby="font-title">
+            <h2 id="font-title">Fontes do jogo</h2>
+            <fieldset id="font-fields" disabled>
+              <div class="settings-grid"><label>Fonte<select id="font-mode"><option value="system">Padrão do sistema</option><option value="console" disabled>Fontes do console importadas</option></select></label></div>
+              <p id="font-status" class="hint" role="status"></p>
+              <label>Pasta das fontes<div class="row"><input id="font-folder" spellcheck="false" /><button type="button" class="ghost" data-browse="font-folder" data-kind="folder" aria-label="Escolher pasta das fontes" hidden>Escolher</button></div></label>
+              <button id="font-import" type="button" class="ghost">Importar pasta de fontes</button>
+            </fieldset>
+            <p class="hint">Use fontes extraídas do seu console. A importação guarda uma cópia privada. Padrão do sistema mantém as fontes importadas para usar depois. As alterações valem ao iniciar o jogo.</p>
+          </article>
+          <article class="card settings-dlc" aria-labelledby="settings-dlc-title">
+            <div class="row"><h2 id="settings-dlc-title">Conteúdo adicional</h2><span id="settings-dlc-state" class="pill">Não instalado</span></div>
+            <label class="dlc-toggle"><input type="checkbox" id="dlc-enabled" disabled />Ativar Booster Course Pass</label>
+            <p id="settings-dlc-hint" class="hint">Desativar mantém os arquivos e os saves.</p>
+            <p class="fine">Nas salas da Steam, todos precisam do mesmo estado: com o DLC ativado ou todos sem ele.</p>
+            <button type="button" class="ghost" data-goto="install">Importar ou reparar DLC</button>
+          </article>
+          <article id="ctgp-card" class="card settings-dlc" aria-labelledby="ctgp-title">
+            <div class="row"><h2 id="ctgp-title">CTGP Deluxe</h2><span id="ctgp-state" class="pill">Não instalado</span></div>
+            <p class="hint">Pacote de pistas opcional: as pistas, músicas e copas do CTGP Deluxe no lugar das do jogo base. Desative para voltar ao jogo original; o jogo, o DLC e os seus saves não são alterados.</p>
+            <label class="dlc-toggle"><input type="checkbox" id="ctgp-enabled" disabled />Ativar CTGP Deluxe</label>
+            <p id="ctgp-hint" class="hint">Importe a pasta extraída do ZIP oficial do CTGP Deluxe.</p>
+            <div id="ctgp-files" class="files">
+              <div class="file-tile" id="tile-ctgp-source">
+                <span class="ft-icon" aria-hidden="true">C</span>
+                <span class="ft-text"><strong>Pasta do CTGP Deluxe</strong><small>A pasta extraída do ZIP, com atmosphere/</small></span>
+                <input id="ctgp-source" aria-label="Pasta do CTGP Deluxe" spellcheck="false" placeholder="Caminho da pasta" />
+                <button type="button" class="ghost" data-browse="ctgp-source" data-kind="ctgp" aria-label="Escolher a pasta do CTGP Deluxe" hidden>Escolher</button>
+              </div>
+            </div>
+            <label class="ctgp-layout">Onde colocar as pistas do CTGP
+              <select id="ctgp-layout">
+                <option value="base">No lugar das copas do jogo base (48 pistas; +16 com o DLC)</option>
+                <option value="dlc">No lugar das copas do DLC (48 pistas; o jogo base fica original)</option>
+                <option value="dlc-late">No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)</option>
+                <option value="added">Em 16 copas novas, sem tirar nenhuma pista (terceira e quarta páginas)</option>
+              </select>
+            </label>
+            <div class="row">
+              <button type="button" id="ctgp-import" class="ghost" disabled>Importar CTGP…</button>
+              <button type="button" class="ghost" data-log="ctgp-log">Ver log</button>
+            </div>
+            <p id="ctgp-detail" class="hint" role="status"></p>
+            <pre id="ctgp-log" class="log" aria-label="Log do CTGP" hidden></pre>
+            <p class="fine">Em copas novas: as 64 pistas do CTGP ficam em 16 copas próprias, nas páginas depois das do jogo (L/R na tela de copas), com nomes, imagens, músicas e ícones delas; nenhuma pista original sai do lugar. Os recordes de cada pista do CTGP ficam nos saves próprios do CTGP, junto com os da pista original da mesma vaga.</p>
+            <p class="fine">No lugar das copas do jogo base: 48 pistas nas 12 copas do jogo e, com o Booster Course Pass ativado, mais 16 nas 4 primeiras copas do DLC. No lugar das copas do DLC: 48 pistas nas 12 copas do Booster Course Pass e o jogo base continua original (requer o DLC importado e ativado). Trocar a disposição importa o pacote de novo, em segundos. Com o CTGP ativado o jogo usa saves próprios, criados como cópia dos seus. Nas salas da Steam, todos precisam do mesmo pacote: o mesmo CTGP ativado ou todos sem ele.</p>
+            <p class="fine">Baixe o CTGP Deluxe em <a href="https://www.ctgpdx.com/download" target="_blank" rel="noopener">ctgpdx.com</a>, para uso pessoal. O MK8-online não distribui o pacote: ele é lido da sua cópia e fica só neste computador.</p>
+          </article>
+          <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
+        </section>
         <!-- Jogar -->
         <section id="play" class="panel" hidden>
           <div class="panel-head">
@@ -193,8 +305,13 @@
             <span id="play-state" class="pill">Bloqueado</span>
           </div>
           <div class="card hero">
-            <span class="big-eight" aria-hidden="true">8</span>
+            <svg class="race-circuit" viewBox="0 0 420 320" aria-hidden="true">
+              <path class="circuit-edge" d="M210 160C160 100 130 55 95 55C15 55 15 265 95 265C130 265 160 220 210 160C260 100 290 55 325 55C405 55 405 265 325 265C290 265 260 220 210 160Z"/>
+              <path class="circuit-lane" d="M210 160C160 100 130 55 95 55C15 55 15 265 95 265C130 265 160 220 210 160C260 100 290 55 325 55C405 55 405 265 325 265C290 265 260 220 210 160Z"/>
+              <circle class="circuit-marker" cx="95" cy="55" r="9"/><circle class="circuit-marker secondary" cx="325" cy="265" r="6"/>
+            </svg>
             <div class="hero-body">
+              <h2 class="game-title">Mario Kart 8<br /><span>Deluxe</span></h2>
               <p id="game-state">Prepare o jogo para habilitar a execução.</p>
               <p id="mii-preparation-state" role="status" aria-live="polite" hidden></p>
               <div class="cta">
@@ -204,6 +321,8 @@
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>
+          <div class="play-shortcuts"><button type="button" data-goto="miis"><span>Perfil Mii</span><small>Crie e personalize seu piloto</small></button><button type="button" data-goto="session"><span>Multijogador</span><small>Encontre sua próxima sala</small></button><button type="button" data-goto="settings" data-anchor="ctgp-title"><span>CTGP Deluxe</span><small>Configure suas pistas e copas</small></button></div>
+          <article class="card"><h2>Booster Course Pass</h2><p class="hint">Você pode importar ou reparar o Booster Course Pass sem repetir a build.</p><button type="button" class="ghost" id="play-dlc-manage">Abrir importação de DLC</button></article>
           <details class="drawer">
             <summary>Log do jogo</summary>
             <pre id="game-log" aria-label="Log do jogo">Nenhum teste iniciado.</pre>
@@ -228,11 +347,16 @@
             </div>
           </div>
           <p id="steam-state" class="hint" role="status"></p>
+          <p id="steam-dlc-hint" class="hint">Para jogar juntos, todos devem usar a mesma DLC ativada ou jogar com ela desativada. Altere isso em Configurações antes de criar ou entrar na sala.</p>
 
           <div class="grid2">
             <div class="card">
               <h2>Sua sala</h2>
-              <button id="steam-host" type="button" class="primary">Criar sala</button>
+              <div class="row">
+                <button id="steam-host" type="button" class="primary">Criar Sala (Automático)</button>
+                <button id="steam-host-manual" type="button" class="ghost">Jogar (Sala Manual)</button>
+              </div>
+              <p class="hint">Estes dois botões criam sua própria sala Steam. No modo manual, você escolhe o Mii e cria a sala LAN no jogo. Para entrar na sala de um amigo, aceite o convite ao lado.</p>
               <div id="steam-room" hidden>
                 <p id="peers">Sem participantes conectados.</p>
                 <div class="row">
@@ -243,6 +367,13 @@
             </div>
             <div class="card">
               <h2>Convites e salas de amigos</h2>
+              <label>Ao entrar na sala de um amigo
+                <select id="steam-navigation">
+                  <option value="automatic">Entrar automaticamente no jogo</option>
+                  <option value="manual">Navegar manualmente no jogo</option>
+                </select>
+              </label>
+              <p class="hint">Vale também para convites aceitos no chat da Steam. A escolha fica salva neste computador.</p>
               <ul id="steam-invites" class="mp-list"></ul>
               <ul id="steam-rooms" class="mp-list"></ul>
               <p id="steam-empty" class="hint">Nenhum convite nem sala de amigo aberta agora.</p>
@@ -251,6 +382,7 @@
 
           <div class="card">
             <div class="row mp-friends-head"><h2>Amigos da Steam</h2><input id="friend-filter" aria-label="Procurar amigo" placeholder="Procurar amigo" /></div>
+            <p class="hint">A busca inclui todos os amigos. Quem está invisível aparece como offline.</p>
             <ul id="steam-friends" class="mp-list mp-friends"></ul>
           </div>
 
@@ -259,8 +391,8 @@
             <ol class="howto">
               <li>Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.</li>
               <li>Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como "Spacewar", o aplicativo de testes da Steam.</li>
-              <li>O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.</li>
-              <li>O amigo aceita: no Launcher (Aceitar), no chat da Steam ou em Entrar na sala do amigo. O jogo dele abre e entra na sala sozinho.</li>
+              <li>O anfitrião usa Criar Sala (Automático) para abrir o jogo e criar a sala LAN sozinho, ou Jogar (Sala Manual) para navegar por conta própria. Depois usa Convidar ao lado do amigo ou Convidar pela Steam.</li>
+              <li>O amigo escolhe entrada automática ou manual acima e aceita no Launcher, no chat da Steam ou em Entrar na sala do amigo. O jogo abre conectado pela Steam.</li>
               <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
               <li>Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>

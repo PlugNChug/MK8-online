@@ -40,8 +40,10 @@ typedef struct {
 
 static const AutoStep auto_common[] = {
     {AUTO_MENU, 330, 36000, AUTO_A, 6, "title"},
-    {AUTO_NONE, 150, 0, AUTO_DOWN, 6, "menu: down"},
-    {AUTO_NONE, 90, 0, AUTO_A, 6, "menu: choose"},
+    // The title opens the Mii picker, whose first item is the active local profile.
+    // DOWN here selected the preset below it ("Player"), not a main-menu option.
+    {AUTO_NONE, 156, 0, 0, 0, "Mii: keep active profile"},
+    {AUTO_NONE, 90, 0, AUTO_A, 6, "Mii: confirm active profile"},
     {AUTO_NONE, 300, 0, AUTO_L | AUTO_R, 20, "LAN: hold L+R"},
     {AUTO_NONE, 0, 0, AUTO_L | AUTO_R | AUTO_LSTICK, 6, "LAN: left stick"},
     {AUTO_NONE, 0, 0, AUTO_L | AUTO_R, 64, "LAN: release"},
