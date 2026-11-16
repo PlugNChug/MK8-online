@@ -123,11 +123,17 @@ L_7000bbbb40:;
                 C.patch_sdk(out, 'sdk_008.c')
         hooks = Counter()  # (the cup screen: both button setups, both page turns, the state query)
         for unit in C.UI_UNITS:
+            if unit.startswith('sdk'):
+                continue
             out = C.patch((folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n'), unit)
-            for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32', 'mk8_cup_label(LD32'):
+            for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32', 'mk8_cup_label(LD32',
+                         'mk8_course_picture(c->x', 'mk8_course_pictures()', 'mk8_panel_record(c->x',
+                         'mk8_panel_picture(c->x', 'mk8_course_picture_id(c->x'):
                 hooks[call] += out.count(call)
         self.assertEqual(hooks, Counter({'mk8_cup_page_id(c->x': 2, 'mk8_cup_page_turn(c->x': 2, 'mk8_cup_owned(LD32': 1,
-                                         'mk8_cup_label(LD32': 1}))
+                                         'mk8_cup_label(LD32': 1, 'mk8_course_picture(c->x': 1,
+                                         'mk8_course_pictures()': 1, 'mk8_panel_record(c->x': 1,
+                                         'mk8_panel_picture(c->x': 1, 'mk8_course_picture_id(c->x': 1}))
         with tempfile.TemporaryDirectory() as tmp:  # (the path builders: the folder hook once the name is ready)
             out = C.patch_unit(folder/'main_186.c', Path(tmp)).read_text(encoding='utf-8')
             self.assertIn('L_700089ece0:;\n    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));', out)
@@ -296,6 +302,32 @@ static int music(void) {  // (MK8_ROMFS_OVERLAY with only Audio/Resource/Stream/
     if (mk8_stream_path(pn) != pn) return 64;
     return 0;
 }
+int64_t mk8_course_pictures(void);
+uint64_t mk8_course_picture(uint64_t record, uint64_t load, uint64_t name);
+void mk8_panel_record(uint64_t panel, uint64_t record);
+uint64_t mk8_panel_picture(uint64_t panel, uint64_t id);
+uint64_t mk8_course_picture_id(uint64_t id);
+static int pictures(void) {  // (MK8_ROMFS_OVERLAY with only UI/cmn/menu/ym_CoursePict_CTGP02_00^u.bntx)
+    game_cups();
+    uint64_t base = (uint64_t)(uintptr_t)object, game = (uint64_t)(uintptr_t)"Gu_WaterPark_00";
+    mk8_cups_built(base);
+    if (mk8_course_pictures() != 1) return 70;
+    uint32_t id = 0x7b, other = 0x7c;  // (the first added picture's ID, and one past the last)
+    const char *got = (const char *)(uintptr_t)mk8_course_picture((uint64_t)(uintptr_t)&id, 1, game);
+    if (strcmp(got, "CTGP02_00")) return 71;
+    if (mk8_course_picture((uint64_t)(uintptr_t)&other, 1, game) != game) return 72;
+    if (strcmp((const char *)(uintptr_t)mk8_course_picture((uint64_t)(uintptr_t)&id, 0, game), "CTGP02_00")) return 73;
+    uint64_t second = mk8_cup_entry(base, 25) + 16;  // (the added cup's second course: CTGP02)
+    mk8_panel_record(0x1000, second);               // (panel A shows it, panel B a game course)
+    mk8_panel_record(0x2000, mk8_cup_entry(base, 3));
+    if (mk8_panel_picture(0x1000, 28) != 0x7b || mk8_panel_picture(0x2000, 28) != 28) return 74;
+    mk8_panel_record(0x1000, second - 16);          // (panel A now shows CTGP01: no picture in the overlay)
+    if (mk8_panel_picture(0x1000, 27) != 27 || mk8_panel_picture(0x3000, 40) != 40) return 75;
+    if (mk8_course_picture_id(28) != 28) return 76;  // (no added cup chosen)
+    mk8_cup_select(base, 25);
+    if (mk8_course_picture_id(28) != 0x7b || mk8_course_picture_id(27) != 27 || mk8_course_picture_id(40) != 40) return 77;
+    return 0;
+}
 static int refused(void) {
     game_cups();
     static uint8_t entries[16 * 0x80];
@@ -320,6 +352,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "pages")) return pages(getenv("MK8_CUPS_EXTRA") != NULL);
     if (argc > 1 && !strcmp(argv[1], "pages16")) return pages16();
     if (argc > 1 && !strcmp(argv[1], "music")) return music();
+    if (argc > 1 && !strcmp(argv[1], "pictures")) return pictures();
     int off = argc > 1;  // (MK8_CUPS_RELOCATE=0 in the environment)
     for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
     uint64_t base = (uint64_t)(uintptr_t)object, other = 0x7200000000ull;
@@ -376,6 +409,11 @@ class CupRuntimeTests(unittest.TestCase):
             env = dict(os.environ, MK8_CUPS_EXTRA='30000=27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04',
                        MK8_ROMFS_OVERLAY=str(overlay))
             self.assertEqual(subprocess.run([str(exe), 'music'], env=env, timeout=60).returncode, 0)
+            pictures = out/'pictures'
+            (pictures/'UI/cmn/menu').mkdir(parents=True)
+            (pictures/'UI/cmn/menu/ym_CoursePict_CTGP02_00^u.bntx').write_bytes(b'BNTX')
+            env['MK8_ROMFS_OVERLAY'] = str(pictures)
+            self.assertEqual(subprocess.run([str(exe), 'pictures'], env=env, timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,5:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             run = subprocess.run([str(exe), 'added'], env=env, timeout=60, capture_output=True)
             self.assertEqual(run.returncode, 70)  # (a reserved ID: the game stops with the reason)

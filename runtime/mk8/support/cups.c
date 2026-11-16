@@ -306,3 +306,103 @@ uint64_t mk8_stream_path(uint64_t path) {
     }
     return (uint64_t)(uintptr_t)buf;
 }
+
+// ---- the course pictures (UI/cmn/menu/ym_CoursePict_<suffix>^u.bntx). f_7000418ed0(names, &record, load) builds the
+// file name from a course ID (the suffix: names + 0x80, index ID + 1): with load = 1 it loads the picture (the menu
+// loads every course's at once, f_7000418e3c: IDs 16-63, 67-122 and -1, Random), with 0 it finds the loaded one to
+// show (given a copy of the course ID). The runtime adds the added courses' own pictures, <folder>_00, those the
+// overlay has: the menu loads them after its own under IDs from 123 on, and the screens that show an added course
+// ask for its picture's ID instead (the cup panel by the record it shows, the time trial screen by the chosen cup).
+#define MK8_PICTURE_FIRST 0x7b
+static int g_pictures = -1;
+static int16_t g_picture_course[MK8_CUPS_ADDED * 4];  // (cup * 4 + slot)
+static char g_picture_names[MK8_CUPS_ADDED * 4][MK8_FOLDER_MAX + 4];
+
+static void pictures_find(void) {
+    const char *overlay = getenv("MK8_ROMFS_OVERLAY");
+    char host[1200];
+    struct stat st;
+    g_pictures = 0;
+    for (int cup = 0; overlay && cup < g_cups_added; cup++)
+        for (int s = 0; s < 4; s++) {
+            if (snprintf(host, sizeof host, "%s/UI/cmn/menu/ym_CoursePict_%s_00^u.bntx", overlay, g_folders[cup][s])
+                    >= (int)sizeof host || stat(host, &st) || !S_ISREG(st.st_mode))
+                continue;
+            g_picture_course[g_pictures] = (int16_t)(cup * 4 + s);
+            snprintf(g_picture_names[g_pictures], sizeof g_picture_names[0], "%s_00", g_folders[cup][s]);
+            g_pictures++;
+        }
+    if (g_pictures) LOG("[mk8:cups] %d imagem(ns) de pista acrescentada(s)\n", g_pictures);
+}
+
+// From the menu's picture loading, after the game's own: how many more to load (IDs MK8_PICTURE_FIRST on).
+int64_t mk8_course_pictures(void) {
+    if (g_pictures < 0) pictures_find();
+    return g_pictures;
+}
+
+static int picture_of(int course) {  // (cup * 4 + slot -> the picture's index, -1 without one)
+    for (int k = 0; k < g_pictures; k++)
+        if (g_picture_course[k] == course) return k;
+    return -1;
+}
+
+// From f_7000418ed0, with the course ID it was given (load or find) and the suffix it chose: an added picture's own
+// for its ID; the game's otherwise.
+uint64_t mk8_course_picture(uint64_t course, uint64_t load, uint64_t name) {
+    (void)load;
+    if (g_pictures < 0) pictures_find();
+    if (g_pictures <= 0 || !course) return name;
+    uint32_t id;
+    memcpy(&id, (const void *)(uintptr_t)course, 4);
+    if (id >= MK8_PICTURE_FIRST && id < (uint32_t)(MK8_PICTURE_FIRST + g_pictures))
+        return (uint64_t)(uintptr_t)g_picture_names[id - MK8_PICTURE_FIRST];
+    return name;
+}
+
+// The cup panel (f_700043c2e8: panel, record): at its entry the record it is set to; where it asks for the picture,
+// the added picture's ID when that record is an added cup's course that has one.
+static struct { uint64_t panel; int32_t picture; } g_panels[16];
+
+void mk8_panel_record(uint64_t panel, uint64_t record) {
+    if (g_pictures < 0) pictures_find();
+    int32_t picture = -1;
+    const uint8_t *added = g_cups + MK8_CUPS_ORIGINAL * MK8_CUP_BYTES, *r = (const uint8_t *)(uintptr_t)record;
+    if (g_pictures > 0 && r >= added && r < added + g_cups_added * MK8_CUP_BYTES) {
+        size_t at = (size_t)(r - added);
+        int k = at % 16 == 0 && (at % MK8_CUP_BYTES) / 16 < 4
+                    ? picture_of((int)(at / MK8_CUP_BYTES) * 4 + (int)(at % MK8_CUP_BYTES) / 16) : -1;
+        if (k >= 0) picture = MK8_PICTURE_FIRST + k;
+    }
+    int free = -1;
+    for (int i = 0; i < 16; i++) {
+        if (g_panels[i].panel == panel) {
+            g_panels[i].picture = picture;
+            return;
+        }
+        if (!g_panels[i].panel && free < 0) free = i;
+    }
+    if (picture < 0) return;
+    if (free < 0) free = (int)((panel >> 4) & 15);
+    g_panels[free].panel = panel;
+    g_panels[free].picture = picture;
+}
+
+uint64_t mk8_panel_picture(uint64_t panel, uint64_t id) {
+    for (int i = 0; i < 16; i++)
+        if (g_panels[i].panel == panel) return g_panels[i].picture >= 0 ? (uint64_t)g_panels[i].picture : id;
+    return id;
+}
+
+// The time trial screen (f_7000446068) asks for the picture of the race's course: the added course's own when the
+// chosen cup is added and has it.
+uint64_t mk8_course_picture_id(uint64_t id) {
+    if (g_pictures < 0) pictures_find();
+    int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
+    for (int s = 0; s < 4 && cup >= 0 && cup < g_cups_added; s++)
+        if (g_ids[cup][s] == (int32_t)(uint32_t)id) {
+            int k = picture_of(cup * 4 + s);
+            return k >= 0 ? (uint64_t)(MK8_PICTURE_FIRST + k) : id;
+        }
+    return id;
+}

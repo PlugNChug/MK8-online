@@ -94,6 +94,27 @@ UI_UNITS = {'main_099.c': {'7000494b44'}, 'main_100.c': {'7000495564', '70004966
 # course music's path is asked for first (runtime/mk8/support/cups.c mk8_stream_path).
 SDK_UNITS = {'sdk_008.c': ('67f6d5f3e751361429f4caae53ea0481e0897e0ea2da03c7b5638e81981b2f13', {'7004050080'})}
 UI['7004050080'] = [('    FN_ENTER(0x7004050080ull);', 'after', '    c->x[1] = mk8_stream_path(c->x[1]);' + _MARK)]
+# The course pictures (main_084.c): f_7000418ed0 asks for the suffix once it has the game's (x21: the record or ID it
+# was given, x19: 1 to load, 0 to find, both still from its entry); the menu's loading (f_7000418e3c) loads the added
+# courses' pictures after its own, with IDs from 123 on.
+UI['7000418ed0'] = [('    { uint64_t ea = c->x[8] + 0x0ull; uint64_t v = LD64(ea); c->x[20] = (uint64_t)(v); }', 'after',
+                     '    c->x[20] = mk8_course_picture(c->x[21], c->x[19], c->x[20]);' + _MARK)]
+UI['7000418e3c'] = [('    c->x[30] = 0x7000418ec0ull; f_7000418ed0(c);', 'after',
+                     '    for (int64_t mk8_k = 0, mk8_n = mk8_course_pictures(); mk8_k < mk8_n; mk8_k++) {' + _MARK + '\n'
+                     '        { uint64_t ea = c->sp + 0x0ull; ST32(ea, (uint32_t)(0x7bull + (uint64_t)mk8_k)); }\n'
+                     '        c->x[0] = c->x[19]; c->x[1] = c->sp + 0x0ull; c->x[2] = 1u;\n'
+                     '        c->x[30] = 0x7000418ec0ull; f_7000418ed0(c);\n'
+                     '    }')]
+UI_UNITS['main_084.c'] = UI_UNITS['main_084.c'] | {'7000418ed0', '7000418e3c'}
+# ... and the screens that show a course's picture by a copy of its ID (main_089.c): the cup panel remembers the
+# record it is set to and gives the added picture's ID for it; the time trial screen gives it for the chosen cup's.
+UI['700043c2e8'] = [('    FN_ENTER(0x700043c2e8ull);', 'after', '    mk8_panel_record(c->x[0], c->x[1]);' + _MARK),
+                    ('    { uint64_t ea = c->x[19] + 0x3ccull; uint64_t v = LD32(ea); c->x[8] = (uint64_t)(v); }\n'
+                     '    c->x[1] = (uint64_t)(c->sp + 0x0ull);', 'after',
+                     '    c->x[8] = (uint64_t)(uint32_t)mk8_panel_picture(c->x[19], c->x[8]);' + _MARK)]
+UI['7000446068'] = [('    { uint64_t ea = c->x[19] + 0xb4ull; uint64_t v = LD32(ea); c->x[8] = (uint64_t)(v); }', 'after',
+                     '    c->x[8] = (uint64_t)(uint32_t)mk8_course_picture_id(c->x[8]);' + _MARK)]
+UI_UNITS['main_089.c'] = {'700043c2e8', '7000446068'}
 
 
 def patch_ui(body, name):
@@ -110,6 +131,11 @@ DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 
                 'int64_t mk8_cup_owned(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'int64_t mk8_cup_label(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_stream_path(uint64_t path);  // MK8 (toolchain/cup_relocation.py)\n'
+                'int64_t mk8_course_pictures(void);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_course_picture(uint64_t record, uint64_t load, uint64_t name);  // MK8 (toolchain/cup_relocation.py)\n'
+                'void mk8_panel_record(uint64_t panel, uint64_t record);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_panel_picture(uint64_t panel, uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_course_picture_id(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_select(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
@@ -213,6 +239,8 @@ def patch(text, unit):
             if anchor is not None and body.count(anchor + '\n') != 1:
                 raise ValueError(f'Cup reader changed: f_{name}')
             body = patch_function(body, readers[name], SELECTORS.get(name, 'mk8_cup_entry'), extra)
+            if name in UI_UNITS.get(unit, ()):
+                body = patch_ui(body, name)
             seen.add(name)
         elif name in UI_UNITS.get(unit, ()):
             body = patch_ui(body, name)
