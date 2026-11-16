@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Identificação das esperas de shaders — 15/11/2026
+
+`codex/shader-wait-diagnostics` sobre `fix-chore d443092`: jobs/programas/quadros correlacionáveis, lead time de registro e limiar padrão de 50 ms. Tracing detalhado continua opt-in; orçamento e desenho permanecem iguais. Quatro testes nativos de trace/budget passaram após rebase. Instrumentação não qualifica um defeito visual ou hitch como corrigido.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).

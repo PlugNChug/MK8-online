@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+Shader diagnostics log waits and driver work of at least 50 ms by default, with job/program/frame identifiers for correlation. Set `MK8_TRACE_SHADER_WAITS=1` for detailed tracing or `0` to disable it. Concurrent job times must not be added together as game stall time. This instrumentation does not change the shader wait budget.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell
