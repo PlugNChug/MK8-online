@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Investigação de geração de quadros — 16/11/2026
+
+Analisada a interpolação já existente em `runtime/nvn/framegen*` e no backend Vulkan do upstream fixado, com seus avisos de licença preservados. Não foi incorporado FSR Frame Generation. Consultadas a [documentação SDL3 de modos de vídeo](https://wiki.libsdl.org/SDL3/SDL_DisplayMode) e as [orientações AMD sobre taxa de entrada e latência da interpolação](https://gpuopen.com/fidelityfx-super-resolution-3/); os resultados de outros projetos não qualificam esta implementação.
+
+Medição externa com [PresentMon Console 2.6.0](https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0), Intel, licença [MIT](https://github.com/GameTechDev/PresentMon/blob/v2.6.0/LICENSE.txt). Executável oficial verificado pelo SHA-256 publicado `b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af`, usado apenas como ferramenta local, com licença preservada; não incluído no launcher. CSVs privados analisados conforme a [documentação das métricas](https://github.com/GameTechDev/PresentMon/blob/v2.6.0/README-ConsoleApplication.md), com as limitações da instrumentação Vulkan. Taxa de apresentação não é taxa da simulação nem medição de latência física do controle.
+
 ## Relatos via GitHub Issues — 16/11/2026
 
 Consultados os guias oficiais de [criação de Issues por parâmetros de URL](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue) e [anexos](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files), para título/descrição preenchidos, anexação manual de ZIP e limite de 25 MB. Interface e integração próprias; nenhum código, imagem, token ou SDK externo foi incorporado.

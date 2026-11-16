@@ -10,9 +10,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "toolchain"))
 from native import DEFAULT_COMPILER, compiler_env
+from host import prepare_host_sources
 
 HARNESS = r'''
 #include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
 #include "settings.h"
 #include "input_bind.h"
 const char *const g_tunic_colours[N_TUNIC_COLOURS] = {0};
@@ -20,6 +23,7 @@ const char *const g_heart_colours[N_HEART_COLOURS] = {0};
 void rt_log(const char *fmt, ...) { (void)fmt; }
 int input_pad_family(void) { return 0; }
 int main(void) {
+    _fmode = _O_BINARY;  /* same file mode as the real runtime's Windows platform startup */
     settings_load();
     printf("%.2f %d %d %d %d %d %d %d\n", g_settings.volume, g_settings.res_mode,
            g_settings.fullscreen, g_settings.show_fps, g_settings.language,
@@ -44,6 +48,7 @@ class RuntimeSettingsTests(unittest.TestCase):
         defaults = {f["key"]: f["default"] for g in schema["groups"] for f in g["fields"]}
         with tempfile.TemporaryDirectory(prefix="mk8-settings-native-") as temporary:
             folder = Path(temporary)
+            base = prepare_host_sources(base.parent, folder / 'prepared')
             harness = folder / "main.c"
             harness.write_text(HARNESS)
             exe = folder / "settings.exe"
@@ -54,8 +59,8 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
             env = dict(os.environ, LARECOMP_SETTINGS=str(folder / "mk8d.ini"),
                        PATH=str(deps / "bin") + os.pathsep + os.environ.get("PATH", ""))
-            def run(values):
-                (folder / "mk8d.ini").write_text("".join(f"{k} = {v}\n" for k,v in values.items()))
+            def run(values, newline='\r\n'):
+                (folder / "mk8d.ini").write_bytes("".join(f"{k} = {v}{newline}" for k,v in values.items()).encode('utf-8'))
                 result = subprocess.run([exe], capture_output=True, text=True, env=env, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 return result.stdout
@@ -70,3 +75,4 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(output.splitlines()[0], "0.65 10 1 1 4 0 1 1")
             self.assertIn("bind_key_a = Space", output)
             self.assertIn("bind_pad_a = south", output)
+            self.assertEqual(output, run(changed, '\n'))

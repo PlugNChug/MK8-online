@@ -1,5 +1,25 @@
 # Estado técnico — 16/11/2026
 
+## Investigação de apresentação acima de 100 FPS — 16/11/2026
+
+O segundo item usa a opção existente `frame_gen = 120`: interpolação por imagens do upstream fixado, com pirâmide de luminância, estimativa de movimento e warp. Não é FSR Frame Generation nem 120 atualizações de física. O pacing da simulação permanece a 60 Hz. O modo gera um intermediário quando há histórico compatível, intervalo de 12–22 ms e monitor detectado a pelo menos 100 Hz; pausas longas, resize, crop/formato diferentes e re-present sem avanço do jogo rejeitam a interpolação. O computador de teste usa RX 580 2048SP, 1080p/SMAA e monitor configurado a 180 Hz; não foi forçada a frequência por variável de diagnóstico.
+
+**Correção encontrada:** o startup Windows define `_fmode = _O_BINARY`, mas o leitor de INI não removia `\r`. Assim, `frame_gen = 120` em CRLF virava `120\r` e caía silenciosamente em Off; idioma, resolução e outros enums também podiam ser interpretados incorretamente. A preparação própria em `toolchain/host.py` agora remove CR/LF antes de interpretar a linha e inicializa valores vazios. Não altera o upstream, nomes serializados nem arquivos pessoais. O teste nativo passou a usar o mesmo modo binário do runtime: falhou antes da correção e passou depois, conferindo equivalência LF/CRLF, geração, idioma, resolução, antialias e bindings. A primeira tentativa de FG com CRLF foi identificada como **desligada**, e não foi contabilizada como teste de interpolação.
+
+**Medições:** runtime corrigido compilado em host, guest preservado, saves/INI/cache copiados para sessões privadas. PresentMon Console 2.6.0 registrou a apresentação via ETW, além dos contadores internos de quadros reais/gerados:
+
+| Ensaio em Dry Dry Falls | Quadros reais do jogo | Apresentação medida |
+| --- | --- | --- |
+| Solo, geração efetivamente desligada | 60 FPS | 60,00 FPS |
+| Solo, geração 120 ativa | 60 FPS | 119,96 FPS |
+| Dois jogadores, geração 120 ativa | 59,87 FPS | 119,68 FPS |
+
+Solo: janela externa de 9 s no fim da sessão, com kart contra uma parede; demonstra ativação e apresentação, não qualifica uma volta. Com dois jogadores: 9000 quadros executados, aceleração contínua e capturas de pista/karts em movimento; janela externa de 27 s após a captura de interpolação e antes da captura final. Os 59,87 FPS reais são dos quadros 7200–8990, pico 95,17 ms; a medição externa usa outra janela temporal e não deve ser tratada como perfeitamente alinhada. Sem erros Vulkan/crash nos dois ensaios, processos com saída 0. Capturas anterior/gerada/atual foram inspecionadas: conteúdo e iluminação permanecem, mas há deformações locais nas rodas/sombras do quadro interpolado. O relógio de simulação não foi desbloqueado; latência física de controle, corrida completa e multiplayer entre PCs permanecem sem qualificação.
+
+A 180 Hz, a apresentação observada alterna principalmente cerca de 5,6/11,1 ms, apesar da média próxima de 120 FPS: a cadência não é uniforme como seria o alvo de 8,33 ms. Avaliar 120 Hz ou VRR, se suportado, exige outro teste; nenhuma configuração do monitor foi alterada. A interpolação acrescentou cerca de 37 MiB de alocações VMA no heap principal no fim do ensaio solo (382 → 419 MiB, reserva 624 MiB nos dois), sem contabilizar toda a memória do driver. Não melhora os FPS reais de máquinas limitadas pela GPU nem elimina a primeira compilação de shaders. Mantida desligada por padrão; opção já disponível em Configurações → Vídeo e controles → Imagem → Geração de quadros.
+
+**Verificação e artefatos:** nove casos nativos de lógica de FG, sete shaders GLSL compilados para SPIR-V, um teste nativo de configurações e nove testes de pré-compilados aprovados. Runtime diagnóstico SHA-256 `fc86fb6ba3ab217de5b084d67685a852a7d4795c21761cfb7912cffa5e6aca7d`. Logs privados: `race-time-trial-ucvopf2e` (FG ignorada por CRLF), `race-time-trial-_k8jstt_` (ativa) e `race-grand-prix-3fq148u9` (dois jogadores); CSVs em `local/ctgp-perf-check/framegen`. Fontes externas em THIRD_PARTY. Nenhuma mudança de UI/Rust, nenhum novo setup/commit/release nesta investigação. O setup da seção abaixo ainda não contém a correção de CRLF; arquivos LF já ativam o modo existente. `gameplay_verified=false`.
+
 ## Desempenho CTGP e seleção local — 16/11/2026
 
 Investigação do relatório privado `mk8-report-1794858711.zip`, com reprodução em Luigi Circuit (CTGP29) e Koopa Troopa Beach (CTGP21). O relatório registra 18–40 FPS e pausas de até 1,76 s na entrada de CTGP29, junto de centenas de compilações de shaders, seguidas de trechos a 60 FPS. Não demonstra sozinho vazamento de VRAM nem identifica um crash novo. Testes usam cópias de saves/configurações/cache, uma única instância e o guest já compilado; nenhum dado comercial é publicado.

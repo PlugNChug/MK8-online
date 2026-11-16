@@ -19,6 +19,19 @@ def prepare_host_sources(source, output):
     shutil.copytree(source/'runtime', runtime, dirs_exist_ok=True)
     for dependency in ('zstd', 'bcdec'):
         shutil.copytree(source/'third_party'/dependency, output/'third_party'/dependency, dirs_exist_ok=True)
+    settings = runtime/'settings.c'
+    text = settings.read_text(encoding='utf-8')
+    old = '''    while (fgets(line, sizeof line, f)) {
+        char key[64];
+        char val[128];'''
+    new = '''    while (fgets(line, sizeof line, f)) {
+        // Windows startup sets binary file mode: accept both CRLF and LF INI files.
+        line[strcspn(line, "\\r\\n")] = 0;
+        char key[64];
+        char val[128] = {0};'''
+    if text.count(old) != 1:
+        raise ValueError('Settings line parser changed upstream')
+    settings.write_text(text.replace(old, new), encoding='utf-8')
     ipc = runtime/'ipc.h'
     text = ipc.read_text(encoding='utf-8')
     old = 'uint8_t data[0x200];'
