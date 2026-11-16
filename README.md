@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+**Launcher debugging controls:** open **Settings → Debugging** for autosaved checkboxes for **Graphics captures (F7/F8)**, **Record diagnostic audio**, and **Native settings menu (experimental)**. They take effect on the next game launch, including solo and room launches, and can be changed while a game is running. Preferences live in `local/debug-options.json`, separate from the game INI and saves. Saved choices override `MK8_GFX_DIAGNOSTICS`, `LARECOMP_AUDIO_WAV`, and `MK8_SETTINGS_EXPERIMENT`; without saved preferences, existing environment-based launches still work. Graphics reports remain under `user-no-mii/graphics-incidents`. Audio creates a new WAV in `user-no-mii/audio-recordings` for each launcher start; an in-game restart reuses and replaces that session's WAV. Disable recording when finished.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell

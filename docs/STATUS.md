@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Preferências de depuração no launcher — 15/11/2026
+
+Branch `codex/launcher-debugging` baseada em `fix-chore d443092`. Checkboxes persistem capturas F7/F8, WAV de diagnóstico e opt-in do Settings nativo, separados do INI e aplicados no próximo lançamento. O Settings nativo exige a branch experimental correspondente; esta alteração só configura o launcher. Build Rust debug, dois testes Rust, formatação e Clippy sem avisos aprovados. Cinco testes de navegador passaram: persistência, validação, recuperação de erro, bloqueio durante gravação e preservação de edições/INI. O launcher release e dados pessoais não foram substituídos.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
