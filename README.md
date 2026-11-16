@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+For an explicit debug-frame pixel probe, `LARECOMP_DEBUG_PROBE_DRAWS=all` ends each captured draw pass so individual draw results can be inspected. Existing `1` and fragment-shader selectors remain available. Detailed debug data also includes depth state. These opt-in diagnostics change capture timing and do not repair rendering.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell

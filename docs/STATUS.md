@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Probes gráficos isolados — 15/11/2026
+
+`codex/graphics-draw-probes` sobre `fix-chore d443092` contém somente o seletor all de draws capturados e estado de profundidade preciso. Três testes de pool/probe aprovados após rebase. Os ensaios de render scale/depth clip não fazem parte desta branch. As marcas nos presentes de Ribbon Road foram confirmadas pelo usuário no jogo original e no emulador de referência: investigação encerrada, sem workaround.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
