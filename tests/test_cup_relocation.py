@@ -104,7 +104,8 @@ L_7000bbbb40:;
                 built = patch_no_mii_unit(folder/unit, Path(tmp))
                 text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
                 out = C.patch_unit(built, Path(tmp)).read_text(encoding='utf-8')
-            sites += out.count('mk8_cup_entry(c->x') + out.count('mk8_cup_select(c->x') + out.count('mk8_cup_by_course(c->x')
+            sites += sum(out.count(call + '(c->x') for call in
+                         ('mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_by_course', 'mk8_cup_by_slot'))
             for match in C._functions(out):
                 if match.group(1) in C.SELECTORS:
                     self.assertIn(C.SELECTORS[match.group(1)] + '(c->x', match.group(2))
@@ -117,9 +118,10 @@ L_7000bbbb40:;
         hooks = Counter()  # (the cup screen: both button setups, both page turns, the state query)
         for unit in C.UI_UNITS:
             out = C.patch((folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n'), unit)
-            for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32'):
+            for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32', 'mk8_cup_label(LD32'):
                 hooks[call] += out.count(call)
-        self.assertEqual(hooks, Counter({'mk8_cup_page_id(c->x': 2, 'mk8_cup_page_turn(c->x': 2, 'mk8_cup_owned(LD32': 1}))
+        self.assertEqual(hooks, Counter({'mk8_cup_page_id(c->x': 2, 'mk8_cup_page_turn(c->x': 2, 'mk8_cup_owned(LD32': 1,
+                                         'mk8_cup_label(LD32': 1}))
         with tempfile.TemporaryDirectory() as tmp:  # (the path builders: the folder hook once the name is ready)
             out = C.patch_unit(folder/'main_186.c', Path(tmp)).read_text(encoding='utf-8')
             self.assertIn('L_700089ece0:;\n    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));', out)
@@ -154,10 +156,12 @@ void mk8_cups_built(uint64_t object);
 uint64_t mk8_cup_entry(uint64_t base, uint64_t index);
 static uint8_t object[0x1500];
 uint64_t mk8_cup_select(uint64_t base, uint64_t index);
-uint64_t mk8_cup_by_course(uint64_t base, uint64_t index);
+uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course);
+uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index);
 uint64_t mk8_course_folder(uint64_t settings, uint64_t name);
 int mk8_cups_parse(const char *spec, uint8_t *entries, int capacity, const uint8_t *reverse, int16_t ids[][4],
-                   char folders[][4][32]);
+                   char folders[][4][32], int32_t labels[]);
+int64_t mk8_cup_label(uint64_t id);
 static uint32_t rd(uint64_t a) { uint32_t v; memcpy(&v, (const void *)(uintptr_t)a, 4); return v; }
 static void game_cups(void) {  // (24 race cups with courses 16.., the reverse map, the battle cup's courses unmapped)
     memset(object, 0xff, 25 * 0x80);
@@ -181,6 +185,7 @@ static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02
         if (rd(cup + 16 * s) != ids[s] || rd(cup + 16 * s + 4) != 0xffffffffu || rd(cup + 16 * s + 8) != 20001u + s)
             return 11;
     if (rd(cup + 64) != 0xffffffffu || rd(mk8_cup_entry(base, 26)) != 0xffffffffu) return 12;
+    if (mk8_cup_label(25) != 30000 || mk8_cup_label(26) != -1 || mk8_cup_label(3) != -1) return 22;
     static uint8_t settings[0x200];
     const char *name = "Gu_FirstCircuit";
     uint64_t named = (uint64_t)(uintptr_t)name, at = (uint64_t)(uintptr_t)settings;
@@ -195,12 +200,22 @@ static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02
     uint32_t other = 40;  // (a course the added cup does not have)
     memcpy(settings + 0x1a0, &other, 4);
     if (mk8_course_folder(at, named) != named) return 18;
-    mk8_cup_by_course(base, 6);  // (a course of the added cup's, set by its ID: cup 6 has 40-43, none of them)
+    mk8_cup_by_course(base, 6, 40);  // (a course set by its ID that the added cup does not have: a game cup's race)
     if (mk8_course_folder(at, named) != named) return 20;
     mk8_cup_select(base, 25);
-    mk8_cup_by_course(base, 2);  // (cup 2 has course 27, which the added cup borrows: still the added cup)
+    uint64_t record = mk8_cup_by_course(base, 2, 27);  // (course 27, game cup 2 position 3: the added cup's, first)
+    if (rd(record + 3 * 16) != 27 || rd(record + 3 * 16 + 8) != 20001) return 23;
     memcpy(settings + 0x1a0, &ids[0], 4);
     if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP01")) return 21;
+    mk8_cup_select(base, 25);
+    uint64_t view = mk8_cup_by_slot(base, 2);  // (game cup 2, 24-27, seen by a reverse-map reader: 27 is the added cup's)
+    if (rd(view + 3 * 16) != 27 || rd(view + 3 * 16 + 8) != 20001 || rd(view + 2 * 16) != 26
+        || rd(view + 2 * 16 + 8) != rd(mk8_cup_entry(base, 2) + 2 * 16 + 8)) return 26;
+    if (mk8_cup_by_slot(base, 6) != mk8_cup_entry(base, 6)) return 27;  // (a cup it borrows nothing from: as it is)
+    if (rd(mk8_cup_entry(base, 2) + 3 * 16 + 8) == 20001) return 28;  // (the cup screen's reading stays the game's)
+    if (mk8_cup_by_course(base, 2, 26) != mk8_cup_entry(base, 2)) return 24;  // (course 26 is not the added cup's)
+    if (mk8_cup_by_slot(base, 2) != mk8_cup_entry(base, 2)) return 29;  // (a game cup chosen: as it is)
+    if (mk8_course_folder(at, named) != named) return 25;
     mk8_cup_select(base, 0);  // (back to a game cup)
     memcpy(settings + 0x1a0, &ids[0], 4);
     if (mk8_course_folder(at, named) != named) return 19;
@@ -254,14 +269,17 @@ static int refused(void) {
     static uint8_t entries[16 * 0x80];
     int16_t ids[16][4];
     char folders[16][4][32];
+    int32_t labels[16];
     const uint8_t *reverse = object + 0xc80;
-    if (mk8_cups_parse("27:1:A,28:2:B,19:3:C,17:4:D;16:5:E,18:6:F,20:7:G,21:8:H", entries, 16, reverse, ids, folders) != 2
-        || ids[1][3] != 21 || strcmp(folders[1][3], "H")) return 20;
+    if (mk8_cups_parse("27:1:A,28:2:B,19:3:C,17:4:D;30001=16:5:E,18:6:F,20:7:G,21:8:H", entries, 16, reverse, ids,
+                       folders, labels) != 2 || ids[1][3] != 21 || strcmp(folders[1][3], "H") || labels[0] != -1
+        || labels[1] != 30001) return 20;
     const char *bad[] = {"27:1:A,28:2:B,19:3:C", "27:1:A,28:2:B,19:3:C,17:4:D,16:5:E", "27:1:A,27:2:B,19:3:C,17:4:D",
                          "27:1:A,28:2:B,19:3:C,5:4:D", "27:1:A,28:2:B,19:3:C,115:4:D", "27:0:A,28:2:B,19:3:C,17:4:D",
                          "27:1,28:2:B,19:3:C,17:4:D", "27:1:A/B,28:2:B,19:3:C,17:4:D", "27:1:,28:2:B,19:3:C,17:4:D", "x"};
     for (unsigned i = 0; i < sizeof bad / sizeof *bad; i++)
-        if (mk8_cups_parse(bad[i], entries, 16, reverse, ids, folders) >= 0) return 21 + (int)i;
+        if (mk8_cups_parse(bad[i], entries, 16, reverse, ids, folders, labels) >= 0) return 21 + (int)i;
+    if (mk8_cups_parse("0=27:1:A,28:2:B,19:3:C,17:4:D", entries, 16, reverse, ids, folders, labels) >= 0) return 39;
     return 0;
 }
 int main(int argc, char **argv) {
@@ -310,7 +328,7 @@ class CupRuntimeTests(unittest.TestCase):
             self.assertEqual(subprocess.run([str(exe)], timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_RELOCATE='0')
             self.assertEqual(subprocess.run([str(exe), 'off'], env=env, timeout=60).returncode, 0)
-            env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
+            env = dict(os.environ, MK8_CUPS_EXTRA='30000=27:20001:CTGP01,28:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             self.assertEqual(subprocess.run([str(exe), 'added'], env=env, timeout=60).returncode, 0)
             self.assertEqual(subprocess.run([str(exe), 'refused'], timeout=60).returncode, 0)
             self.assertEqual(subprocess.run([str(exe), 'pages'], env=env, timeout=60).returncode, 0)

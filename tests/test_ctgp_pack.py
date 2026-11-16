@@ -204,6 +204,38 @@ def texts(sarc_bytes):
 
 
 class CtgpPackTests(unittest.TestCase):
+    def test_new_labels_are_added_in_their_buckets(self):
+        common = msbt({'1401': 'Mario Kart Stadium', '1501': f'{TAG}Mario Kart Stadium{END}'})
+        self.assertEqual(P.msbt_add(common, {}), common)
+        added = P.msbt_add(common, {'30000': 'Boo Cup', '31000': 'Omatsuri', '31100': f'{TAG}Omatsuri{END}'})
+        labels, values = P.msbt_read(added)
+        self.assertEqual(values[labels['30000']], 'Boo Cup\0')
+        self.assertEqual(values[labels['31100']], f'{TAG}Omatsuri{END}\0')
+        self.assertEqual(values[labels['1401']], 'Mario Kart Stadium\0')
+        for bad in ({'1401': 'x'}, {'': 'x'}, {'é': 'x'}):
+            with self.assertRaises(P.PackError):
+                P.msbt_add(common, bad)
+        # (the game's files have 101 buckets: each label goes to the one of its hash, after the ones there)
+        empty = bytearray(msbt({}))
+        lbl = struct.pack('<I', 7) + struct.pack('<II', 0, 4 + 8 * 7) * 7
+        empty[0x24:0x28] = struct.pack('<I', len(lbl))
+        body = bytes(empty[:0x30]) + lbl + b'\xab' * (-(0x10 + len(lbl)) % 16) + bytes(empty[0x30 + 16:])
+        empty = bytearray(body)
+        struct.pack_into('<I', empty, 0x12, len(empty))
+        out = P.msbt_add(bytes(empty), {str(n): f't{n}' for n in range(30000, 30020)})
+        at = 0x20 + 0x10
+        slots = struct.unpack_from('<I', out, at)[0]
+        self.assertEqual(slots, 7)
+        for i in range(slots):
+            count, offset = struct.unpack_from('<II', out, at + 4 + 8 * i)
+            for _ in range(count):
+                n = out[at + offset]
+                self.assertEqual(P._label_slot(out[at + offset + 1:at + offset + 1 + n].decode(), 7), i)
+                offset += 1 + n + 4
+        labels, values = P.msbt_read(out)
+        self.assertEqual(values[labels['30019']], 't30019\0')
+        self.assertEqual(P.msbt_add(out, {}), out)
+
     def test_archives_round_trip_and_names_keep_their_tags(self):
         common = msbt({'1401': 'Mario Kart Stadium', '1501': f'{TAG}Mario Kart Stadium{END}', '7': 'x'})
         archive = sarc({'Common.msbt': common, 'Menu.msbt': msbt({'1': 'a'})})

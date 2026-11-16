@@ -222,6 +222,60 @@ def msbt_write(data, texts):
     return bytes(out)
 
 
+def _label_slot(label, slots):
+    """The MSBT label hash (LBL1 bucket)."""
+    h = 0
+    for ch in label:
+        h = (h * 0x492 + ord(ch)) & 0xFFFFFFFF
+    return h % slots
+
+
+def msbt_add(data, values):
+    """The same MSBT with new labels (label -> text, without the final NUL) appended after its texts: LBL1 rebuilt
+    with the same number of buckets, each bucket's labels in their order and the new ones after them. An MSBT with
+    other per-message sections (ATR1, TSY1...) or a label that exists already is refused."""
+    sections = _sections(data)
+    if sorted(m for m, _, _ in sections) != [b'LBL1', b'TXT2']:
+        raise PackError('MSBT com seções por mensagem além de LBL1/TXT2')
+    labels, texts = msbt_read(data)
+    texts = list(texts)
+    for label in values:
+        if label in labels or not label or len(label) > 255 or not label.isascii():
+            raise PackError(f'Rótulo {label} inválido ou já existente')
+    lbl = next((at, size) for m, at, size in sections if m == b'LBL1')
+    body = data[lbl[0] + 0x10:lbl[0] + 0x10 + lbl[1]]
+    slots = struct.unpack_from('<I', body, 0)[0]
+    buckets = [[] for _ in range(slots)]
+    for i in range(slots):
+        count, o = struct.unpack_from('<II', body, 4 + 8 * i)
+        for _ in range(count):
+            n = body[o]
+            buckets[i].append((body[o + 1:o + 1 + n].decode('ascii'), struct.unpack_from('<I', body, o + 1 + n)[0]))
+            o += 1 + n + 4
+    for label, text in values.items():
+        buckets[_label_slot(label, slots)].append((label, len(texts)))
+        texts.append(text + '\0')
+    table = bytearray(struct.pack('<I', slots))
+    names = bytearray()
+    offset = 4 + 8 * slots
+    for bucket in buckets:
+        table += struct.pack('<II', len(bucket), offset + len(names))
+        for label, index in bucket:
+            names += bytes([len(label)]) + label.encode('ascii') + struct.pack('<I', index)
+    new_lbl = bytes(table + names)
+    out = bytearray(data[:0x20])
+    for magic, at, size in sections:
+        if magic == b'LBL1':
+            section = bytearray(data[at:at + 0x10])
+            struct.pack_into('<I', section, 4, len(new_lbl))
+            section += new_lbl
+            section += b'\xab' * (-len(section) % 16)
+            out += section
+        else:
+            out += bytes(data[at:at + 0x10 + ((size + 15) & ~15)])
+    return msbt_write(bytes(out), texts)
+
+
 def set_texts(data, values):
     """values: label -> text (without the final NUL). Keeps a tagged text's control tags around the new name."""
     labels, texts = msbt_read(data)

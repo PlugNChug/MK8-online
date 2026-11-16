@@ -30,6 +30,7 @@ static _Alignas(64) uint8_t g_cups[MK8_CUPS_CAPACITY * MK8_CUP_BYTES];
 static uint64_t g_cups_object;
 static int g_cups_on = -1, g_cups_added, g_cups_preview = -1, g_cups_selected = -1;
 static int16_t g_ids[MK8_CUPS_ADDED][4];
+static int32_t g_cup_labels[MK8_CUPS_ADDED];  // (-1: none given)
 static char g_folders[MK8_CUPS_ADDED][4][MK8_FOLDER_MAX];
 
 static int cups_enabled(void) {
@@ -49,17 +50,27 @@ static void cups_clear(uint8_t *entry) {
 }
 
 // MK8_CUPS_EXTRA: added cups, `;` between cups and `,` between their 4 courses, each `<course ID>:<name label>:<folder>`
-// (e.g. "27:1401:CTGP01,28:1402:CTGP02,19:1403:CTGP03,17:1404:CTGP04"). The course ID must be in one of the game's
-// race cups (its tables exist) and appear once per added cup; the folder is Course/<folder> in the RomFS overlay.
-// Returns the number of cups, or -1 (and nothing usable) for anything else.
+// (e.g. "30000=27:31000:CTGP01,28:31001:CTGP02,19:31002:CTGP03,17:31003:CTGP04"); a cup may start with its own name
+// label and `=`. The course ID must be in one of the game's race cups (its tables exist) and appear once per added
+// cup; the folder is Course/<folder> in the RomFS overlay; a course's name label n has its race-intro text at n + 100,
+// as the game's. Returns the number of cups, or -1 (and nothing usable) for anything else.
 int mk8_cups_parse(const char *spec, uint8_t *entries, int capacity, const uint8_t *reverse, int16_t ids[][4],
-                   char folders[][4][MK8_FOLDER_MAX]) {
+                   char folders[][4][MK8_FOLDER_MAX], int32_t labels[]) {
     int cups = 0, slot = 0;
     const char *p = spec;
     if (!p || !*p) return 0;
     cups_clear(entries);
     while (*p) {
         char *end;
+        if (slot == 0) {
+            labels[cups] = -1;
+            unsigned long cup = strtoul(p, &end, 10);
+            if (end != p && *end == '=') {
+                if (cup == 0 || cup > 0x7fffffff) return -1;
+                labels[cups] = (int32_t)cup;
+                p = end + 1;
+            }
+        }
         unsigned long id = strtoul(p, &end, 10);
         if (end == p || *end != ':' || id >= MK8_COURSE_IDS || slot >= 4) return -1;
         p = end + 1;
@@ -109,7 +120,7 @@ void mk8_cups_built(uint64_t object) {
     for (int i = MK8_CUPS_ORIGINAL; i < MK8_CUPS_CAPACITY; i++) cups_clear(g_cups + i * MK8_CUP_BYTES);
     const char *spec = getenv("MK8_CUPS_EXTRA");
     int added = mk8_cups_parse(spec, g_cups + MK8_CUPS_ORIGINAL * MK8_CUP_BYTES, MK8_CUPS_ADDED,
-                               (const uint8_t *)(uintptr_t)(object + MK8_CUPS_REVERSE), g_ids, g_folders);
+                               (const uint8_t *)(uintptr_t)(object + MK8_CUPS_REVERSE), g_ids, g_folders, g_cup_labels);
     if (added < 0) FATAL("[mk8:cups] MK8_CUPS_EXTRA inválido: %s\n", spec);
     if (g_cups_object != object || g_cups_added != added) {
         LOG("[mk8:cups] %d entradas + %d copa(s) acrescentada(s) em área de %d (objeto %llx)\n", MK8_CUPS_ORIGINAL,
@@ -190,22 +201,54 @@ int64_t mk8_cup_owned(uint64_t id) {
     return (int64_t)id - MK8_CUPS_ORIGINAL < g_cups_added ? 0 : 1;
 }
 
-// The reader that sets the selection from a course ID (f_70004a3940): the cup it found in the reverse map is a game
-// cup. An added cup chosen before stays chosen when it shares a course with that cup (the course chosen from it, or
-// a race of one of its courses); otherwise the race is from the game cup (a random course elsewhere, for one).
-uint64_t mk8_cup_by_course(uint64_t base, uint64_t index) {
+// The reader that sets the selection from a course ID (f_70004a3940): it found the cup and position in the reverse
+// map, always a game cup's, and will read the record at entry + position x 16. When the added cup chosen before has
+// that course, it stays chosen and the record read is the added cup's (its name label, for one): the entry given back
+// is offset so that the game's position lands on it. Otherwise the race is from the game cup (a random course, say).
+uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course) {
+    uint64_t at = cup_index(base, index);
+    int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
+    if (at != UINT64_MAX && at < MK8_CUPS_ORIGINAL && cup >= 0 && cup < g_cups_added && course < MK8_COURSE_IDS) {
+        uint32_t position;
+        memcpy(&position, (const void *)(uintptr_t)(base + MK8_CUPS_REVERSE + course * 8 + 4), 4);
+        for (int s = 0; s < 4 && position < 8; s++)
+            if (g_ids[cup][s] == (int32_t)course)
+                return (uint64_t)(uintptr_t)(g_cups + (MK8_CUPS_ORIGINAL + cup) * MK8_CUP_BYTES + 16 * s) - 16 * position;
+    }
+    return mk8_cup_select(base, index);
+}
+
+// From the cup name lookup (f_700041fd6c: the game's table of 24 cup name labels, read without a limit): an added
+// cup's own label; -1 for the game's cups and for an added cup with none, which the game answers itself.
+int64_t mk8_cup_label(uint64_t id) {
+    if (g_cups_added <= 0 || id < MK8_CUPS_ORIGINAL || id >= (uint64_t)(MK8_CUPS_ORIGINAL + g_cups_added)) return -1;
+    return g_cup_labels[id - MK8_CUPS_ORIGINAL];
+}
+
+// The readers that find a course's cup and position in the reverse map to show it (the race's course name, for one):
+// while an added cup is chosen, the game cup they read comes with that added cup's records (their name labels) in
+// the places of the courses it borrows from it; any other cup, or no added cup chosen, as it is.
+static _Alignas(16) uint8_t g_cup_view[MK8_CUPS_ORIGINAL][MK8_CUP_BYTES];
+
+uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index) {
     uint64_t at = cup_index(base, index);
     int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
     if (at != UINT64_MAX && at < MK8_CUPS_ORIGINAL && cup >= 0 && cup < g_cups_added) {
-        const uint8_t *game = g_cups + at * MK8_CUP_BYTES;
+        const uint8_t *game = g_cups + at * MK8_CUP_BYTES, *added = g_cups + (MK8_CUPS_ORIGINAL + cup) * MK8_CUP_BYTES;
+        int changed = 0;
+        memcpy(g_cup_view[at], game, MK8_CUP_BYTES);
         for (int k = 0; k < 8; k++) {
             int32_t id;
             memcpy(&id, game + 16 * k, 4);
-            for (int s = 0; s < 4; s++)
-                if (id >= 0 && g_ids[cup][s] == id) return mk8_cup_entry(base, index);
+            for (int s = 0; s < 4 && id >= 0; s++)
+                if (g_ids[cup][s] == id) {
+                    memcpy(g_cup_view[at] + 16 * k, added + 16 * s, 16);
+                    changed = 1;
+                }
         }
+        if (changed) return (uint64_t)(uintptr_t)g_cup_view[at];
     }
-    return mk8_cup_select(base, index);
+    return mk8_cup_entry(base, index);
 }
 
 // From the path builders, with the name they chose for the race's course: the course's folder when the race is from
