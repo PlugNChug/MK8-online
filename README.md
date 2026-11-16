@@ -148,14 +148,18 @@ courses, music and cups can: the launcher puts the 64 CTGP courses into existing
 1. Download CTGP Deluxe from [ctgpdx.com](https://www.ctgpdx.com/download) (personal use) and extract the ZIP.
 2. **Settings → CTGP Deluxe**: choose the extracted folder (the one with `atmosphere/`) and click **Import CTGP…**.
    On the same disk as the data folder it takes seconds and no extra space (hard links).
-   Choose where the courses go: **in place of the base game's cups** (48 courses, +16 with the DLC) or **in place
-   of the DLC's cups** (48 courses next to the 48 original ones; needs the Booster Course Pass imported and enabled).
+   Choose where the courses go: **in place of the base game's cups** (48 courses, +16 with the DLC), **in place
+   of the DLC's cups** (48 courses next to the 48 original ones; needs the Booster Course Pass imported and enabled)
+   or **in 16 new cups** (all 64 courses on two more pages of the cup screen, L/R, with their own names, pictures,
+   music and cup icons; no original course moves).
 3. **Enable CTGP Deluxe** switches it on; turn it off to play the original game. The game, the DLC and your saves are
    never changed; with CTGP on, the game uses its own saves, created once as a copy of yours.
 
 In Steam rooms everyone needs the same pack (the same CTGP enabled, or everyone without it). MK8-online does not
-distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus, extra cups and random
-button need its code (not available); time-trial staff ghosts are the original course's. See
+distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus and random button need
+its code (not available); time-trial staff ghosts are the original course's; in the new cups, each CTGP course keeps
+its records together with those of the original course whose slot it borrows (in CTGP's own saves), and online
+sessions use the game's cups (each machine would otherwise decide on its own which races are a CTGP cup's). See
 [STATUS.md](docs/STATUS.md).
 
 ## Build and contribute

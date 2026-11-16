@@ -925,5 +925,9 @@
   "DLL Steam incompatível: interface exigida {0} (ou {1}) ausente.": "Incompatible Steam DLL: required interface {0} (or {1}) is missing.",
   "Interface Steam indisponível após inicialização: {0}.": "Steam interface unavailable after initialization: {0}.",
   "Você pode importar ou reparar o Booster Course Pass sem repetir a build.": "You can import or repair the Booster Course Pass without rebuilding the game.",
-  "Abrir importação de DLC": "Open DLC import"
+  "Abrir importação de DLC": "Open DLC import",
+  "Em 16 copas novas, sem tirar nenhuma pista (terceira e quarta páginas)": "In 16 new cups, without removing any course (third and fourth pages)",
+  "Em copas novas: as 64 pistas do CTGP ficam em 16 copas próprias, nas páginas depois das do jogo (L/R na tela de copas), com nomes, imagens, músicas e ícones delas; nenhuma pista original sai do lugar. Os recordes de cada pista do CTGP ficam nos saves próprios do CTGP, junto com os da pista original da mesma vaga.": "In new cups: the 64 CTGP courses go into 16 cups of their own, on the pages after the game's (L/R on the cup screen), with their own names, pictures, music and icons; no original course moves. Each CTGP course's records stay in CTGP's own saves, together with those of the original course of the same slot.",
+  "{0} pistas do CTGP em 16 copas novas; as originais continuam nas copas delas. Vale ao iniciar o jogo.": "{0} CTGP courses in 16 new cups; the originals stay in their cups. Applies when starting the game.",
+  "Jogo original. Ative para jogar as {0} pistas do CTGP em copas novas.": "Original game. Enable it to play the {0} CTGP courses in new cups."
 }

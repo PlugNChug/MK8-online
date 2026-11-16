@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import struct
+import time
 from pathlib import Path
 
 TITLE = '0100152000022000'
@@ -96,9 +97,33 @@ BCP_CUPS = [(11601 + c, f'Charger{c:02d}',
               for k in range(4)])
             for c in range(12)]
 # Where CTGP's cups go, in CTGP cup order.
-LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS, 'dlc-late': BCP_CUPS}
+# 'added': all 16 CTGP cups as cups of their own after the game's (a third and a fourth page; runtime/mk8/support/
+# cups.c), each CT course on the ID of the slot 'base' gives it (its files over that course's) and with its own folder,
+# name, picture, music and cup icon; the game's courses stay as they are.
+LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS, 'dlc-late': BCP_CUPS, 'added': BASE_CUPS + BCP_CUPS[:4]}
 # the first CTGP cup each layout places ('dlc-late': CTGP cups 5-16 in the DLC's 12, so both DLC layouts reach all 16)
-LAYOUT_FIRST_CUP = {'base': 0, 'dlc': 0, 'dlc-late': 4}
+LAYOUT_FIRST_CUP = {'base': 0, 'dlc': 0, 'dlc-late': 4, 'added': 0}
+# MK8 4.0.1's course IDs (its course enum) from 16 on: the race courses and the battle courses, in order
+COURSE_ORDER = [
+    'Gu_MarioCircuit', 'Gu_DossunIseki', 'Gu_City', 'Gu_Cake', 'Gu_HorrorHouse', 'Gu_Expert', 'Gu_Desert',
+    'Gu_Cloud', 'Gu_SnowMountain', 'Gu_Techno', 'Gu_Airport', 'Gu_FirstCircuit', 'Gu_WaterPark', 'Gu_Ocean',
+    'Gu_BowserCastle', 'Gu_RainbowRoad', 'G3ds_DKJungle', 'Gwii_MooMooMeadows', 'G64_PeachCircuit',
+    'G64_KinopioHighway', 'Gds_PukupukuBeach', 'Ggc_SherbetLand', 'Gagb_MarioCircuit', 'G3ds_MusicPark',
+    'Gwii_GrumbleVolcano', 'Gsfc_DonutsPlain3', 'Ggc_DryDryDesert', 'G3ds_PackunSlider', 'Gds_TickTockClock',
+    'G64_YoshiValley', 'Gds_WarioStadium', 'G64_RainbowRoad', 'Du_Metro', 'Du_MuteCity', 'Du_DragonRoad',
+    'Du_Hyrule', 'Du_Animal_Summer', 'Du_ExciteBike', 'Du_Woods', 'Du_IcePark', 'Dgc_YoshiCircuit',
+    'Dwii_WariosMine', 'Dsfc_RainbowRoad', 'Dagb_RibbonRoad', 'D3ds_NeoBowserCity', 'Dgc_BabyPark',
+    'Dagb_CheeseLand', 'Du_BigBlue', 'Du_Animal_Spring', 'Du_Animal_Autumn', 'Du_Animal_Winter', 'B3ds_WuhuTown',
+    'Bgc_LuigiMansion', 'Bsfc_Battle1', 'Bu_DekaLine', 'Bu_Moon', 'Bu_BattleStadium', 'Bu_Dojo', 'Bu_Sweets',
+    'Cnsw_11', 'Cnsw_12', 'Cnsw_13', 'Cnsw_14', 'Cnsw_15', 'Cnsw_16', 'Cnsw_17', 'Cnsw_18', 'Cnsw_21', 'Cnsw_22',
+    'Cnsw_23', 'Cnsw_24', 'Cnsw_25', 'Cnsw_26', 'Cnsw_27', 'Cnsw_28', 'Cnsw_31', 'Cnsw_33', 'Cnsw_34', 'Cnsw_62',
+    'Cnsw_35', 'Cnsw_32', 'Cnsw_37', 'Cnsw_38', 'Cnsw_41', 'Cnsw_47', 'Cnsw_42', 'Cnsw_44', 'Cnsw_55', 'Cnsw_43',
+    'Cnsw_36', 'Cnsw_45', 'Cnsw_65', 'Cnsw_46', 'Cnsw_63', 'Cnsw_58', 'Cnsw_48', 'Cnsw_53', 'Cnsw_52', 'Cnsw_61',
+    'Cnsw_54', 'Cnsw_56', 'Cnsw_66', 'Cnsw_64', 'Cnsw_51', 'Cnsw_67', 'Cnsw_57', 'Cnsw_68',
+]
+COURSE_IDS = {name: 16 + i for i, name in enumerate(COURSE_ORDER)}
+ADDED_CUP_LABEL = 30000     # the added cups' names: 30000 + cup
+ADDED_COURSE_LABEL = 31000  # the CT courses' names: 31000 + CT index, and + 100 the race intro's
 PLATFORM_LABELS = range(1461, 1469)  # Wii, GBA, DS, 3DS, N64, SNES, GCN, Tour: retro prefixes shown before a name
 # CTGP files verified to load on 4.0.1 outside the course slots (race-time-trial-ssw00gbi, -lzz6p1u3)
 EXTRAS = ['Audio/Resource/Stream/BGM_MENU_LOCAL.bfstm', 'Audio/Resource/Stream/BGM_MENU_SINGLE_MULTI.bfstm',
@@ -222,6 +247,60 @@ def msbt_write(data, texts):
     return bytes(out)
 
 
+def _label_slot(label, slots):
+    """The MSBT label hash (LBL1 bucket)."""
+    h = 0
+    for ch in label:
+        h = (h * 0x492 + ord(ch)) & 0xFFFFFFFF
+    return h % slots
+
+
+def msbt_add(data, values):
+    """The same MSBT with new labels (label -> text, without the final NUL) appended after its texts: LBL1 rebuilt
+    with the same number of buckets, each bucket's labels in their order and the new ones after them. An MSBT with
+    other per-message sections (ATR1, TSY1...) or a label that exists already is refused."""
+    sections = _sections(data)
+    if sorted(m for m, _, _ in sections) != [b'LBL1', b'TXT2']:
+        raise PackError('MSBT com seções por mensagem além de LBL1/TXT2')
+    labels, texts = msbt_read(data)
+    texts = list(texts)
+    for label in values:
+        if label in labels or not label or len(label) > 255 or not label.isascii():
+            raise PackError(f'Rótulo {label} inválido ou já existente')
+    lbl = next((at, size) for m, at, size in sections if m == b'LBL1')
+    body = data[lbl[0] + 0x10:lbl[0] + 0x10 + lbl[1]]
+    slots = struct.unpack_from('<I', body, 0)[0]
+    buckets = [[] for _ in range(slots)]
+    for i in range(slots):
+        count, o = struct.unpack_from('<II', body, 4 + 8 * i)
+        for _ in range(count):
+            n = body[o]
+            buckets[i].append((body[o + 1:o + 1 + n].decode('ascii'), struct.unpack_from('<I', body, o + 1 + n)[0]))
+            o += 1 + n + 4
+    for label, text in values.items():
+        buckets[_label_slot(label, slots)].append((label, len(texts)))
+        texts.append(text + '\0')
+    table = bytearray(struct.pack('<I', slots))
+    names = bytearray()
+    offset = 4 + 8 * slots
+    for bucket in buckets:
+        table += struct.pack('<II', len(bucket), offset + len(names))
+        for label, index in bucket:
+            names += bytes([len(label)]) + label.encode('ascii') + struct.pack('<I', index)
+    new_lbl = bytes(table + names)
+    out = bytearray(data[:0x20])
+    for magic, at, size in sections:
+        if magic == b'LBL1':
+            section = bytearray(data[at:at + 0x10])
+            struct.pack_into('<I', section, 4, len(new_lbl))
+            section += new_lbl
+            section += b'\xab' * (-len(section) % 16)
+            out += section
+        else:
+            out += bytes(data[at:at + 0x10 + ((size + 15) & ~15)])
+    return msbt_write(bytes(out), texts)
+
+
 def set_texts(data, values):
     """values: label -> text (without the final NUL). Keeps a tagged text's control tags around the new name."""
     labels, texts = msbt_read(data)
@@ -304,6 +383,313 @@ def bntx_textures(data):
         out[data[name_at + 2:name_at + 2 + n].decode()] = (fmt, width, height, mips, size, layout,
                                                             struct.unpack_from('<Q', data, ptrs)[0])
     return out
+
+
+def _bntx_slots(data):
+    """The BNTX relocation table (_RLT) decoded: [(section, offset of a 64-bit pointer)] and the section ranges."""
+    rlt = struct.unpack_from('<I', data, 0x18)[0]
+    if data[rlt:rlt + 4] != b'_RLT':
+        raise PackError('BNTX sem _RLT')
+    nsec = struct.unpack_from('<I', data, rlt + 8)[0]
+    secs = [struct.unpack_from('<QIIII', data, rlt + 0x10 + i * 0x18) for i in range(nsec)]
+    at = rlt + 0x10 + nsec * 0x18
+    slots = []
+    for sec, (_, _, _, first, count) in enumerate(secs):
+        for e in range(first, first + count):
+            off, structs, per, pad = struct.unpack_from('<IHBB', data, at + e * 8)
+            slots += [(sec, off + s * (per + pad) * 8 + k * 8) for s in range(structs) for k in range(per)]
+    return secs, slots
+
+
+def _dic_bit(name, bit):
+    i = bit >> 3
+    return 0 if i >= len(name) else (name[len(name) - 1 - i] >> (bit & 7)) & 1
+
+
+def _dic_build(names):
+    """The _DIC of a BNTX (a Patricia trie over the names, from the last byte's lowest bit): [(ref, left, right,
+    name)], the root first with the empty name. Rebuilds the game's dictionaries exactly."""
+    nodes = [[-1, 0, 0, b'']]
+    for name in names:
+        p, x = 0, nodes[0][1]
+        while nodes[p][0] < nodes[x][0]:
+            p, x = x, nodes[x][2] if _dic_bit(name, nodes[x][0]) else nodes[x][1]
+        other, d = nodes[x][3], 0
+        while d < max(len(name), len(other)) * 8 and _dic_bit(name, d) == _dic_bit(other, d):
+            d += 1
+        p, t = 0, nodes[0][1]
+        while nodes[p][0] < nodes[t][0] < d:
+            p, t = t, nodes[t][2] if _dic_bit(name, nodes[t][0]) else nodes[t][1]
+        new = len(nodes)
+        nodes.append([d, t, new, name] if _dic_bit(name, d) else [d, new, t, name])
+        if p == 0:
+            nodes[0][1] = new
+        elif _dic_bit(name, nodes[p][0]):
+            nodes[p][2] = new
+        else:
+            nodes[p][1] = new
+    return nodes
+
+
+def bntx_add_textures(data, added):
+    """The BNTX with textures appended: added = [(name, template texture name, image bytes)], each a copy of its
+    template's BRTI (format, size, layout) with its own name and image (the template's image size). Every pointer the
+    relocation table lists is remapped to the new layout (pointer array, _STR with the names and the _DIC, the BRTI
+    blocks, the BRTD data aligned as the original's, the _RLT rebuilt); without textures to add, the same file but
+    for the _RLT's encoding of the same pointers."""
+    if data[:4] != b'BNTX' or data[0x20:0x24] != b'NX  ':
+        raise PackError('BNTX inválido')
+    count, arr, brtd, dic = struct.unpack_from('<IQQQ', data, 0x24)
+    first_block = struct.unpack_from('<H', data, 0x16)[0]
+    secs, slots = _bntx_slots(data)
+    if len(secs) != 2 or secs[0][1] != 0 or secs[1][1] != brtd:
+        raise PackError('BNTX com seções inesperadas')
+    blocks = [struct.unpack_from('<Q', data, arr + 8 * i)[0] for i in range(count)]
+    block_size = struct.unpack_from('<I', data, blocks[0] + 8)[0]
+    if (first_block != arr + 8 * count or data[first_block:first_block + 4] != b'_STR'
+            or any(b != blocks[0] + i * block_size for i, b in enumerate(blocks))
+            or secs[0][2] != blocks[0] + count * block_size):
+        raise PackError('BNTX com disposição inesperada')
+    textures = bntx_textures(data)
+    names, tex_names = [], []
+    o = first_block + 0x18
+    for _ in range(struct.unpack_from('<I', data, first_block + 0x10)[0]):
+        n = struct.unpack_from('<H', data, o)[0]
+        names.append((o, data[o + 2:o + 2 + n]))
+        o += 2 + n + 1
+        o += o & 1
+    for i in range(count):
+        at = struct.unpack_from('<Q', data, blocks[i] + 0x60)[0]
+        tex_names.append(data[at + 2:at + 2 + struct.unpack_from('<H', data, at)[0]])
+    if (o + 7) & ~7 != dic or any(tex_names[i] != _dic_build(tex_names)[i + 1][3] for i in range(count)):
+        raise PackError('BNTX com _STR/_DIC inesperados')
+    for name, template, image in added:
+        if name.encode() in tex_names or template not in textures or len(image) != textures[template][4]:
+            raise PackError(f'Textura {name} inválida')
+    total = count + len(added)
+    # new layout
+    arr_new = arr
+    str_new = arr + 8 * total
+    strings = [s for _, s in names] + [n.encode() for n, _, _ in added]
+    blob, offsets = bytearray(), []
+    for s in strings:
+        offsets.append(str_new + 0x18 + len(blob))
+        blob += struct.pack('<H', len(s)) + s + b'\0'
+        blob += b'\0' * (len(blob) & 1)
+    dic_new = (str_new + 0x18 + len(blob) + 7) & ~7
+    blocks_new = dic_new + 8 + (total + 1) * 16
+    sec0_end = blocks_new + total * block_size
+    brtd_new = ((sec0_end + 0x10 + 0xFFF) & ~0xFFF) - 0x10
+    shift_str, shift_blocks, shift_data = str_new - first_block, blocks_new - blocks[0], brtd_new - brtd
+    string_at = {old: new for (old, _), new in zip(names, offsets)}
+    string_at[first_block + 0x14] = str_new + 0x14  # (the empty name of the _DIC's root)
+
+    def remap(value):
+        if value < arr:
+            return value
+        if value < arr + 8 * count:
+            return arr_new + value - arr
+        if value == dic:
+            return dic_new
+        if value in string_at:
+            return string_at[value]
+        if blocks[0] <= value < secs[0][2]:
+            return value + shift_blocks
+        if value >= brtd:
+            return value + shift_data
+        raise PackError(f'Ponteiro inesperado no BNTX: {value:#x}')
+
+    rlt = struct.unpack_from('<I', data, 0x18)[0]
+    image_end = rlt - brtd - 0x10  # (relative to the data, the original images)
+    out = bytearray(brtd_new + 0x10 + image_end)
+    out[:arr] = data[:arr]
+    for i in range(count):
+        out[blocks_new + i * block_size:blocks_new + (i + 1) * block_size] = data[blocks[i]:blocks[i] + block_size]
+    out[brtd_new + 0x10:] = data[brtd + 0x10:rlt]
+    new_slots = set()
+    for sec, at in slots:  # (the original's pointers, moved; the array's and the _DIC's are rewritten below)
+        if arr <= at < arr + 8 * count or dic <= at < first_block + struct.unpack_from('<I', data, first_block + 8)[0]:
+            continue
+        where = at if at < arr else at + shift_blocks
+        struct.pack_into('<Q', out, where, remap(struct.unpack_from('<Q', data, at)[0]))
+        new_slots.add((sec, where))
+    template_slots = {}
+    for sec, at in slots:
+        for i, b in enumerate(blocks):
+            if b <= at < b + block_size:
+                template_slots.setdefault(i, []).append((sec, at - b))
+    by_name = {n.decode(): i for i, n in enumerate(tex_names)}
+    for k, (name, template, image) in enumerate(added):
+        t = by_name[template]
+        block = blocks_new + (count + k) * block_size
+        out[block:block + block_size] = data[blocks[t]:blocks[t] + block_size]
+        align = 0x1000
+        at_image = (len(out) - (brtd_new) + align - 1) // align * align + brtd_new
+        out += b'\0' * (at_image - len(out)) + image
+        for sec, rel in template_slots[t]:
+            value = struct.unpack_from('<Q', data, blocks[t] + rel)[0]
+            if sec == 1:
+                value = at_image
+            elif blocks[t] <= value < blocks[t] + block_size:
+                value = block + value - blocks[t]
+            elif value == struct.unpack_from('<Q', data, blocks[t] + 0x60)[0]:
+                value = offsets[len(names) + k]
+            else:
+                value = remap(value)
+            struct.pack_into('<Q', out, block + rel, value)
+            new_slots.add((sec, block + rel))
+    # pointer array, _STR, _DIC
+    for i in range(total):
+        struct.pack_into('<Q', out, arr_new + 8 * i, blocks_new + i * block_size)
+        new_slots.add((0, arr_new + 8 * i))
+    out[str_new:str_new + 0x10] = b'_STR' + struct.pack('<IIi', blocks_new - str_new, blocks_new - str_new, 0)
+    struct.pack_into('<I', out, str_new + 0x10, len(strings))
+    out[str_new + 0x18:str_new + 0x18 + len(blob)] = blob
+    nodes = _dic_build(tex_names + [n.encode() for n, _, _ in added])
+    name_at = {s: offsets[i] for i, s in enumerate(strings)}
+    name_at[b''] = str_new + 0x14
+    out[dic_new:dic_new + 8] = b'_DIC' + struct.pack('<I', total)
+    for i, (ref, left, right, name) in enumerate(nodes):
+        struct.pack_into('<iHHQ', out, dic_new + 8 + 16 * i, ref, left, right, name_at[name])
+        new_slots.add((0, dic_new + 8 + 16 * i + 8))
+    # headers, block chain
+    for i in range(total):
+        block = blocks_new + i * block_size
+        nxt = block_size if i + 1 < total else brtd_new - block
+        struct.pack_into('<I', out, block + 4, nxt)
+    rlt_new = (len(out) + 7) & ~7
+    out += b'\0' * (rlt_new - len(out))
+    out[brtd_new:brtd_new + 0x10] = b'BRTD' + struct.pack('<IIi', 0, rlt_new - brtd_new, 0)
+    struct.pack_into('<IQQQ', out, 0x24, total, arr_new, brtd_new, dic_new)
+    struct.pack_into('<H', out, 0x16, str_new)
+    file_name = struct.unpack_from('<I', data, 0x10)[0]  # (the file name's characters, after its length)
+    if file_name - 2 not in string_at:
+        raise PackError('BNTX com nome de arquivo inesperado')
+    struct.pack_into('<I', out, 0x10, string_at[file_name - 2] + 2)
+    # _RLT: one entry per run of consecutive pointers, by section
+    entries, sections = [], []
+    for sec, (start, size) in enumerate(((0, sec0_end), (brtd_new, rlt_new - brtd_new))):
+        run = sorted(o for s, o in new_slots if s == sec)
+        first = len(entries)
+        i = 0
+        while i < len(run):
+            j = i
+            while j + 1 < len(run) and run[j + 1] == run[j] + 8 and j + 1 - i < 255:
+                j += 1
+            entries.append((run[i], 1, j - i + 1, 0))
+            i = j + 1
+        sections.append((0, start, size, first, len(entries) - first))
+    table = bytearray(b'_RLT' + struct.pack('<III', rlt_new, len(sections), 0))
+    for section in sections:
+        table += struct.pack('<QIIII', *section)
+    for entry in entries:
+        table += struct.pack('<IHBB', *entry)
+    out += table
+    struct.pack_into('<II', out, 0x18, rlt_new, len(out))
+    return bytes(out)
+
+
+def flan_add_pattern(data, pane, names, first_frame):
+    """A BFLAN (pai1) where pane's texture pattern (FLTP, a step curve, the file's last animation) gets a key per name
+    from first_frame on (frame first_frame + k shows names[k]); names it does not list yet are appended to its texture
+    list (a name may repeat). The animation's length grows to the last key."""
+    if data[:4] != b'FLAN' or data[4:6] != b'\xff\xfe':
+        raise PackError('BFLAN inválido')
+    pai = data.find(b'pai1')
+    if pai < 0 or struct.unpack_from('<I', data, 0x0C)[0] != len(data) or pai + struct.unpack_from('<I', data, pai + 4)[0] != len(data):
+        raise PackError('BFLAN sem pai1 no fim')
+    frames, _, textures, anims, anim_table = struct.unpack_from('<HHHHI', data, pai + 8)
+    table = pai + 0x14
+    tex_off = [struct.unpack_from('<I', data, table + 4 * i)[0] for i in range(textures)]
+    old_names = [data[table + o:data.index(b'\0', table + o)] for o in tex_off]
+    anim_at = [struct.unpack_from('<I', data, pai + anim_table + 4 * i)[0] for i in range(anims)]
+    last = pai + anim_at[-1]
+    if data[last:last + 28].rstrip(b'\0') != pane.encode():
+        raise PackError('BFLAN com animação inesperada')
+    tag = last + struct.unpack_from('<I', data, last + 0x20)[0]
+    if data[last + 0x1C] != 1 or data[tag:tag + 4] != b'FLTP' or struct.unpack_from('<I', data, tag + 4)[0] != 1:
+        raise PackError('BFLAN com animação inesperada')
+    entry = tag + struct.unpack_from('<I', data, tag + 8)[0]
+    curve, keys, key_at = data[entry + 2], struct.unpack_from('<H', data, entry + 4)[0], struct.unpack_from('<I', data, entry + 8)[0]
+    if curve != 1 or entry + key_at + 8 * keys != len(data):
+        raise PackError('BFLAN com chaves inesperadas')
+    all_names = list(old_names)
+    for n in names:
+        if n.encode() not in all_names:
+            all_names.append(n.encode())
+    blob = bytearray()
+    offsets = []
+    for n in all_names:
+        offsets.append(4 * len(all_names) + len(blob))
+        blob += n + b'\0'
+    blob += b'\0' * (-(0x14 + 4 * len(all_names) + len(blob)) % 4)
+    head = bytearray(data[pai:pai + 0x14])
+    new_anim_table = 0x14 + 4 * len(all_names) + len(blob)
+    shift = new_anim_table - anim_table
+    struct.pack_into('<HHHHI', head, 8, max(frames, first_frame + len(names) - 1) if names else frames, struct.unpack_from('<H', data, pai + 0xA)[0],
+                     len(all_names), anims, new_anim_table)
+    body = bytearray(head + b''.join(struct.pack('<I', o) for o in offsets) + blob)
+    body += b''.join(struct.pack('<I', a + shift) for a in anim_at)
+    rest = bytearray(data[pai + anim_table + 4 * anims:])
+    entry_rel = entry - (pai + anim_table + 4 * anims)
+    struct.pack_into('<H', rest, entry_rel + 4, keys + len(names))
+    for k, n in enumerate(names):
+        rest += struct.pack('<fHH', float(first_frame + k), all_names.index(n.encode()), 0)
+    out = bytearray(data[:pai]) + body + rest
+    struct.pack_into('<I', out, pai + 4, len(out) - pai)
+    struct.pack_into('<I', out, 0x0C, len(out))
+    return bytes(out)
+
+
+def cup_select_add_icons(menu_sarc, icons, first_cup=25, places=24, skipped=None):
+    """4.0.1 menu.sarc with cup select icons for the added cups (cup first_cup + k shows icons[k], a CTGP icon BNTX
+    path): textures ym_CupIconCTnn^h appended to mn_L_CupSlctBtn_00's BNTX (as the Mushroom icon's: format, size)
+    and frames for them in its icon animation; the places after them, up to places, show the game's empty icon
+    (ym_CupIconBack^h). An icon this cannot read shows the Mushroom icon (its name goes to skipped)."""
+    menu = sarc_read(menu_sarc)
+    archive = next((blob for name, _, _, blob, _ in menu['files'] if name == 'mn_L_CupSlctBtn_00.szs'), None)
+    if archive is None:
+        raise PackError('menu.sarc sem mn_L_CupSlctBtn_00.szs')
+    inner = sarc_read(yaz0_decode(archive))
+    bntx_index = next((i for i, f in enumerate(inner['files']) if f[3][:4] == b'BNTX'), None)
+    flan_index = next((i for i, f in enumerate(inner['files']) if f[3][:4] == b'FLAN' and b'FLTP' in f[3]
+                       and b'P_CupIcon_00' in f[3]), None)
+    if bntx_index is None or flan_index is None:
+        raise PackError('mn_L_CupSlctBtn_00.szs sem BNTX ou animação de ícone')
+    bntx = inner['files'][bntx_index][3]
+    slot = bntx_textures(bntx).get('ym_CupIconMushroom^h')
+    if not slot or slot[0] != 0x701 or slot[3] != 1:
+        raise PackError('Ícone de copa inesperado no 4.0.1')
+    fmt, width, height, _, size, layout, at = slot
+    added = []
+    for k, path in enumerate(icons):
+        if not Path(path).is_file():
+            if skipped is not None:
+                skipped.append(f'{Path(path).name}: ausente')
+            added.append((f'ym_CupIconCT{k:02d}^h', 'ym_CupIconMushroom^h', bntx[at:at + size]))
+            continue
+        source = Path(path).read_bytes()
+        tex = next(iter(bntx_textures(source).values()))
+        decode = {0xB01: rgba8_linear, 0xB06: rgba8_linear, 0x1C01: bc3_rgba, 0x1C06: bc3_rgba,
+                  0x2001: bc7_rgba, 0x2006: bc7_rgba}.get(tex[0])
+        try:
+            if not decode:
+                raise PackError(f'formato {tex[0]:#x}')
+            rgba = decode(source[tex[6]:tex[6] + tex[4]], tex[1], tex[2], 1 << tex[5])
+            image = icon_rgb565(rgba, tex[1], tex[2], size, 1 << layout, width, height)
+        except PackError as error:
+            if skipped is not None:
+                skipped.append(f'{Path(path).name}: {error}')
+            image = bntx[at:at + size]
+        added.append((f'ym_CupIconCT{k:02d}^h', 'ym_CupIconMushroom^h', image))
+    if 'ym_CupIconBack^h' not in bntx_textures(bntx) or len(icons) > places:
+        raise PackError('Ícones de copa a mais ou sem o ícone vazio')
+    frames = [n for n, _, _ in added] + ['ym_CupIconBack^h'] * (places - len(icons))
+    files = {bntx_index: bntx_add_textures(bntx, added),
+             flan_index: flan_add_pattern(inner['files'][flan_index][3], 'P_CupIcon_00', frames, first_cup)}
+    rebuilt = sarc_write(inner, files, by_index=True)
+    alignment = struct.unpack_from('>I', archive, 8)[0]
+    return sarc_write(menu, {'mn_L_CupSlctBtn_00.szs': yaz0_store(rebuilt, alignment)})
 
 
 def _gob(x, y, row_bytes, bpp, block_height):
@@ -519,6 +905,120 @@ def slots(layout='base'):
     return out
 
 
+def rename_folder(source, target, attempts=20):
+    """source renamed to target. On Windows a folder of files just written may be refused for a moment (an open
+    handle, an antivirus scan): retried for a few seconds before the error is passed on."""
+    for attempt in range(attempts):
+        try:
+            return Path(source).rename(target)
+        except PermissionError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(0.5)
+
+
+def added_folder(ct):
+    """The course folder of CT course ct in the 'added' layout."""
+    return f'CTGP{ct + 1:02d}'
+
+
+def barslist_renamed(data, old, new):
+    """A course's sound bank list (ARSL) under another course name: Course_<old> and its own bank Course_<old>.bars
+    become Course_<new> and Course_<new>.bars; the other banks stay."""
+    if data[:6] != b'ARSL\xff\xfe' or struct.unpack_from('<HI', data, 6) != (1, 0):
+        raise PackError('barslist inválido')
+    count = struct.unpack_from('<I', data, 12)[0]
+    strings = data[16 + 4 * count:].split(b'\0')[:count + 1]
+    if len(strings) != count + 1 or strings[0] != f'Course_{old}'.encode():
+        raise PackError('barslist inesperado')
+    rename = {f'Course_{old}'.encode(): f'Course_{new}'.encode(), f'Course_{old}.bars'.encode(): f'Course_{new}.bars'.encode()}
+    strings = [rename.get(s, s) for s in strings]
+    offsets, at = [], len(strings[0]) + 1
+    for s in strings[1:]:
+        offsets.append(at)
+        at += len(s) + 1
+    return (data[:16] + b''.join(struct.pack('<I', o) for o in offsets) + b''.join(s + b'\0' for s in strings))
+
+
+def barslist(name, own=True):
+    """A course's sound bank list (ARSL), as the game's: Course_<name>, then its banks (its own .bars, when it has
+    one, and Course.bars)."""
+    strings = [f'Course_{name}'.encode()] + ([f'Course_{name}.bars'.encode()] if own else []) + [b'Course.bars']
+    offsets, at = [], len(strings[0]) + 1
+    for s in strings[1:]:
+        offsets.append(at)
+        at += len(s) + 1
+    head = b'ARSL\xff\xfe' + struct.pack('<HII', 1, 0, len(offsets)) + b''.join(struct.pack('<I', o) for o in offsets)
+    return head + b''.join(s + b'\0' for s in strings)
+
+
+def cups_extra():
+    """MK8_CUPS_EXTRA for the 'added' layout: per cup its name label and its 4 courses as ID:label:folder."""
+    cups = {}
+    for ct, cup, folders, _, _, _ in slots('added'):
+        cups.setdefault(cup, []).append(f'{COURSE_IDS[folders[0]]}:{ADDED_COURSE_LABEL + ct}:{added_folder(ct)}')
+    return ';'.join(f'{ADDED_CUP_LABEL + c}=' + ','.join(courses) for c, courses in sorted(cups.items()))
+
+
+def _retag(old, new):
+    """new inside old's control tags (a tagged "<tag>Name<tag>" text keeps both), or new alone."""
+    old = old.rstrip('\0')
+    head = 4 + ord(old[3]) // 2 if len(old) >= 4 and old[0] == '\x0e' else 0
+    tail = old.rfind('\x0e')
+    if head and head <= tail and len(old) >= tail + 4 and len(old) == tail + 4 + ord(old[tail + 3]) // 2:
+        return old[:head] + new + old[tail:]
+    return new
+
+
+def messages_added(target, ctgp_sarc, fallback):
+    """The 4.0.1 message.sarc of one language with the added cups' and CT courses' names as new labels (the
+    game's own texts unchanged); the race intro's form takes the tags of the game's (label 1501)."""
+    names, cups = ctgp_names(ctgp_sarc if Path(ctgp_sarc).is_file() else fallback)
+    parsed = sarc_read(Path(target).read_bytes())
+    common = next(blob for name, _, _, blob, _ in parsed['files'] if name == 'Common.msbt')
+    labels, texts = msbt_read(common)
+    intro = texts[labels['1501']] if '1501' in labels else ''
+    values = {str(ADDED_CUP_LABEL + c): cups[c] for c in range(16)}
+    for ct in range(CT_COUNT):
+        values[str(ADDED_COURSE_LABEL + ct)] = names[ct]
+        values[str(ADDED_COURSE_LABEL + 100 + ct)] = _retag(intro, names[ct])
+    return sarc_write(parsed, {'Common.msbt': msbt_add(common, values)})
+
+
+def plan_added(title, romfs, notes=None):
+    """The 'added' layout's overlay files (see LAYOUTS). Expects plan's validation done."""
+    ct_romfs, files = title / 'romfs', {}
+    for ct, _, folders, _, _, _ in slots('added'):
+        src, borrowed, name = ct_romfs / f'Course/CT_{ct:02X}', romfs / 'Course' / folders[0], added_folder(ct)
+        for tree, skip in ((borrowed, ()), (src, (f'Course_CT_{ct:02X}.bars', f'Course_CT_{ct:02X}.barslist'))):
+            for path in sorted(tree.rglob('*')):
+                if path.is_file() and path.name not in skip:
+                    files[f'Course/{name}/{path.relative_to(tree).as_posix()}'] = path
+        bank = borrowed / f'Course_{folders[0]}.bars'  # (the course's own sound bank, under its new name as well)
+        if bank.is_file():
+            files[f'Course/{name}/Course_{name}.bars'] = bank
+        listed = borrowed / f'Course_{folders[0]}.barslist'
+        files[f'Course/{name}/Course_{name}.barslist'] = (
+            barslist_renamed(listed.read_bytes(), folders[0], name) if listed.is_file() else barslist(name, bank.is_file()))
+        for kind in ('N', 'F'):
+            music = ct_romfs / f'Audio/Resource/Stream/pBGM_CT_{ct:02X}_{kind}.bfstm'
+            if music.is_file():
+                files[f'Audio/Resource/Stream/{name}_{kind}.bfstm'] = music
+        pict = ct_romfs / f'UI/cmn/menu/ym_CoursePict_CT_{ct:02X}_00^u.bntx'
+        if pict.is_file():
+            files[f'UI/cmn/menu/ym_CoursePict_{name}_00^u.bntx'] = pict
+    if (romfs / 'UI/cmn/menu.sarc').is_file():
+        icons = [ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c]}_130x130^h.bntx' for c in range(16)]
+        files['UI/cmn/menu.sarc'] = cup_select_add_icons((romfs / 'UI/cmn/menu.sarc').read_bytes(), icons, 25, 24,
+                                                         notes)
+    for lang in LANGUAGES:
+        target = romfs / f'UI/{lang}/message.sarc'
+        if target.is_file():
+            files[f'UI/{lang}/message.sarc'] = messages_added(target, ct_romfs / f'UI/{lang}/message.sarc',
+                                                              ct_romfs / 'UI/USen/message.sarc')
+    return files
+
+
 def plan(title, romfs, layout='base', notes=None):
     """Every overlay file: (overlay path, source path or bytes). Validates both trees first."""
     title, romfs = Path(title), Path(romfs)
@@ -530,6 +1030,8 @@ def plan(title, romfs, layout='base', notes=None):
                 raise PackError(f'CTGP incompleto: Course/CT_{i:02X}/{name}')
     if not (romfs / 'Course/Gu_FirstCircuit/course_model.szs').is_file():
         raise PackError('RomFS do MK8 4.0.1 não encontrado.')
+    if layout == 'added':
+        return plan_added(title, romfs, notes)
     files = {}
     stream = romfs / 'Audio/Resource/Stream'
     for ct, cup, folders, label, music, picture in slots(layout):
@@ -638,10 +1140,12 @@ def build(title, romfs, output, link=True, layout='base'):
             'base_courses': sum(1 for s in slots(layout) if not s[2][0].startswith('Cnsw_')),
             'files': record, 'gameplay_verified': False,
         }
+        if layout == 'added':
+            manifest['cups_extra'] = cups_extra()  # (the launcher gives it to the game as MK8_CUPS_EXTRA)
         manifest['identity'] = hashlib.sha256(json.dumps({k: manifest[k] for k in ('plugin_sha256', 'layout', 'files')},
                                                          sort_keys=True).encode()).hexdigest()
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=1), encoding='utf-8')
-        stage.rename(output)
+        rename_folder(stage, output)
         return manifest
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)

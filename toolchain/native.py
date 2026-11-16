@@ -192,7 +192,8 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
         src, obj = pair
         from experimental import patch_no_mii_unit
         from yaz0_native import patch_unit as patch_yaz0_unit
-        src = patch_yaz0_unit(patch_no_mii_unit(src, output), output)
+        from cup_relocation import patch_unit as patch_cup_unit
+        src = patch_cup_unit(patch_yaz0_unit(patch_no_mii_unit(src, output), output), output)
         obj.parent.mkdir(parents=True, exist_ok=True)
         stamp = obj.with_suffix('.json')
         key = {'source': digest(src), 'environment': identity, 'flags': flags}

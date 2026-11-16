@@ -122,6 +122,23 @@ class LauncherCtgpTests(unittest.TestCase):
         state["dlc"].update(state="ready", installed=True, enabled=True)
         expect(page.locator("#ctgp-hint")).to_have_text(
             "48 pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo.", timeout=5000)
+        # The added layout: 16 cups of their own; the game's courses stay in their cups, with or without the DLC.
+        page.locator("#ctgp-source").fill("D:/Jogos/CTGPDX")
+        page.locator("#ctgp-layout").select_option("added")
+        page.locator("#ctgp-import").click()
+        self.assertEqual(calls[-1], ("import", {"source": "D:/Jogos/CTGPDX", "reinstall": True, "layout": "added"}))
+        state["ctgp_import"]["state"] = "done"
+        state["ctgp"].update(enabled=True, layout="added", courses=64, base_courses=48)
+        state["dlc"].update(state="missing", installed=False, enabled=False)
+        expect(page.locator("#ctgp-hint")).to_have_text(
+            "64 pistas do CTGP em 16 copas novas; as originais continuam nas copas delas. Vale ao iniciar o jogo.",
+            timeout=5000)
+        page.locator("#language").select_option("en")
+        expect(page.locator("#ctgp-hint")).to_have_text(
+            "64 CTGP courses in 16 new cups; the originals stay in their cups. Applies when starting the game.",
+            timeout=5000)
+        page.locator("#language").select_option("pt-BR")
+        state["dlc"].update(state="ready", installed=True, enabled=True)
         page.locator("#ctgp-source").fill("D:/Jogos/CTGPDX")
         page.locator("#ctgp-layout").select_option("base")
         page.locator("#ctgp-import").click()

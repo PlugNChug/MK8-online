@@ -28,7 +28,7 @@ pub struct Status {
     pub base_courses: u64,
     pub names_verified: bool,
     /// "base": in place of the base game's cups (+4 DLC cups); "dlc" / "dlc-late": CTGP cups 1-12 / 5-16 in place
-    /// of the DLC's cups only.
+    /// of the DLC's cups only; "added": all 16 as cups of their own after the game's (a third and a fourth page).
     pub layout: String,
 }
 
@@ -173,6 +173,36 @@ pub fn launch_overlay(local: &Path, install: &Installation) -> Result<Option<Pat
     }
 }
 
+/// The added cups the game gets at launch (`MK8_CUPS_EXTRA`): the "added" layout's, recorded in its manifest;
+/// empty with the pack off or another layout. A game library without them is refused rather than launched with
+/// the pack's cups missing.
+pub fn launch_cups(local: &Path, install: &Installation) -> Result<String> {
+    if launch_overlay(local, install)?.is_none() {
+        return Ok(String::new());
+    }
+    let value = manifest(local, false)?.ok_or("CTGP: pacote ausente.")?;
+    if value["layout"].as_str() != Some("added") {
+        return Ok(String::new());
+    }
+    if !install.cups_supported {
+        return Err(
+            "Atualize a build para usar as copas novas do CTGP ou importe-o em outra disposição."
+                .into(),
+        );
+    }
+    value["cups_extra"]
+        .as_str()
+        .filter(|cups| {
+            !cups.is_empty()
+                && cups.len() <= 4096
+                && cups
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_:,;=".contains(&b))
+        })
+        .map(str::to_string)
+        .ok_or_else(|| "CTGP: copas do pacote inválidas. Importe novamente.".into())
+}
+
 /// The identity of the pack the game would get at launch (for the Steam lobby rule), None with it off.
 pub fn launch_identity(local: &Path, install: &Installation) -> Result<Option<String>> {
     if launch_overlay(local, install)?.is_none() {
@@ -228,6 +258,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use mk8_manifest::{hash_file, Installation};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     fn install(local: &Path, supported: bool) -> Installation {
@@ -243,6 +274,7 @@ mod tests {
             gameplay_verified: false,
             dlc_supported: true,
             pack_supported: supported,
+            cups_supported: supported,
             files: BTreeMap::new(),
         }
     }
@@ -320,6 +352,34 @@ mod tests {
         fs::write(local.join("ctgp.json"), br#"{"enabled":"sim"}"#).unwrap();
         assert!(launch_overlay(&local, &install).is_err());
         fs::remove_dir_all(&local).unwrap();
+    }
+
+    #[test]
+    fn the_added_layout_gives_the_game_its_cups_only_when_the_build_takes_them() {
+        let local = temp("cups");
+        fixture_pack(&local);
+        let mut install = install(&local, true);
+        set_enabled(&local, &install, true).unwrap();
+        assert_eq!(launch_cups(&local, &install).unwrap(), ""); // (a pack in another layout)
+        let path = local.join("ctgp/pack/manifest.json");
+        let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["layout"] = json!("added");
+        value["cups_extra"] =
+            json!("30000=27:31000:CTGP01,28:31001:CTGP02,19:31002:CTGP03,17:31003:CTGP04");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(
+            launch_cups(&local, &install).unwrap(),
+            "30000=27:31000:CTGP01,28:31001:CTGP02,19:31002:CTGP03,17:31003:CTGP04"
+        );
+        install.cups_supported = false; // (a game library from before the added cups)
+        assert!(launch_cups(&local, &install).is_err());
+        install.cups_supported = true;
+        value["cups_extra"] = json!("27:31000:CTGP01 & calc");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(launch_cups(&local, &install).is_err());
+        set_enabled(&local, &install, false).unwrap();
+        assert_eq!(launch_cups(&local, &install).unwrap(), ""); // (the pack off)
+        let _ = fs::remove_dir_all(&local);
     }
 
     #[test]

@@ -204,6 +204,100 @@ def texts(sarc_bytes):
 
 
 class CtgpPackTests(unittest.TestCase):
+    def test_texture_dictionary_and_pattern_frames(self):
+        names = [b'ym_CupIconMushroom^h', b'ym_CupIconFlower^h', b'ym_CupIconStar^h', b'ym_CupIconCT00^h', b'a', b'ab']
+        nodes = P._dic_build(names)
+        self.assertEqual(len(nodes), len(names) + 1)
+        for name in names:  # (each name is found by walking the trie as the game's ResDic does)
+            p, x = 0, nodes[0][1]
+            while nodes[p][0] < nodes[x][0]:
+                p, x = x, nodes[x][2] if P._dic_bit(name, nodes[x][0]) else nodes[x][1]
+            self.assertEqual(nodes[x][3], name)
+        # a BFLAN as the game's: one pai1 with a texture list and a pane's FLTP step curve last
+        def flan(textures, keys):
+            table = b''.join(struct.pack('<I', 4 * len(textures) + sum(len(n) + 1 for n in textures[:i]))
+                             for i in range(len(textures)))
+            blob = table + b''.join(n + b'\0' for n in textures)
+            blob += b'\0' * (-(0x14 + len(blob)) % 4)
+            anim_table = 0x14 + len(blob)
+            anim = bytearray(b'P_CupIcon_00'.ljust(28, b'\0') + struct.pack('<BBHI', 1, 1, 0, 0x24))
+            anim += b'FLTP' + struct.pack('<BBHI', 1, 0, 0, 0xC)
+            anim += struct.pack('<HBBHHI', 0, 1, 0, len(keys), 0, 0xC)
+            anim += b''.join(struct.pack('<fHH', float(f), i, 0) for f, i in keys)
+            pai = bytearray(b'pai1' + struct.pack('<IHHHHI', 0, len(keys), 0, len(textures), 1, anim_table))
+            pai += blob + struct.pack('<I', anim_table + 4) + anim
+            struct.pack_into('<I', pai, 4, len(pai))
+            out = bytearray(b'FLAN\xff\xfe\x14\x00\x00\x00\x00\x08' + struct.pack('<IHH', 0, 1, 0) + pai)
+            struct.pack_into('<I', out, 0xC, len(out))
+            return bytes(out)
+        base = flan([b'ym_CupIconMushroom^h', b'ym_CupIconBack^h'], [(0, 0), (1, 1)])
+        self.assertEqual(P.flan_add_pattern(base, 'P_CupIcon_00', [], 25), base)
+        out = P.flan_add_pattern(base, 'P_CupIcon_00', ['ym_CupIconCT00^h', 'ym_CupIconBack^h'], 25)
+        pai = out.find(b'pai1')
+        frames, _, textures, anims, _ = struct.unpack_from('<HHHHI', out, pai + 8)
+        self.assertEqual((frames, textures, anims), (26, 3, 1))
+        self.assertEqual(out[-16:], struct.pack('<fHHfHH', 25.0, 2, 0, 26.0, 1, 0))
+        self.assertEqual(struct.unpack_from('<I', out, 0xC)[0], len(out))
+        with self.assertRaises(P.PackError):
+            P.flan_add_pattern(base, 'P_Other_00', ['x'], 25)
+
+    @unittest.skipUnless((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').is_file(), 'MK8 4.0.1 RomFS required')
+    def test_cup_icon_textures_are_added_to_the_games_bntx(self):
+        menu = P.sarc_read((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').read_bytes())
+        archive = next(b for n, _, _, b, _ in menu['files'] if n == 'mn_L_CupSlctBtn_00.szs')
+        bntx = next(f[3] for f in P.sarc_read(P.yaz0_decode(archive))['files'] if f[3][:4] == b'BNTX')
+        same = P.bntx_add_textures(bntx, [])  # (the same file: only the _RLT's encoding may differ)
+        rlt = struct.unpack_from('<I', bntx, 0x18)[0]
+        self.assertEqual(same[0x20:rlt], bntx[0x20:rlt])
+        self.assertEqual(sorted(P._bntx_slots(same)[1]), sorted(P._bntx_slots(bntx)[1]))
+        textures = P.bntx_textures(bntx)
+        size = textures['ym_CupIconMushroom^h'][4]
+        image = bytes(range(256)) * (size // 256) + bytes(size % 256)
+        out = P.bntx_add_textures(bntx, [('ym_CupIconCT00^h', 'ym_CupIconMushroom^h', image)])
+        added = P.bntx_textures(out)
+        self.assertEqual(len(added), len(textures) + 1)
+        self.assertEqual(added['ym_CupIconCT00^h'][:6], textures['ym_CupIconMushroom^h'][:6])
+        at = added['ym_CupIconCT00^h'][6]
+        self.assertEqual(out[at:at + size], image)
+        for name, (fmt, w, h, mips, length, layout, start) in textures.items():
+            self.assertEqual(added[name][:6], (fmt, w, h, mips, length, layout))
+            self.assertEqual(out[added[name][6]:added[name][6] + length], bntx[start:start + length])
+        self.assertTrue(all(struct.unpack_from('<Q', out, o)[0] < len(out) for _, o in P._bntx_slots(out)[1]))
+        with self.assertRaises(P.PackError):
+            P.bntx_add_textures(bntx, [('ym_CupIconMushroom^h', 'ym_CupIconMushroom^h', image)])
+
+    def test_new_labels_are_added_in_their_buckets(self):
+        common = msbt({'1401': 'Mario Kart Stadium', '1501': f'{TAG}Mario Kart Stadium{END}'})
+        self.assertEqual(P.msbt_add(common, {}), common)
+        added = P.msbt_add(common, {'30000': 'Boo Cup', '31000': 'Omatsuri', '31100': f'{TAG}Omatsuri{END}'})
+        labels, values = P.msbt_read(added)
+        self.assertEqual(values[labels['30000']], 'Boo Cup\0')
+        self.assertEqual(values[labels['31100']], f'{TAG}Omatsuri{END}\0')
+        self.assertEqual(values[labels['1401']], 'Mario Kart Stadium\0')
+        for bad in ({'1401': 'x'}, {'': 'x'}, {'é': 'x'}):
+            with self.assertRaises(P.PackError):
+                P.msbt_add(common, bad)
+        # (the game's files have 101 buckets: each label goes to the one of its hash, after the ones there)
+        empty = bytearray(msbt({}))
+        lbl = struct.pack('<I', 7) + struct.pack('<II', 0, 4 + 8 * 7) * 7
+        empty[0x24:0x28] = struct.pack('<I', len(lbl))
+        body = bytes(empty[:0x30]) + lbl + b'\xab' * (-(0x10 + len(lbl)) % 16) + bytes(empty[0x30 + 16:])
+        empty = bytearray(body)
+        struct.pack_into('<I', empty, 0x12, len(empty))
+        out = P.msbt_add(bytes(empty), {str(n): f't{n}' for n in range(30000, 30020)})
+        at = 0x20 + 0x10
+        slots = struct.unpack_from('<I', out, at)[0]
+        self.assertEqual(slots, 7)
+        for i in range(slots):
+            count, offset = struct.unpack_from('<II', out, at + 4 + 8 * i)
+            for _ in range(count):
+                n = out[at + offset]
+                self.assertEqual(P._label_slot(out[at + offset + 1:at + offset + 1 + n].decode(), 7), i)
+                offset += 1 + n + 4
+        labels, values = P.msbt_read(out)
+        self.assertEqual(values[labels['30019']], 't30019\0')
+        self.assertEqual(P.msbt_add(out, {}), out)
+
     def test_archives_round_trip_and_names_keep_their_tags(self):
         common = msbt({'1401': 'Mario Kart Stadium', '1501': f'{TAG}Mario Kart Stadium{END}', '7': 'x'})
         archive = sarc({'Common.msbt': common, 'Menu.msbt': msbt({'1': 'a'})})
@@ -397,6 +491,51 @@ class CtgpPackTests(unittest.TestCase):
             self.assertEqual(manifest['layout'], 'base')
             with self.assertRaises(P.PackError):
                 P.locate(root/'game')
+
+    def test_added_layout_gives_ct_courses_cups_of_their_own(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            romfs, sd = fixture(root)
+            (romfs/'UI/cmn/menu.sarc').unlink()  # (its icons: with the game's own file, test_cup_icon_textures_...)
+            names = [b'Course_Du_Animal_Spring', b'Course_Du_Animal_Spring.bars', b'Course_Du_Animal.bars', b'Course.bars']
+            offsets = [len(names[0]) + 1, len(names[0]) + len(names[1]) + 2,
+                       len(names[0]) + len(names[1]) + len(names[2]) + 3]
+            write(romfs/'Course/Du_Animal_Spring/Course_Du_Animal_Spring.barslist',  # (three banks, as Animal's)
+                  b'ARSL\xff\xfe' + struct.pack('<HIIIII', 1, 0, 3, *offsets) + b''.join(n + b'\0' for n in names))
+            manifest = import_ctgp.import_pack(sd, romfs, root/'data', layout='added')
+            pack = root/'data/ctgp/pack/romfs'
+            self.assertEqual((manifest['layout'], manifest['courses']), ('added', 64))
+            self.assertEqual(manifest['cups_extra'], P.cups_extra())
+            cups = [c.split('=') for c in manifest['cups_extra'].split(';')]
+            self.assertEqual([int(label) for label, _ in cups], list(range(30000, 30016)))
+            for _, courses in cups:  # (four courses each, on IDs of the game's race courses, none twice in a cup)
+                ids = [int(c.split(':')[0]) for c in courses.split(',')]
+                self.assertEqual(len(set(ids)), 4)
+                self.assertTrue(all(16 <= i < 123 and P.COURSE_ORDER[i - 16][0] != 'B' for i in ids))
+            first = pack/'Course/CTGP01'  # (CT 0 over Mario Kart Stadium's files, its sound bank under its name)
+            self.assertEqual((first/'course_model.szs').read_bytes(), b'ct0-course_model.szs')
+            self.assertEqual((first/'Course_Gu_FirstCircuit.bars').read_bytes(), b'original')
+            self.assertEqual((first/'Course_CTGP01.bars').read_bytes(), b'original')
+            self.assertEqual((first/'Course_CTGP01.barslist').read_bytes(), P.barslist('CTGP01'))
+            self.assertTrue((first/'MapObj/Thing/Thing.bfres').is_file())
+            self.assertFalse((first/'Course_CT_00.bars').exists())
+            animal = next(P.added_folder(ct) for ct, _, f, *_ in P.slots('added') if f[0] == 'Du_Animal_Spring')
+            listed = (pack/'Course'/animal/f'Course_{animal}.barslist').read_bytes()
+            self.assertEqual(struct.unpack_from('<I', listed, 12)[0], 3)
+            self.assertTrue(listed.endswith(f'Course_{animal}\0Course_{animal}.bars\0Course_Du_Animal.bars\0'
+                                            'Course.bars\0'.encode()))
+            self.assertFalse((pack/'Course/Gu_FirstCircuit').exists())  # (no game course replaced)
+            self.assertFalse(any(p.name.startswith('pBGM_') for p in (pack/'Audio/Resource/Stream').iterdir()))
+            self.assertEqual((pack/'Audio/Resource/Stream/CTGP01_N.bfstm').read_bytes(), b'music0N')
+            self.assertEqual((pack/'Audio/Resource/Stream/CTGP64_F.bfstm').read_bytes(), b'music63F')
+            self.assertEqual((pack/'UI/cmn/menu/ym_CoursePict_CTGP01_00^u.bntx').read_bytes(), b'pict0')
+            values, _ = texts((pack/'UI/USen/message.sarc').read_bytes())
+            names, cup_names = P.ctgp_names(sd/'atmosphere/contents'/P.TITLE/'romfs/UI/USen/message.sarc')
+            self.assertEqual((values['30000'], values['30015']), (cup_names[0], cup_names[15]))
+            self.assertEqual((values['31000'], values['31063']), (names[0], names[63]))
+            self.assertIn(names[0], values['31100'])
+            self.assertEqual(values['1401'], common_labels()['1401'])  # (the game's own texts as they are)
+            self.assertEqual(P.verify(root/'data/ctgp/pack')['identity'], manifest['identity'])
 
     def test_incomplete_ctgp_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
