@@ -12,6 +12,14 @@
 
 `codex/runtime-texture-ownership`, baseada em `fix-chore d443092`: comparação semântica de descrição/armazenamento e liberação única da referência Initialize, inclusive objetos guest copiados. Seis regressões nativas de comparação, finalize, pool e retirement passaram após rebase. A build combinada anterior já inclui os fixes; não houve nova corrida completa nesta branch isolada. Não qualifica os clarões de Stadium nem vazamento geral como resolvidos. `gameplay_verified=false`.
 
+## TMML.B dos efeitos: tradução verificada offline — 15/11/2026
+
+As recusas `df60000120670406` / `df60000120770407` em `0x48` são consultas de mip bindless ausentes no tradutor. Recursos privados de partículas reproduziram essas instruções; os handles vêm de constantes da tabela NVN. A adaptação própria em `maxwell_mip_query.py` prova a origem estática, preserva o emissor TMML bound existente e rejeita controle de fluxo, variantes ou escritas de registradores não demonstradas. Suporte limitado ao resultado clamped 2D; não é suporte bindless geral.
+
+O teste nativo verifica falha anterior, os 32 slots, ambos os registradores observados, equivalência MSL/GLSL, compilação shaderc e rejeição de clobbers/variantes. A verificação dos shaders completos revelou consultas posteriores em `0x228` e `0xd8`: a prova passou a considerar as instruções intermediárias observadas, inclusive os quatro destinos de TEXS, com negativos para cada par. **Três shaders completos** privados passaram de erro de instrução desconhecida para tradução e SPIR-V válidos (3, 3 e 1 texturas); bytes comerciais não entram nas fixtures públicas.
+
+Base isolada `Vnnc1/MK8-online fix-chore d443092`, branch `codex/shader-mip-query`; revisão independente sem pendência. Evidências privadas em `local/graphics-diagnostics-work/lead-20261115/shader-fixes/verification.json` e logs associados, inclusive compilação completa de `objects.c`, `exec.c` e `translate.c` na integração atual. Isso comprova tradução/compatibilidade de fontes, não a contribuição visual desses efeitos nem a correção das linhas de blur. `gameplay_verified=false`.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).

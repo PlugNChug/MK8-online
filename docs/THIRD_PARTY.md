@@ -10,6 +10,10 @@ A adaptação de `nvnTextureCompare` usa a comparação de propriedades, swizzle
 
 A motivação local vem do probe privado MK8 `1267wfvj`: 18 pares de cubemaps de ambiente com descrições registradas iguais retornaram 0 e houve duplicação do slot 8036→8054; a primeira comparação entre textura 2D e cubemap era corretamente desigual. Essa evidência identifica o falso negativo; a validação local e seus limites são registrados em [STATUS.md](STATUS.md). Resultados de SavageWindRecomp em BOTW não qualificam MK8-online nem demonstram que os clarões deste jogo estejam resolvidos.
 
+## Consulta de mip TMML.B — 15/11/2026
+
+Consultados [decodificadores](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/src/Ryujinx.Graphics.Shader/Decoders/InstDecoders.cs) e [semântica de texturas](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/src/Ryujinx.Graphics.Shader/Instructions/InstEmitTexture.cs) do Ryubing, revisão `7231e00ea0302dd61b617b4edc29672b3dbcda30`, [MIT](https://github.com/Leuconoe/Ryubing/blob/7231e00ea0302dd61b617b4edc29672b3dbcda30/LICENSE.txt): campos de TMML.B, NODEP, condição EXIT e origem do handle. Nenhum código C# foi copiado; a implementação própria prova a origem estática e reutiliza o emissor SMM2Recomp já atribuído. Os resultados de outro renderer não qualificam esta build, e shaders comerciais usados na comparação continuam privados.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.
