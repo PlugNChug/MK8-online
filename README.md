@@ -140,7 +140,7 @@ In **Support → Create report**, create a diagnostic ZIP and attach it to an [i
 
 ## Build and contribute
 
-The current local work is organized into focused branches based on upstream `fix-chore d443092`; the tested combination remains on `integrate/vnnc1-0.2.0`. See the [publication branch map and validation limits](docs/STATUS.md#publicação-das-branches-revisadas--15112026). No pull requests were opened.
+The current local work is organized into focused branches based on upstream `fix-chore d443092`; the tested combination remains on `integrate/vnnc1-0.2.0`. See the [publication branch map and validation limits](docs/STATUS.md#publicação-das-branches-revisadas--15112026). The four user-facing fix PRs are listed in the [technical status](docs/STATUS.md#prs-das-correções-voltadas-ao-jogador--15112026).
 
 **Launcher debugging controls:** open **Settings → Debugging** for autosaved checkboxes for **Graphics captures (F7/F8)**, **Record diagnostic audio**, and **Native settings menu (experimental)**. They take effect on the next game launch, including solo and room launches, and can be changed while a game is running. Preferences live in `local/debug-options.json`, separate from the game INI and saves. Saved choices override `MK8_GFX_DIAGNOSTICS`, `LARECOMP_AUDIO_WAV`, and `MK8_SETTINGS_EXPERIMENT`; without saved preferences, existing environment-based launches still work. Graphics reports remain under `user-no-mii/graphics-incidents`. Audio creates a new WAV in `user-no-mii/audio-recordings` for each launcher start; an in-game restart reuses and replaces that session's WAV. Disable recording when finished.
 

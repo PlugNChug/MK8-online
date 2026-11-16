@@ -1,5 +1,18 @@
 # Estado técnico — 15/11/2026
 
+## PRs das correções voltadas ao jogador — 15/11/2026
+
+Abertos, por solicitação do usuário, quatro PRs normais de `PlugNChug/MK8-online` para `Vnnc1/MK8-online:fix-chore`:
+
+- [#27](https://github.com/Vnnc1/MK8-online/pull/27) — `fix/main-menu-manual`.
+- [#28](https://github.com/Vnnc1/MK8-online/pull/28) — `fix/mktv-replay-thumbnails`.
+- [#29](https://github.com/Vnnc1/MK8-online/pull/29) — `codex/runtime-texture-ownership`.
+- [#30](https://github.com/Vnnc1/MK8-online/pull/30) — `codex/shader-mip-query`.
+
+O PR do Info descreve explicitamente o popup como placeholder para evitar crashes, sem restaurar o manual original Nintendo. As descrições distinguem testes na base atual das evidências anteriores na build combinada; não alegam correção dos clarões de Stadium ou artefatos de boost. Base remota conferida em `d443092`, sem commits atrás, e heads conferidos contra as branches publicadas. Nenhuma mudança de código ou novo teste de gameplay nesta abertura de PRs.
+
+`codex/controller-applet-focus`, `codex/shader-wait-diagnostics` e `codex/graphics-draw-probes` permanecem sem PR, para possível combinação posterior. Settings, launcher debugging, preparo compute e fontes também não receberam novo PR nesta etapa. Os limites de qualificação permanecem; `gameplay_verified=false`.
+
 ## Publicação das branches revisadas — 15/11/2026
 
 Trabalho pendente separado em commits de Settings (`0f3be6f`), opções de diagnóstico do launcher (`52cc6d0`), TMML.B (`da0624e`) e preparo compute (`cc98c69`) na integração. As branches abaixo foram preparadas para o fork `PlugNChug/MK8-online`, todas descendentes do `fix-chore d443092` atualizado de `Vnnc1/MK8-online`. Nenhum PR aberto. A integração mantém a combinação já testada; não incorpora as demais novidades upstream nesta publicação. A branch de fontes já publicada permanece intacta.
