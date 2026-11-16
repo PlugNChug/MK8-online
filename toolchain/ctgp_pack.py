@@ -360,6 +360,308 @@ def bntx_textures(data):
     return out
 
 
+def _bntx_slots(data):
+    """The BNTX relocation table (_RLT) decoded: [(section, offset of a 64-bit pointer)] and the section ranges."""
+    rlt = struct.unpack_from('<I', data, 0x18)[0]
+    if data[rlt:rlt + 4] != b'_RLT':
+        raise PackError('BNTX sem _RLT')
+    nsec = struct.unpack_from('<I', data, rlt + 8)[0]
+    secs = [struct.unpack_from('<QIIII', data, rlt + 0x10 + i * 0x18) for i in range(nsec)]
+    at = rlt + 0x10 + nsec * 0x18
+    slots = []
+    for sec, (_, _, _, first, count) in enumerate(secs):
+        for e in range(first, first + count):
+            off, structs, per, pad = struct.unpack_from('<IHBB', data, at + e * 8)
+            slots += [(sec, off + s * (per + pad) * 8 + k * 8) for s in range(structs) for k in range(per)]
+    return secs, slots
+
+
+def _dic_bit(name, bit):
+    i = bit >> 3
+    return 0 if i >= len(name) else (name[len(name) - 1 - i] >> (bit & 7)) & 1
+
+
+def _dic_build(names):
+    """The _DIC of a BNTX (a Patricia trie over the names, from the last byte's lowest bit): [(ref, left, right,
+    name)], the root first with the empty name. Rebuilds the game's dictionaries exactly."""
+    nodes = [[-1, 0, 0, b'']]
+    for name in names:
+        p, x = 0, nodes[0][1]
+        while nodes[p][0] < nodes[x][0]:
+            p, x = x, nodes[x][2] if _dic_bit(name, nodes[x][0]) else nodes[x][1]
+        other, d = nodes[x][3], 0
+        while d < max(len(name), len(other)) * 8 and _dic_bit(name, d) == _dic_bit(other, d):
+            d += 1
+        p, t = 0, nodes[0][1]
+        while nodes[p][0] < nodes[t][0] < d:
+            p, t = t, nodes[t][2] if _dic_bit(name, nodes[t][0]) else nodes[t][1]
+        new = len(nodes)
+        nodes.append([d, t, new, name] if _dic_bit(name, d) else [d, new, t, name])
+        if p == 0:
+            nodes[0][1] = new
+        elif _dic_bit(name, nodes[p][0]):
+            nodes[p][2] = new
+        else:
+            nodes[p][1] = new
+    return nodes
+
+
+def bntx_add_textures(data, added):
+    """The BNTX with textures appended: added = [(name, template texture name, image bytes)], each a copy of its
+    template's BRTI (format, size, layout) with its own name and image (the template's image size). Every pointer the
+    relocation table lists is remapped to the new layout (pointer array, _STR with the names and the _DIC, the BRTI
+    blocks, the BRTD data aligned as the original's, the _RLT rebuilt); without textures to add, the same file but
+    for the _RLT's encoding of the same pointers."""
+    if data[:4] != b'BNTX' or data[0x20:0x24] != b'NX  ':
+        raise PackError('BNTX inválido')
+    count, arr, brtd, dic = struct.unpack_from('<IQQQ', data, 0x24)
+    first_block = struct.unpack_from('<H', data, 0x16)[0]
+    secs, slots = _bntx_slots(data)
+    if len(secs) != 2 or secs[0][1] != 0 or secs[1][1] != brtd:
+        raise PackError('BNTX com seções inesperadas')
+    blocks = [struct.unpack_from('<Q', data, arr + 8 * i)[0] for i in range(count)]
+    block_size = struct.unpack_from('<I', data, blocks[0] + 8)[0]
+    if (first_block != arr + 8 * count or data[first_block:first_block + 4] != b'_STR'
+            or any(b != blocks[0] + i * block_size for i, b in enumerate(blocks))
+            or secs[0][2] != blocks[0] + count * block_size):
+        raise PackError('BNTX com disposição inesperada')
+    textures = bntx_textures(data)
+    names, tex_names = [], []
+    o = first_block + 0x18
+    for _ in range(struct.unpack_from('<I', data, first_block + 0x10)[0]):
+        n = struct.unpack_from('<H', data, o)[0]
+        names.append((o, data[o + 2:o + 2 + n]))
+        o += 2 + n + 1
+        o += o & 1
+    for i in range(count):
+        at = struct.unpack_from('<Q', data, blocks[i] + 0x60)[0]
+        tex_names.append(data[at + 2:at + 2 + struct.unpack_from('<H', data, at)[0]])
+    if (o + 7) & ~7 != dic or any(tex_names[i] != _dic_build(tex_names)[i + 1][3] for i in range(count)):
+        raise PackError('BNTX com _STR/_DIC inesperados')
+    for name, template, image in added:
+        if name.encode() in tex_names or template not in textures or len(image) != textures[template][4]:
+            raise PackError(f'Textura {name} inválida')
+    total = count + len(added)
+    # new layout
+    arr_new = arr
+    str_new = arr + 8 * total
+    strings = [s for _, s in names] + [n.encode() for n, _, _ in added]
+    blob, offsets = bytearray(), []
+    for s in strings:
+        offsets.append(str_new + 0x18 + len(blob))
+        blob += struct.pack('<H', len(s)) + s + b'\0'
+        blob += b'\0' * (len(blob) & 1)
+    dic_new = (str_new + 0x18 + len(blob) + 7) & ~7
+    blocks_new = dic_new + 8 + (total + 1) * 16
+    sec0_end = blocks_new + total * block_size
+    brtd_new = ((sec0_end + 0x10 + 0xFFF) & ~0xFFF) - 0x10
+    shift_str, shift_blocks, shift_data = str_new - first_block, blocks_new - blocks[0], brtd_new - brtd
+    string_at = {old: new for (old, _), new in zip(names, offsets)}
+    string_at[first_block + 0x14] = str_new + 0x14  # (the empty name of the _DIC's root)
+
+    def remap(value):
+        if value < arr:
+            return value
+        if value < arr + 8 * count:
+            return arr_new + value - arr
+        if value == dic:
+            return dic_new
+        if value in string_at:
+            return string_at[value]
+        if blocks[0] <= value < secs[0][2]:
+            return value + shift_blocks
+        if value >= brtd:
+            return value + shift_data
+        raise PackError(f'Ponteiro inesperado no BNTX: {value:#x}')
+
+    rlt = struct.unpack_from('<I', data, 0x18)[0]
+    image_end = rlt - brtd - 0x10  # (relative to the data, the original images)
+    out = bytearray(brtd_new + 0x10 + image_end)
+    out[:arr] = data[:arr]
+    for i in range(count):
+        out[blocks_new + i * block_size:blocks_new + (i + 1) * block_size] = data[blocks[i]:blocks[i] + block_size]
+    out[brtd_new + 0x10:] = data[brtd + 0x10:rlt]
+    new_slots = set()
+    for sec, at in slots:  # (the original's pointers, moved; the array's and the _DIC's are rewritten below)
+        if arr <= at < arr + 8 * count or dic <= at < first_block + struct.unpack_from('<I', data, first_block + 8)[0]:
+            continue
+        where = at if at < arr else at + shift_blocks
+        struct.pack_into('<Q', out, where, remap(struct.unpack_from('<Q', data, at)[0]))
+        new_slots.add((sec, where))
+    template_slots = {}
+    for sec, at in slots:
+        for i, b in enumerate(blocks):
+            if b <= at < b + block_size:
+                template_slots.setdefault(i, []).append((sec, at - b))
+    by_name = {n.decode(): i for i, n in enumerate(tex_names)}
+    for k, (name, template, image) in enumerate(added):
+        t = by_name[template]
+        block = blocks_new + (count + k) * block_size
+        out[block:block + block_size] = data[blocks[t]:blocks[t] + block_size]
+        align = 0x1000
+        at_image = (len(out) - (brtd_new) + align - 1) // align * align + brtd_new
+        out += b'\0' * (at_image - len(out)) + image
+        for sec, rel in template_slots[t]:
+            value = struct.unpack_from('<Q', data, blocks[t] + rel)[0]
+            if sec == 1:
+                value = at_image
+            elif blocks[t] <= value < blocks[t] + block_size:
+                value = block + value - blocks[t]
+            elif value == struct.unpack_from('<Q', data, blocks[t] + 0x60)[0]:
+                value = offsets[len(names) + k]
+            else:
+                value = remap(value)
+            struct.pack_into('<Q', out, block + rel, value)
+            new_slots.add((sec, block + rel))
+    # pointer array, _STR, _DIC
+    for i in range(total):
+        struct.pack_into('<Q', out, arr_new + 8 * i, blocks_new + i * block_size)
+        new_slots.add((0, arr_new + 8 * i))
+    out[str_new:str_new + 0x10] = b'_STR' + struct.pack('<IIi', blocks_new - str_new, blocks_new - str_new, 0)
+    struct.pack_into('<I', out, str_new + 0x10, len(strings))
+    out[str_new + 0x18:str_new + 0x18 + len(blob)] = blob
+    nodes = _dic_build(tex_names + [n.encode() for n, _, _ in added])
+    name_at = {s: offsets[i] for i, s in enumerate(strings)}
+    name_at[b''] = str_new + 0x14
+    out[dic_new:dic_new + 8] = b'_DIC' + struct.pack('<I', total)
+    for i, (ref, left, right, name) in enumerate(nodes):
+        struct.pack_into('<iHHQ', out, dic_new + 8 + 16 * i, ref, left, right, name_at[name])
+        new_slots.add((0, dic_new + 8 + 16 * i + 8))
+    # headers, block chain
+    for i in range(total):
+        block = blocks_new + i * block_size
+        nxt = block_size if i + 1 < total else brtd_new - block
+        struct.pack_into('<I', out, block + 4, nxt)
+    rlt_new = (len(out) + 7) & ~7
+    out += b'\0' * (rlt_new - len(out))
+    out[brtd_new:brtd_new + 0x10] = b'BRTD' + struct.pack('<IIi', 0, rlt_new - brtd_new, 0)
+    struct.pack_into('<IQQQ', out, 0x24, total, arr_new, brtd_new, dic_new)
+    struct.pack_into('<H', out, 0x16, str_new)
+    file_name = struct.unpack_from('<I', data, 0x10)[0]  # (the file name's characters, after its length)
+    if file_name - 2 not in string_at:
+        raise PackError('BNTX com nome de arquivo inesperado')
+    struct.pack_into('<I', out, 0x10, string_at[file_name - 2] + 2)
+    # _RLT: one entry per run of consecutive pointers, by section
+    entries, sections = [], []
+    for sec, (start, size) in enumerate(((0, sec0_end), (brtd_new, rlt_new - brtd_new))):
+        run = sorted(o for s, o in new_slots if s == sec)
+        first = len(entries)
+        i = 0
+        while i < len(run):
+            j = i
+            while j + 1 < len(run) and run[j + 1] == run[j] + 8 and j + 1 - i < 255:
+                j += 1
+            entries.append((run[i], 1, j - i + 1, 0))
+            i = j + 1
+        sections.append((0, start, size, first, len(entries) - first))
+    table = bytearray(b'_RLT' + struct.pack('<III', rlt_new, len(sections), 0))
+    for section in sections:
+        table += struct.pack('<QIIII', *section)
+    for entry in entries:
+        table += struct.pack('<IHBB', *entry)
+    out += table
+    struct.pack_into('<II', out, 0x18, rlt_new, len(out))
+    return bytes(out)
+
+
+def flan_add_pattern(data, pane, names, first_frame):
+    """A BFLAN (pai1) where pane's texture pattern (FLTP, a step curve, the file's last animation) gets a key per name
+    from first_frame on (frame first_frame + k shows names[k]); names it does not list yet are appended to its texture
+    list (a name may repeat). The animation's length grows to the last key."""
+    if data[:4] != b'FLAN' or data[4:6] != b'\xff\xfe':
+        raise PackError('BFLAN inválido')
+    pai = data.find(b'pai1')
+    if pai < 0 or struct.unpack_from('<I', data, 0x0C)[0] != len(data) or pai + struct.unpack_from('<I', data, pai + 4)[0] != len(data):
+        raise PackError('BFLAN sem pai1 no fim')
+    frames, _, textures, anims, anim_table = struct.unpack_from('<HHHHI', data, pai + 8)
+    table = pai + 0x14
+    tex_off = [struct.unpack_from('<I', data, table + 4 * i)[0] for i in range(textures)]
+    old_names = [data[table + o:data.index(b'\0', table + o)] for o in tex_off]
+    anim_at = [struct.unpack_from('<I', data, pai + anim_table + 4 * i)[0] for i in range(anims)]
+    last = pai + anim_at[-1]
+    if data[last:last + 28].rstrip(b'\0') != pane.encode():
+        raise PackError('BFLAN com animação inesperada')
+    tag = last + struct.unpack_from('<I', data, last + 0x20)[0]
+    if data[last + 0x1C] != 1 or data[tag:tag + 4] != b'FLTP' or struct.unpack_from('<I', data, tag + 4)[0] != 1:
+        raise PackError('BFLAN com animação inesperada')
+    entry = tag + struct.unpack_from('<I', data, tag + 8)[0]
+    curve, keys, key_at = data[entry + 2], struct.unpack_from('<H', data, entry + 4)[0], struct.unpack_from('<I', data, entry + 8)[0]
+    if curve != 1 or entry + key_at + 8 * keys != len(data):
+        raise PackError('BFLAN com chaves inesperadas')
+    all_names = list(old_names)
+    for n in names:
+        if n.encode() not in all_names:
+            all_names.append(n.encode())
+    blob = bytearray()
+    offsets = []
+    for n in all_names:
+        offsets.append(4 * len(all_names) + len(blob))
+        blob += n + b'\0'
+    blob += b'\0' * (-(0x14 + 4 * len(all_names) + len(blob)) % 4)
+    head = bytearray(data[pai:pai + 0x14])
+    new_anim_table = 0x14 + 4 * len(all_names) + len(blob)
+    shift = new_anim_table - anim_table
+    struct.pack_into('<HHHHI', head, 8, max(frames, first_frame + len(names) - 1) if names else frames, struct.unpack_from('<H', data, pai + 0xA)[0],
+                     len(all_names), anims, new_anim_table)
+    body = bytearray(head + b''.join(struct.pack('<I', o) for o in offsets) + blob)
+    body += b''.join(struct.pack('<I', a + shift) for a in anim_at)
+    rest = bytearray(data[pai + anim_table + 4 * anims:])
+    entry_rel = entry - (pai + anim_table + 4 * anims)
+    struct.pack_into('<H', rest, entry_rel + 4, keys + len(names))
+    for k, n in enumerate(names):
+        rest += struct.pack('<fHH', float(first_frame + k), all_names.index(n.encode()), 0)
+    out = bytearray(data[:pai]) + body + rest
+    struct.pack_into('<I', out, pai + 4, len(out) - pai)
+    struct.pack_into('<I', out, 0x0C, len(out))
+    return bytes(out)
+
+
+def cup_select_add_icons(menu_sarc, icons, first_cup=25, places=16, skipped=None):
+    """4.0.1 menu.sarc with cup select icons for the added cups (cup first_cup + k shows icons[k], a CTGP icon BNTX
+    path): textures ym_CupIconCTnn^h appended to mn_L_CupSlctBtn_00's BNTX (as the Mushroom icon's: format, size)
+    and frames for them in its icon animation; the places after them, up to places, show the game's empty icon
+    (ym_CupIconBack^h). An icon this cannot read shows the Mushroom icon (its name goes to skipped)."""
+    menu = sarc_read(menu_sarc)
+    archive = next((blob for name, _, _, blob, _ in menu['files'] if name == 'mn_L_CupSlctBtn_00.szs'), None)
+    if archive is None:
+        raise PackError('menu.sarc sem mn_L_CupSlctBtn_00.szs')
+    inner = sarc_read(yaz0_decode(archive))
+    bntx_index = next((i for i, f in enumerate(inner['files']) if f[3][:4] == b'BNTX'), None)
+    flan_index = next((i for i, f in enumerate(inner['files']) if f[3][:4] == b'FLAN' and b'FLTP' in f[3]
+                       and b'P_CupIcon_00' in f[3]), None)
+    if bntx_index is None or flan_index is None:
+        raise PackError('mn_L_CupSlctBtn_00.szs sem BNTX ou animação de ícone')
+    bntx = inner['files'][bntx_index][3]
+    slot = bntx_textures(bntx).get('ym_CupIconMushroom^h')
+    if not slot or slot[0] != 0x701 or slot[3] != 1:
+        raise PackError('Ícone de copa inesperado no 4.0.1')
+    fmt, width, height, _, size, layout, at = slot
+    added = []
+    for k, path in enumerate(icons):
+        source = Path(path).read_bytes()
+        tex = next(iter(bntx_textures(source).values()))
+        decode = {0xB01: rgba8_linear, 0xB06: rgba8_linear, 0x1C01: bc3_rgba, 0x1C06: bc3_rgba,
+                  0x2001: bc7_rgba, 0x2006: bc7_rgba}.get(tex[0])
+        try:
+            if not decode:
+                raise PackError(f'formato {tex[0]:#x}')
+            rgba = decode(source[tex[6]:tex[6] + tex[4]], tex[1], tex[2], 1 << tex[5])
+            image = icon_rgb565(rgba, tex[1], tex[2], size, 1 << layout, width, height)
+        except PackError as error:
+            if skipped is not None:
+                skipped.append(f'{Path(path).name}: {error}')
+            image = bntx[at:at + size]
+        added.append((f'ym_CupIconCT{k:02d}^h', 'ym_CupIconMushroom^h', image))
+    if 'ym_CupIconBack^h' not in bntx_textures(bntx) or len(icons) > places:
+        raise PackError('Ícones de copa a mais ou sem o ícone vazio')
+    frames = [n for n, _, _ in added] + ['ym_CupIconBack^h'] * (places - len(icons))
+    files = {bntx_index: bntx_add_textures(bntx, added),
+             flan_index: flan_add_pattern(inner['files'][flan_index][3], 'P_CupIcon_00', frames, first_cup)}
+    rebuilt = sarc_write(inner, files, by_index=True)
+    alignment = struct.unpack_from('>I', archive, 8)[0]
+    return sarc_write(menu, {'mn_L_CupSlctBtn_00.szs': yaz0_store(rebuilt, alignment)})
+
+
 def _gob(x, y, row_bytes, bpp, block_height):
     """Byte offset of texel (x, y) in a block-linear surface: GOBs of 64x8 bytes, blocks of block_height GOBs."""
     xb = x * bpp

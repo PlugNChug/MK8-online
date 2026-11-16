@@ -204,6 +204,68 @@ def texts(sarc_bytes):
 
 
 class CtgpPackTests(unittest.TestCase):
+    def test_texture_dictionary_and_pattern_frames(self):
+        names = [b'ym_CupIconMushroom^h', b'ym_CupIconFlower^h', b'ym_CupIconStar^h', b'ym_CupIconCT00^h', b'a', b'ab']
+        nodes = P._dic_build(names)
+        self.assertEqual(len(nodes), len(names) + 1)
+        for name in names:  # (each name is found by walking the trie as the game's ResDic does)
+            p, x = 0, nodes[0][1]
+            while nodes[p][0] < nodes[x][0]:
+                p, x = x, nodes[x][2] if P._dic_bit(name, nodes[x][0]) else nodes[x][1]
+            self.assertEqual(nodes[x][3], name)
+        # a BFLAN as the game's: one pai1 with a texture list and a pane's FLTP step curve last
+        def flan(textures, keys):
+            table = b''.join(struct.pack('<I', 4 * len(textures) + sum(len(n) + 1 for n in textures[:i]))
+                             for i in range(len(textures)))
+            blob = table + b''.join(n + b'\0' for n in textures)
+            blob += b'\0' * (-(0x14 + len(blob)) % 4)
+            anim_table = 0x14 + len(blob)
+            anim = bytearray(b'P_CupIcon_00'.ljust(28, b'\0') + struct.pack('<BBHI', 1, 1, 0, 0x24))
+            anim += b'FLTP' + struct.pack('<BBHI', 1, 0, 0, 0xC)
+            anim += struct.pack('<HBBHHI', 0, 1, 0, len(keys), 0, 0xC)
+            anim += b''.join(struct.pack('<fHH', float(f), i, 0) for f, i in keys)
+            pai = bytearray(b'pai1' + struct.pack('<IHHHHI', 0, len(keys), 0, len(textures), 1, anim_table))
+            pai += blob + struct.pack('<I', anim_table + 4) + anim
+            struct.pack_into('<I', pai, 4, len(pai))
+            out = bytearray(b'FLAN\xff\xfe\x14\x00\x00\x00\x00\x08' + struct.pack('<IHH', 0, 1, 0) + pai)
+            struct.pack_into('<I', out, 0xC, len(out))
+            return bytes(out)
+        base = flan([b'ym_CupIconMushroom^h', b'ym_CupIconBack^h'], [(0, 0), (1, 1)])
+        self.assertEqual(P.flan_add_pattern(base, 'P_CupIcon_00', [], 25), base)
+        out = P.flan_add_pattern(base, 'P_CupIcon_00', ['ym_CupIconCT00^h', 'ym_CupIconBack^h'], 25)
+        pai = out.find(b'pai1')
+        frames, _, textures, anims, _ = struct.unpack_from('<HHHHI', out, pai + 8)
+        self.assertEqual((frames, textures, anims), (26, 3, 1))
+        self.assertEqual(out[-16:], struct.pack('<fHHfHH', 25.0, 2, 0, 26.0, 1, 0))
+        self.assertEqual(struct.unpack_from('<I', out, 0xC)[0], len(out))
+        with self.assertRaises(P.PackError):
+            P.flan_add_pattern(base, 'P_Other_00', ['x'], 25)
+
+    @unittest.skipUnless((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').is_file(), 'MK8 4.0.1 RomFS required')
+    def test_cup_icon_textures_are_added_to_the_games_bntx(self):
+        menu = P.sarc_read((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').read_bytes())
+        archive = next(b for n, _, _, b, _ in menu['files'] if n == 'mn_L_CupSlctBtn_00.szs')
+        bntx = next(f[3] for f in P.sarc_read(P.yaz0_decode(archive))['files'] if f[3][:4] == b'BNTX')
+        same = P.bntx_add_textures(bntx, [])  # (the same file: only the _RLT's encoding may differ)
+        rlt = struct.unpack_from('<I', bntx, 0x18)[0]
+        self.assertEqual(same[0x20:rlt], bntx[0x20:rlt])
+        self.assertEqual(sorted(P._bntx_slots(same)[1]), sorted(P._bntx_slots(bntx)[1]))
+        textures = P.bntx_textures(bntx)
+        size = textures['ym_CupIconMushroom^h'][4]
+        image = bytes(range(256)) * (size // 256) + bytes(size % 256)
+        out = P.bntx_add_textures(bntx, [('ym_CupIconCT00^h', 'ym_CupIconMushroom^h', image)])
+        added = P.bntx_textures(out)
+        self.assertEqual(len(added), len(textures) + 1)
+        self.assertEqual(added['ym_CupIconCT00^h'][:6], textures['ym_CupIconMushroom^h'][:6])
+        at = added['ym_CupIconCT00^h'][6]
+        self.assertEqual(out[at:at + size], image)
+        for name, (fmt, w, h, mips, length, layout, start) in textures.items():
+            self.assertEqual(added[name][:6], (fmt, w, h, mips, length, layout))
+            self.assertEqual(out[added[name][6]:added[name][6] + length], bntx[start:start + length])
+        self.assertTrue(all(struct.unpack_from('<Q', out, o)[0] < len(out) for _, o in P._bntx_slots(out)[1]))
+        with self.assertRaises(P.PackError):
+            P.bntx_add_textures(bntx, [('ym_CupIconMushroom^h', 'ym_CupIconMushroom^h', image)])
+
     def test_new_labels_are_added_in_their_buckets(self):
         common = msbt({'1401': 'Mario Kart Stadium', '1501': f'{TAG}Mario Kart Stadium{END}'})
         self.assertEqual(P.msbt_add(common, {}), common)
