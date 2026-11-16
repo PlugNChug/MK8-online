@@ -148,6 +148,8 @@ button need its code (not available); time-trial staff ghosts are the original c
 
 ## Build and contribute
 
+This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. Six focused native regressions passed against `fix-chore d443092`. It does not establish a fix for Stadium flashing or a general VRAM leak.
+
 Development happens on `fix-chore`. You need Rust, Python 3.12 x64, PowerShell 7 and .NET 10 x64 (for the importer). From the repository root:
 
 ```powershell

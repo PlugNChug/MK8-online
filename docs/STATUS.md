@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Comparação e ownership de texturas — 15/11/2026
+
+`codex/runtime-texture-ownership`, baseada em `fix-chore d443092`: comparação semântica de descrição/armazenamento e liberação única da referência Initialize, inclusive objetos guest copiados. Seis regressões nativas de comparação, finalize, pool e retirement passaram após rebase. A build combinada anterior já inclui os fixes; não houve nova corrida completa nesta branch isolada. Não qualifica os clarões de Stadium nem vazamento geral como resolvidos. `gameplay_verified=false`.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
