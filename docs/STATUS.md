@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Publicação do Settings nativo — 15/11/2026
+
+Branch `experiment/main-menu-settings` atualizada sobre `fix-chore d443092`, preservando o hook Yaz0 e as adaptações upstream. Inclui botão nativo, página/categorias, rolagem, captura de inputs, edição/remapeamento, confirmação de reinício e feedback/gradiente finais. As instruções no README substituem o protótipo antigo. Testes após rebase: 17 aprovados, um caso Yaz0 dependente de asset privado ignorado; incluiu event loop real, controller reassignment, persistência INI e controles/página. A build combinada já foi exercitada localmente, mas esta branch isolada ainda não recebeu nova qualificação de corrida inteira ou controle físico. `gameplay_verified=false`. Nenhum asset comercial incluído.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
