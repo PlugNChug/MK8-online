@@ -1,5 +1,13 @@
 # Estado técnico — 15/11/2026
 
+## Fontes do console: atualização para fix-chore — 15/11/2026
+
+`feature/console-font-import` recebeu merge do upstream `fix-chore d443092`, preservando o histórico já publicado. A checagem de catálogos encontrou 11 mensagens de fontes ausentes no espanhol recém-adicionado; traduzidas, removida uma chave inglesa duplicada e ampliado o fluxo de navegador para conferir PT/EN/ES. Nenhuma mudança na implementação de importação ou no adaptador runtime de fontes. A regra de branches específica do fork foi retirada deste diff, permanecendo no checkout de integração.
+
+Validação concluída nesta branch: **73 testes Rust**, **13 testes nativos de host layout/fontes**, **2 testes de catálogos** e **11 testes de navegador/WebView2**, sem skips. Build debug do launcher, `cargo fmt --all -- --check`, Clippy workspace/all-targets com `-D warnings` e `git diff --check` passaram. O fluxo de UI verificou importação, rejeição de substituição inválida, persistência de System Default, reativação, preservação de save, bloqueio com sessão ativa e troca dos três idiomas. O navegador também cobriu salvamento de Settings, idiomas do launcher/instalador, rebuild e convivência com CTGP; a janela nativa mostrou o seletor de pasta. Captura visual revisada.
+
+Os testes usam fixtures e diretórios temporários. A confirmação anterior do usuário com fontes autênticas permanece evidência da build combinada; não foi feita nova importação pessoal nem reconstrução/execução completa do jogo nesta atualização. Runtime instalado, launcher release, fontes pessoais, configurações e saves foram preservados. `gameplay_verified=false`; nenhum arquivo de fonte comercial acompanha o PR.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
