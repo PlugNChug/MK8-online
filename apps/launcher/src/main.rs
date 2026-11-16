@@ -2,6 +2,7 @@
 //! MK8-online Launcher: a native Tauri window over the local API server.
 //! `--headless` (or the older `--no-browser`) keeps only the server, for tests.
 mod console;
+mod fonts;
 mod game_session;
 mod game_settings;
 mod installer;

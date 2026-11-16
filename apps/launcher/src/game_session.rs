@@ -34,6 +34,8 @@ pub fn run() -> Result<i32> {
         "MK8_MANUAL_VIEWER",
         std::env::current_exe().map_err(|e| e.to_string())?,
     );
+
+    crate::fonts::configure(&request.local)?;
     let signal = request.local.join("open-rooms");
     if signal.exists() {
         std::fs::remove_file(signal).map_err(|e| e.to_string())?;
