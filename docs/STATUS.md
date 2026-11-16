@@ -1,5 +1,13 @@
 # Estado técnico — 15/11/2026
 
+## PR da importação de fontes atualizado — 15/11/2026
+
+Aberto [PR #31](https://github.com/Vnnc1/MK8-online/pull/31), `feature/console-font-import` (`08daace`) → `Vnnc1/MK8-online:fix-chore`. Merge do upstream `d443092` preservou o histórico publicado; nenhuma atualização forçada. A integração atual e o runtime pessoal não receberam esse merge.
+
+O novo catálogo espanhol exigiu 11 traduções para os controles de fontes; adicionadas e testadas junto à alternância PT/EN/ES. Removida uma chave inglesa duplicada e mantida fora do PR a regra operacional específica do fork. Importador e adaptador runtime de fontes permanecem iguais ao código anterior da feature.
+
+Validação na branch atualizada: **73 testes Rust, 13 nativos de host/fontes, 2 de catálogos e 11 de navegador/WebView2**, todos aprovados, sem skips. Build debug, fmt, Clippy com `-D warnings` e diff check passaram; captura da interface revisada. Cobertura inclui importação, substituição inválida, System Default/reativação, persistência, save preservado, bloqueio durante jogo, idiomas, seletor de pasta nativo e convivência com Settings/CTGP. A confirmação anterior do usuário com fontes autênticas pertence à build combinada. Sem novo rebuild completo do jogo ou qualificação de gameplay nesta atualização; launcher release, runtime instalado e dados pessoais preservados. `gameplay_verified=false`.
+
 ## PRs das correções voltadas ao jogador — 15/11/2026
 
 Abertos, por solicitação do usuário, quatro PRs normais de `PlugNChug/MK8-online` para `Vnnc1/MK8-online:fix-chore`:
