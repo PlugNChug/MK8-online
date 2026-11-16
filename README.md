@@ -146,7 +146,8 @@ courses, music and cups can: the launcher puts the 64 CTGP courses into existing
 In Steam rooms everyone needs the same pack (the same CTGP enabled, or everyone without it). MK8-online does not
 distribute CTGP: it is read from your copy and stays on your PC. Known limits: CTGP's own menus and random button need
 its code (not available); time-trial staff ghosts are the original course's; in the new cups, each CTGP course keeps
-its records together with those of the original course whose slot it borrows (in CTGP's own saves). See
+its records together with those of the original course whose slot it borrows (in CTGP's own saves), and online
+sessions use the game's cups (each machine would otherwise decide on its own which races are a CTGP cup's). See
 [STATUS.md](docs/STATUS.md).
 
 ## Build and contribute

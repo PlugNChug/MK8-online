@@ -156,7 +156,8 @@ aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP 
 Nas salas da Steam todos precisam do mesmo pacote (o mesmo CTGP ativado ou todos sem ele). O MK8-online não distribui
 o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios e botão aleatório do CTGP
 dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original; nas copas
-novas, cada pista do CTGP guarda os recordes junto com os da pista original cuja vaga ela usa (nos saves do CTGP). Veja
+novas, cada pista do CTGP guarda os recordes junto com os da pista original cuja vaga ela usa (nos saves do CTGP), e
+as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha quais corridas são de copa CTGP). Veja
 [STATUS.md](docs/STATUS.md).
 
 ## Compilar e contribuir

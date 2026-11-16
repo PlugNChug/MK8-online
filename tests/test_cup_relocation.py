@@ -105,7 +105,7 @@ L_7000bbbb40:;
                 text = (folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n')
                 out = C.patch_unit(built, Path(tmp)).read_text(encoding='utf-8')
             sites += sum(out.count(call + '(c->x') for call in
-                         ('mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_by_course', 'mk8_cup_by_slot'))
+                         ('mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot'))
             for match in C._functions(out):
                 if match.group(1) in C.SELECTORS:
                     self.assertIn(C.SELECTORS[match.group(1)] + '(c->x', match.group(2))
@@ -169,6 +169,7 @@ void mk8_cups_built(uint64_t object);
 uint64_t mk8_cup_entry(uint64_t base, uint64_t index);
 static uint8_t object[0x1500];
 uint64_t mk8_cup_select(uint64_t base, uint64_t index);
+uint64_t mk8_cup_select_gp(uint64_t base, uint64_t index);
 uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course);
 uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index);
 uint64_t mk8_course_folder(uint64_t settings, uint64_t name);
@@ -208,6 +209,7 @@ static int added_cup(void) {  // (MK8_CUPS_EXTRA=27:20001:CTGP01,28:20002:CTGP02
     if (mk8_course_folder(at, named) != named) return 14;  // (a game cup: its own course)
     if (mk8_cup_select(base, 25) != cup) return 15;
     if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP01")) return 16;
+    mk8_cup_select(base, 25);  // (the cup chosen again for its fourth course)
     memcpy(settings + 0x1a0, &ids[3], 4);
     if (strcmp((const char *)(uintptr_t)mk8_course_folder(at, named), "CTGP04")) return 17;
     uint32_t other = 40;  // (a course the added cup does not have)
@@ -330,6 +332,33 @@ static int pictures(void) {  // (MK8_ROMFS_OVERLAY with only UI/cmn/menu/ym_Cour
     if (mk8_course_picture_id(28) != 0x7b || mk8_course_picture_id(27) != 27 || mk8_course_picture_id(40) != 40) return 77;
     return 0;
 }
+static int armed(void) {  // (which races take the added cup's folders; MK8_CUPS_EXTRA with one cup)
+    game_cups();
+    uint64_t base = (uint64_t)(uintptr_t)object;
+    mk8_cups_built(base);
+    static uint8_t settings[0x200];
+    uint64_t at = (uint64_t)(uintptr_t)settings, name = (uint64_t)(uintptr_t)"game";
+    #define RACE(id) (memcpy(settings + 0x1a0, &(uint32_t){id}, 4), mk8_course_folder(at, name) != name)
+    if (RACE(27)) return 80;                         // (nothing chosen yet)
+    mk8_cup_select(base, 25);                        // (a time trial from the added cup)
+    if (RACE(0)) return 81;                          // (the menu course in between: no race, no change)
+    if (!RACE(19) || !RACE(19)) return 82;           // (its course, and a restart of it)
+    if (RACE(27)) return 83;                         // (another course of the cup without choosing it: not armed)
+    if (RACE(19)) return 84;                         // (disarmed until the cup is chosen again)
+    mk8_cup_select(base, 25);
+    if (!RACE(27)) return 85;
+    if (RACE(40) || RACE(27)) return 86;             // (VS with random courses after it: the game's, then still)
+    mk8_cup_select_gp(base, 25);                     // (a Grand Prix: its four races in order)
+    if (!RACE(27) || !RACE(27) || !RACE(28) || !RACE(19) || !RACE(17)) return 87;
+    if (RACE(27)) return 88;                         // (after it, a race of its first course again: not the cup's)
+    mk8_cup_select_gp(base, 25);
+    if (!RACE(27) || RACE(19)) return 89;            // (a Grand Prix skipping a course: not the cup's)
+    mk8_cup_select(base, 25);
+    mk8_cup_select(base, 3);                         // (a game cup chosen after it)
+    if (RACE(27)) return 90;
+    #undef RACE
+    return 0;
+}
 static int refused(void) {
     game_cups();
     static uint8_t entries[16 * 0x80];
@@ -355,6 +384,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "pages16")) return pages16();
     if (argc > 1 && !strcmp(argv[1], "music")) return music();
     if (argc > 1 && !strcmp(argv[1], "pictures")) return pictures();
+    if (argc > 1 && !strcmp(argv[1], "armed")) return armed();
     int off = argc > 1;  // (MK8_CUPS_RELOCATE=0 in the environment)
     for (int i = 0; i < 25 * 0x80; i++) object[i] = (uint8_t)i;
     uint64_t base = (uint64_t)(uintptr_t)object, other = 0x7200000000ull;
@@ -416,6 +446,7 @@ class CupRuntimeTests(unittest.TestCase):
             (pictures/'UI/cmn/menu/ym_CoursePict_CTGP02_00^u.bntx').write_bytes(b'BNTX')
             env['MK8_ROMFS_OVERLAY'] = str(pictures)
             self.assertEqual(subprocess.run([str(exe), 'pictures'], env=env, timeout=60).returncode, 0)
+            self.assertEqual(subprocess.run([str(exe), 'armed'], env=env, timeout=60).returncode, 0)
             env = dict(os.environ, MK8_CUPS_EXTRA='27:20001:CTGP01,5:20002:CTGP02,19:20003:CTGP03,17:20004:CTGP04')
             run = subprocess.run([str(exe), 'added'], env=env, timeout=60, capture_output=True)
             self.assertEqual(run.returncode, 70)  # (a reserved ID: the game stops with the reason)

@@ -49,7 +49,7 @@ AFTER_EXPERIMENTAL = {'main_082.c': 'f861292e6a6cb546924ca6f555bd28dce080afebdf2
 # sp+0x18 just before) and finds its cup and position in the reverse map (always a game cup): with the ID as well, the
 # runtime keeps an added cup chosen that has the course and gives its record instead.
 SELECTORS = {'70004980a0': 'mk8_cup_select', '7000498e90': 'mk8_cup_select', '70004a3940': 'mk8_cup_by_course',
-             '70004fb290': 'mk8_cup_select'}
+             '70004fb290': 'mk8_cup_select_gp'}
 # The readers that find a course's cup and position in the reverse map (+0xC80/+0xC84; some also the battle map at
 # +0x1058) to show it, the race's course name among them: while an added cup is chosen, its courses' records (their
 # name labels) take the borrowed courses' places in the game cup they read.
@@ -142,6 +142,7 @@ DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 
                 'uint64_t mk8_panel_picture(uint64_t panel, uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_course_picture_id(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_select(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
+                'uint64_t mk8_cup_select_gp(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_course(uint64_t base, uint64_t index, uint64_t course);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_cup_by_slot(uint64_t base, uint64_t index);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_course_folder(uint64_t settings, uint64_t name);  // MK8 (toolchain/cup_relocation.py)\n'

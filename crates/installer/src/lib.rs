@@ -216,7 +216,12 @@ fn spawn_game(
     mii::read(local)?;
     let dlc_root = dlc::launch_root(local, install)?;
     let pack = ctgp::launch_overlay(local, install)?;
-    let cups = ctgp::launch_cups(local, install)?;
+    // Online, the added cups stay off: each machine would decide alone which races are a CTGP cup's (the game sends
+    // course IDs, which the added cups borrow), so all play the game's cups and courses with the pack's files.
+    let cups = match network {
+        Some(_) => String::new(),
+        None => ctgp::launch_cups(local, install)?,
+    };
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     // The CTGP pack keeps its own saves (records and ghosts of its courses), seeded once from the regular ones.

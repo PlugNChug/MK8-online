@@ -151,16 +151,37 @@ uint64_t mk8_cup_entry(uint64_t base, uint64_t index) {
     return base + (index << 7);
 }
 
-// The readers that copy the chosen course into the selection (f_70004980a0, f_7000498e90) or a Grand Prix's 4
-// courses into its list (f_70004fb290): the same
-// entry, and the cup it came from is the one the next race is from.
-uint64_t mk8_cup_select(uint64_t base, uint64_t index) {
-    uint64_t at = cup_index(base, index);
-    if (at != UINT64_MAX && (int)at != g_cups_selected) {
+// Which races take an added cup's course folders ("armed"): only those set up by choosing that cup. A choice from
+// the cup screen (f_70004980a0, f_7000498e90) arms the next race, whichever of the cup's courses it is, and its
+// restarts (the same course again); a Grand Prix from it (f_70004fb290) arms its four races in the cup's order. A race
+// of any other course disarms: one whose course comes from elsewhere (VS with random courses calls none of these
+// readers, traced 16/11/2026) plays the game's own, even on a course ID an added cup borrows. Menu courses (IDs below
+// 16, Gu_Menu) are not races and change nothing.
+static int g_armed_cup = -1, g_armed_gp, g_armed_slot = -1;
+
+static void cup_chosen(uint64_t at, int gp) {
+    if (at == UINT64_MAX) return;
+    if ((int)at != g_cups_selected) {
         if (at >= MK8_CUPS_ORIGINAL) LOG("[mk8:cups] copa acrescentada %d escolhida\n", (int)at - MK8_CUPS_ORIGINAL + 1);
         else if (g_cups_selected >= MK8_CUPS_ORIGINAL && g_cups_added > 0) LOG("[mk8:cups] copa %d escolhida\n", (int)at);
         g_cups_selected = (int)at;
     }
+    int cup = (int)at - MK8_CUPS_ORIGINAL;
+    g_armed_cup = cup >= 0 && cup < g_cups_added ? cup : -1;
+    g_armed_gp = gp;
+    g_armed_slot = -1;
+}
+
+// The readers that copy the chosen course into the selection (f_70004980a0, f_7000498e90): the same entry, and the
+// cup it came from is the one the next race is from.
+uint64_t mk8_cup_select(uint64_t base, uint64_t index) {
+    cup_chosen(cup_index(base, index), 0);
+    return mk8_cup_entry(base, index);
+}
+
+// The Grand Prix's reader (f_70004fb290: the cup's 4 courses into its list): its four races are from the cup.
+uint64_t mk8_cup_select_gp(uint64_t base, uint64_t index) {
+    cup_chosen(cup_index(base, index), 1);
     return mk8_cup_entry(base, index);
 }
 
@@ -258,13 +279,18 @@ static const char *g_race_folder;  // (the race's course folder when it is an ad
 // From the path builders, with the name they chose for the race's course: the course's folder when the race is from
 // an added cup that has it, the name unchanged otherwise.
 uint64_t mk8_course_folder(uint64_t settings, uint64_t name) {
-    int cup = g_cups_selected - MK8_CUPS_ORIGINAL;
     g_race_folder = NULL;
-    if (cup < 0 || cup >= g_cups_added || !settings) return name;
+    if (!settings) return name;
     uint32_t id;
     memcpy(&id, (const void *)(uintptr_t)(settings + MK8_SETTINGS_COURSE), 4);
+    if (id < 16 || id >= MK8_COURSE_IDS) return name;  // (the menu's course: not a race)
+    int cup = g_armed_cup;
+    if (cup < 0 || cup >= g_cups_added) return name;
     for (int s = 0; s < 4; s++) {
         if (g_ids[cup][s] != (int32_t)id) continue;
+        // (the armed race and its restarts; in a Grand Prix the next of its courses as well)
+        if (g_armed_slot >= 0 && s != g_armed_slot && !(g_armed_gp && s == g_armed_slot + 1)) break;
+        g_armed_slot = s;
         static int logged[MK8_CUPS_ADDED][4];
         if (!logged[cup][s]) {
             logged[cup][s] = 1;
@@ -273,6 +299,8 @@ uint64_t mk8_course_folder(uint64_t settings, uint64_t name) {
         g_race_folder = g_folders[cup][s];
         return (uint64_t)(uintptr_t)g_folders[cup][s];
     }
+    if (g_armed_cup >= 0) LOG("[mk8:cups] corrida da pista %u fora da copa acrescentada %d: pasta do jogo\n", id, cup + 1);
+    g_armed_cup = -1;  // (any other course: the races after it are not the cup's)
     return name;
 }
 
