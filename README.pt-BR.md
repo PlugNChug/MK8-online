@@ -196,6 +196,8 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 - o conversor estático de cabeça Mii;
 - o protótipo Nextendo.
 
+Os testes Nextendo foram retomados na `fix-chore`: o mantenedor confirmou gameplay online com outras pessoas em uma sessão isolada. O adaptador opt-in usa a API OAuth documentada e o ID público registrado do MK8-online. `scripts/test-race.py time-trial --nextendo --interactive` permite teste manual com saves copiados e candidato local verificado. Ainda não é um recurso público do launcher; confiança TLS de produção, reconexão e qualificação completa de corrida/reinício continuam pendentes. Os tokens ficam em memória durante o processo.
+
 | Local | Responsabilidade |
 | --- | --- |
 | `apps/launcher` | Launcher nativo, interface web, instalador, atualizações e relatórios |

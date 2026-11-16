@@ -1203,5 +1203,8 @@
   "Contexto": "Contexto",
   "Área": "Área",
   "Resultado esperado": "Resultado esperado",
-  "Diagnóstico": "Diagnóstico"
+  "Diagnóstico": "Diagnóstico",
+  "Jogar no Nextendo": "Jugar en Nextendo",
+  "Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.": "Inicia sesión en Nextendo desde el navegador. En el juego, elige Online Play. CTGP queda desactivado durante esta sesión.",
+  "Nextendo indisponível nesta sessão.": "Nextendo no está disponible en esta sesión."
 }

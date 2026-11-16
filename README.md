@@ -202,6 +202,8 @@ The earlier installation simulation is available only in the live debug preview 
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter, the Nextendo prototype) are documented in the [technical status](docs/STATUS.md).
 
+Nextendo testing has resumed on `fix-chore`: the maintainer reports successful online play with other players in an isolated test session. The opt-in adapter uses the documented OAuth API and our registered public client ID. `scripts/test-race.py time-trial --nextendo --interactive` supports manual testing with copied saves and a verified local candidate. This is not enabled as a public launcher feature; production TLS trust, reconnection and full race/restart qualification remain pending. Tokens remain in memory for the current process.
+
 | Location | Responsibility |
 | --- | --- |
 | `apps/launcher` | Native launcher, web interface, installer, updates and reports |

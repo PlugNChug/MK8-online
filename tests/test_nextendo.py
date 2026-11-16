@@ -20,20 +20,28 @@ ROOT = Path(__file__).resolve().parents[1]
 @unittest.skipUnless(os.name == 'nt', 'Windows runtime required')
 class NextendoTests(unittest.TestCase):
     def run_flow(self, scenario, login_play=False):
-        candidate = json.loads((ROOT/'local/candidate.json').read_text())
-        exe = candidate['executable']['path']
+        exe = os.environ.get('MK8_NEXTENDO_TEST_EXE')
+        if not exe:
+            candidate = json.loads((ROOT/'local/candidate.json').read_text())
+            exe = candidate['executable']['path']
+        self.assertTrue(Path(exe).is_file(), 'Build the runtime or set MK8_NEXTENDO_TEST_EXE')
         calls = []
+        client_ids = []
         class Api(BaseHTTPRequestHandler):
             def log_message(self, *_):
                 pass
             def do_POST(self):
+                client_ids.append(self.headers.get('X-Nextendo-Client-Id'))
                 body = self.rfile.read(int(self.headers['Content-Length'])).decode()
                 calls.append((self.path, parse_qs(body)))
+                if scenario == 'legacy_token_path' and self.path == '/api/oauth/token':
+                    self.send_response(404); self.end_headers(); return
                 if scenario == 'server_error':
                     self.send_response(503); self.end_headers(); return
                 payload = json.dumps({'access_token':'synthetic-access', 'refresh_token':'synthetic-refresh', 'expires_in':3600}).encode()
                 self.send_response(200); self.send_header('Content-Length', str(len(payload))); self.end_headers(); self.wfile.write(payload)
             def do_GET(self):
+                client_ids.append(self.headers.get('X-Nextendo-Client-Id'))
                 calls.append((self.path, self.headers.get('Authorization')))
                 payload = json.dumps({'allow': True, 'nex_token': '' if scenario == 'no_nex' else 'synthetic-nex', 'pid':1800000001, 'username':'Fixture', 'expires_in':86400}).encode()
                 self.send_response(200); self.send_header('Content-Length', str(len(payload))); self.end_headers(); self.wfile.write(payload)
@@ -62,6 +70,7 @@ class NextendoTests(unittest.TestCase):
                     threading.Thread(target=read_url, daemon=True).start()
                     url = lines.get(timeout=15).strip()
                     params = parse_qs(urlsplit(url).query)
+                    self.assertEqual(urlsplit(url).path, '/api/oauth/authorize')
                     self.assertTrue(url, 'Native probe ended before producing an authorization URL')
                     self.assertEqual(params['client_id'], ['nxc_5QmpWFAhTHSd'])
                     self.assertEqual(params['scope'], ['identity game.matchmaking'])
@@ -75,11 +84,18 @@ class NextendoTests(unittest.TestCase):
                     except HTTPError as error:
                         self.assertEqual(error.code, 400)
                     output, errors = proc.communicate(timeout=25)
-                    self.assertEqual(proc.returncode, 0 if scenario == 'success' else 2 if scenario == 'no_nex' else 1, errors)
-                    if scenario == 'success': self.assertIn('BAAS adapter generated a token', output)
+                    succeeded = scenario in ('success', 'legacy_token_path')
+                    self.assertEqual(proc.returncode, 0 if succeeded else 2 if scenario == 'no_nex' else 1, errors)
+                    if succeeded: self.assertIn('BAAS adapter generated a token', output)
+                    if scenario == 'legacy_token_path':
+                        self.assertEqual(calls[1][0], '/oauth/token')
+                    if scenario == 'server_error':
+                        self.assertEqual(len(calls), 1, 'Do not retry failed requests on a different endpoint')
                     if scenario in ('wrong_state', 'denied'):
                         self.assertFalse(calls)
                     else:
+                        self.assertEqual(calls[0][0], '/api/oauth/token')
+                        self.assertTrue(all(value == 'nxc_5QmpWFAhTHSd' for value in client_ids))
                         form = calls[0][1]
                         verifier = form['code_verifier'][0]
                         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
@@ -100,6 +116,7 @@ class NextendoTests(unittest.TestCase):
             server.shutdown(); server.server_close(); thread.join()
 
     def test_native_oauth_and_nex(self): self.run_flow('success')
+    def test_legacy_token_path_only_after_not_found(self): self.run_flow('legacy_token_path')
     def test_rejects_wrong_state(self): self.run_flow('wrong_state')
     def test_denied_consent(self): self.run_flow('denied')
     def test_nex_failure_is_not_success(self): self.run_flow('no_nex')

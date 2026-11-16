@@ -777,6 +777,7 @@ setInterval(() => loadSteam(), 5000);
 /* ---------- Jogar e suporte ---------- */
 $("play-solo").onclick = () => action(() => api("play", { online: false }));
 $("play-online").onclick = () => action(() => api("play", { online: true }));
+$("play-nextendo").onclick = () => action(() => api("play", { online: false, nextendo: true }));
 let lastReport = null;
 let update = null;
 function renderUpdate(result) {
@@ -862,6 +863,8 @@ async function refresh() {
   $("play-solo").disabled =
     !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
+  $("play-nextendo").hidden = !status.nextendo_available;
+  $("play-nextendo").disabled = $("play-solo").disabled;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
   for (const id of ["steam-host", "steam-host-manual"]) {

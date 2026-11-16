@@ -16,6 +16,36 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_nextendo_opt_in_button_and_backend_guard(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="play"]').click()
+            expect(page.locator('#play-nextendo')).to_be_hidden()
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            headers = {'X-MK8-Token': token}
+            refused = page.request.post(self.urls[0]+'/api/play', headers=headers,
+                                        data=json.dumps({'online':False, 'nextendo':True})).json()
+            self.assertFalse(refused['ok'])
+            self.assertIn('Nextendo', refused['error'])
+            status = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
+            status.update(nextendo_available=True, candidate=True, game_pid=None)
+            page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
+            calls = []
+            def play(route):
+                calls.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{'message':'Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.'}})
+            page.route('**/api/play', play)
+            expect(page.locator('#play-nextendo')).to_be_enabled()
+            page.locator('#play-nextendo').click()
+            self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+            expect(page.locator('#notice')).to_contain_text('CTGP')
+            page.locator('#language').select_option('en')
+            expect(page.locator('#play-nextendo')).to_have_text('Play on Nextendo')
+            status['game_pid'] = 123
+            expect(page.locator('#play-nextendo')).to_be_disabled()
+        finally:
+            page.close()
+
     def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
         page = self.page()
         try:
