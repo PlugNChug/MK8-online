@@ -1,5 +1,9 @@
 # Estado técnico — 15/11/2026
 
+## Rebase do guia local — 15/11/2026
+
+`fix/main-menu-manual` atualizada para `fix-chore d443092`. Dois testes nativos do retorno OfflineWeb e o teste real de navegador/viewer (conteúdo, origem e fechamento) passaram. Launcher compilado em debug, fmt e Clippy sem avisos aprovados. Sem assets adicionais de manual e sem nova qualificação de corrida completa nesta branch isolada.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
