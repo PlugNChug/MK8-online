@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = Path(os.environ.get('MK8_NATIVE_TOOLS') or ROOT/'local/native-tools')
 EXE = Path(os.environ.get('MK8_LAUNCHER_EXE', ROOT/'target/release/Launcher.exe'))
 FIXTURE = r'''
 use std::{env,fs,process::Command,thread,time::Duration};
@@ -33,6 +34,12 @@ fn main() {
     assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES").unwrap(), "");
     assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT").unwrap(), "");
     assert_eq!(env::var("SDL_GAMECONTROLLERCONFIG").unwrap(), "authored-custom-mapping");
+    if env::var("MK8_TEST_INPUT_PROBE").is_ok() {
+        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT"]
+            .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
+        fs::write("navigation.txt", state).unwrap();
+        return;
+    }
     fs::write("game.pid", std::process::id().to_string()).unwrap();
     while !std::path::Path::new("finish").exists() { thread::sleep(Duration::from_millis(50)); }
     fs::write("completed-save.bin", b"saved normally").unwrap();
@@ -65,6 +72,40 @@ def alive(pid):
 
 @unittest.skipUnless(os.name == 'nt', 'Windows process lifetime')
 class LifetimeTests(unittest.TestCase):
+    def test_manual_and_automatic_launch_preserve_network_and_clear_inherited_macro(self):
+        data = self.base/'navigation'
+        (data/'fixture-game/extracted/romfs').mkdir(parents=True)
+        dummy = data/'synthetic-input'
+        dummy.write_bytes(b'authored fixture')
+        identity = lambda p: {'path':str(p), 'sha256':hashlib.sha256(p.read_bytes()).hexdigest(), 'bytes':p.stat().st_size}
+        manifest = {'schema':2, 'identity':'fixture', 'profile':'mk8d-smm2-experimental',
+                    'gameplay_verified':False, 'executable':identity(self.fixture),
+                    'files':{k:identity(dummy) for k in ['npdm','main','sdk','subsdk0','gamelib']},
+                    'data_root':str(data/'fixture-game'), 'shader_root':str(data)}
+        for name in ('vulkan-1.dll', 'SDL3.dll'):
+            source = TOOLS/'deps/packages/ucrt64/bin'/name
+            if not source.is_file():
+                self.skipTest('Prepared SDL/Vulkan required for launch preflight')
+            target = self.fixture.parent/name
+            shutil.copyfile(source,target)
+            manifest['files'][name]=identity(target)
+        for source in (TOOLS/'deps/dlls').glob('*.dll'):
+            target=self.fixture.parent/source.name
+            shutil.copyfile(source,target)
+            manifest['files'][source.name]=identity(target)
+        env=dict(os.environ,MK8_TEST_INPUT_PROBE='1',MK8_AUTO_LAN='host',
+                 SDL_GAMECONTROLLERCONFIG='authored-custom-mapping')
+        for role in (None, 'host', 'guest'):
+            with self.subTest(role=role):
+                request={'root':str(data/'root'), 'local':str(data), 'install':manifest,
+                         'network':['127.0.0.1:47820',2], 'username':'Test', 'candidate':True, 'auto_lan':role}
+                result=subprocess.run([str(EXE),'--game-supervisor'],input=json.dumps(request)+'\n',
+                                      env=env,capture_output=True,text=True,timeout=30)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                lines=(data/'user-no-mii/navigation.txt').read_text().splitlines()
+                self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}', 'LARECOMP_LAN_RELAY=127.0.0.1:47820',
+                                        'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2'])
+
     def test_python_tools_ignore_external_home_path_and_user_site(self):
         folder = self.base/'python-environment'
         folder.mkdir()
@@ -143,13 +184,13 @@ class LifetimeTests(unittest.TestCase):
                     'files': {k: identity(dummy) for k in ['npdm','main','sdk','subsdk0','gamelib']},
                     'data_root': str(data/'fixture-game'), 'shader_root': str(data)}
         for name in ('vulkan-1.dll', 'SDL3.dll'):
-            source = ROOT/'local/native-tools/deps/packages/ucrt64/bin'/name
+            source = TOOLS/'deps/packages/ucrt64/bin'/name
             if not source.is_file():
                 self.skipTest('Prepared SDL/Vulkan required for the launch preflight')
             target = self.fixture.parent/name
             shutil.copyfile(source, target)
             manifest['files'][name] = identity(target)
-        for source in (ROOT/'local/native-tools/deps/dlls').glob('*.dll'):
+        for source in (TOOLS/'deps/dlls').glob('*.dll'):
             target = self.fixture.parent/source.name
             shutil.copyfile(source, target)
             manifest['files'][source.name] = identity(target)

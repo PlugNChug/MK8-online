@@ -294,6 +294,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
         return { message: "Arquivo selecionado." };
       }
       if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
+      if (input.id === "prepare-dlc-package") return { message: "Arquivo selecionado." };
       await api("config", config());
       return { message: "Arquivo selecionado." };
     });
@@ -314,7 +315,7 @@ $("build").onclick = () =>
       await api("config", { ...config(), base_package: "", update_package: "" });
     else await api("config", config());
     samples = [];
-    const result = await api("prepare", {});
+    const result = await api("prepare", { dlc_package: $("prepare-dlc-package").value.trim() });
     userOpened.delete("step-build");
     openStep("step-build", true);
     return result;
@@ -457,7 +458,7 @@ function renderInstall(status) {
   const buildRunning = build.state === "running";
   const dlcRunning = status.dlc_import?.state === "running";
   const ctgpRunning = status.ctgp_import?.state === "running";
-  const busyNow = setupRunning || buildRunning || dlcRunning || ctgpRunning || !!status.game_pid;
+  const busyNow = setupRunning || buildRunning || dlcRunning || ctgpRunning || !!status.game_pid || status.session.steam_active;
   settingsBlocked = busyNow;
   const dlc = status.dlc || { state: "unprepared", installed: false, enabled: false };
   if (lastDlcImport === "running" && status.dlc_import?.state === "done") dlcReplace = false;
@@ -560,7 +561,8 @@ function renderInstall(status) {
         ? "Pasta do jogo extraído."
         : "Jogo base, atualização e chaves selecionados."
       : "Jogo base, atualização 4.0.1 e chaves do seu console.");
-  fieldNames.forEach((key) => ($(key).disabled = buildRunning));
+  [...fieldNames, "prepare-dlc-package", "game-folder"].forEach((key) => ($(key).disabled = busyNow));
+  document.querySelectorAll('#step-files [data-browse]').forEach(button => { button.disabled = busyNow; });
   const architecture = status.checks.find((c) => c.name === "Arquitetura do executável");
   i18n.text($("architecture-state"), files.folder ? architecture?.detail || "" : "");
 
@@ -568,7 +570,7 @@ function renderInstall(status) {
   // (a game built by an earlier launcher version: its runtime lacks this version's fixes until it is rebuilt)
   const dlcUpgrade = status.candidate && dlc.state === "unsupported";
   const stale = (!!status.candidate_stale || dlcUpgrade) && build.state !== "running";
-  const done = !stale && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
+  const done = !stale && !dlcRunning && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
     i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." : "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
@@ -605,10 +607,13 @@ function renderInstall(status) {
   i18n.text($("build-took"), build.duration_s && build.state === "candidate"
     ? "Concluída em " + clock(build.duration_s) + ". Gameplay ainda experimental."
     : "Build experimental; gameplay ainda em validação.");
-  i18n.text($("build-detail"), build.state === "failed" || build.state === "cancelled" ? build.detail : "");
+  i18n.text($("build-detail"), dlcRunning ? status.dlc_import.detail : build.state === "failed" || build.state === "cancelled" ? build.detail : "");
   $("build-detail").classList.toggle("error", build.state === "failed");
   let buildStep = "pending";
-  if (buildRunning) {
+  if (dlcRunning) {
+    setStep("stage-build", "prepare-state", "running", "Importando DLC…");
+    buildStep = "running";
+  } else if (buildRunning) {
     setStep("stage-build", "prepare-state", "running", percentText(build.percent || 0));
     buildStep = "running";
   } else if (build.state === "failed") {
@@ -676,12 +681,19 @@ function renderSteam() {
     ])));
   $("steam-empty").hidden = !!(data?.invites?.length || rooms.length);
   const filter = $("friend-filter").value.trim().toLowerCase();
-  const friends = (data?.friends ?? []).filter((friend) => friend.online && friend.name.toLowerCase().includes(filter));
-  $("steam-friends").replaceChildren(...friends.slice(0, 60).map((friend) =>
-    listItem(friend.name, hosting ? [steamButton("Convidar", () => api("steam/invite", { friend: friend.id }))] : [])));
+  const friends = (data?.friends ?? []).filter((friend) => friend.name.toLowerCase().includes(filter));
+  $("steam-friends").replaceChildren(...friends.map((friend) => {
+    const row = listItem(friend.name, hosting ? [steamButton("Convidar", () => api("steam/invite", { friend: friend.id }))] : []);
+    const presence = document.createElement("small");
+    presence.className = "mp-presence";
+    i18n.text(presence, { online: "Online", busy: "Ocupado", away: "Ausente", offline: "Offline" }[friend.presence]
+      || (friend.online ? "Online" : "Offline"));
+    row.querySelector("span").append(presence);
+    return row;
+  }));
   if (!friends.length) {
     const empty = document.createElement("li");
-    i18n.text(empty, data ? "Nenhum amigo online agora." : "Abra a Steam para ver seus amigos.");
+    i18n.text(empty, data ? (filter ? "Nenhum amigo encontrado nesta busca." : "Nenhum amigo disponível na lista da Steam.") : "Abra a Steam para ver seus amigos.");
     $("steam-friends").replaceChildren(empty);
   }
 }
@@ -703,7 +715,13 @@ async function loadSteam() {
   }
   renderSteam();
 }
-$("steam-host").onclick = () => action(() => api("steam/host", {}));
+$("steam-host").onclick = () => action(() => api("steam/host", { automatic: true }));
+$("steam-host-manual").onclick = () => action(() => api("steam/host", { automatic: false }));
+i18n.text($("steam-navigation").options[0], "Entrar automaticamente no jogo");
+i18n.text($("steam-navigation").options[1], "Navegar manualmente no jogo");
+$("steam-navigation").onchange = () => action(() => api("steam/navigation", {
+  automatic: $("steam-navigation").value === "automatic",
+}));
 $("steam-overlay").onclick = () => action(() => api("session/steam-overlay-invite", {}));
 $("friend-filter").oninput = renderSteam;
 $("leave").onclick = () => action(() => api("session/stop", {}));
@@ -748,6 +766,7 @@ $("open-data").onclick = () => action(() => api("open", { what: "data" }));
 
 async function refresh() {
   const status = await api("status");
+  const dlcBusy = status.dlc_import?.state === "running" || status.ctgp_import?.state === "running";
   if (status.room_menu !== roomMenu) {
     roomMenu = status.room_menu;
     showTab("session");
@@ -799,8 +818,13 @@ async function refresh() {
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
-  $("steam-host").hidden = active;
-  $("steam-host").disabled = !!status.game_pid;
+  for (const id of ["steam-host", "steam-host-manual"]) {
+    $(id).hidden = active;
+    $(id).disabled = !!status.game_pid || running || status.setup.state === "running" || miiBusy || dlcBusy;
+  }
+  if (!busy && document.activeElement !== $("steam-navigation")) {
+    $("steam-navigation").value = session.steam_auto_join === false ? "manual" : "automatic";
+  }
   $("steam-room").hidden = !active;
   $("leave").disabled = !!status.game_pid;
   i18n.text($("network-state"), session.connected ? "Na sala" : active ? "Conectando" : "Sem sala");
@@ -866,3 +890,8 @@ async function refresh() {
 })();
 
 window.addEventListener("languagechange", () => refresh().catch((error) => notice(error.message, true)));
+
+$("play-dlc-manage").onclick = () => {
+  showTab("install");
+  $("dlc-card").scrollIntoView({ block: "center" });
+};

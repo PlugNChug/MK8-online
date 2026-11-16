@@ -1,4 +1,19 @@
-# Estado técnico — 15/11/2026
+# Estado técnico — 16/11/2026
+
+## Contribuição: Steam, navegação e Mii sobre fix-chore — 16/11/2026
+
+Base de integração: `d443092`. A contribuição preserva DLC verificada, configurações, espanhol, CTGP e correções de runtime já existentes nessa branch. A correção equivalente do congelamento Mii já incorporada pelo mantenedor foi mantida.
+
+- **Steam:** resolve acessores C versionados com fallback legado; busca bibliotecas registradas/adicionais e layouts internos sem corte em 40 jogos; mantém todos os amigos pesquisáveis, ordenados por disponibilidade/nome, inclusive offline. Não identifica amigos invisíveis. Nenhuma DLL Valve é distribuída; a dependência autossuficiente permanece pendente.
+- **Transporte:** datagramas criptografados acima de 1200 bytes usam Reliable; menores continuam UnreliableNoDelay. O backend simulado impõe o limite real e testa as fronteiras nos dois sentidos. Retransmissão/ordenação podem aumentar a latência sob perda; o efeito em uma corrida real ainda precisa ser medido.
+- **Sessão:** sair do jogo encerra workers e libera lobby/gateway; um convidado ocioso pode aceitar outra sala sem reiniciar o launcher, mas um jogo vivo continua protegido. Entrada valida LobbyEnter, identidade, DLC e CTGP; falhas deixam o lobby. Convites pelo cliente e pelo launcher usam a mesma rotina.
+- **Navegação:** anfitrião escolhe automático ou manual; convidado escolhe a navegação antes de aceitar o convite. Ambos os botões de anfitrião criam uma sala Steam; apenas abrir manualmente não conecta a uma sala de outro anfitrião. Preferência do convidado persiste por computador.
+- **DLC opcional:** o campo em Arquivos do jogo acompanha a preparação. Como o importador atual exige um candidate pronto, a importação ocorre após a build bem-sucedida, na mesma operação guiada. Campo vazio preserva a preferência; falha/cancelamento não dispara a importação pendente. O importador e os manifestos upstream são reutilizados; não há segundo formato de receipt. Importação posterior permanece em Instalar → Conteúdo adicional, acessível por atalho em Jogar, com ativação em Configurações.
+- **Mii:** automação confirma o perfil ativo sem DOWN para um preset; texturas de óculos AFL RG8 trocam cobertura/luminância para a ordem NX, com revisão do conversor. Exige regenerar recursos Mii e recompilar o runtime para aplicar ambos os ajustes; atualizar apenas o launcher não repara recursos derivados antigos.
+
+Validação local da integração: `cargo test --workspace --locked` (77 aprovados, um teste Steam real optativo ignorado), formatação, Clippy com `-D warnings` e build release do launcher. Conversor Mii: oito testes aprovados; automação LAN: um teste C compilado/executado em host e guest; supervisão/navegação: quatro testes com processos reais e executável autoral aprovados. Navegador: 24 testes aprovados e um relay externo optativo ignorado; idiomas: quatro aprovados. Capturas desktop/mobile inspecionadas. Nenhum arquivo comercial foi necessário para esses testes. Os artefatos de diagnóstico permanecem privados e não integram a contribuição.
+
+Limites: sem corrida completa entre máquinas, reconexão real entre dois clientes, teste intercontinental ou nova importação comercial ponta a ponta nesta integração. Testes anteriores chegaram à seleção da pista, mas o anfitrião encerrou com Vulkan device loss também reproduzido em solo; esse computador foi retirado da próxima rodada de testes, sem atribuir causa física. `gameplay_verified` e `multiplayer_verified` permanecem falsos. Instalador, tag e versão de lançamento ficam para decisão do mantenedor após revisão.
 
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 

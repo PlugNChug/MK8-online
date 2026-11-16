@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Integração Steam e transporte — contribuição de 16/11/2026
+
+Referências primárias Valve: [interface C e versionamento](https://partner.steamgames.com/doc/sdk/api#flat_interface_for_binding_to_other_languages), [ISteamNetworking — EP2PSend](https://partner.steamgames.com/doc/api/ISteamNetworking#EP2PSend), [ISteamFriends](https://partner.steamgames.com/doc/api/ISteamFriends) e [InviteUserToLobby](https://partner.steamgames.com/doc/api/ISteamMatchmaking#InviteUserToLobby). O limite de envio não confiável é 1200 bytes; mensagens maiores usam fragmentação confiável. A lista conserva amigos Immediate, incluindo offline; não tenta distinguir nem revelar quem escolheu ficar invisível. O carregador resolve acessores C versionados da biblioteca local e rejeita interfaces ausentes. Nenhuma DLL, SDK ou implementação proprietária Valve foi adicionada à contribuição; testes usam backends e arquivos autorais. O teste Steam real é optativo e não qualifica uma corrida entre máquinas.
+
 ## Controles nativos e Steam — 13/11/2026
 
 A separação dos filtros de controles entre launcher e runtime foi verificada com SDL3 e GameSir pelo receptor USB. Referências primárias: [suporte a gamepads da SDL3](https://wiki.libsdl.org/SDL3/CategoryGamepad), [filtro de dispositivos ignorados](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES) e [filtro de dispositivos permitidos](https://wiki.libsdl.org/SDL3/SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT). A Steam permanece responsável pelas salas no launcher; o processo do jogo usa entrada SDL nativa e não herda esses dois filtros. Nenhum código SDL adicional foi copiado.
