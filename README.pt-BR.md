@@ -158,7 +158,7 @@ CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-r
 
 ## Compilar e contribuir
 
-**Menu Settings experimental:** após uma build completa com este experimento, defina `$env:MK8_SETTINGS_EXPERIMENT='1'` antes de iniciar o launcher nessa sessão PowerShell. Uma engrenagem separada fica à direita de Booster Course Pass: direita nesse botão seleciona Settings; esquerda ou B retorna. O botão DLC mantém a ação original. As configurações usam fundo azul quadriculado, painéis claros, seleção amarela e dicas de teclado/controle, preservando a lógica existente. F1 continua disponível. O novo slot é desenhado pelo runtime e ligado ao foco nativo; não é um widget adicional no layout Nintendo. Remova a variável e reinicie para restaurar a interface original. O hook guest exige uma build completa inicial; mudanças posteriores só de UI usam `--runtime-only`. A posição do botão é um protótipo 16:9; outras proporções e toque não foram qualificados.
+**Settings nativo experimental:** use `MK8_SETTINGS_EXPERIMENT=1` após uma build completa. O botão de chave inglesa, primeiro da fileira inferior, e F1 abrem a mesma página nativa durante menus ou corridas. Video, Audio e Controls incluem listas com rolagem, edição numérica e remapeamento. Back salva; alterações de inicialização no menu principal oferecem Yes/No para reiniciar. A página captura os inputs; a corrida continua por baixo. Shift+F1 mantém o menu avançado anterior. Assets são derivados em uma cópia privada; RomFS original e saves são preservados. Veja as instruções completas no README em inglês.
 
 O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
 
