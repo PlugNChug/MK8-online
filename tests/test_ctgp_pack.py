@@ -492,6 +492,51 @@ class CtgpPackTests(unittest.TestCase):
             with self.assertRaises(P.PackError):
                 P.locate(root/'game')
 
+    def test_added_layout_gives_ct_courses_cups_of_their_own(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            romfs, sd = fixture(root)
+            (romfs/'UI/cmn/menu.sarc').unlink()  # (its icons: with the game's own file, test_cup_icon_textures_...)
+            names = [b'Course_Du_Animal_Spring', b'Course_Du_Animal_Spring.bars', b'Course_Du_Animal.bars', b'Course.bars']
+            offsets = [len(names[0]) + 1, len(names[0]) + len(names[1]) + 2,
+                       len(names[0]) + len(names[1]) + len(names[2]) + 3]
+            write(romfs/'Course/Du_Animal_Spring/Course_Du_Animal_Spring.barslist',  # (three banks, as Animal's)
+                  b'ARSL\xff\xfe' + struct.pack('<HIIIII', 1, 0, 3, *offsets) + b''.join(n + b'\0' for n in names))
+            manifest = import_ctgp.import_pack(sd, romfs, root/'data', layout='added')
+            pack = root/'data/ctgp/pack/romfs'
+            self.assertEqual((manifest['layout'], manifest['courses']), ('added', 64))
+            self.assertEqual(manifest['cups_extra'], P.cups_extra())
+            cups = [c.split('=') for c in manifest['cups_extra'].split(';')]
+            self.assertEqual([int(label) for label, _ in cups], list(range(30000, 30016)))
+            for _, courses in cups:  # (four courses each, on IDs of the game's race courses, none twice in a cup)
+                ids = [int(c.split(':')[0]) for c in courses.split(',')]
+                self.assertEqual(len(set(ids)), 4)
+                self.assertTrue(all(16 <= i < 123 and P.COURSE_ORDER[i - 16][0] != 'B' for i in ids))
+            first = pack/'Course/CTGP01'  # (CT 0 over Mario Kart Stadium's files, its sound bank under its name)
+            self.assertEqual((first/'course_model.szs').read_bytes(), b'ct0-course_model.szs')
+            self.assertEqual((first/'Course_Gu_FirstCircuit.bars').read_bytes(), b'original')
+            self.assertEqual((first/'Course_CTGP01.bars').read_bytes(), b'original')
+            self.assertEqual((first/'Course_CTGP01.barslist').read_bytes(), P.barslist('CTGP01'))
+            self.assertTrue((first/'MapObj/Thing/Thing.bfres').is_file())
+            self.assertFalse((first/'Course_CT_00.bars').exists())
+            animal = next(P.added_folder(ct) for ct, _, f, *_ in P.slots('added') if f[0] == 'Du_Animal_Spring')
+            listed = (pack/'Course'/animal/f'Course_{animal}.barslist').read_bytes()
+            self.assertEqual(struct.unpack_from('<I', listed, 12)[0], 3)
+            self.assertTrue(listed.endswith(f'Course_{animal}\0Course_{animal}.bars\0Course_Du_Animal.bars\0'
+                                            'Course.bars\0'.encode()))
+            self.assertFalse((pack/'Course/Gu_FirstCircuit').exists())  # (no game course replaced)
+            self.assertFalse(any(p.name.startswith('pBGM_') for p in (pack/'Audio/Resource/Stream').iterdir()))
+            self.assertEqual((pack/'Audio/Resource/Stream/CTGP01_N.bfstm').read_bytes(), b'music0N')
+            self.assertEqual((pack/'Audio/Resource/Stream/CTGP64_F.bfstm').read_bytes(), b'music63F')
+            self.assertEqual((pack/'UI/cmn/menu/ym_CoursePict_CTGP01_00^u.bntx').read_bytes(), b'pict0')
+            values, _ = texts((pack/'UI/USen/message.sarc').read_bytes())
+            names, cup_names = P.ctgp_names(sd/'atmosphere/contents'/P.TITLE/'romfs/UI/USen/message.sarc')
+            self.assertEqual((values['30000'], values['30015']), (cup_names[0], cup_names[15]))
+            self.assertEqual((values['31000'], values['31063']), (names[0], names[63]))
+            self.assertIn(names[0], values['31100'])
+            self.assertEqual(values['1401'], common_labels()['1401'])  # (the game's own texts as they are)
+            self.assertEqual(P.verify(root/'data/ctgp/pack')['identity'], manifest['identity'])
+
     def test_incomplete_ctgp_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             romfs, sd = fixture(Path(folder))

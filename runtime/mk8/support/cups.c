@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 
 #define MK8_CUPS_ORIGINAL 25
-#define MK8_CUPS_CAPACITY 41  // the game's 25 + 16 (CTGP Deluxe's cups)
+#define MK8_CUPS_CAPACITY 49  // the game's 25 + two pages of 12 (CTGP Deluxe's 16 cups and 8 empty places)
 #define MK8_CUPS_ADDED (MK8_CUPS_CAPACITY - MK8_CUPS_ORIGINAL)
 #define MK8_CUP_BYTES 0x80
 #define MK8_CUPS_REVERSE 0xC80  // 123 x {u32 cup, u32 slot} by course ID; -1 when no cup has the course
@@ -355,8 +355,12 @@ uint64_t mk8_course_picture(uint64_t course, uint64_t load, uint64_t name) {
     if (g_pictures <= 0 || !course) return name;
     uint32_t id;
     memcpy(&id, (const void *)(uintptr_t)course, 4);
-    if (id >= MK8_PICTURE_FIRST && id < (uint32_t)(MK8_PICTURE_FIRST + g_pictures))
+    if (id >= MK8_PICTURE_FIRST && id < (uint32_t)(MK8_PICTURE_FIRST + g_pictures)) {
+        static uint8_t logged[MK8_CUPS_ADDED * 4][2];
+        if (!logged[id - MK8_PICTURE_FIRST][load & 1]++)
+            LOG("[mk8:cups] imagem %u (%s): %s\n", id, (load & 1) ? "carregar" : "achar", g_picture_names[id - MK8_PICTURE_FIRST]);
         return (uint64_t)(uintptr_t)g_picture_names[id - MK8_PICTURE_FIRST];
+    }
     return name;
 }
 
@@ -405,4 +409,17 @@ uint64_t mk8_course_picture_id(uint64_t id) {
             return k >= 0 ? (uint64_t)(MK8_PICTURE_FIRST + k) : id;
         }
     return id;
+}
+
+// The menu's texture manager (f_7000405f74 makes it with room for 150 textures: the game's 105 course pictures and
+// the rest of the menu's) gets room for the added courses' pictures as well: with 150, CTGP Deluxe's last 16 did not
+// fit and the panel kept showing the ones before (traced 16/11/2026: its count reached 150 of 150). It is made before
+// the cups are built, so the places come from MK8_CUPS_EXTRA itself: one per course listed, none without added cups.
+int64_t mk8_course_picture_places(void) {
+    const char *spec = getenv("MK8_CUPS_EXTRA");
+    int64_t colons = 0;
+    if (!cups_enabled() || !spec || !*spec) return 0;
+    for (const char *p = spec; *p; p++) colons += *p == ':';
+    int64_t courses = colons / 2;  // (two ':' per course)
+    return courses > MK8_CUPS_ADDED * 4 ? MK8_CUPS_ADDED * 4 : courses;
 }

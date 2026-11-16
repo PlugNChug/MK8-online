@@ -25,7 +25,7 @@ L_7000aaaa20:;
     c->x[10] = (uint64_t)((COND_CC(c)) ? c->x[10] : (uint64_t)(0ull));
     (void)(subs32(c, (uint32_t)c->x[8], (uint32_t)((uint32_t)c->x[9])));
     c->x[10] = (uint64_t)(c->x[0] + (c->x[10] << 7));
-    (void)(subs32(c, (uint32_t)c->x[3], 0x29ull));
+    (void)(subs32(c, (uint32_t)c->x[3], 0x31ull));
     return;
 }
 '''
@@ -61,7 +61,7 @@ L_7000bbbb40:;
 '''
         C.UNITS['main_test.c'] = ('', {'7000bbbb00': (3, 2)})  # (two clamps meet at one computation)
         out = C.patch(reader, 'main_test.c')
-        self.assertEqual(out.count('0x29ull'), 3)
+        self.assertEqual(out.count('0x31ull'), 3)
         self.assertIn('c->x[8] = (uint64_t)(mk8_cup_entry(c->x[8], c->x[9]));', out)
         self.assertIn('c->x[8] = (uint64_t)(mk8_cup_entry(c->x[22], c->x[24]));', out)  # (x24 survives the call)
         clobbered = reader.replace('c->x[24]', 'c->x[10]')  # (x10 does not: refused)
@@ -72,7 +72,7 @@ L_7000bbbb40:;
     def test_reader_clamps_widen_and_entries_redirect(self):
         C.UNITS['main_test.c'] = ('', {'7000aaaa00': (2, 2)})
         out = C.patch('#include "cpu.h"\n' + READER, 'main_test.c')
-        self.assertEqual(out.count('0x29ull));'), 3)  # (two widened, one that was 0x29 already)
+        self.assertEqual(out.count('0x31ull));'), 3)  # (two widened, one that was 0x31 already)
         self.assertNotIn('0x19ull', out)
         self.assertIn('c->x[9] = (uint64_t)(mk8_cup_entry(c->x[21], c->x[9]));', out)
         self.assertIn('c->x[10] = (uint64_t)(mk8_cup_entry(c->x[0], c->x[10]));', out)
@@ -128,12 +128,13 @@ L_7000bbbb40:;
             out = C.patch((folder/unit).read_bytes().decode('utf-8').replace('\r\n', '\n'), unit)
             for call in ('mk8_cup_page_id(c->x', 'mk8_cup_page_turn(c->x', 'mk8_cup_owned(LD32', 'mk8_cup_label(LD32',
                          'mk8_course_picture(c->x', 'mk8_course_pictures()', 'mk8_panel_record(c->x',
-                         'mk8_panel_picture(c->x', 'mk8_course_picture_id(c->x'):
+                         'mk8_panel_picture(c->x', 'mk8_course_picture_id(c->x', 'mk8_course_picture_places()'):
                 hooks[call] += out.count(call)
         self.assertEqual(hooks, Counter({'mk8_cup_page_id(c->x': 2, 'mk8_cup_page_turn(c->x': 2, 'mk8_cup_owned(LD32': 1,
                                          'mk8_cup_label(LD32': 1, 'mk8_course_picture(c->x': 1,
                                          'mk8_course_pictures()': 1, 'mk8_panel_record(c->x': 1,
-                                         'mk8_panel_picture(c->x': 1, 'mk8_course_picture_id(c->x': 1}))
+                                         'mk8_panel_picture(c->x': 1, 'mk8_course_picture_id(c->x': 1,
+                                         'mk8_course_picture_places()': 1}))
         with tempfile.TemporaryDirectory() as tmp:  # (the path builders: the folder hook once the name is ready)
             out = C.patch_unit(folder/'main_186.c', Path(tmp)).read_text(encoding='utf-8')
             self.assertIn('L_700089ece0:;\n    c->x[2] = (uint64_t)(mk8_course_folder(c->x[20], c->x[2]));', out)
@@ -252,7 +253,7 @@ static int pages(int added) {  // (MK8_CUPS_EXTRA with one cup, or none)
     if (page(0, 0)) return 41;                              // (opened on the first page)
     mk8_cup_page_turn(1 << 12); if (page(1, 12)) return 42;  // (forward: DLC)
     mk8_cup_page_turn(1 << 12); if (page(0, 25)) return 43;  // (forward: the added cups, in the first page's layout)
-    if (mk8_cup_owned(25) != 0 || mk8_cup_owned(26) != 1 || mk8_cup_owned(3) != -1 || mk8_cup_owned(41) != -1) return 44;
+    if (mk8_cup_owned(25) != 0 || mk8_cup_owned(26) != 1 || mk8_cup_owned(3) != -1 || mk8_cup_owned(48) != 1 || mk8_cup_owned(49) != -1) return 44;
     mk8_cup_page_turn(1 << 12); if (page(1, 0)) return 45;   // (forward again: back to the base cups)
     mk8_cup_page_turn(1 << 11); if (page(0, 25)) return 46;  // (back: the added cups)
     mk8_cup_page_turn(1 << 11); if (page(1, 12)) return 47;  // (back: DLC)
@@ -269,7 +270,7 @@ static int pages16(void) {  // (16 added cups, as CTGP Deluxe's: pages base, DLC
     mk8_cup_page_turn(1 << 12); if (page(1, 12)) return 51;
     mk8_cup_page_turn(1 << 12); if (page(0, 25)) return 52;
     mk8_cup_page_turn(1 << 12); if (page(1, 37)) return 53;  // (cups 13-16 and 8 empty places after them)
-    if (mk8_cup_owned(40) != 0 || mk8_cup_owned(41) != -1) return 54;
+    if (mk8_cup_owned(40) != 0 || mk8_cup_owned(41) != 1 || mk8_cup_owned(48) != 1 || mk8_cup_owned(49) != -1) return 54;
     mk8_cup_page_turn(1 << 12); if (page(0, 0)) return 55;   // (and round to the base cups)
     mk8_cup_page_turn(1 << 11); if (page(1, 37)) return 56;
     mk8_cup_select(base, 39);                                // (a race from added cup 15: the screen opens on its page)
@@ -303,6 +304,7 @@ static int music(void) {  // (MK8_ROMFS_OVERLAY with only Audio/Resource/Stream/
     return 0;
 }
 int64_t mk8_course_pictures(void);
+int64_t mk8_course_picture_places(void);
 uint64_t mk8_course_picture(uint64_t record, uint64_t load, uint64_t name);
 void mk8_panel_record(uint64_t panel, uint64_t record);
 uint64_t mk8_panel_picture(uint64_t panel, uint64_t id);
@@ -311,7 +313,7 @@ static int pictures(void) {  // (MK8_ROMFS_OVERLAY with only UI/cmn/menu/ym_Cour
     game_cups();
     uint64_t base = (uint64_t)(uintptr_t)object, game = (uint64_t)(uintptr_t)"Gu_WaterPark_00";
     mk8_cups_built(base);
-    if (mk8_course_pictures() != 1) return 70;
+    if (mk8_course_pictures() != 1 || mk8_course_picture_places() != 4) return 70;  // (4 courses listed)
     uint32_t id = 0x7b, other = 0x7c;  // (the first added picture's ID, and one past the last)
     const char *got = (const char *)(uintptr_t)mk8_course_picture((uint64_t)(uintptr_t)&id, 1, game);
     if (strcmp(got, "CTGP02_00")) return 71;
@@ -364,12 +366,12 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (cup0 == object || memcmp(cup0, object, 25 * 0x80) || cup24 != cup0 + 24 * 0x80) return 3;
-    uint8_t *cup40 = (uint8_t *)(uintptr_t)mk8_cup_entry(base, 40);
-    if (cup40 != cup0 + 40 * 0x80) return 4;
+    uint8_t *cup40 = (uint8_t *)(uintptr_t)mk8_cup_entry(base, 48);  // (the last place)
+    if (cup40 != cup0 + 48 * 0x80) return 4;
     for (int k = 0; k < 8; k++)  // (an added cup starts empty: records {-1, -1, -1, 0})
         for (int b = 0; b < 16; b++)
             if (cup40[16 * k + b] != (b < 12 ? 0xff : 0)) return 5;
-    if (mk8_cup_entry(base, 41) != base) return 6;  // (beyond the area: index 0 of the original, as its clamp did)
+    if (mk8_cup_entry(base, 49) != base) return 6;  // (beyond the area: index 0 of the original, as its clamp did)
     if (mk8_cup_entry(other, 3) != other + 3 * 0x80 || mk8_cup_entry(other, 30) != other) return 7;  // (other objects)
     object[5] = 0xAB;
     mk8_cups_built(base);  // (built again: copied again)

@@ -876,5 +876,9 @@
   "As copas do CTGP ficam no lugar das do DLC: importe e ative o Booster Course Pass para vê-las.": "CTGP's cups take the DLC's places: import and enable the Booster Course Pass to see them.",
   "{0} pistas do CTGP nas copas do DLC; o jogo base continua original. Vale ao iniciar o jogo.": "{0} CTGP courses in the DLC's cups; the base game stays original. Applies when starting the game.",
   "Disposição das copas do CTGP inválida.": "Invalid CTGP cup layout.",
-  "No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)": "In place of the DLC's cups, CTGP cups 5–16 (the base game stays original)"
+  "No lugar das copas do DLC, copas 5–16 do CTGP (o jogo base fica original)": "In place of the DLC's cups, CTGP cups 5–16 (the base game stays original)",
+  "Em 16 copas novas, sem tirar nenhuma pista (terceira e quarta páginas)": "In 16 new cups, without removing any course (third and fourth pages)",
+  "Em copas novas: as 64 pistas do CTGP ficam em 16 copas próprias, nas páginas depois das do jogo (L/R na tela de copas), com nomes, imagens, músicas e ícones delas; nenhuma pista original sai do lugar. Os recordes de cada pista do CTGP ficam nos saves próprios do CTGP, junto com os da pista original da mesma vaga.": "In new cups: the 64 CTGP courses go into 16 cups of their own, on the pages after the game's (L/R on the cup screen), with their own names, pictures, music and icons; no original course moves. Each CTGP course's records stay in CTGP's own saves, together with those of the original course of the same slot.",
+  "{0} pistas do CTGP em 16 copas novas; as originais continuam nas copas delas. Vale ao iniciar o jogo.": "{0} CTGP courses in 16 new cups; the originals stay in their cups. Applies when starting the game.",
+  "Jogo original. Ative para jogar as {0} pistas do CTGP em copas novas.": "Original game. Enable it to play the {0} CTGP courses in new cups."
 }

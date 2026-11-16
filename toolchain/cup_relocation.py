@@ -6,8 +6,8 @@ conditional select of that index or 0, and then, possibly after other instructio
 register they preserve) or a `goto` within the function, the `base + (selected << 7)` computation. In the build copies
 of the verified units:
 - the builder (main_081.c) keeps its code and, at its one return, hands its object to mk8_cups_built, which copies the
-  entries into a runtime area with room for 41;
-- in the 19 functions that read cups, each clamp allows 41 (0x29) and the computation it feeds becomes
+  entries into a runtime area with room for 49 (the game's 25 and two pages of 12);
+- in the 19 functions that read cups, each clamp allows 49 (0x31) and the computation it feeds becomes
   mk8_cup_entry(base, index): that area for the builder's object, the original arithmetic (and limit) otherwise.
 Each unit is checked by its SHA-256 and each function by its exact numbers of clamps and of computations; a clamp that
 cannot be followed to its computation is refused. main_082.c and main_115.c arrive as toolchain/experimental.py's copies
@@ -106,6 +106,10 @@ UI['7000418e3c'] = [('    c->x[30] = 0x7000418ec0ull; f_7000418ed0(c);', 'after'
                      '        c->x[30] = 0x7000418ec0ull; f_7000418ed0(c);\n'
                      '    }')]
 UI_UNITS['main_084.c'] = UI_UNITS['main_084.c'] | {'7000418ed0', '7000418e3c'}
+# ... and the menu's texture manager (main_082.c, f_7000405f74: room for 150) room for them too.
+UI['7000405f74'] = [('    c->x[3] = (uint32_t)(0x96ull);', 'after',
+                     '    c->x[3] = (uint32_t)(0x96ull + (uint64_t)mk8_course_picture_places());' + _MARK)]
+UI_UNITS['main_082.c'] = {'7000405f74'}
 # ... and the screens that show a course's picture by a copy of its ID (main_089.c): the cup panel remembers the
 # record it is set to and gives the added picture's ID for it; the time trial screen gives it for the chosen cup's.
 UI['700043c2e8'] = [('    FN_ENTER(0x700043c2e8ull);', 'after', '    mk8_panel_record(c->x[0], c->x[1]);' + _MARK),
@@ -132,6 +136,7 @@ DECLARATIONS = ('uint64_t mk8_cup_entry(uint64_t base, uint64_t index);  // MK8 
                 'int64_t mk8_cup_label(uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_stream_path(uint64_t path);  // MK8 (toolchain/cup_relocation.py)\n'
                 'int64_t mk8_course_pictures(void);  // MK8 (toolchain/cup_relocation.py)\n'
+                'int64_t mk8_course_picture_places(void);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_course_picture(uint64_t record, uint64_t load, uint64_t name);  // MK8 (toolchain/cup_relocation.py)\n'
                 'void mk8_panel_record(uint64_t panel, uint64_t record);  // MK8 (toolchain/cup_relocation.py)\n'
                 'uint64_t mk8_panel_picture(uint64_t panel, uint64_t id);  // MK8 (toolchain/cup_relocation.py)\n'
@@ -210,7 +215,7 @@ def patch_function(body, expected, call='mk8_cup_entry', extra=''):
     if (len(clamps), len(entries)) != expected:
         raise ValueError(f'Cup readers changed: {len(clamps)} clamps and {len(entries)} computations, {expected} expected')
     for i in clamps:
-        lines[i] = lines[i].replace('0x19ull', '0x29ull')
+        lines[i] = lines[i].replace('0x19ull', '0x31ull')
     for k in entries:
         entry = ENTRY.search(lines[k])
         lines[k] = lines[k].replace(entry.group(0), 'c->x[%s] = (uint64_t)(%s(c->x[%s], c->x[%s]%s));'

@@ -171,6 +171,7 @@ mod tests {
             gameplay_verified: false,
             dlc_supported: true,
             pack_supported: false,
+            cups_supported: false,
             files: BTreeMap::from([
                 (
                     "dlc-manifest".into(),

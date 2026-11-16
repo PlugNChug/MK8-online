@@ -54,9 +54,12 @@ def import_pack(source, romfs, local, reinstall=False, layout='base'):
     ctgp_pack.verify(stage)
     if target.exists():
         remove_owned(target, folder)
-    stage.rename(target)
+    ctgp_pack.rename_folder(stage, target)
     atomic_json(local / 'ctgp.json', {'enabled': True})
-    if layout == 'dlc':
+    if layout == 'added':
+        print(f"CTGP Deluxe importado: {manifest['courses']} pistas em 16 copas novas (terceira e quarta páginas da "
+              "tela de copas); as pistas originais continuam nas copas delas.", flush=True)
+    elif layout == 'dlc':
         print(f"CTGP Deluxe importado: {manifest['courses']} pistas nas copas do Booster Course Pass (com o DLC "
               "ativo); o jogo base fica original.", flush=True)
     else:
@@ -75,7 +78,8 @@ def main():
     parser.add_argument('--local', required=True, type=Path)
     parser.add_argument('--reinstall', action='store_true')
     parser.add_argument('--layout', choices=sorted(ctgp_pack.LAYOUTS), default='base',
-                        help='base: no lugar das copas do jogo base; dlc: no lugar das copas do DLC')
+                        help='base: no lugar das copas do jogo base; dlc: no lugar das copas do DLC; '
+                             'added: em copas novas, sem tirar nenhuma pista')
     args = parser.parse_args()
     with exclusive_build(args.local):
         try:

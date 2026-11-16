@@ -146,14 +146,17 @@ aqui. As pistas, músicas e copas rodam: o launcher coloca as 64 pistas do CTGP 
 1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
 2. **Configurações → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
    No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
-   Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC) ou **no lugar das
-   copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado).
+   Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC), **no lugar das
+   copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado) ou **em 16
+   copas novas** (as 64 pistas em mais duas páginas da tela de copas, L/R, com nomes, imagens, músicas e ícones
+   próprios; nenhuma pista original sai do lugar).
 3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. O jogo, o DLC e os seus saves nunca são
    alterados; com o CTGP ligado o jogo usa saves próprios, criados uma vez como cópia dos seus.
 
 Nas salas da Steam todos precisam do mesmo pacote (o mesmo CTGP ativado ou todos sem ele). O MK8-online não distribui
-o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios, copas extras e botão aleatório do
-CTGP dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original. Veja
+o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios e botão aleatório do CTGP
+dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original; nas copas
+novas, cada pista do CTGP guarda os recordes junto com os da pista original cuja vaga ela usa (nos saves do CTGP). Veja
 [STATUS.md](docs/STATUS.md).
 
 ## Compilar e contribuir

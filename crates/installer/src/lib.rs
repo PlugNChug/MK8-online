@@ -216,6 +216,7 @@ fn spawn_game(
     mii::read(local)?;
     let dlc_root = dlc::launch_root(local, install)?;
     let pack = ctgp::launch_overlay(local, install)?;
+    let cups = ctgp::launch_cups(local, install)?;
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
     // The CTGP pack keeps its own saves (records and ghosts of its courses), seeded once from the regular ones.
@@ -256,6 +257,7 @@ fn spawn_game(
             "MK8_ROMFS_OVERLAY",
             pack.as_deref().unwrap_or_else(|| Path::new("")),
         )
+        .env("MK8_CUPS_EXTRA", &cups)
         .arg(install.data_root.join("extracted"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
@@ -346,6 +348,7 @@ mod tests {
             gameplay_verified: false,
             dlc_supported: false,
             pack_supported: false,
+            cups_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

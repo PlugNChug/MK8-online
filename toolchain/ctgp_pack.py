@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import struct
+import time
 from pathlib import Path
 
 TITLE = '0100152000022000'
@@ -96,9 +97,33 @@ BCP_CUPS = [(11601 + c, f'Charger{c:02d}',
               for k in range(4)])
             for c in range(12)]
 # Where CTGP's cups go, in CTGP cup order.
-LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS, 'dlc-late': BCP_CUPS}
+# 'added': all 16 CTGP cups as cups of their own after the game's (a third and a fourth page; runtime/mk8/support/
+# cups.c), each CT course on the ID of the slot 'base' gives it (its files over that course's) and with its own folder,
+# name, picture, music and cup icon; the game's courses stay as they are.
+LAYOUTS = {'base': BASE_CUPS + BCP_CUPS[:4], 'dlc': BCP_CUPS, 'dlc-late': BCP_CUPS, 'added': BASE_CUPS + BCP_CUPS[:4]}
 # the first CTGP cup each layout places ('dlc-late': CTGP cups 5-16 in the DLC's 12, so both DLC layouts reach all 16)
-LAYOUT_FIRST_CUP = {'base': 0, 'dlc': 0, 'dlc-late': 4}
+LAYOUT_FIRST_CUP = {'base': 0, 'dlc': 0, 'dlc-late': 4, 'added': 0}
+# MK8 4.0.1's course IDs (its course enum) from 16 on: the race courses and the battle courses, in order
+COURSE_ORDER = [
+    'Gu_MarioCircuit', 'Gu_DossunIseki', 'Gu_City', 'Gu_Cake', 'Gu_HorrorHouse', 'Gu_Expert', 'Gu_Desert',
+    'Gu_Cloud', 'Gu_SnowMountain', 'Gu_Techno', 'Gu_Airport', 'Gu_FirstCircuit', 'Gu_WaterPark', 'Gu_Ocean',
+    'Gu_BowserCastle', 'Gu_RainbowRoad', 'G3ds_DKJungle', 'Gwii_MooMooMeadows', 'G64_PeachCircuit',
+    'G64_KinopioHighway', 'Gds_PukupukuBeach', 'Ggc_SherbetLand', 'Gagb_MarioCircuit', 'G3ds_MusicPark',
+    'Gwii_GrumbleVolcano', 'Gsfc_DonutsPlain3', 'Ggc_DryDryDesert', 'G3ds_PackunSlider', 'Gds_TickTockClock',
+    'G64_YoshiValley', 'Gds_WarioStadium', 'G64_RainbowRoad', 'Du_Metro', 'Du_MuteCity', 'Du_DragonRoad',
+    'Du_Hyrule', 'Du_Animal_Summer', 'Du_ExciteBike', 'Du_Woods', 'Du_IcePark', 'Dgc_YoshiCircuit',
+    'Dwii_WariosMine', 'Dsfc_RainbowRoad', 'Dagb_RibbonRoad', 'D3ds_NeoBowserCity', 'Dgc_BabyPark',
+    'Dagb_CheeseLand', 'Du_BigBlue', 'Du_Animal_Spring', 'Du_Animal_Autumn', 'Du_Animal_Winter', 'B3ds_WuhuTown',
+    'Bgc_LuigiMansion', 'Bsfc_Battle1', 'Bu_DekaLine', 'Bu_Moon', 'Bu_BattleStadium', 'Bu_Dojo', 'Bu_Sweets',
+    'Cnsw_11', 'Cnsw_12', 'Cnsw_13', 'Cnsw_14', 'Cnsw_15', 'Cnsw_16', 'Cnsw_17', 'Cnsw_18', 'Cnsw_21', 'Cnsw_22',
+    'Cnsw_23', 'Cnsw_24', 'Cnsw_25', 'Cnsw_26', 'Cnsw_27', 'Cnsw_28', 'Cnsw_31', 'Cnsw_33', 'Cnsw_34', 'Cnsw_62',
+    'Cnsw_35', 'Cnsw_32', 'Cnsw_37', 'Cnsw_38', 'Cnsw_41', 'Cnsw_47', 'Cnsw_42', 'Cnsw_44', 'Cnsw_55', 'Cnsw_43',
+    'Cnsw_36', 'Cnsw_45', 'Cnsw_65', 'Cnsw_46', 'Cnsw_63', 'Cnsw_58', 'Cnsw_48', 'Cnsw_53', 'Cnsw_52', 'Cnsw_61',
+    'Cnsw_54', 'Cnsw_56', 'Cnsw_66', 'Cnsw_64', 'Cnsw_51', 'Cnsw_67', 'Cnsw_57', 'Cnsw_68',
+]
+COURSE_IDS = {name: 16 + i for i, name in enumerate(COURSE_ORDER)}
+ADDED_CUP_LABEL = 30000     # the added cups' names: 30000 + cup
+ADDED_COURSE_LABEL = 31000  # the CT courses' names: 31000 + CT index, and + 100 the race intro's
 PLATFORM_LABELS = range(1461, 1469)  # Wii, GBA, DS, 3DS, N64, SNES, GCN, Tour: retro prefixes shown before a name
 # CTGP files verified to load on 4.0.1 outside the course slots (race-time-trial-ssw00gbi, -lzz6p1u3)
 EXTRAS = ['Audio/Resource/Stream/BGM_MENU_LOCAL.bfstm', 'Audio/Resource/Stream/BGM_MENU_SINGLE_MULTI.bfstm',
@@ -616,7 +641,7 @@ def flan_add_pattern(data, pane, names, first_frame):
     return bytes(out)
 
 
-def cup_select_add_icons(menu_sarc, icons, first_cup=25, places=16, skipped=None):
+def cup_select_add_icons(menu_sarc, icons, first_cup=25, places=24, skipped=None):
     """4.0.1 menu.sarc with cup select icons for the added cups (cup first_cup + k shows icons[k], a CTGP icon BNTX
     path): textures ym_CupIconCTnn^h appended to mn_L_CupSlctBtn_00's BNTX (as the Mushroom icon's: format, size)
     and frames for them in its icon animation; the places after them, up to places, show the game's empty icon
@@ -638,6 +663,11 @@ def cup_select_add_icons(menu_sarc, icons, first_cup=25, places=16, skipped=None
     fmt, width, height, _, size, layout, at = slot
     added = []
     for k, path in enumerate(icons):
+        if not Path(path).is_file():
+            if skipped is not None:
+                skipped.append(f'{Path(path).name}: ausente')
+            added.append((f'ym_CupIconCT{k:02d}^h', 'ym_CupIconMushroom^h', bntx[at:at + size]))
+            continue
         source = Path(path).read_bytes()
         tex = next(iter(bntx_textures(source).values()))
         decode = {0xB01: rgba8_linear, 0xB06: rgba8_linear, 0x1C01: bc3_rgba, 0x1C06: bc3_rgba,
@@ -875,6 +905,120 @@ def slots(layout='base'):
     return out
 
 
+def rename_folder(source, target, attempts=20):
+    """source renamed to target. On Windows a folder of files just written may be refused for a moment (an open
+    handle, an antivirus scan): retried for a few seconds before the error is passed on."""
+    for attempt in range(attempts):
+        try:
+            return Path(source).rename(target)
+        except PermissionError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(0.5)
+
+
+def added_folder(ct):
+    """The course folder of CT course ct in the 'added' layout."""
+    return f'CTGP{ct + 1:02d}'
+
+
+def barslist_renamed(data, old, new):
+    """A course's sound bank list (ARSL) under another course name: Course_<old> and its own bank Course_<old>.bars
+    become Course_<new> and Course_<new>.bars; the other banks stay."""
+    if data[:6] != b'ARSL\xff\xfe' or struct.unpack_from('<HI', data, 6) != (1, 0):
+        raise PackError('barslist inválido')
+    count = struct.unpack_from('<I', data, 12)[0]
+    strings = data[16 + 4 * count:].split(b'\0')[:count + 1]
+    if len(strings) != count + 1 or strings[0] != f'Course_{old}'.encode():
+        raise PackError('barslist inesperado')
+    rename = {f'Course_{old}'.encode(): f'Course_{new}'.encode(), f'Course_{old}.bars'.encode(): f'Course_{new}.bars'.encode()}
+    strings = [rename.get(s, s) for s in strings]
+    offsets, at = [], len(strings[0]) + 1
+    for s in strings[1:]:
+        offsets.append(at)
+        at += len(s) + 1
+    return (data[:16] + b''.join(struct.pack('<I', o) for o in offsets) + b''.join(s + b'\0' for s in strings))
+
+
+def barslist(name, own=True):
+    """A course's sound bank list (ARSL), as the game's: Course_<name>, then its banks (its own .bars, when it has
+    one, and Course.bars)."""
+    strings = [f'Course_{name}'.encode()] + ([f'Course_{name}.bars'.encode()] if own else []) + [b'Course.bars']
+    offsets, at = [], len(strings[0]) + 1
+    for s in strings[1:]:
+        offsets.append(at)
+        at += len(s) + 1
+    head = b'ARSL\xff\xfe' + struct.pack('<HII', 1, 0, len(offsets)) + b''.join(struct.pack('<I', o) for o in offsets)
+    return head + b''.join(s + b'\0' for s in strings)
+
+
+def cups_extra():
+    """MK8_CUPS_EXTRA for the 'added' layout: per cup its name label and its 4 courses as ID:label:folder."""
+    cups = {}
+    for ct, cup, folders, _, _, _ in slots('added'):
+        cups.setdefault(cup, []).append(f'{COURSE_IDS[folders[0]]}:{ADDED_COURSE_LABEL + ct}:{added_folder(ct)}')
+    return ';'.join(f'{ADDED_CUP_LABEL + c}=' + ','.join(courses) for c, courses in sorted(cups.items()))
+
+
+def _retag(old, new):
+    """new inside old's control tags (a tagged "<tag>Name<tag>" text keeps both), or new alone."""
+    old = old.rstrip('\0')
+    head = 4 + ord(old[3]) // 2 if len(old) >= 4 and old[0] == '\x0e' else 0
+    tail = old.rfind('\x0e')
+    if head and head <= tail and len(old) >= tail + 4 and len(old) == tail + 4 + ord(old[tail + 3]) // 2:
+        return old[:head] + new + old[tail:]
+    return new
+
+
+def messages_added(target, ctgp_sarc, fallback):
+    """The 4.0.1 message.sarc of one language with the added cups' and CT courses' names as new labels (the
+    game's own texts unchanged); the race intro's form takes the tags of the game's (label 1501)."""
+    names, cups = ctgp_names(ctgp_sarc if Path(ctgp_sarc).is_file() else fallback)
+    parsed = sarc_read(Path(target).read_bytes())
+    common = next(blob for name, _, _, blob, _ in parsed['files'] if name == 'Common.msbt')
+    labels, texts = msbt_read(common)
+    intro = texts[labels['1501']] if '1501' in labels else ''
+    values = {str(ADDED_CUP_LABEL + c): cups[c] for c in range(16)}
+    for ct in range(CT_COUNT):
+        values[str(ADDED_COURSE_LABEL + ct)] = names[ct]
+        values[str(ADDED_COURSE_LABEL + 100 + ct)] = _retag(intro, names[ct])
+    return sarc_write(parsed, {'Common.msbt': msbt_add(common, values)})
+
+
+def plan_added(title, romfs, notes=None):
+    """The 'added' layout's overlay files (see LAYOUTS). Expects plan's validation done."""
+    ct_romfs, files = title / 'romfs', {}
+    for ct, _, folders, _, _, _ in slots('added'):
+        src, borrowed, name = ct_romfs / f'Course/CT_{ct:02X}', romfs / 'Course' / folders[0], added_folder(ct)
+        for tree, skip in ((borrowed, ()), (src, (f'Course_CT_{ct:02X}.bars', f'Course_CT_{ct:02X}.barslist'))):
+            for path in sorted(tree.rglob('*')):
+                if path.is_file() and path.name not in skip:
+                    files[f'Course/{name}/{path.relative_to(tree).as_posix()}'] = path
+        bank = borrowed / f'Course_{folders[0]}.bars'  # (the course's own sound bank, under its new name as well)
+        if bank.is_file():
+            files[f'Course/{name}/Course_{name}.bars'] = bank
+        listed = borrowed / f'Course_{folders[0]}.barslist'
+        files[f'Course/{name}/Course_{name}.barslist'] = (
+            barslist_renamed(listed.read_bytes(), folders[0], name) if listed.is_file() else barslist(name, bank.is_file()))
+        for kind in ('N', 'F'):
+            music = ct_romfs / f'Audio/Resource/Stream/pBGM_CT_{ct:02X}_{kind}.bfstm'
+            if music.is_file():
+                files[f'Audio/Resource/Stream/{name}_{kind}.bfstm'] = music
+        pict = ct_romfs / f'UI/cmn/menu/ym_CoursePict_CT_{ct:02X}_00^u.bntx'
+        if pict.is_file():
+            files[f'UI/cmn/menu/ym_CoursePict_{name}_00^u.bntx'] = pict
+    if (romfs / 'UI/cmn/menu.sarc').is_file():
+        icons = [ct_romfs / f'UI/cmn/race/ym_CupIcon{CTGP_CUP_ICONS[c]}_130x130^h.bntx' for c in range(16)]
+        files['UI/cmn/menu.sarc'] = cup_select_add_icons((romfs / 'UI/cmn/menu.sarc').read_bytes(), icons, 25, 24,
+                                                         notes)
+    for lang in LANGUAGES:
+        target = romfs / f'UI/{lang}/message.sarc'
+        if target.is_file():
+            files[f'UI/{lang}/message.sarc'] = messages_added(target, ct_romfs / f'UI/{lang}/message.sarc',
+                                                              ct_romfs / 'UI/USen/message.sarc')
+    return files
+
+
 def plan(title, romfs, layout='base', notes=None):
     """Every overlay file: (overlay path, source path or bytes). Validates both trees first."""
     title, romfs = Path(title), Path(romfs)
@@ -886,6 +1030,8 @@ def plan(title, romfs, layout='base', notes=None):
                 raise PackError(f'CTGP incompleto: Course/CT_{i:02X}/{name}')
     if not (romfs / 'Course/Gu_FirstCircuit/course_model.szs').is_file():
         raise PackError('RomFS do MK8 4.0.1 não encontrado.')
+    if layout == 'added':
+        return plan_added(title, romfs, notes)
     files = {}
     stream = romfs / 'Audio/Resource/Stream'
     for ct, cup, folders, label, music, picture in slots(layout):
@@ -994,10 +1140,12 @@ def build(title, romfs, output, link=True, layout='base'):
             'base_courses': sum(1 for s in slots(layout) if not s[2][0].startswith('Cnsw_')),
             'files': record, 'gameplay_verified': False,
         }
+        if layout == 'added':
+            manifest['cups_extra'] = cups_extra()  # (the launcher gives it to the game as MK8_CUPS_EXTRA)
         manifest['identity'] = hashlib.sha256(json.dumps({k: manifest[k] for k in ('plugin_sha256', 'layout', 'files')},
                                                          sort_keys=True).encode()).hexdigest()
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=1), encoding='utf-8')
-        stage.rename(output)
+        rename_folder(stage, output)
         return manifest
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)

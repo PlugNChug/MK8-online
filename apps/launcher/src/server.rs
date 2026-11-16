@@ -735,6 +735,7 @@ impl App {
                         "base" => "base",
                         "dlc" => "dlc",
                         "dlc-late" => "dlc-late",
+                        "added" => "added",
                         _ => return Err("Disposição das copas do CTGP inválida.".into()),
                     };
                     drop(guards);
@@ -1838,6 +1839,7 @@ mod tests {
             gameplay_verified: false,
             dlc_supported: false,
             pack_supported: false,
+            cups_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
