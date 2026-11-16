@@ -4,6 +4,10 @@
 
 `fix/main-menu-manual` atualizada para `fix-chore d443092`. Dois testes nativos do retorno OfflineWeb e o teste real de navegador/viewer (conteúdo, origem e fechamento) passaram. Launcher compilado em debug, fmt e Clippy sem avisos aprovados. Sem assets adicionais de manual e sem nova qualificação de corrida completa nesta branch isolada.
 
+## Rebase MKTV — 15/11/2026
+
+`fix/mktv-replay-thumbnails` atualizada para `fix-chore d443092`, preservando os hooks recentes de vertex cache, texture retirement e controller applet. Quinze regressões nativas de readback, submissão assíncrona e lifetime de descritores passaram. Sem nova corrida completa na branch isolada; qualificação anterior não é ampliada.
+
 ## CTGP Deluxe como pacote de pistas opcional (Fase A) — 15/11/2026
 
 **O que é:** as 64 pistas do CTGP Deluxe 1.1.1 nas vagas de pista existentes do 4.0.1, sem código do mod (o plugin é ARM de 32 bits, para o 3.0.3). Opcional e reversível: o launcher importa, liga e desliga. Jogo base, DLC e saves não são alterados, e as quatro combinações funcionam (base; base + DLC; base + CTGP; base + DLC + CTGP).
@@ -435,6 +439,12 @@ Branch focada `fix/main-menu-manual` sobre fix-chore `15d1106`. Reproduzido abor
 Uma tentativa inicial de overlay no renderer reentrou o Vulkan e falhou no driver; removida integralmente. Solução final usa WebView2 separado e espera a janela encerrar, sem representar frames dentro do IPC. **17 testes nativos/Python aprovados**, incluindo protocolo real do accessor, fronteiras, ABI e Mii. Fixture Mii do upstream exigia stub para a resolução DLC já existente; corrigido somente no teste. Fmt/Clippy e suíte Rust aprovados, build debug e runtime-only **215 unidades** concluídos. Teste de janela real: conteúdo, 390/900 px, Origin inválido recusado e botão de retorno saindo 0.
 
 Fluxo real com saves copiados em `race-time-trial-_jol18cr`: **Info → How to Play → Back to game → menu**, saída **0**, captura final 2400 após retorno, sem FATAL/exceção. Viewer e capturas/logs privados em `manual-{from-game,viewer}*`; não houve corrida completa nem nova qualificação. `gameplay_verified=false`. Guia próprio inicial em inglês, sem assets Nintendo; precisa de launcher/runtime com suporte. Teste direto do runtime fornece MK8_MANUAL_VIEWER explicitamente; o launcher o define no supervisor.
+
+## Miniaturas do MKTV: leitura de textura pela CPU — 13/11/2026
+
+Os JPEGs de 480×270 nos replays existentes já continham estática: o problema antecedia sua exibição no MKTV. `nvnTextureReadTexels` e sua variante com strides eram stubs. `toolchain/texture_readback.py` prepara esses pontos no runtime fixado e usa a cópia Vulkan existente, com espera pela GPU e redução para o tamanho guest quando necessário. A leitura síncrona entra na fila do tradutor, mantém a textura viva e só retorna depois da cópia para a CPU; chamar Vulkan diretamente da thread guest causava uma falha no driver NVIDIA e foi descartado. O código próprio fica em `runtime/mk8/graphics/texture_readback.inc`. A implementação aceita regiões 2D de nível zero, uma camada e cor de 32 bits; valida formato, região, strides e destino e rejeita os demais casos explicitamente.
+
+Validação: 26 testes nativos passaram (readback, fila assíncrona, descritores e layout), incluindo execução na thread correta, ordem, retenção da textura, memória inválida e modo síncrono. Build `--runtime-only` concluída com 214 unidades e 108 executáveis/DLLs conferidos, sem alterar a biblioteca guest. Na sessão copiada `local/race-grand-prix-9iy3sgx5`, uma corrida terminou, o jogo leu 480×270 RGBA e voltou ao menu; saída 0. Uma cópia privada do replay temporário contém um JPEG válido de 71.675 bytes, revisado visualmente com Mario, Peach e a pista, sem estática. Saves originais preservados. JPEGs antigos não são reparados; é necessário gravar novos replays. O teste funcional usou apresentação sem limite para abreviar a automação; não qualifica velocidade do relógio, áudio ou gameplay completo. `gameplay_verified` permanece `false`.
 
 ## Salas da Steam exigem o mesmo estado de DLC — 13/11/2026
 
