@@ -16,6 +16,36 @@ from windows_file_lock import locked_file
 
 @unittest.skipUnless(os.name == 'nt', 'Windows sharing violations')
 class FileAccessTests(unittest.TestCase):
+    def test_long_ghost_name_does_not_extend_the_staging_path_past_max_path(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+            root = Path(temporary)
+            src = root/'source'
+            src.mkdir()
+            name = 'ghost-' + '0' * 96 + '.dat'
+            (src/name).write_bytes(b'authored ghost fixture')
+            dst = root/('d' * (255 - len(str(root/name)) - 1))
+            self.assertEqual(len(str(dst/name)), 255)
+            with patch.object(build.os, 'link', wraps=os.link) as link:
+                build.mirror(dst, src)
+            self.assertLess(len(str(link.call_args.args[1].absolute())), 260)
+            self.assertTrue(os.path.samefile(src/name, dst/name))
+            self.assertEqual((dst/name).read_bytes(), b'authored ghost fixture')
+
+    def test_staging_path_that_cannot_fit_reports_actionable_error_without_pruning(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+            root = Path(temporary)
+            src = root/'source'
+            src.mkdir()
+            (src/'a').write_bytes(b'new bytes')
+            dst = root/('d' * (235 - len(str(root)) - 1))
+            dst.mkdir()
+            (dst/'a').write_bytes(b'previous bytes')
+            (dst/'keep.bin').write_bytes(b'keep until success')
+            with self.assertRaisesRegex(ValueError, 'pasta de dados mais curta'):
+                build.mirror(dst, src)
+            self.assertEqual((dst/'a').read_bytes(), b'previous bytes')
+            self.assertEqual((dst/'keep.bin').read_bytes(), b'keep until success')
+
     def test_device_disappearing_during_copy_preserves_destination(self):
         with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
             root = Path(temporary)

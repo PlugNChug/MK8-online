@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 from repair import cleanup_stale, remove_owned, unlink_links_on_the_way, is_link
 from build_lock import exclusive_build
@@ -240,8 +241,11 @@ def mirror(path, target, copy_ok=False):
             a, b = src.stat(), dst.stat()
             if copy_ok and (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns):
                 continue
+        # Appending to long ghost names exceeds MAX_PATH even when the final destination fits.
+        pending = dst.with_name(f'.pending-{uuid.uuid4().hex}')
+        if os.name == 'nt' and len(str(pending.absolute())) >= 260:
+            raise ValueError(f'Caminho temporário excede MAX_PATH; use uma pasta de dados mais curta e tente novamente: {dst.parent}')
         dst.parent.mkdir(parents=True, exist_ok=True)
-        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{time.time_ns()}')
         try:
             os.link(src, pending)
         except OSError as error:
