@@ -1,5 +1,8 @@
 """Bounded host-only Nextendo test adaptation, after upstream hash verification."""
 
+from pathlib import Path
+import shutil
+
 def prepare(runtime):
     def edit(relative, old, new):
         path = runtime / relative
@@ -17,6 +20,14 @@ def prepare(runtime):
             raise ValueError('Nextendo region order changed: ' + relative)
         edit(relative, text[start:stop], replacement)
 
+    source = Path(__file__).resolve().parents[1] / 'runtime/mk8/net'
+    shutil.copyfile(source / 'social.h', runtime / 'net/mk8_social.h')
+    # Prepared headers participate in the host cache key, unlike .inc files.
+    shutil.copyfile(source / 'social.inc', runtime / 'net/mk8_social_impl.h')
+    edit('net/nextendo.c', '#define SCOPE "identity%20game.matchmaking"',
+         '#define SCOPE ((getenv("MK8_MENU_PROTOTYPE") && !strcmp(getenv("MK8_MENU_PROTOTYPE"), "1")) ? "identity%20game.matchmaking%20friends" : "identity%20game.matchmaking")')
+    edit('net/nextendo.c', 'void nx_test_reset(void) {',
+         '#include "mk8_social_impl.h"\n\nvoid nx_test_reset(void) {')
     edit('net/nextendo.c', '#define CLIENT_ID "nxc_R-JWtJ6JrrgY"',
          '#define CLIENT_ID "nxc_5QmpWFAhTHSd"\nextern bool mk8_nextendo_enabled(void);')
     # Third-party integration contract: identify our registered public client on API requests.

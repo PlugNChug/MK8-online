@@ -35,6 +35,8 @@ Vozes de áudio novas começam com volume anterior zero e usam a rampa existente
 
 ## Novidades da 0.3.0
 
+Prévia de desenvolvimento na `fix-chore`: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados. Não faz parte do setup público 0.3.0.
+
 - **CTGP Deluxe no MK8 4.0.1:** importe os recursos das pistas do CTGP Deluxe 1.1.1 (originalmente para 3.0.3), incluindo 64 pistas em 16 copas adicionais com nomes, imagens, ícones e músicas. A adaptação não executa o plugin original; a compatibilidade é incompleta e ainda há bugs.
 - **Launcher redesenhado:** instalação horizontal em etapas, configurações em módulos, idioma do jogo acessível, criação guiada de Mii, amigos/salas Steam e relatórios de suporte mais claros.
 - **DLC opcional:** importe seu Booster Course Pass na preparação ou depois e ative/desative sem excluí-lo. Jogo, DLC e chaves nunca são distribuídos.
@@ -194,7 +196,8 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 
 - transportes LAN/relay/P2P pela API;
 - o conversor estático de cabeça Mii;
-- o protótipo Nextendo.
+- o protótipo Nextendo;
+- o painel dentro do jogo (`MK8_MENU_PROTOTYPE=1`, F1 ou Menos + Mais), com Jogar, Nextendo, Social e Ajustes. Conta e configurações usam o runtime; lobbies, contagens e perfis sociais são exemplos identificados. Não faz parte do setup 0.3.0 publicado.
 
 Os testes Nextendo foram retomados na `fix-chore`: o mantenedor confirmou gameplay online com outras pessoas em uma sessão isolada. O adaptador opt-in usa a API OAuth documentada e o ID público registrado do MK8-online. `scripts/test-race.py time-trial --nextendo --interactive` permite teste manual com saves copiados e candidato local verificado. Ainda não é um recurso público do launcher; confiança TLS de produção, reconexão e qualificação completa de corrida/reinício continuam pendentes. Os tokens ficam em memória durante o processo.
 

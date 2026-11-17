@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Nextendo Social — 16/11/2026
+
+Listagem de salas: contrato de `/api/status/live` e tratamento de `games[].titles`, `lobbies`, `players` e `roomsAvailable` conferidos no [cliente público de status do Nextendo](https://nextendo.network/assets/js/pages.js). Implementação própria, sem copiar o cliente. `0100152000022000` filtra exclusivamente MK8 Deluxe; posição de sala na lista nunca é tratada como identificador NEX. Pesquisa de ingresso: [Matchmake Extension](https://github.com/Kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol) e [extensões MK8D](https://github.com/kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol-%28MK8D%29), referências de protocolo, sem incorporar biblioteca/código. Métodos documentados não constituem validação contra o servidor atual Nextendo ou contra esta build.
+
+Contrato consultado na [documentação oficial de desenvolvedores](https://wiki.nextendo.network/developers) e no [guia de integração](https://wiki.nextendo.network/integration): escopo OAuth `friends`, leitura de `/api/friends?images=0`, presença retornada por amigo e consulta `/api/my-lobby` com `game.matchmaking`. Implementação própria em `runtime/mk8/net/social.inc`, sem copiar código do serviço. Tokens permanecem em memória. A referência documenta leitura da sala atual; não documenta operação HTTP para entrar em uma sala. Não se infere que consulta HTTP substitua o matchmaking NEX do MK8.
+
 ## Revisão de compatibilidade — 16/11/2026
 
 Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.

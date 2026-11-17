@@ -312,6 +312,17 @@ def prepare_host_sources(source, output):
         raise ValueError('Runtime room menu boundary changed')
     text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n'
                         '        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();\n' + boundary)
+    hub = runtime/'ui/mk8_hub.h'
+    shutil.copyfile(ROOT/'runtime/mk8/ui/hub.h', hub)
+    boundary = 'static bool g_drew;  // the last menu_render drew (menu_redraw draws it again)'
+    if text.count(boundary) != 1:
+        raise ValueError('MK8 hub declaration boundary changed')
+    text = text.replace(boundary, '#include "mk8_hub.h"\n' + boundary)
+    boundary = '    if (open) {\n        // dim the game behind the menu'
+    if text.count(boundary) != 1:
+        raise ValueError('MK8 hub render boundary changed')
+    text = text.replace(boundary, '    if (open && mk8_hub_enabled()) mk8_hub_draw(scale);\n'
+                        '    if (open && !mk8_hub_enabled()) {\n        // dim the game behind the menu')
     menu.write_text('extern "C" bool mk8_mii_menu_available(void);\nextern "C" void mk8_open_mii_menu(void);\n'
                    'extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
     kernel = runtime/'kernel.c'
