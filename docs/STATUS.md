@@ -1,4 +1,12 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Verificação SDL/Vulkan isolada — 17/11/2026
+
+Branch local baseada em `fix-chore` `7e8836e`, relacionada à issue #5. A presença de `vkGetInstanceProcAddr` não comprovava que o SDL conseguia usar o loader: uma DLL autoral que exportava a função, mas não fornecia funções Vulkan, passava no probe anterior e falhava no SDL real. A verificação agora executa `SDL_Init(VIDEO)` e `SDL_Vulkan_LoadLibrary`, com unload/quit, mantendo conferência de hashes, processo separado e timeout de 20 segundos. Falhas interrompem o lançamento com o diagnóstico real.
+
+Validação na branch isolada: **85 testes Rust aprovados**, um teste Steam real optativo ignorado; formatação, Clippy com `-D warnings` e build debug do launcher concluídos. **Quatro testes SDL/Vulkan aprovados**, cobrindo DLL ausente/corrompida, dependência ausente, loader funcional, driver de vídeo inexistente, falso loader exportador e retenção das dependências dinâmicas. Um teste de empacotamento precisou ser repetido após corrigir somente o caminho do runtime usado como fixture. A suíte Rust inicialmente reproduziu a dependência de um teste DLC no perfil pessoal; incluída a correção de fixture já existente, com caminho de chave ausente explícito e sem alteração da importação.
+
+Revisão independente aprovada. Sem corrida, criação de superfície Vulkan ou qualificação de outra GPU/máquina do relator. Jogo instalado e dados pessoais preservados; `gameplay_verified=false`. Commits locais, sem push ou PR.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 
