@@ -525,7 +525,7 @@ impl Drop for Gateway {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn game(gateway: &Gateway) -> UdpSocket {
+    pub(super) fn game(gateway: &Gateway) -> UdpSocket {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(2)))
@@ -537,7 +537,7 @@ mod tests {
         assert_eq!(&buf[..n], b"MMKW\x00");
         socket
     }
-    fn datagram(slot: u8, destination: u8) -> Vec<u8> {
+    pub(super) fn datagram(slot: u8, destination: u8) -> Vec<u8> {
         [
             b"MMKDVL1".as_slice(),
             &[10, 13, 37, slot + 1, 0, 1, 10, 13, 37, destination, 0, 2],

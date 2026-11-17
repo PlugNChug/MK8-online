@@ -6,7 +6,7 @@
 use crate::{Gateway, Host, Invite};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use mk8_manifest::Result;
-use mk8_transport::{random, MAX_PACKET};
+use mk8_transport::{random, Channel, MAX_PACKET};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -32,6 +32,7 @@ const EP2P_SEND_RELIABLE: c_int = 2;
 const STEAM_UNRELIABLE_MAX: usize = 1200;
 const P2P_CHANNEL_CONTROL: c_int = 0;
 const P2P_CHANNEL_DATA: c_int = 1;
+const JOIN_VERSION: u8 = 2;
 const DEFAULT_APP_ID: &str = "480";
 // Callbacks delivered through SteamAPI_RegisterCallback (steam_api.h k_i* values).
 const GAME_LOBBY_JOIN_REQUESTED: c_int = 333; // invite accepted in the Steam client
@@ -1120,25 +1121,66 @@ impl SteamRoom {
         let s = stop.clone();
         let b = backend.clone();
         let identity_owned = identity.to_owned();
+        let peers = host.peers.clone();
         let worker = thread::spawn(move || {
             struct GuestProxy {
                 socket: UdpSocket,
-                invite_encoded: String,
+                invite: Invite,
+                request: Option<[u8; 16]>,
+                pending: Option<([u8; 16], Invite)>,
             }
             let mut assigned: HashMap<u64, GuestProxy> = HashMap::new();
             let mut available = guest_invites.into_iter();
             let mut buf = [0u8; MAX_PACKET + 64];
             while !s.load(Ordering::Relaxed) {
                 b.tick();
-                // 1. Control channel: handle guest JOIN requests (`MK8J` + token + identity)
+                // 1. A fresh offer must be confirmed before it replaces a live channel.
                 while let Some((n, remote_steam_id)) = b.recv(P2P_CHANNEL_CONTROL, &mut buf) {
-                    if n < 20 || &buf[..4] != b"MK8J" || buf[4..20] != token {
+                    if n < 20 || !matches!(&buf[..4], b"MK8J" | b"MK8C") || buf[4..20] != token {
                         continue;
                     }
-                    let req_id = std::str::from_utf8(&buf[20..n]).unwrap_or("");
-                    if req_id != identity_owned {
-                        let mut error = b"MK8E".to_vec();
-                        error.extend_from_slice(
+                    if n < 37 || buf[20] != JOIN_VERSION {
+                        let error = "MK8EProtocolo Steam incompatível. Atualize os dois launchers.";
+                        let _ =
+                            b.send(remote_steam_id, P2P_CHANNEL_CONTROL, error.as_bytes(), true);
+                        continue;
+                    }
+                    let request: [u8; 16] = buf[21..37].try_into().unwrap();
+                    let response =
+                        |tag: &[u8], body: &[u8]| [tag, &[JOIN_VERSION], &request, body].concat();
+                    if &buf[..4] == b"MK8C" {
+                        let Some(proxy) = assigned.get_mut(&remote_steam_id) else {
+                            continue;
+                        };
+                        if n != 53 {
+                            continue;
+                        }
+                        if proxy.pending.as_ref().is_some_and(|(id, invite)| {
+                            *id == request && buf[37..53] == invite.session
+                        }) {
+                            let (_, invite) = proxy.pending.take().unwrap();
+                            let mut peers = peers.lock().unwrap();
+                            let peer = &mut peers[invite.slot as usize];
+                            peer.channel =
+                                Channel::new(invite.key, invite.session, invite.slot, true);
+                            peer.invite = invite.clone();
+                            peer.endpoint = None;
+                            proxy.invite = invite;
+                            proxy.request = Some(request);
+                        }
+                        if proxy.request == Some(request) && buf[37..53] == proxy.invite.session {
+                            let _ = b.send(
+                                remote_steam_id,
+                                P2P_CHANNEL_CONTROL,
+                                &response(b"MK8A", &proxy.invite.session),
+                                true,
+                            );
+                        }
+                        continue;
+                    }
+                    if buf[37..n] != *identity_owned.as_bytes() {
+                        let error = response(
+                            b"MK8E",
                             "Instalação incompatível com a sala Steam.".as_bytes(),
                         );
                         let _ = b.send(remote_steam_id, P2P_CHANNEL_CONTROL, &error, true);
@@ -1151,7 +1193,7 @@ impl SteamRoom {
                             let _ = b.send(
                                 remote_steam_id,
                                 P2P_CHANNEL_CONTROL,
-                                b"MK8ESala cheia (limite de 12 jogadores).",
+                                &response(b"MK8E", b"Sala cheia (limite de 12 jogadores)."),
                                 true,
                             );
                             continue;
@@ -1163,12 +1205,25 @@ impl SteamRoom {
                         let _ = sock.connect(host_addr);
                         e.insert(GuestProxy {
                             socket: sock,
-                            invite_encoded: inv.encode(),
+                            invite: inv,
+                            request: None,
+                            pending: None,
                         });
                     }
-                    if let Some(proxy) = assigned.get(&remote_steam_id) {
-                        let mut reply = b"MK8I".to_vec();
-                        reply.extend_from_slice(proxy.invite_encoded.as_bytes());
+                    if let Some(proxy) = assigned.get_mut(&remote_steam_id) {
+                        let invite = if proxy.request == Some(request) {
+                            &proxy.invite
+                        } else {
+                            if !proxy.pending.as_ref().is_some_and(|(id, _)| *id == request) {
+                                let mut invite = proxy.invite.clone();
+                                invite.key = random();
+                                invite.session = random();
+                                invite.expires = crate::now() + 4 * 3600;
+                                proxy.pending = Some((request, invite));
+                            }
+                            &proxy.pending.as_ref().unwrap().1
+                        };
+                        let reply = response(b"MK8I", invite.encode().as_bytes());
                         let _ = b.send(remote_steam_id, P2P_CHANNEL_CONTROL, &reply, true);
                     }
                 }
@@ -1280,30 +1335,55 @@ impl SteamRoom {
         // Perform handshake with Host over P2P_CHANNEL_CONTROL
         let mut join_req = b"MK8J".to_vec();
         join_req.extend_from_slice(&code.token);
+        join_req.push(JOIN_VERSION);
+        let request = random::<16>();
+        join_req.extend_from_slice(&request);
         join_req.extend_from_slice(identity.as_bytes());
 
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut last_send = Instant::now() - Duration::from_secs(2);
         let mut buf = [0u8; MAX_PACKET + 64];
         let mut received_invite = None;
+        let mut offered: Option<Invite> = None;
+        let mut legacy_reply = false;
 
         while Instant::now() < deadline {
             backend.tick();
             if last_send.elapsed() >= Duration::from_millis(500) {
                 let _ = backend.send(code.host, P2P_CHANNEL_CONTROL, &join_req, true);
+                if let Some(invite) = &offered {
+                    let confirm = [b"MK8C".as_slice(), &join_req[4..37], &invite.session].concat();
+                    let _ = backend.send(code.host, P2P_CHANNEL_CONTROL, &confirm, true);
+                }
                 last_send = Instant::now();
             }
             if let Some((n, from)) = backend.recv(P2P_CHANNEL_CONTROL, &mut buf) {
                 if from == code.host && n > 4 {
+                    if matches!(&buf[..4], b"MK8I" | b"MK8E" | b"MK8A") && buf[4] != JOIN_VERSION {
+                        // Legacy replies have no request ID and may belong to an earlier join.
+                        legacy_reply = true;
+                        continue;
+                    }
+                    if n < 21 || buf[5..21] != request {
+                        continue;
+                    }
                     if &buf[..4] == b"MK8I" {
-                        let text = std::str::from_utf8(&buf[4..n])
+                        let text = std::str::from_utf8(&buf[21..n])
                             .map_err(|_| "Convite corrompido na Steam.")?;
                         let mut invite = Invite::decode(text, identity)?;
                         invite.endpoint = proxy_addr;
-                        received_invite = Some(invite);
-                        break;
+                        offered = Some(invite);
+                        last_send = Instant::now() - Duration::from_secs(2);
+                    } else if &buf[..4] == b"MK8A" {
+                        if offered
+                            .as_ref()
+                            .is_some_and(|invite| n == 37 && buf[21..37] == invite.session)
+                        {
+                            received_invite = offered.take();
+                            break;
+                        }
                     } else if &buf[..4] == b"MK8E" {
-                        let err = std::str::from_utf8(&buf[4..n]).unwrap_or("Recusado pelo host.");
+                        let err = std::str::from_utf8(&buf[21..n]).unwrap_or("Recusado pelo host.");
                         return Err(err.to_owned());
                     }
                 }
@@ -1311,9 +1391,11 @@ impl SteamRoom {
             thread::sleep(Duration::from_millis(20));
         }
 
-        let invite = received_invite.ok_or(
-            "Sem resposta do anfitrião via Steam Relay. Verifique se o anfitrião está com a sala aberta na Steam.",
-        )?;
+        let invite = received_invite.ok_or(if legacy_reply {
+            "Protocolo Steam incompatível. Atualize os dois launchers."
+        } else {
+            "Sem resposta do anfitrião via Steam Relay. Verifique se o anfitrião está com a sala aberta na Steam."
+        })?;
         let gateway = Gateway::start(invite)?;
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
@@ -1701,6 +1783,201 @@ mod tests {
                 assert_eq!(host.connected(), 0);
             }
         }
+    }
+
+    #[test]
+    fn steam_join_retries_and_stale_messages_cannot_reset_an_active_channel() {
+        let bus = MockSteamBus::new();
+        let host_node = Arc::new(MockSteamNode {
+            steam_id: 1,
+            bus: bus.clone(),
+        });
+        let guest = MockSteamNode { steam_id: 2, bus };
+        let (room, host, _) =
+            SteamRoom::host_with_backend(host_node, 10, 1, "fixture", "Host").unwrap();
+        let code = SteamCode::decode(&room.code).unwrap();
+        let receive = || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut buf = [0; MAX_PACKET + 64];
+            loop {
+                if let Some((n, from)) = guest.recv(P2P_CHANNEL_CONTROL, &mut buf) {
+                    assert_eq!(from, 1);
+                    return buf[..n].to_vec();
+                }
+                assert!(Instant::now() < deadline, "control response missing");
+                thread::sleep(Duration::from_millis(2));
+            }
+        };
+        let exchange = |tag: &[u8], request: &[u8; 16], body: &[u8]| {
+            let packet = [tag, &code.token, &[JOIN_VERSION], request, body].concat();
+            assert!(guest.send(1, P2P_CHANNEL_CONTROL, &packet, true));
+            receive()
+        };
+        // An old launcher gets an actionable error, never an unusable invitation.
+        let legacy = [b"MK8J".as_slice(), &code.token, b"fixture"].concat();
+        guest.send(1, P2P_CHANNEL_CONTROL, &legacy, true);
+        assert!(std::str::from_utf8(&receive())
+            .unwrap()
+            .contains("Atualize os dois launchers"));
+        let first = [1; 16];
+        let offer = exchange(b"MK8J", &first, b"fixture");
+        assert_eq!(offer, exchange(b"MK8J", &first, b"fixture"));
+        let old = Invite::decode(std::str::from_utf8(&offer[21..]).unwrap(), "fixture").unwrap();
+        let ack = exchange(b"MK8C", &first, &old.session);
+        assert_eq!(&ack[..4], b"MK8A");
+        let mut old_channel = Channel::new(old.key, old.session, old.slot, false);
+        let old_packet = old_channel.seal(b"HELLO").unwrap();
+        {
+            let mut peers = host.peers.lock().unwrap();
+            assert_eq!(
+                peers[old.slot as usize].channel.open(&old_packet).unwrap(),
+                b"HELLO"
+            );
+        }
+        // Repeated confirmation and JOIN retain both the key and replay window.
+        assert_eq!(ack, exchange(b"MK8C", &first, &old.session));
+        assert_eq!(offer, exchange(b"MK8J", &first, b"fixture"));
+        assert!(host.peers.lock().unwrap()[old.slot as usize]
+            .channel
+            .open(&old_packet)
+            .is_none());
+
+        let second = [2; 16];
+        let offer = exchange(b"MK8J", &second, b"fixture");
+        let fresh = Invite::decode(std::str::from_utf8(&offer[21..]).unwrap(), "fixture").unwrap();
+        assert_eq!(fresh.slot, old.slot);
+        assert_ne!(fresh.key, old.key);
+        assert_ne!(fresh.session, old.session);
+        // An unconfirmed offer must not invalidate the current channel.
+        assert_eq!(
+            host.peers.lock().unwrap()[old.slot as usize].invite.key,
+            old.key
+        );
+        exchange(b"MK8C", &second, &fresh.session);
+        // A delayed old JOIN gets a fresh challenge, never its old live key.
+        let stale_offer = exchange(b"MK8J", &first, b"fixture");
+        let stale =
+            Invite::decode(std::str::from_utf8(&stale_offer[21..]).unwrap(), "fixture").unwrap();
+        assert_ne!(stale.session, old.session);
+        let stale_confirm = [
+            b"MK8C".as_slice(),
+            &code.token,
+            &[JOIN_VERSION],
+            &first,
+            &old.session,
+        ]
+        .concat();
+        guest.send(1, P2P_CHANNEL_CONTROL, &stale_confirm, true);
+        // This later request is a barrier: the worker has handled the stale confirmation.
+        exchange(b"MK8J", &second, b"fixture");
+        let mut peers = host.peers.lock().unwrap();
+        let peer = &mut peers[fresh.slot as usize];
+        assert_eq!(peer.invite.key, fresh.key);
+        assert!(peer
+            .channel
+            .open(&old_channel.seal(b"HELLO").unwrap())
+            .is_none());
+        let mut fresh_channel = Channel::new(fresh.key, fresh.session, fresh.slot, false);
+        let valid = fresh_channel.seal(b"HELLO").unwrap();
+        assert_eq!(peer.channel.open(&valid).unwrap(), b"HELLO");
+        assert!(peer.channel.open(&valid).is_none());
+        assert_eq!(peers.len(), 12);
+    }
+
+    #[test]
+    fn steam_guest_reconnects_to_the_same_room_after_sending_game_packets() {
+        let bus = MockSteamBus::new();
+        let host_node = Arc::new(MockSteamNode {
+            steam_id: 1,
+            bus: bus.clone(),
+        });
+        let guest_node = Arc::new(MockSteamNode { steam_id: 2, bus });
+        let (room, host, owner) =
+            SteamRoom::host_with_backend(host_node, 10, 1, "fixture", "Host").unwrap();
+        let host_gateway = Gateway::start(owner).unwrap();
+        let host_game = crate::tests::game(&host_gateway);
+        for attempt in 0..13 {
+            // Replies left by an earlier attempt must not abort or select its key.
+            for packet in [b"MK8Imk8://old".as_slice(), b"MK8Elegacy error"] {
+                guest_node
+                    .bus
+                    .queues
+                    .lock()
+                    .unwrap()
+                    .entry((2, P2P_CHANNEL_CONTROL))
+                    .or_default()
+                    .push_back((1, packet.to_vec()));
+            }
+            for tag in [b"MK8I", b"MK8A", b"MK8E"] {
+                guest_node
+                    .bus
+                    .queues
+                    .lock()
+                    .unwrap()
+                    .entry((2, P2P_CHANNEL_CONTROL))
+                    .or_default()
+                    .push_back((
+                        1,
+                        [tag.as_slice(), &[JOIN_VERSION], &[0; 16], b"stale"].concat(),
+                    ));
+            }
+            let (guest, gateway) = SteamRoom::join_with_backend(
+                guest_node.clone(),
+                SteamCode::decode(&room.code).unwrap(),
+                "fixture",
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !(gateway.connected() && host_gateway.connected()) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                gateway.connected(),
+                "same-identity join {attempt} did not receive READY"
+            );
+            assert_eq!(gateway.slot, 1);
+            assert_eq!(host.connected(), 2);
+            let game = crate::tests::game(&gateway);
+            let packet = crate::tests::datagram(gateway.slot, 1);
+            let mut buf = [0; MAX_PACKET];
+            for _ in 0..70 {
+                game.send_to(&packet, gateway.local_addr).unwrap();
+                let (n, _) = host_game.recv_from(&mut buf).unwrap();
+                assert_eq!(&buf[..n], packet);
+            }
+            let packet = crate::tests::datagram(host_gateway.slot, gateway.slot + 1);
+            host_game.send_to(&packet, host_gateway.local_addr).unwrap();
+            let (n, _) = game.recv_from(&mut buf).unwrap();
+            assert_eq!(&buf[..n], packet);
+            drop(gateway);
+            drop(guest);
+        }
+    }
+
+    #[test]
+    fn steam_join_rejects_legacy_host_replies_with_an_update_hint() {
+        let bus = MockSteamBus::new();
+        let host = MockSteamNode {
+            steam_id: 1,
+            bus: bus.clone(),
+        };
+        let guest = Arc::new(MockSteamNode { steam_id: 2, bus });
+        let code = SteamCode {
+            v: 1,
+            lobby: 10,
+            host: 1,
+            token: [7; 16],
+        };
+        host.send(
+            2,
+            P2P_CHANNEL_CONTROL,
+            b"MK8Elegacy identity mismatch",
+            true,
+        );
+        let error = SteamRoom::join_with_backend(guest, code, "fixture")
+            .err()
+            .unwrap();
+        assert!(error.contains("Atualize os dois launchers"), "{error}");
     }
 
     #[test]
