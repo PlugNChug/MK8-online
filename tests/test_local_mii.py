@@ -13,6 +13,71 @@ from native import DEFAULT_COMPILER
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class LocalMiiTests(unittest.TestCase):
+    def test_saved_mii_refresh_and_index_use_real_database_entry(self):
+        from host import prepare_host_sources
+        from native import compiler_env
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', root/'host')
+            text = (runtime/'services/mii.c').read_text(encoding='utf-8')
+            body = text[text.index('void mii_default_charinfo'):text.index('static void static_service')]
+            program = root/'refresh.c'
+            program.write_text(r'''
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <assert.h>
+#include "ipc.h"
+#define LOG(...) ((void)0)
+#define NET_BACKEND_OCW 1
+static int net_backend(void) { return 0; }
+''' + body + r'''
+static IpcResp call(unsigned cmd, const uint8_t *data, unsigned bytes) {
+    IpcReq req = {.cmd=cmd, .data=data, .data_size=bytes};
+    IpcResp resp = {0}; database(NULL, &req, &resp); return resp;
+}
+int main(void) {
+    _putenv_s("MK8_MII_CHARINFO", ""); _putenv_s("MK8_MII_FACE", "");
+    _putenv_s("MK8_MII_ID", "00112233445566778099aabbccddeeff");
+    _putenv_s("MK8_MII_NAME", "Player"); _putenv_s("MK8_MII_COLOR", "3");
+    _putenv_s("MK8_MII_GENDER", "0");
+    uint8_t saved[0x5c] = {0}, current[0x58];
+    assert(mk8_profile_charinfo(current)); memcpy(saved, current, sizeof current);
+    saved[0x58] = 1;
+    IpcResp r = call(5, saved, sizeof saved);
+    assert(r.result == 0x67e && r.data_size == 0x58); // unchanged
+    assert(!memcmp(r.data, current, sizeof current));
+    saved[0x27] = 2;
+    r = call(5, saved, sizeof saved);
+    assert(!r.result && r.data_size == 0x58 && mk8_charinfo_valid(r.data));
+    assert(!memcmp(r.data, current, sizeof current)); // latest appearance, same identity
+    r = call(21, saved, 0x58); assert(!r.result && r.data_size == 4 && *(int32_t *)r.data == 0);
+    saved[0x58] = 2; assert(call(5, saved, sizeof saved).result == 0x87e);
+    saved[0x58] = 1; saved[0x2b] = 1;
+    assert(call(5, saved, sizeof saved).result == 0x87e);
+    saved[0x2b] = 0; saved[0] ^= 1;
+    assert(call(5, saved, sizeof saved).result == 0x87e);
+    r = call(21, saved, 0x58); assert(r.result == 0x87e && *(int32_t *)r.data == -1);
+    saved[0] ^= 1; saved[0x31] = 255;
+    assert(call(5, saved, sizeof saved).result == 0xc87e);
+    assert(call(21, saved, 0x58).result == 0xc87e);
+    for (unsigned n=0; n<0x5c; n++) assert(call(5, saved, n).result == 0x27e);
+    for (unsigned n=0; n<0x58; n++) assert(call(21, saved, n).result == 0x27e);
+    assert(call(5, NULL, 0x5c).result == 0x27e);
+    memcpy(saved, current, sizeof current); _putenv_s("MK8_MII_ID", "");
+    assert(call(5, saved, sizeof saved).result == 0x87e);
+    assert(call(21, saved, 0x58).result == 0x87e);
+    return 0;
+}
+''', encoding='utf-8')
+            exe = root/'refresh.exe'
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu',
+                            '-O1', '-UNDEBUG', '-I'+str(runtime), str(program), '-o', str(exe)],
+                           env=compiler_env(), check=True, capture_output=True, timeout=120)
+            subprocess.run([str(exe)], check=True, capture_output=True, timeout=15)
+
     def test_simulated_session_boundaries_and_repeated_profile_switches(self):
         from native import compiler_env
         source = (ROOT/'upstream/smm2recomp/recomp/runtime/services/mii.c').read_text(encoding='utf-8')

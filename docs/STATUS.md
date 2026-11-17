@@ -1,4 +1,10 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Persistência de saves e recarga de Mii — 17/11/2026
+
+O FSP lia `FsSaveDataAttribute.type` no offset do identificador de save de sistema, fazendo conta/dispositivo/temporário coincidirem em `save_0`. O adapter valida o payload e separa os tipos; a conta mantém `save_0`, sem mover ou apagar arquivos antigos. Consultas Mii de recarga fazem parte da mesma correção: devem retornar o CharInfo da identidade local ou resultados reais de não encontrado/não atualizado, nunca sucesso com dados vazios.
+
+Branch atualizada para `fix-chore 7e8836e`: 19 testes nativos de saves, Mii e layout host passaram sem skips. A regressão exerce escrita, limpeza de outros mounts e reabertura em outro processo; a de Mii cobre atualização, ausência de identidade, campos inválidos e limites do payload. Na build combinada anterior, saves copiados antigo/novo recarregaram, e o usuário confirmou uma thumbnail MKTV nova e sua persistência após reinício do processo. A mesma combinação completou uma Shell Cup 200cc com quatro thumbnails corretas e emblema 200cc; troféu de vencedor e persistência da copa não foram qualificados. Não houve nova corrida ou rebuild completo nesta branch isolada. Não recupera progresso já apagado nem thumbnails antigas corrompidas; brilho intermitente do lobby/editor permanece separado. Relacionada às issues #39/#40, ainda sem reteste dos relatores. `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

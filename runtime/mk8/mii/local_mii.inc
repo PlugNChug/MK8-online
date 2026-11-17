@@ -32,11 +32,24 @@ static void mk8_face_charinfo(uint8_t *out, const uint8_t face[9]) {
     out[0x34]=eyes[face[4]]; out[0x35]=eye_colors[face[5]];
     out[0x3c]=face[3]; out[0x4f]=face[6] ? 1 : 0;
 }
+static bool mk8_charinfo_valid(const uint8_t data[0x58]) {
+    static const uint8_t limits[50] = {3,11,1,127,127,1,3,11,9,11,11,131,99,1,59,99,7,6,7,12,18,
+        23,99,8,6,11,12,18,17,8,18,35,99,8,6,18,99,5,5,8,16,19,99,7,20,1,8,16,30,0};
+    if ((data[8]&0xc0)!=0x80 || data[0x24] || data[0x25] || data[0x41]<3) return false;
+    bool ended=false, named=false;
+    for (int i=16; i<36; i+=2) {
+        unsigned ch=data[i]|data[i+1]<<8;
+        if (!ch) ended=true;
+        else if (ended || ch<32 || (ch>=127 && ch<=159) || (ch>=0xd800 && ch<=0xdfff)) return false;
+        else if (ch!=32) named=true;
+    }
+    if (!named) return false;
+    for (int i=0; i<50; i++) if (data[0x26+i]>limits[i]) return false;
+    return true;
+}
 static bool mk8_profile_charinfo(uint8_t *out) {
     const char *raw = getenv("MK8_MII_CHARINFO");
     if (raw && *raw) {
-        static const uint8_t limits[50] = {3,11,1,127,127,1,3,11,9,11,11,131,99,1,59,99,7,6,7,12,18,
-            23,99,8,6,11,12,18,17,8,18,35,99,8,6,18,99,5,5,8,16,19,99,7,20,1,8,16,30,0};
         uint8_t data[0x58];
         if (strlen(raw) != sizeof data * 2) return false;
         for (size_t i=0; i<sizeof data; i++) {
@@ -44,16 +57,7 @@ static bool mk8_profile_charinfo(uint8_t *out) {
             if (a<0 || b<0) return false;
             data[i]=(uint8_t)(a*16+b);
         }
-        if ((data[8]&0xc0)!=0x80 || data[0x24] || data[0x25] || data[0x41]<3) return false;
-        bool ended=false, named=false;
-        for (int i=16; i<36; i+=2) {
-            unsigned ch=data[i]|data[i+1]<<8;
-            if (!ch) ended=true;
-            else if (ended || ch<32 || (ch>=127 && ch<=159) || (ch>=0xd800 && ch<=0xdfff)) return false;
-            else if (ch!=32) named=true;
-        }
-        if (!named) return false;
-        for (int i=0; i<50; i++) if (data[0x26+i]>limits[i]) return false;
+        if (!mk8_charinfo_valid(data)) return false;
         if (out) memcpy(out,data,sizeof data);
         return true;
     }
