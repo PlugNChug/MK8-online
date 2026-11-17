@@ -61,6 +61,33 @@ class FileAccessTests(unittest.TestCase):
             self.assertEqual((dst/'file.bin').read_bytes(), b'previous bytes')
             self.assertTrue((dst/'stale.bin').exists())
 
+    def test_cross_volume_copy_requires_opt_in_and_prunes_only_after_success(self):
+        for code in (None, 17):
+            with self.subTest(winerror=code), tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+                root = Path(temporary)
+                src, dst = root/'source', root/'destination'
+                src.mkdir(); dst.mkdir()
+                (src/'file.bin').write_bytes(b'new bytes')
+                (dst/'file.bin').write_bytes(b'previous bytes')
+                (dst/'stale.bin').write_bytes(b'keep until success')
+                error = OSError(errno.EXDEV if code is None else errno.EINVAL, 'cross-device link')
+                if code is not None:
+                    error.winerror = code
+                with patch.object(build.os, 'link', side_effect=error):
+                    with self.assertRaisesRegex(ValueError, 'mesmo disco'):
+                        build.mirror(dst, src)
+                    self.assertEqual((dst/'file.bin').read_bytes(), b'previous bytes')
+                    self.assertEqual({p.name for p in dst.iterdir()}, {'file.bin', 'stale.bin'})
+                    with locked_file(dst/'file.bin'):
+                        with self.assertRaises(PermissionError):
+                            build.mirror(dst, src, copy_ok=True)
+                        self.assertEqual((dst/'file.bin').read_bytes(), b'previous bytes')
+                        self.assertEqual((dst/'stale.bin').read_bytes(), b'keep until success')
+                    build.mirror(dst, src, copy_ok=True)
+                self.assertEqual((dst/'file.bin').read_bytes(), b'new bytes')
+                self.assertFalse(os.path.samefile(src/'file.bin', dst/'file.bin'))
+                self.assertEqual({p.name for p in dst.iterdir()}, {'file.bin'})
+
     def test_locked_runtime_receipt_does_not_trigger_deletion(self):
         with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
             job = Path(temporary)
