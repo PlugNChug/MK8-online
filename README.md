@@ -73,6 +73,8 @@ These are observed milestones, not a percentage-complete estimate. `gameplay_ver
 
 MKTV thumbnail readback now copies the rendered GPU image when recording a replay. Existing replay files can already contain corrupted thumbnail JPEGs; this change preserves those files and applies to newly recorded thumbnails.
 
+Historical cube-map fallback now reuses only an existing GPU-rendered image. A retained old texture could otherwise upload guest memory that had been reused, introducing invalid HDR pixels and bright/black boost streaks. Active CPU-backed cube maps remain supported. Native regressions pass, and a multi-course retest of the combined local build found no recurrence. Rebuild the game/runtime to apply this fix; it does not establish that unrelated MKTV lighting/editor defects are fixed.
+
 ## What this project does
 
 The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.

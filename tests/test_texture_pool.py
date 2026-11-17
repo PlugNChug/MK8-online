@@ -1,4 +1,4 @@
-"""A cube sampler keeps reading the cube map last registered under a pool ID that now holds a 2D texture."""
+"""Historical cube lookups preserve GPU images without reviving CPU storage after an ID is reused."""
 import os
 from pathlib import Path
 import subprocess
@@ -19,7 +19,7 @@ def between(text, start, end):
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class TexturePoolTests(unittest.TestCase):
-    def test_cube_sampler_reads_last_cube_of_reused_id(self):
+    def test_cube_history_keeps_only_existing_gpu_images(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out)
@@ -45,7 +45,8 @@ class TexturePoolTests(unittest.TestCase):
 enum { TEXTYPE_1D, TEXTYPE_2D, TEXTYPE_3D, TEXTYPE_CUBE, TEXTYPE_2D_ARRAY, TEXTYPE_CUBE_ARRAY };
 typedef struct { uint64_t x[31]; } Cpu;
 typedef struct { uint8_t raw[0x28]; } NvnTextureView;
-typedef struct NvnTexture { uint32_t target, width, height; unsigned mk8_refs; } NvnTexture;
+typedef struct { uintptr_t image; bool gpu_owned; } TexBackend;
+typedef struct NvnTexture { uint32_t target, width, height; unsigned mk8_refs; TexBackend *backend; } NvnTexture;
 typedef struct { NvnTexture *tex; NvnTextureView view; bool has_view; } NvnTexEntry;
 typedef struct NvnDescPool { uint64_t addr; int count; void *entries; } NvnDescPool;
 static int freed;
@@ -67,6 +68,8 @@ int main(int argc, char **argv) {
     NvnTexEntry entries[16] = {{0}};
     NvnDescPool pool = {0, 16, entries};
     NvnTexture *cube = texture(8, 32, 32), *cube2 = texture(8, 32, 32), *target = texture(1, 1920, 1080);
+    TexBackend rendered = {.image=1, .gpu_owned=true}, uploaded = {.image=2, .gpu_owned=false};
+    cube->backend = cube2->backend = &rendered;
     reg(&pool, 5, cube);
     if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex != cube) return 1;
     reg(&pool, 5, target);  /* the slot handed to a render target */
@@ -79,7 +82,19 @@ int main(int argc, char **argv) {
     reg(&pool, 5, cube2);  /* a new cube under the ID replaces the remembered one */
     if (cube->mk8_refs != 1 || cube2->mk8_refs != 3 || target->mk8_refs != 1 || freed) return 7;
     reg(&pool, 5, target);
-    return mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex == cube2 ? 0 : 8;
+    if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex != cube2) return 8;
+    /* A retained object cannot keep its guest storage alive after the ID is reused. */
+    cube2->backend = &uploaded;
+    if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex != target) return 9;
+    cube2->backend = NULL;
+    if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE_ARRAY)->tex != target) return 10;
+    cube2->backend = &rendered; rendered.image = 0;  /* retired GPU image cannot be re-uploaded */
+    if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex != target) return 11;
+    rendered.image = 1;
+    if (mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex != cube2) return 12;
+    cube2->backend = &uploaded;
+    reg(&pool, 5, cube2);  /* an actively registered CPU cube remains a valid input */
+    return mk8_tex_entry(&pool, 5, TEXTYPE_CUBE)->tex == cube2 ? 0 : 13;
 }
 ''', encoding='utf-8')
             exe = out/'pool.exe'

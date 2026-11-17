@@ -9,8 +9,9 @@ whole scene alternated between two brightness levels at 30 Hz (automated capture
 vs 43). O jogo preserva o descritor quando nvnTextureCompare reconhece a recriação equivalente; comparar apenas
 os endereços guest devolvia falso. A adaptação abaixo compara o estado da textura e preserva esse caminho.
 
-So a cube sampler whose ID now holds a texture that is not a cube map reads the last cube map registered under that
-ID instead of an empty view (logged; MK8_TEXPOOL_CUBE_HISTORY=0 restores the empty view).
+So a cube sampler whose ID now holds a texture that is not a cube map can reuse the last cube's existing GPU-rendered
+image (logged; MK8_TEXPOOL_CUBE_HISTORY=0 restores the empty view). CPU-backed or retired historical images are not
+revived: their guest storage can already contain unrelated data, including NaNs when interpreted as HDR texels.
 
 Diagnostics: MK8_TRACE_TEXPOOL=<first>:<last> presented frames logs every registration (pool, ID, texture, target,
 size, address, guest caller; cube maps with the guest frame-pointer chain) and every bind of an ID that once held a
@@ -171,7 +172,7 @@ BIND_SITES = [
 
 LOOKUP = '''
 // MK8 (toolchain/texture_pool.py): the entry a sampler reads at a pool ID. A cube sampler whose ID now holds a texture
-// that is not a cube map reads the last cube map registered there (vk_view could only give it an empty view).
+// that is not a cube map can reuse the last cube's GPU-rendered image (otherwise vk_view gives it an empty view).
 const NvnTexEntry *mk8_texpool_cube(NvnDescPool *d, uint32_t id);
 uint64_t vk_frame_counter(void);
 static const NvnTexEntry *mk8_tex_entry(NvnDescPool *p, uint32_t tic, int type) {
@@ -186,6 +187,9 @@ static const NvnTexEntry *mk8_tex_entry(NvnDescPool *p, uint32_t tic, int type) 
                 (unsigned long long)vk_frame_counter());
         return e;
     }
+    const TexBackend *b = cube->tex->backend;
+    // Retaining the old object does not retain its guest storage; never upload it after the slot was reused.
+    if (!b || !b->image || !b->gpu_owned) return e;
     static uint64_t n;
     if (n++ < 8 || n % 100000 == 0)
         LOG("[mk8:texpool] cube sampler at ID %u: %ux%u target %u registered there now, its last cube map %p used (%llu)\\n", tic,

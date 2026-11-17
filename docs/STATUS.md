@@ -1,4 +1,10 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Cubemap histórico e streaks de boost — 17/11/2026
+
+Correção isolada sobre `fix-chore 7e8836e`: `mk8_tex_entry` só reutiliza o cubemap histórico quando seu backend ainda contém uma imagem GPU-owned. A retenção do objeto não preserva o armazenamento guest; recriar/enviar a imagem antiga podia interpretar memória reutilizada como texels HDR inválidos. Histórico sem backend/imagem, CPU-backed ou aposentado retorna ao caminho existente de incompatibilidade de tipo. Cubemap CPU no descritor atual continua válido.
+
+14 testes nativos de pool, memoização, readback, referências, aposentadoria, inicialização, finalização e comparação passaram sem skips nesta branch. A regressão nova rejeita histórico CPU/ausente/aposentado e preserva histórico GPU e cubemap CPU ativo; falhou antes da correção na investigação original. Na build combinada anterior, leitura por draw confirmou NaNs no cubemap histórico, checks curtos passaram e o usuário confirmou várias pistas, incluindo Toad's Turnpike repetidas vezes, sem streaks. Esse reteste prolongado usou imports seletivos desligados; não houve nova corrida nem rebuild completo nesta branch isolada. Sem novos probes ou clamp no bloom/shader. Problemas intermitentes de MKTV permanecem separados; `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

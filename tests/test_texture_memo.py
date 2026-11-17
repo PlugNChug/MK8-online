@@ -34,7 +34,7 @@ class TextureMemoTests(unittest.TestCase):
 static struct { uint64_t tex[6][32]; NvnDescPool *tpool,*spool; } st;
 static int naliases,nfeedback;
 static NvnTexture *feedback_tex[8];
-typedef struct { uint32_t levels; VkFormat format; VkImageAspectFlags aspect; VkImage image; } TexBackend;
+typedef struct { uint32_t levels; VkFormat format; VkImageAspectFlags aspect; VkImage image; bool gpu_owned; } TexBackend;
 static TexBackend *feedback_copy[8];
 static uint32_t snapshot_base, snapshot_levels;
 static VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t base, uint32_t count,
