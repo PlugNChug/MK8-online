@@ -47,6 +47,8 @@ Leia as [notas da 0.3.0 em inglês ou português](docs/releases/0.3.0.md) e o [e
 
 ## Onde estamos
 
+A correção local de reconexão Steam renova o canal autenticado quando um convidado volta à mesma sala, preservando sua vaga e a proteção contra replay. Os dois launchers precisam ser atualizados. As regressões automáticas de transporte e prontidão LAN passaram; ainda é necessária uma corrida completa entre dois PCs. Veja a [validação e seus limites](docs/STATUS.md).
+
 **Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime da 0.3.0 também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
 
 As correções de desempenho da 0.3.0 usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.

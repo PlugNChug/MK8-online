@@ -1,4 +1,12 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Reconexão Steam em branch isolada — 17/11/2026
+
+Branch local baseada em `fix-chore` `7e8836e`, relacionada à issue #32. O convidado que voltava à mesma sala recebia o convite antigo enquanto o host mantinha a janela de replay anterior; o handshake podia parar após tráfego suficiente. Cada tentativa agora recebe nonce e desafio próprios, e o host renova chave/sessão da vaga existente somente após a confirmação correspondente. Repetições do handshake atual não reiniciam a janela de replay; mensagens e pacotes antigos são rejeitados. O protocolo de controle exige os dois launchers atualizados e informa incompatibilidade com versões antigas.
+
+Validação na branch isolada: **88 testes Rust aprovados**, um teste Steam real optativo ignorado; formatação, Clippy com `-D warnings` e build debug do launcher concluídos. O cache Cargo compartilhado inicialmente reutilizou o binário de testes anterior; somente os artefatos dos pacotes launcher/session foram invalidados, e a execução fresca confirmou os três testes de reconexão. A regressão usa Host/Gateway, UDP e canais criptografados reais com o transporte Steam simulado: **13 entradas na mesma vaga, 910 pacotes do convidado e 13 respostas**, além de confirmações antigas, respostas fora de ordem e replay. O teste nativo auto-LAN passou seus **10 cenários** de prontidão, prazos, beacons inválidos e sinais tardios sem alterar o comportamento do runtime. Incluída a fixture DLC existente que torna o teste Rust independente das chaves do perfil pessoal.
+
+Revisão independente aprovada. O relato original da 0.2.0 não identifica sozinho qual etapa impediu a entrada; transporte, navegação e prontidão são verificados separadamente. Para qualificação, usar dois PCs com esta mesma revisão, mesma versão 4.0.1 e estados DLC/CTGP compatíveis: host cria sala, guest entra por convite, ambos completam uma corrida, guest sai normalmente e volta à mesma sala, e ambos completam outra corrida. Repetir entrada automática e manual para separar navegação do transporte. Preservar logs de launcher/supervisor/runtime de ambos, horários correlacionados e imagens de lobby/resultados; sanitizar tokens, códigos de sala, IDs de conta e caminhos pessoais antes de compartilhar. Steam real, relay/NAT, controle físico e confirmação na máquina do relator continuam pendentes; `gameplay_verified=false` e multiplayer não qualificado. Commits locais, sem push ou PR.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

@@ -47,6 +47,8 @@ Read the [0.3.0 release notes in English or Portuguese](docs/releases/0.3.0.md) 
 
 ## Where it stands
 
+The local Steam reconnect fix renews an authenticated channel when a guest rejoins the same room, retaining its player slot and replay protection. Both launchers must be updated. Automated transport and LAN-readiness regressions pass; a complete race between two PCs remains required. See [validation and limits](docs/STATUS.md).
+
 **120 FPS presentation:** the existing experimental frame-generation option interpolates one image between real frames while the game remains at 60 Hz. It needs a high-refresh display and GPU headroom; it does not unlock native simulation or remove shader stutters. Local investigation measured about 120 presented frames per second in a stable solo section on an RX 580 2048SP / 180 Hz display. This is not full-race or multiplayer qualification. The 0.3.0 runtime also fixes CRLF INI parsing, which could silently disable `frame_gen = 120` and misread other text settings. Details and limitations are in [STATUS.md](docs/STATUS.md).
 
 Performance fixes in 0.3.0 use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. For keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
