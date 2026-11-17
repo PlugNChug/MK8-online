@@ -226,3 +226,5 @@ Project code is licensed under **[GPL-3.0-or-later](LICENSE)**. Dependencies kee
 An independent community project, not affiliated with or endorsed by Nintendo or Valve. Mario Kart and related names belong to their respective owners.
 
 Conditional occlusion rendering waits for pending reports on either comparison operand before reading their actual sample counts. This addresses transient missing racers/objects during previews; it preserves legitimate hidden results. The fix is applied during runtime preparation and needs a game/runtime rebuild.
+
+Host command-record headers use 72 instead of 88 bytes by sharing argument slots that are never used together. Command retention and GPU synchronization stay the same. Rebuild all host consumers together; `--runtime-only` is sufficient when the guest is already current. Native recorder/lifetime regressions and the isolated host rebuild passed on current `fix-chore`; earlier two-cup comparisons remained near 60 FPS in measured race windows. Full gameplay qualification remains pending.

@@ -1,4 +1,10 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Cabeçalhos compactos de comandos — 17/11/2026
+
+Branch atualizada para `fix-chore 7e8836e`. O header interno `CmdRec` passa de 88 para 72 bytes compartilhando slots inteiros não usados por comandos com argumentos float. Mantém os sete argumentos inteiros dos demais comandos, payload, alinhamento, referências e sincronização. Asserções de layout e quantidade de comandos exigem revisão quando o contrato mudar.
+
+23 testes nativos de recorder, fila assíncrona, descritores, referências de texturas, compute e oclusão passaram sem skips. Build isolada `--runtime-only` concluída: 220 unidades host e 108 executáveis/DLLs conferidos; todos os consumidores host recompilados juntos, sem alterar o runtime instalado. Comparações anteriores com cópias de saves cobriram duas copas e uma repetição, com janelas de corrida próximas de 60 FPS; smoke com imports seletivos desligados exercitou reboot. Essas evidências pertencem à combinação anterior e não substituem nova qualificação do guest atual. Nenhuma nova sessão do jogo nesta publicação, áudio/controles físicos/multiplayer não qualificados. Evidência detalhada de memória permanece privada, em inglês; `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 
