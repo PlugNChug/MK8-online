@@ -38,6 +38,12 @@ fn main() {
         let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT"]
             .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
         fs::write("navigation.txt", state).unwrap();
+        let debug = ["LARECOMP_AUDIO_WAV", "MK8_GFX_DIAGNOSTICS", "MK8_SETTINGS_EXPERIMENT"]
+            .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
+        fs::write("debugging.txt", debug).unwrap();
+        if let Ok(path) = env::var("LARECOMP_AUDIO_WAV") {
+            fs::write(path, b"authored audio probe").unwrap();
+        }
         return;
     }
     fs::write("game.pid", std::process::id().to_string()).unwrap();
@@ -93,10 +99,25 @@ class LifetimeTests(unittest.TestCase):
             target=self.fixture.parent/source.name
             shutil.copyfile(source,target)
             manifest['files'][source.name]=identity(target)
+        user = data/'user-no-mii'
+        user.mkdir()
+        ini = user/'mk8d.ini'
+        ini.write_bytes(b'volume = 0.65\n')
+        save = user/'existing-save.bin'
+        save.write_bytes(b'original save')
+        inherited_audio = data/'inherited.wav'
         env=dict(os.environ,MK8_TEST_INPUT_PROBE='1',MK8_AUTO_LAN='host',
-                 SDL_GAMECONTROLLERCONFIG='authored-custom-mapping')
-        for role in (None, 'host', 'guest'):
-            with self.subTest(role=role):
+                 SDL_GAMECONTROLLERCONFIG='authored-custom-mapping',
+                 LARECOMP_AUDIO_WAV=str(inherited_audio),
+                 MK8_GFX_DIAGNOSTICS='inherited-graphics', MK8_SETTINGS_EXPERIMENT='inherited-settings')
+        recordings = []
+        for role, recording in ((None, None), ('host', True), ('guest', True), (None, False)):
+            with self.subTest(role=role, recording=recording):
+                preference = data/'debug-options.json'
+                if recording is not None:
+                    preference.write_text(json.dumps(dict(graphics_capture=True,
+                        audio_recording=recording, native_settings=True)))
+                    saved_options = preference.read_bytes()
                 request={'root':str(data/'root'), 'local':str(data), 'install':manifest,
                          'network':['127.0.0.1:47820',2], 'username':'Test', 'candidate':True, 'auto_lan':role}
                 result=subprocess.run([str(EXE),'--game-supervisor'],input=json.dumps(request)+'\n',
@@ -105,6 +126,57 @@ class LifetimeTests(unittest.TestCase):
                 lines=(data/'user-no-mii/navigation.txt').read_text().splitlines()
                 self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}', 'LARECOMP_LAN_RELAY=127.0.0.1:47820',
                                         'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2'])
+                debug = dict(line.split('=', 1) for line in (user/'debugging.txt').read_text().splitlines())
+                self.assertEqual(debug['MK8_GFX_DIAGNOSTICS'], 'inherited-graphics')
+                self.assertEqual(debug['MK8_SETTINGS_EXPERIMENT'], 'inherited-settings')
+                if recording is None:
+                    self.assertFalse(preference.exists())
+                    self.assertEqual(debug['LARECOMP_AUDIO_WAV'], str(inherited_audio))
+                else:
+                    self.assertEqual(preference.read_bytes(), saved_options)
+                    if recording:
+                        audio = Path(debug['LARECOMP_AUDIO_WAV'])
+                        self.assertEqual(audio.parent, user/'audio-recordings')
+                        self.assertNotIn(audio, recordings)
+                        self.assertEqual(audio.read_bytes(), b'authored audio probe')
+                        audio.write_bytes(b'preserve completed recording')
+                        recordings.append(audio)
+                    else:
+                        self.assertEqual(debug['LARECOMP_AUDIO_WAV'], '')
+                self.assertEqual(inherited_audio.read_bytes(), b'authored audio probe')
+                self.assertEqual(ini.read_bytes(), b'volume = 0.65\n')
+                self.assertEqual(save.read_bytes(), b'original save')
+                for audio in recordings:
+                    self.assertEqual(audio.read_bytes(), b'preserve completed recording')
+        self.assertEqual(set((user/'audio-recordings').glob('*.wav')), set(recordings))
+
+        with self.subTest(recording='junction rejected before spawn'):
+            linked_data = self.base/'debug-junction'
+            linked_user = linked_data/'user-no-mii'
+            linked_user.mkdir(parents=True)
+            outside = self.base/'outside-recordings'
+            outside.mkdir()
+            marker = outside/'keep.wav'
+            marker.write_bytes(b'outside recording remains intact')
+            preference = linked_data/'debug-options.json'
+            preference.write_text(json.dumps(dict(graphics_capture=True,
+                audio_recording=True, native_settings=True)))
+            saved_options = preference.read_bytes()
+            link = linked_user/'audio-recordings'
+            made = subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(link), str(outside)],
+                                  capture_output=True)
+            if made.returncode:
+                self.skipTest('mklink /J unavailable')
+            request = dict(request, root=str(linked_data/'root'), local=str(linked_data))
+            result = subprocess.run([str(EXE), '--game-supervisor'], input=json.dumps(request)+'\n',
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertIn('caminho com link recusado', result.stdout+result.stderr)
+            for name in ('navigation.txt', 'debugging.txt', 'game.pid'):
+                self.assertFalse((linked_user/name).exists(), 'Runtime must not start')
+            self.assertEqual(preference.read_bytes(), saved_options)
+            self.assertEqual(set(outside.iterdir()), {marker})
+            self.assertEqual(marker.read_bytes(), b'outside recording remains intact')
 
     def test_python_tools_ignore_external_home_path_and_user_site(self):
         folder = self.base/'python-environment'

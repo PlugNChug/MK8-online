@@ -1,4 +1,14 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Port da depuração do launcher para a fix-chore — 17/11/2026
+
+Extração local de `c382b4c`/`eb5633c`, com o encaixe modular de `08c1bfe`, sobre `fix-chore 7e8836e`. **Configurações → Depuração** oferece gravação de áudio WAV, com salvamento automático em `debug-options.json` e aplicação pelo supervisor no próximo início do jogo. Cada início pelo launcher reserva um arquivo próprio em `user-no-mii/audio-recordings`; reiniciar pelo menu do jogo reutiliza e substitui o arquivo daquela sessão. Desativar a opção não apaga gravações. INI, saves, layout 0.3.0 e fluxo Nextendo permanecem preservados.
+
+O consumidor `LARECOMP_AUDIO_WAV` já existe no `services/audio.c` fixado pelo manifesto upstream, cujo SHA-256 foi conferido. Os hooks `MK8_GFX_DIAGNOSTICS` e `MK8_SETTINGS_EXPERIMENT` não existem nessa base: seus controles não foram portados e nenhum hook de guest/runtime foi acrescentado. Os campos serializados antigos `graphics_capture` e `native_settings` continuam aceitos e preservados ao editar áudio, mas não são aplicados. Sem preferências gravadas, o caminho WAV herdado do ambiente mantém seu comportamento anterior.
+
+Validação concluída na branch isolada: **87 testes Rust aprovados**, um teste Steam real optativo ignorado; formatação, Clippy com `-D warnings` e build debug do launcher concluídos. Dois testes de catálogos e **sete testes de navegador** passaram: depuração (dois), fluxo Nextendo (um) e módulos de configurações (quatro). Cobrem persistência, tipos inválidos, falha/repetição de salvamento, três idiomas e largura de 390 px. A primeira execução corrigiu apenas uma asserção Playwright para verificar o checkbox desabilitado, em vez do fieldset. Capturas desktop/móvel inspecionadas. A fixture DLC usa uma chave explicitamente ausente, sem consultar chaves do perfil real.
+
+Além dos subprocessos unitários Rust, o fixture autoral executou o `--game-supervisor` real: caminho WAV herdado, duas sessões habilitadas com arquivos distintos, opção desabilitada e recusa de junction antes de iniciar o runtime. Bytes de gravações anteriores, campos legados, INI, save e marcador fora da pasta vinculada permaneceram iguais; os quatro lançamentos positivos mantiveram a navegação LAN esperada. O fixture grava bytes autorais e não comprova codificação WAV nem qualidade sonora do jogo. Revisão independente aprovada; sem publicação, mudança da instalação ou nova qualificação de gameplay. `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

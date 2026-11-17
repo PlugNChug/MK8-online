@@ -1206,5 +1206,13 @@
   "Diagnóstico": "Diagnóstico",
   "Jogar no Nextendo": "Jugar en Nextendo",
   "Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.": "Inicia sesión en Nextendo desde el navegador. En el juego, elige Online Play. CTGP queda desactivado durante esta sesión.",
-  "Nextendo indisponível nesta sessão.": "Nextendo no está disponible en esta sesión."
+  "Nextendo indisponível nesta sessão.": "Nextendo no está disponible en esta sesión.",
+  "Depuração": "Depuración",
+  "Salvando…": "Guardando…",
+  "As opções são salvas automaticamente e valem ao iniciar o jogo. Não alteram a sessão em andamento.": "Las opciones se guardan automáticamente y se aplican al iniciar el juego. No cambian la sesión actual.",
+  "Gravar áudio para diagnóstico": "Grabar audio de diagnóstico",
+  "Grava continuamente em WAV. Cada início pelo launcher cria um arquivo em user-no-mii/audio-recordings, na pasta de dados. Reiniciar pelo menu do jogo substitui a gravação da sessão atual.": "Graba continuamente en WAV. Cada inicio desde el launcher crea un archivo en user-no-mii/audio-recordings, dentro de la carpeta de datos. Reiniciar desde el menú del juego reemplaza la grabación de la sesión actual.",
+  "Depuração salva. As alterações valem ao iniciar o jogo.": "Opciones de depuración guardadas. Los cambios se aplican al iniciar el juego.",
+  "Não foi possível salvar a depuração.": "No se pudieron guardar las opciones de depuración.",
+  "Gravação de áudio": "Grabación de audio"
 }

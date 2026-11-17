@@ -237,6 +237,16 @@
           </div>
           <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
           <nav class="settings-index" aria-label="Seções de configurações"><a href="#settings-groups">Vídeo e controles</a><a href="#font-title">Fontes do jogo</a><a href="#settings-dlc-title">Conteúdo adicional</a><a href="#ctgp-title">CTGP Deluxe</a></nav>
+          <article class="card" aria-labelledby="debug-title">
+            <h2 id="debug-title">Depuração</h2>
+            <p class="hint">As opções são salvas automaticamente e valem ao iniciar o jogo. Não alteram a sessão em andamento.</p>
+            <fieldset id="debug-fields" disabled>
+              <div class="settings-grid">
+                <div><label class="settings-check"><span>Gravar áudio para diagnóstico</span><input id="debug-audio" type="checkbox" aria-describedby="debug-audio-hint" /></label><p id="debug-audio-hint" class="hint">Grava continuamente em WAV. Cada início pelo launcher cria um arquivo em user-no-mii/audio-recordings, na pasta de dados. Reiniciar pelo menu do jogo substitui a gravação da sessão atual.</p></div>
+              </div>
+            </fieldset>
+            <p id="debug-status" class="hint" role="status"></p>
+          </article>
           <form id="game-settings">
             <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
             <div class="row settings-actions">

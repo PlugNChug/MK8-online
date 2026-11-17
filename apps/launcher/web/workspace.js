@@ -16,15 +16,17 @@
   i18n.html(nav, `
     <button type="button" id="config-tab-video" role="tab" data-config-module="video" aria-controls="config-panel-video"><span class="config-module-icon" aria-hidden="true">▣</span><span>Vídeo e controles<small>Imagem, áudio e comandos</small></span></button>
     <button type="button" id="config-tab-fonts" role="tab" data-config-module="fonts" aria-controls="config-panel-fonts"><span class="config-module-icon config-type-icon" aria-hidden="true">Aa</span><span>Fontes do jogo<small>Leitura e biblioteca de fontes</small></span></button>
-    <button type="button" id="config-tab-content" role="tab" data-config-module="content" aria-controls="config-panel-content"><span class="config-module-icon" aria-hidden="true">⊞</span><span>Conteúdo adicional<small>Booster Course Pass e CTGP</small></span></button>`);
+    <button type="button" id="config-tab-content" role="tab" data-config-module="content" aria-controls="config-panel-content"><span class="config-module-icon" aria-hidden="true">⊞</span><span>Conteúdo adicional<small>Booster Course Pass e CTGP</small></span></button>
+    <button type="button" id="config-tab-debug" role="tab" data-config-module="debug" aria-controls="config-panel-debug"><span class="config-module-icon" aria-hidden="true">⚙</span><span>Depuração<small>Gravação de áudio</small></span></button>`);
   originalNav.after(nav);
   const modules = {};
-  for (const name of ['video', 'fonts', 'content']) {
+  for (const name of ['video', 'fonts', 'content', 'debug']) {
     const section = document.createElement('section');
     section.id = `config-panel-${name}`; section.className = 'config-module-panel';
     section.setAttribute('role', 'tabpanel'); section.setAttribute('aria-labelledby', `config-tab-${name}`);
     section.hidden = true; panel.append(section); modules[name] = section;
   }
+  modules.debug.append(byId('debug-title').closest('article'));
   const form = byId('game-settings');
   modules.video.append(form);
   const subnav = document.createElement('nav');

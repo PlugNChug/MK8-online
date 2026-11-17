@@ -790,6 +790,13 @@ impl App {
                 ))
             }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
+            ("POST", "/api/debug-options") => {
+                let options: crate::debug_options::Options =
+                    serde_json::from_str(body).map_err(|e| e.to_string())?;
+                crate::debug_options::write(&self.local, &options)?;
+                Ok(json!({"message":"Depuração salva. As alterações valem ao iniciar o jogo."}))
+            }
             ("GET", "/api/fonts") => crate::fonts::status(&self.local),
             ("POST", "/api/settings")
             | ("POST", "/api/fonts")

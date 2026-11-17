@@ -408,6 +408,99 @@ class LauncherTests(unittest.TestCase):
         finally:
             page.close()
 
+    def test_debug_audio_persists_preserves_legacy_flags_and_game_settings(self):
+        folder = Path(self.temporary.name) / '1'
+        ini = folder / 'user-no-mii/mk8d.ini'
+        ini.parent.mkdir(exist_ok=True)
+        original = b'volume = 0.65\nunknown_future = preserve\n'
+        ini.write_bytes(original)
+        page = self.page(1)
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        try:
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            headers = {'X-MK8-Token': token}
+            url = self.urls[1] + '/api/debug-options'
+            off = dict(graphics_capture=True, audio_recording=False, native_settings=True)
+            self.assertTrue(page.request.post(url, headers=headers, data=json.dumps(off)).json()['ok'])
+            page.locator('#language').select_option('en')
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-debug').click()
+            expect(page.get_by_role('heading', name='Debugging', exact=True)).to_be_visible()
+            expect(page.locator('#debug-graphics, #debug-settings')).to_have_count(0)
+            checkbox = page.locator('#debug-audio')
+            expect(checkbox).not_to_be_checked()
+            checkbox.check()
+            expect(checkbox).to_be_enabled()
+            expect(checkbox).to_be_checked()
+            on = dict(graphics_capture=True, audio_recording=True, native_settings=True)
+            self.assertEqual(page.request.get(url, headers=headers).json()['data'], on)
+            self.assertEqual(json.loads((folder / 'debug-options.json').read_text()), on)
+            self.assertEqual(ini.read_bytes(), original)
+            for invalid in (dict(on, audio_recording='1'), dict(on, unknown=True), {}):
+                self.assertEqual(page.request.post(url, headers=headers, data=json.dumps(invalid)).status, 400)
+                self.assertEqual(json.loads((folder / 'debug-options.json').read_text()), on)
+            # A running game locks its INI, but these switches configure the next launch.
+            state = page.request.get(self.urls[1] + '/api/status', headers=headers).json()['data']
+            state['game_pid'] = 12345
+            page.route('**/api/status', lambda route: route.fulfill(json={'ok': True, 'data': state}))
+            page.evaluate('refresh()')
+            expect(page.locator('[data-key="volume"]')).to_be_disabled()
+            expect(page.locator('#debug-audio')).to_be_enabled()
+            page.locator('#debug-audio').uncheck()
+            expect(page.locator('#debug-audio')).to_be_enabled()
+            page.reload()
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-debug').click()
+            expect(page.locator('#debug-audio')).not_to_be_checked()
+            self.assertEqual(page.request.get(url, headers=headers).json()['data'], off)
+            self.assertEqual(json.loads((folder / 'debug-options.json').read_text()), off)
+            page.locator('#language').select_option('es')
+            expect(page.get_by_role('heading', name='Depuración', exact=True)).to_be_visible()
+            page.locator('#language').select_option('en')
+            (ROOT/'local/screenshots').mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(ROOT/'local/screenshots/debug-audio-desktop.png'), full_page=True)
+            page.locator('#language').select_option('pt-BR')
+            expect(page.get_by_role('heading', name='Depuração', exact=True)).to_be_visible()
+            page.set_viewport_size({'width': 390, 'height': 844})
+            page.locator('#debug-title').scroll_into_view_if_needed()
+            self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+            page.evaluate('window.scrollTo(0, 0)')
+            page.screenshot(path=str(ROOT/'local/screenshots/debug-audio-mobile.png'), full_page=True)
+            self.assertFalse(errors, errors)
+        finally:
+            page.close()
+
+    def test_debug_save_failure_restores_saved_checkbox_and_allows_retry(self):
+        page = self.page(1)
+        pending = []
+        def delay(route):
+            if route.request.method == 'POST': pending.append(route)
+            else: route.continue_()
+        try:
+            page.locator('#language').select_option('en')
+            page.locator('[data-tab="settings"]').click()
+            page.locator('#config-tab-debug').click()
+            checkbox = page.locator('#debug-audio')
+            expect(checkbox).to_be_enabled()
+            previous = checkbox.is_checked()
+            page.route('**/api/debug-options', delay)
+            checkbox.set_checked(not previous)
+            expect(checkbox).to_be_disabled()
+            expect(page.locator('#debug-audio')).to_be_disabled()
+            expect(page.locator('#debug-status')).to_have_text('Saving…')
+            pending[0].fulfill(status=400, json={'ok':False, 'error':'write failed'})
+            expect(checkbox).to_be_enabled()
+            self.assertEqual(checkbox.is_checked(), previous)
+            expect(page.locator('#debug-status')).to_have_text('Could not save debugging options.')
+            page.unroute('**/api/debug-options', delay)
+            checkbox.set_checked(not previous)
+            expect(checkbox).to_be_enabled()
+            expect(page.locator('#debug-status')).to_have_text('Debugging options saved. Changes apply when starting the game.')
+            self.assertEqual(checkbox.is_checked(), not previous)
+        finally:
+            page.close()
+
     def test_settings_save_locks_edits_through_delayed_response_and_reload(self):
         folder = Path(self.temporary.name) / "0/user-no-mii"
         folder.mkdir(exist_ok=True)

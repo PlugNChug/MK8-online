@@ -65,7 +65,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
-  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings()])
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadDebugOptions()])
     .catch((error) => notice(error.message, true));
 }
 document
@@ -82,6 +82,39 @@ document
 
 /* ---------- Instalação: três passos ---------- */
 let settingsLoaded = false;
+let debugOptions;
+let debugSaving = false;
+let debugRequest = 0;
+async function loadDebugOptions() {
+  if (debugSaving) return;
+  const request = ++debugRequest;
+  const data = await api("debug-options");
+  if (debugSaving || request !== debugRequest) return;
+  debugOptions = data;
+  $("debug-audio").checked = data.audio_recording;
+  $("debug-fields").disabled = false;
+}
+$("debug-audio").onchange = async () => {
+  ++debugRequest;
+  debugSaving = true;
+  $("debug-fields").disabled = true;
+  i18n.text($("debug-status"), "Salvando…");
+  try {
+    const result = await api("debug-options", {
+      ...debugOptions,
+      audio_recording: $("debug-audio").checked,
+    });
+    i18n.text($("debug-status"), result.message);
+    return result;
+  } catch (error) {
+    i18n.text($("debug-status"), "Não foi possível salvar a depuração.");
+    notice(error.message, true);
+  } finally {
+    debugSaving = false;
+    await loadDebugOptions().catch((error) => notice(error.message, true));
+  }
+};
+
 let settingsDirty = false;
 let settingsBlocked = false;
 let settingsSaving = false;
