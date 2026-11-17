@@ -98,6 +98,8 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 
 A etapa **Ferramentas** do launcher prepara o Python privado diretamente, sem PowerShell ou carregamento de ZIP pelo .NET. O CPython vem do pacote oficial NuGet fixado; o arquivo e as dependências são conferidos por hash. Ambientes interrompidos são preservados antes do reparo. Mantenha a proteção do antivírus ativa.
 
+A preparação dos dados do jogo usa nomes temporários curtos para arquivos de ghost com nomes longos. Se o caminho temporário ainda exceder o limite do Windows, o erro orienta usar um caminho mais curto para a pasta de dados. Veja o [escopo verificado e as verificações pendentes](docs/STATUS.md).
+
 Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`): use **Já tenho o jogo extraído numa pasta**. O perfil ativo é o 4.0.1 AArch64; outras versões do jogo e importação de XCI/XCZ não foram validadas. O DLC suportado é importado separadamente.
 
 A importação direta de NSP/NSZ aceita duas variantes verificadas do programa base, mantendo a conferência integral dos hashes e da atualização 4.0.1. Outros conteúdos base continuam sem suporte; nesse caso, use uma pasta extraída compatível. Os detalhes da validação estão no [estado técnico](docs/STATUS.md).

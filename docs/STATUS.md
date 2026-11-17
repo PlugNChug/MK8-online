@@ -1,4 +1,12 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Temporários de ghost na preparação — 17/11/2026
+
+Correção isolada sobre `fix-chore` `7e8836e`, relacionada à [issue #38](https://github.com/Vnnc1/MK8-online/issues/38): `build.mirror` usa um nome temporário UUID curto no mesmo diretório, sem alongar o nome do ghost. Se nem esse caminho couber em `MAX_PATH`, informa que a pasta de dados precisa ter um caminho mais curto, antes de criar o temporário ou substituir o arquivo. A substituição continua atômica; erros de origem, permissão e dispositivo permanecem preservados.
+
+Reprodução com arquivos autorais e a operação real `os.link`: o CPython com suporte a caminhos longos passou destinos de 220/235/245/255 caracteres. Hospedado em executável sem esse suporte, sem alterar a política do Windows, falhou com WinError 3 nos destinos de 235/245/255, cujos temporários atingiam 269/279/289 caracteres. Após a correção, os quatro comprimentos passaram nos dois executáveis, com bytes idênticos e hardlinks reais. As duas regressões de comprimento falharam antes e passaram depois. A validação da correção reuniu **18 testes de arquivos, armazenamento, reparo e mirror aprovados sem skips**, incluindo locks reais. A injeção de EXDEV e WinError 17 verifica a recusa de cópia sem autorização, a preservação durante lock do destino e a cópia real após nova tentativa; arquivos antigos e temporários só são removidos após sucesso.
+
+A captura do relato mostra origem e destino na mesma unidade D:. Os testes de erro entre volumes não comprovam uma segunda unidade física. Preparação completa com dados comerciais, configuração da máquina do relator e confirmação em unidade secundária continuam pendentes. Nenhuma mudança de guest/runtime ou qualificação de gameplay; `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

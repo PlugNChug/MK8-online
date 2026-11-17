@@ -100,6 +100,8 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 The Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
 
+Game-data preparation uses short temporary filenames for long ghost files. If the temporary path still exceeds Windows' path limit, the builder asks for a shorter data-folder path. See the [verified scope and remaining checks](docs/STATUS.md).
+
 An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other game versions and XCI/XCZ import are not validated. Supported DLC is imported separately.
 
 Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalling. To use another drive with the portable launcher: `.\Launcher.exe --data-dir E:\MK8-Local`, and keep using the same folder.
