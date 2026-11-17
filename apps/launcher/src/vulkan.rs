@@ -1,6 +1,9 @@
 //! Runs in a separate process: a broken DLL must not crash the launcher or touch saves.
 use mk8_manifest::Result;
-use std::{ffi::CStr, path::Path};
+use std::{
+    ffi::{CStr, CString},
+    path::Path,
+};
 use windows_sys::Win32::{
     Foundation::FreeLibrary,
     System::LibraryLoader::{
@@ -51,9 +54,37 @@ pub fn probe(folder: &Path) -> Result<()> {
     let vk = Library::open(&loader)?;
     vk.symbol(c"vkGetInstanceProcAddr")?;
     let sdl = Library::open(&folder.join("SDL3.dll"))?;
-    sdl.symbol(c"SDL_Vulkan_LoadLibrary")?;
     sdl.symbol(c"SDL_CreateWindow")?;
-    Ok(())
+    let loader = CString::new(loader.to_str().ok_or("Caminho Vulkan não é UTF-8")?)
+        .map_err(|e| e.to_string())?;
+    // Symbol presence does not prove SDL can initialize the supplied Vulkan loader.
+    unsafe {
+        let init: unsafe extern "C" fn(u32) -> bool = std::mem::transmute(sdl.symbol(c"SDL_Init")?);
+        let quit: unsafe extern "C" fn() = std::mem::transmute(sdl.symbol(c"SDL_Quit")?);
+        let error: unsafe extern "C" fn() -> *const std::ffi::c_char =
+            std::mem::transmute(sdl.symbol(c"SDL_GetError")?);
+        let load: unsafe extern "C" fn(*const std::ffi::c_char) -> bool =
+            std::mem::transmute(sdl.symbol(c"SDL_Vulkan_LoadLibrary")?);
+        let unload: unsafe extern "C" fn() =
+            std::mem::transmute(sdl.symbol(c"SDL_Vulkan_UnloadLibrary")?);
+        let result = if !init(0x20) {
+            // SDL_INIT_VIDEO
+            Err(format!(
+                "SDL_Init(VIDEO): {}",
+                CStr::from_ptr(error()).to_string_lossy()
+            ))
+        } else if !load(loader.as_ptr()) {
+            Err(format!(
+                "SDL_Vulkan_LoadLibrary: {}",
+                CStr::from_ptr(error()).to_string_lossy()
+            ))
+        } else {
+            unload();
+            Ok(())
+        };
+        quit();
+        result
+    }
 }
 
 pub fn check(install: &mk8_manifest::Installation, local: &Path) -> Result<()> {

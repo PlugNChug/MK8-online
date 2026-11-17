@@ -14,10 +14,33 @@ sys.path.insert(0, str(ROOT/'toolchain'))
 sys.path.insert(0, str(ROOT/'scripts'))
 import host
 import pefile
+from native import DEFAULT_COMPILER, compiler_env
 
 
 @unittest.skipUnless(os.name == 'nt' and (host.DEPS/'bin/vulkan-1.dll').is_file(), 'Pinned Windows dependencies required')
 class VulkanBundleTests(unittest.TestCase):
+    @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
+    def test_probe_rejects_a_loader_that_exports_but_cannot_supply_vulkan_functions(self):
+        launcher = Path(os.environ.get('MK8_LAUNCHER_EXE', ROOT/'target/release/Launcher.exe'))
+        if not launcher.is_file():
+            self.skipTest('Build the launcher first')
+        with tempfile.TemporaryDirectory(prefix='mk8-vulkan-api-') as temporary:
+            folder = Path(temporary)
+            shutil.copyfile(host.DEPS/'bin/SDL3.dll', folder/'SDL3.dll')
+            shutil.copyfile(host.DEPS/'bin/vulkan-1.dll', folder/'vulkan-1.dll')
+            resolve = runpy.run_path(str(ROOT/'scripts/runtime-dlls.py'))['resolve']
+            resolve(folder, roots=[folder/'SDL3.dll'])
+            source = folder/'loader.c'
+            source.write_text('__declspec(dllexport) void *vkGetInstanceProcAddr(void *instance, const char *name) '
+                              '{ (void)instance; (void)name; return 0; }\n')
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-shared',
+                            str(source), '-o', str(folder/'vulkan-1.dll')],
+                           check=True, capture_output=True, env=compiler_env())
+            result = subprocess.run([str(launcher), '--check-vulkan', str(folder)],
+                                    capture_output=True, timeout=25, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertNotEqual(result.returncode, 0, 'Symbol presence alone is not a working SDL Vulkan loader')
+            self.assertIn(b'SDL_Vulkan_LoadLibrary', result.stderr)
+
     def test_launcher_probe_detects_missing_corrupt_and_missing_dependency(self):
         launcher = Path(os.environ.get('MK8_LAUNCHER_EXE', ROOT/'target/release/Launcher.exe'))
         if not launcher.is_file():
@@ -46,6 +69,10 @@ class VulkanBundleTests(unittest.TestCase):
             resolve(folder, roots=[folder/'SDL3.dll', folder/'vulkan-1.dll'])
             loaded = probe()
             self.assertEqual(loaded.returncode, 0, loaded.stderr.decode(errors='replace'))
+            with patch.dict(os.environ, SDL_VIDEODRIVER='mk8-nonexistent-video-driver'):
+                unavailable = probe()
+            self.assertNotEqual(unavailable.returncode, 0)
+            self.assertIn(b'SDL_Init(VIDEO)', unavailable.stderr)
 
     def test_prefetch_without_additional_downloads_writes_verified_receipt(self):
         with tempfile.TemporaryDirectory(prefix='mk8-prefetch-ready-') as temporary:
@@ -57,11 +84,15 @@ class VulkanBundleTests(unittest.TestCase):
             binaries.mkdir(parents=True)
             for name in ('SDL3.dll', 'vulkan-1.dll', 'libshaderc_shared.dll'):
                 shutil.copyfile(host.DEPS/'bin'/name, binaries/name)
+            ffmpeg = [binaries/path.name for path in host.ffmpeg_dlls()]
+            for source, destination in zip(host.ffmpeg_dlls(), ffmpeg):
+                shutil.copyfile(source, destination)
             def resolved(folder, roots):
                 # No secondary archives are needed, hence no DLL cache index is written.
                 self.assertEqual(len(roots), 7)
                 return {}
-            with patch.dict(prefetch.__globals__, DEPS=deps, CACHE=deps/'dlls', resolve=resolved):
+            with patch.dict(prefetch.__globals__, DEPS=deps, CACHE=deps/'dlls', resolve=resolved), \
+                    patch.object(host, 'ffmpeg_dlls', return_value=ffmpeg):
                 prefetch()
             import json
             receipt = json.loads((deps/'runtime-ready.json').read_text())
@@ -75,7 +106,8 @@ class VulkanBundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='mk8-vulkan-bundle-') as temporary:
             output = Path(temporary)
             host.copy_runtime_dlls(output)
-            shutil.copyfile(ROOT/'prebuilt/host/mk8drecomp.exe', output/'runtime.exe')
+            runtime = Path(os.environ.get('MK8_TEST_RUNTIME_EXE', ROOT/'prebuilt/host/mk8drecomp.exe'))
+            shutil.copyfile(runtime, output/'runtime.exe')
             self.assertTrue((output/'vulkan-1.dll').is_file())
             with pefile.PE(str(output/'SDL3.dll')) as pe:
                 self.assertNotIn(b'vulkan-1.dll', [entry.dll.lower() for entry in pe.DIRECTORY_ENTRY_IMPORT])
