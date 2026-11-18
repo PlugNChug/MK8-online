@@ -184,6 +184,10 @@ Referências consultadas em 10/11/2026: [Switchbrew — serviço `aoc:u`](https:
 
 O protótipo consulta também as assinaturas IPC de [`nn::aocsrv::detail::IAddOnContentManager` no SwIPC](https://reswitched.github.io/SwIPC/ifaces.html#nn::aocsrv::detail::IAddOnContentManager): comandos, argumentos e descritores de saída. A implementação própria fica em `runtime/mk8/services/dlc.c` e é aplicada às cópias de build por `toolchain/dlc.py`; não houve cópia de implementação de outros emuladores.
 
+## Depth clamp Vulkan — 18/11/2026
+
+Consultadas as referências Khronos de [VkPipelineRasterizationStateCreateInfo](https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineRasterizationStateCreateInfo.html) e [VkPhysicalDeviceFeatures](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceFeatures.html): clamp habilitado altera o tratamento dos planos Z e exige a feature `depthClamp` do dispositivo. A adaptação própria conserva o contrato de comando do backend Metal já incluído no upstream fixado; nenhum código externo novo foi copiado. Avisos e licenças existentes permanecem intactos; resultados externos não qualificam este runtime.
+
 ## Applet de controles — 16/11/2026
 
 Controle local (16/11/2026): consultados o [contrato do applet HID em libnx](https://github.com/switchbrew/libnx/blob/master/nx/source/applets/hid_la.c) e o [registro técnico de ControllerSupportCanceled em nxnative_patch](https://git.dukantic.fr/dukantic/nxnative_patch/src/commit/7249ee9f95ed728aff9a86395330d10d4c91fb5c/docs/reference/services.md), para identificar o resultado `2202-3101` quando a configuração é cancelada. A adaptação própria em `toolchain/controller_applet.py` recusa sucesso com menos jogadores que o mínimo solicitado. Nenhum código dessas referências foi copiado; resultados de testes externos não qualificam este runtime.
