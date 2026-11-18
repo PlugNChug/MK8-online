@@ -323,6 +323,8 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     if (!fsr.create) return false;
     ffxCreateBackendVKDesc backend = {0};
     backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
+    const char *ver = getenv("MK8_FSR_VERSION");
+    if (ver && strncmp(ver, "3.", 2) == 0) backend.header.type = 3;  // legacy SDK backend desc
     backend.deviceContext.vkDevice = g_vk.dev;
     backend.deviceContext.vkPhysicalDevice = g_vk.phys;
     backend.deviceContext.vkDeviceProcAddr = vkGetDeviceProcAddr;
@@ -340,8 +342,12 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     upscale.maxRenderSize = {rw, rh};
     upscale.maxUpscaleSize = {ow, oh};
     upscale.flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // the game image is perceptual sRGB
-    upscale.header.pNext = &version.header;
-    version.header.pNext = &backend.header;
+    if (getenv("MK8_FSR_NO_VERSION")) {
+        upscale.header.pNext = &backend.header;
+    } else {
+        upscale.header.pNext = &version.header;
+        version.header.pNext = &backend.header;
+    }
 
     ffxContext context = NULL;
     ffxReturnCode_t rc = fsr.create(&context, &upscale.header, NULL);
