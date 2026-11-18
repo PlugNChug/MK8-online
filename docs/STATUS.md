@@ -1,5 +1,7 @@
 # Estado técnico — 18/11/2026
 
+A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) está aberta para `fix-chore`. A CI anterior passou os testes portáteis e falhou na asserção de liberação da porta UDP do teste de reconexão Steam. Esta atualização somente de documentação solicita uma nova execução; não altera código nem testes e não declara a falha corrigida. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
 ## Mount Wario — compensação do bias de profundidade pela escala
 
 Reteste manual da combinação `ef0eaa9` concluído em `race-time-trial-h6rmhjc_`, candidato `07849d88`, Original 16:9 e geração de quadros desligada, na NVIDIA local. O usuário confirmou ausência das faixas largas em 2×, 3× e 4×. O F8 solicitado por engano não existe nesta build de produção e não gerou imagem; a coleta válida é o F9 19565, já de volta a 2×. O log confirma alvo 3840×2160, escala 2/2 e o strip conhecido com 27 índices. Revisões visual e independente de `pass_010.png` e da imagem final `pass_046.png` confirmam remoção do recorte angular largo e preservação do kart/sombra. O usuário conferiu a linha fina da superfície no hardware real e confirmou que faz parte do jogo original; ela não é um defeito pendente desta correção. A comparação com o diagnóstico anterior de 30 índices tem pose diferente e é qualitativa; 3×/4× são confirmação do usuário, sem capturas próprias.
