@@ -1,6 +1,14 @@
 # Estado técnico — 18/11/2026
 
-A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) está aberta para `fix-chore`. A CI anterior passou os testes portáteis e falhou na asserção de liberação da porta UDP do teste de reconexão Steam. Esta atualização somente de documentação solicita uma nova execução; não altera código nem testes e não declara a falha corrigida. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
+## Boo Lake com dois jogadores — PR #55
+
+Recompilação `--runtime-only` concluída para a base `18bbf31` e para a cópia de teste com `0d94703` aplicada. Cada build recompilou 220 unidades host, verificou as dependências e reutilizou a biblioteca guest com hash conferido. A RX 580 2048SP executou VS Race → Rock Cup → GBA Boo Lake com dois jogadores locais, entradas roteirizadas, DLC verificado e saves copiados. A base e a variante com a PR foram comparadas a 50%. A variante também rodou em 1x. As quatro sessões direcionadas encerraram com código 0 na captura programada do frame 5100, durante a primeira volta.
+
+As capturas da Rock Cup mostram a correção da troca de vermelho por azul nos ícones. Já a cintilação da iluminação foi reproduzida na reta inicial a 50% tanto na base quanto com a PR. Na gravação da variante, a luminância média de uma faixa do piso à frente do jogador 2 passou de aproximadamente 64 para 156 e voltou a 66 em três quadros capturados, com a posição da câmera quase constante. O mesmo tipo de alternância aparece na tela do jogador 1 e na gravação da base. Esses registros não isolam o passe responsável nem permitem concluir se a cintilação ocorre também em 1x. O recorte por escala tratado em solo e a cintilação em tela dividida exigem validações distintas. A [issue #49](https://github.com/Vnnc1/MK8-online/issues/49) continua aberta.
+
+As duas execuções filmadas a 50% tiveram descarte acumulado de milhares de imagens, com 3369 na base e 3144 na variante ao fim da coleta. Uma primeira execução sem gravação descartou menos imagens. A variação entre sessões impede atribuir essa diferença à PR. Os totais são descartes acumulados, sem equivalência a pico de VRAM. Capturas também afetam os tempos de quadro, portanto a comparação não é benchmark de desempenho. Evidências privadas em `local/pr55-visual`, com os dois vídeos, quadros consecutivos e logs das sessões. A #55 segue em revisão. `gameplay_verified=false`.
 
 ## Mount Wario — compensação do bias de profundidade pela escala
 
