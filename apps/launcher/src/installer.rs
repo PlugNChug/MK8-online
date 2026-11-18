@@ -1,7 +1,8 @@
 //! The setup program: the launcher binary itself, named `MK8-online-<version>-setup.exe` (or run with
-//! `--install`). It shows its own window (welcome, folders, desktop shortcut, progress), copies itself as
+//! `--install`). The first-run screens collect install options and copy the app as
 //! `Launcher.exe`, writes `mk8-online.json` (the data folder), unpacks this version's sources ahead of the first
-//! start, creates the shortcuts and registers the uninstaller under the current user (no administrator rights).
+//! start, create the shortcuts and register the uninstaller under the current user. After setup,
+//! the same window opens the launcher.
 //!
 //! `/SILENT` (the in-launcher updater) installs over the previous installation with its folders and starts the
 //! new launcher; `/DIR=` and `/DATADIR=` choose the folders, `/DESKTOP=0|1` the desktop shortcut and `/NOLAUNCH`
@@ -687,7 +688,7 @@ type Parent = Arc<OnceLock<tauri::WebviewWindow>>;
 struct Setup {
     previous: Previous,
     progress: Arc<Mutex<Progress>>,
-    app: Option<PathBuf>,
+    data: Option<PathBuf>,
     started: bool,
     language: String,
 }
@@ -706,29 +707,34 @@ fn window() -> Result<(), Error> {
         language: crate::language::read(&previous.data.join("data")),
         previous,
         progress: Arc::new(Mutex::new(Progress::default())),
-        app: None,
+        data: None,
         started: false,
     };
+    let launcher = Arc::new(OnceLock::<tauri::Url>::new());
     {
         let parent = parent.clone();
         let url = url.clone();
-        std::thread::spawn(move || serve(setup, server, authority, url, token, parent));
+        let launcher = launcher.clone();
+        std::thread::spawn(move || serve(setup, server, authority, url, token, parent, launcher));
     }
     let target: tauri::Url = url.parse()?;
     let origin = target.origin();
     tauri::Builder::default()
         .setup(move |tauri_app| {
-            let window =
-                WebviewWindowBuilder::new(tauri_app, "setup", WebviewUrl::External(target))
-                    .title("MK8-online Setup")
-                    .inner_size(880.0, 620.0)
-                    .resizable(false)
-                    .maximizable(false)
-                    .theme(Some(tauri::Theme::Dark))
-                    .center()
-                    .disable_drag_drop_handler()
-                    .on_navigation(move |url| url.origin() == origin)
-                    .build()?;
+            let window = WebviewWindowBuilder::new(tauri_app, "main", WebviewUrl::External(target))
+                .title("MK8-online")
+                .inner_size(880.0, 620.0)
+                .resizable(false)
+                .maximizable(false)
+                .theme(Some(tauri::Theme::Dark))
+                .center()
+                .disable_drag_drop_handler()
+                .on_navigation(move |url| {
+                    let target = url.origin();
+                    target == origin || launcher.get().is_some_and(|page| page.origin() == target)
+                })
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
             let _ = parent.set(window);
             Ok(())
         })
@@ -799,7 +805,7 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
                 ..Progress::default()
             };
             setup.started = true;
-            setup.app = Some(options.app.clone());
+            setup.data = Some(options.data.clone());
             let progress = setup.progress.clone();
             std::thread::spawn(move || {
                 let _ = install(&options, &progress);
@@ -809,14 +815,6 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
         ("GET", "/api/progress") => {
             let p = setup.progress.lock().unwrap().clone();
             Ok(json!({"percent": p.percent, "step": p.step, "state": p.state, "error": p.error}))
-        }
-        ("POST", "/api/finish") => {
-            if body["launch"].as_bool().unwrap_or(false) {
-                if let Some(app) = setup.app.as_ref() {
-                    launch(app).map_err(|e| e.to_string())?;
-                }
-            }
-            Ok(json!({"exit": true}))
         }
         _ => Err("Rota não encontrada".into()),
     }
@@ -829,6 +827,7 @@ fn serve(
     url: String,
     token: String,
     parent: Parent,
+    launcher: Arc<OnceLock<tauri::Url>>,
 ) {
     for mut req in server.incoming_requests() {
         let host = req
@@ -936,11 +935,14 @@ fn serve(
             });
             continue;
         }
-        let (code, data, exit) = match handle(&mut setup, &method, &path, &body) {
-            Ok(value) => {
-                let exit = value["exit"] == true;
-                (200, json!({"ok": true, "data": value}), exit)
-            }
+        let finish = method == Method::Post && path == "/api/finish";
+        let result = if finish {
+            finish_setup(&setup, &body, &parent, &launcher).map_err(|e| e.to_string())
+        } else {
+            handle(&mut setup, &method, &path, &body)
+        };
+        let (code, data, finished) = match result {
+            Ok(value) => (200, json!({"ok": true, "data": value}), finish),
             Err(error) => (400, json!({"ok": false, "error": error}), false),
         };
         response(
@@ -949,11 +951,44 @@ fn serve(
             data.to_string(),
             "application/json; charset=utf-8",
         );
-        if exit {
-            std::thread::sleep(Duration::from_millis(300));
-            std::process::exit(0);
+        if finished {
+            break;
         }
     }
+}
+
+fn finish_setup(
+    setup: &Setup,
+    body: &str,
+    parent: &Parent,
+    launcher: &OnceLock<tauri::Url>,
+) -> Result<Value, Error> {
+    let body: Value = serde_json::from_str(body)?;
+    let window = parent.get().ok_or("Janela do MK8-online indisponível")?;
+    if setup.progress.lock().unwrap().state != "done" {
+        return Err("A instalação precisa terminar primeiro.".into());
+    }
+    if body["launch"].as_bool() != Some(true) {
+        window.close()?;
+        return Ok(json!({}));
+    }
+    let base = setup.data.as_deref().ok_or("Pasta de dados ausente")?;
+    let target = if let Some(target) = launcher.get() {
+        target.clone()
+    } else {
+        let target = crate::launcher_after_setup(base, parent.clone())?;
+        launcher
+            .set(target.clone())
+            .map_err(|_| "O MK8-online já foi aberto")?;
+        target
+    };
+    window.set_resizable(true)?;
+    window.set_maximizable(true)?;
+    window.set_min_size(Some(tauri::LogicalSize::new(400.0, 560.0)))?;
+    window.set_size(tauri::LogicalSize::new(1280.0, 880.0))?;
+    window.center()?;
+    window.navigate(target)?;
+    Ok(json!({}))
 }
 
 #[cfg(test)]

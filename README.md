@@ -91,7 +91,7 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 ### Install and play
 
-1. Download `MK8-online-0.3.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
+1. Download `MK8-online-0.3.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. When setup finishes, the same MK8-online window opens the launcher. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
 2. Open **Install**. Complete **Tools**, then select the base game and the update in **Game files** (the Launcher finds keys next to the game, or select your own).
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.

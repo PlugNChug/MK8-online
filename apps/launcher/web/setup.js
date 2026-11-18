@@ -76,6 +76,18 @@ document.querySelectorAll("[data-pick]").forEach((button) => {
 });
 
 let polling = 0;
+async function finish(launch) {
+  const open = $("open");
+  const close = $("close");
+  open.disabled = close.disabled = true;
+  i18n.text($("finish-error"), "");
+  try {
+    await api("finish", { launch });
+  } catch (error) {
+    i18n.text($("finish-error"), error.message);
+    open.disabled = close.disabled = false;
+  }
+}
 function draw(progress) {
   const pct = Math.floor(progress.percent || 0);
   i18n.text($("pct"), pct + "%");
@@ -93,7 +105,8 @@ async function poll() {
     draw(progress);
     if (progress.state === "done") {
       clearInterval(polling);
-      setTimeout(() => show("done"), 450);
+      show("done");
+      if ($("launch").checked) void finish(true);
     } else if (progress.state === "failed") {
       clearInterval(polling);
       i18n.text($("progress-title"), "A instalação não terminou");
@@ -126,8 +139,8 @@ async function install() {
 }
 $("install").onclick = install;
 $("retry").onclick = install;
-$("open").onclick = () => api("finish", { launch: true }).catch(() => window.close());
-$("close").onclick = () => api("finish", { launch: false }).catch(() => window.close());
+$("open").onclick = () => finish(true);
+$("close").onclick = () => finish(false);
 
 (async () => {
   await i18n.ready;

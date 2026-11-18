@@ -1,5 +1,9 @@
 # Estado técnico — 16/11/2026
 
+## Instalação e launcher na mesma janela
+
+O instalador interativo abre o launcher na mesma janela após concluir a instalação. A escolha de abrir ao concluir continua disponível. O executável instalado mantém os atalhos e argumentos de atualização silenciosa e desinstalação. A transição foi compilada para Windows; a validação do WebView2 instalado e da atualização de 0.3.0 está pendente.
+
 ## Pré-release 0.3.0 — pacote validado em 16/11/2026
 
 Publicação solicitada pelo mantenedor e concluída, reunindo a `fix-chore` e suas PRs aceitas na branch principal **master** (o repositório não usa `main`). Versão de workspace/launcher `0.3.0`, tag `v0.3.0` no commit `47b05c5`, marcada como pré-release mesmo sem sufixo. Merge `c2b4ee6`; branches sincronizadas. Notas em inglês e português, em seções expansíveis, em [releases/0.3.0.md](releases/0.3.0.md); README, README.pt-BR, ROADMAP e instruções de publicação atualizados.
