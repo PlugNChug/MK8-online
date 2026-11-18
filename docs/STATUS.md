@@ -1,5 +1,11 @@
 # Estado técnico — 17/11/2026
 
+## Descoberta de controles — continuidade da #50
+
+Encontrada falha na enumeração inicial: somente `ids[0]` era tentado para jogador 1; se SDL não conseguisse abri-lo, os demais eram encaminhados a `open_extra`, deixando jogador 1 sem controle. `controller_discovery.py` aplica uma rotina comum à enumeração e a GAMEPAD_ADDED, tentando cada dispositivo válido até preencher jogador 1. IDs já abertos são ignorados, inclusive se jogador 1 desconectar enquanto jogador 2 permanece, sem roubar esse controle em evento duplicado. Mantém `pads_from_p2`; falha de abertura informa erro real SDL, sem chamar APIs de nome com handle nulo. Abertura bem-sucedida atualiza botões e sinaliza mudança de estilo.
+
+Quatro testes nativos aprovados: atribuição com primeiro dispositivo inválido/falhando, duplicatas, desconexão/reconexão e modo jogador 2; três regressões do applet de controles. Host recompilado com guest reutilizado, SHA-256 `4d5336bd88b1ca3370b08cdfe565146566c044768daf8f87786383917fd79717`. A fixture usa dispositivos SDL simulados para executar a rotina preparada; não testa DSX nem o driver físico. Sem novo teste humano nesta build. #50 não tem diagnóstico anexado e permanece aberta; esta lacuna não comprova a causa do relato. Nenhum setup/publicação nesta rodada.
+
 ## Capacidade dos relatórios de oclusão
 
 Reteste manual solicitado com dois controles em `local/two-controller-5yho8esi`: mantenedor informou que está rodando perfeitamente. Sessão com runtime `7e348694` encerrou com código 0, sem `FATAL`, após aproximadamente 6,4 minutos registrados. Log identifica Nintendo Switch Pro Controller; não comprova sozinho dois controles físicos nem a pista selecionada. Últimas três janelas: 59,7/59,7/55,8 FPS, máximos de 33/26/42 ms; não declarar 60 FPS constantes. Resultado humano positivo nesta sessão, sem confirmação específica de Boo Lake/faróis ou prova de que o limite de consultas foi atingido; #49 ainda requer essa confirmação antes de fechamento.

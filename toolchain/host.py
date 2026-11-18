@@ -329,6 +329,8 @@ def prepare_host_sources(source, output):
     prepare_snapshot_memory(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
+    from controller_discovery import prepare as prepare_controller_discovery
+    prepare_controller_discovery(runtime)
     from texture_readback import prepare as prepare_texture_readback
     prepare_texture_readback(runtime)
     from entry_trace import prepare as prepare_entry_trace  # (read-only tracing for reverse engineering)
