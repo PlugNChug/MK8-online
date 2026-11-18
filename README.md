@@ -62,7 +62,7 @@ Read the [0.3.0 release notes in English or Portuguese](docs/releases/0.3.0.md) 
 
 ## Where it stands
 
-Development builds compensate slope-based depth bias for uniform internal-resolution scaling. This addresses Mount Wario’s snow/ice band reproduced at 2×; the GPU replay passes, but the rebuilt game still needs a visual retest. **1x (1080p)** remains the verified workaround. Rebuild the runtime to apply the change.
+Development builds compensate slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 
 **120 FPS presentation:** the existing experimental frame-generation option interpolates one image between real frames while the game remains at 60 Hz. It needs a high-refresh display and GPU headroom; it does not unlock native simulation or remove shader stutters. Local investigation measured about 120 presented frames per second in a stable solo section on an RX 580 2048SP / 180 Hz display. This is not full-race or multiplayer qualification. The 0.3.0 runtime also fixes CRLF INI parsing, which could silently disable `frame_gen = 120` and misread other text settings. Details and limitations are in [STATUS.md](docs/STATUS.md).
 
