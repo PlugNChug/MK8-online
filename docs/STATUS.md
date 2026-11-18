@@ -1,5 +1,15 @@
 # Estado técnico — 18/11/2026
 
+## Iluminação — interpolação SPH/IPA isolada para revisão
+
+Separada sobre `fix-chore` `0085fed` somente a correção do tradutor Maxwell: entradas flat e lineares usam os modos declarados no cabeçalho SPH; a multiplicação implícita por 1/W continua exclusiva das entradas perspective, preservando a multiplicação explícita da instrução IPA. O mesmo tradutor atende os caminhos normal e antecipado. A preparação valida as três fronteiras antes de gravar a cópia de build; não altera upstream, guest, ABI ou dados privados. Não inclui RGB565, escala de alvos ou orçamento de espera já propostos na PR #55.
+
+Regressão reproduzida antes da alteração: o executável nativo falhou por qualificador Flat ausente, saída 2, em 1,754 s. Após a correção, dois testes passaram em 1,748 s: seis combinações sintéticas de interpolação/multiplicação pelo tradutor real preparado, compilação shaderc e decorações SPIR-V; limites alterados/duplicados e segunda aplicação recusados sem modificar bytes. Revisão independente aprovada. Logs privados: `local/uw-pr18/interpolation-only-red.log` e `interpolation-only-green.log`.
+
+Suíte conectada: quatro testes Maxwell passaram em 16,119 s; oito de armazenamento, antecipação e espera de shaders passaram em 8,390 s, todos sem skips. O caso de mip query também compila GLSL e recusa proveniência inválida. Nenhum novo teste Rust ou de navegador foi necessário, pois não há alteração de launcher/interface.
+
+A confirmação anterior do usuário em Stadium pertence à combinação com correções de escala; não comprova isoladamente esta alteração. Music Park e Stadium ainda precisam de comparação visual do candidato restrito, inicialmente em 1×, Original 16:9 e geração de quadros desligada. Build e reteste pendentes; sem publicação, instalação normal preservada e `gameplay_verified=false`.
+
 ## Integração das PRs #42, #43 e #44 na fix-chore
 
 Integrado o histórico das três PRs com commits de merge separados. Os códigos de saves/Mii (#42), guarda do histórico de cubemaps (#43) e comandos compactos (#44) já estavam presentes nos commits locais `07126fd` e `26a6dce`. Comparação com `53ae368` confirma que os merges não alteraram runtime/toolchain/testes; conflitos foram resolvidos preservando documentação atual, output-aspect, recuperação de memória e demais correções posteriores. README recebeu os esclarecimentos das PRs.

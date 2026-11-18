@@ -253,6 +253,8 @@ def prepare_host_sources(source, output):
     translator.write_text(text, encoding='utf-8')
     from maxwell_mip_query import prepare as prepare_maxwell_mip_query
     prepare_maxwell_mip_query(runtime)
+    from interpolation import prepare as prepare_interpolation
+    prepare_interpolation(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
     prepare_texture_lifetime(runtime)
     from gpu_sync import prepare as prepare_gpu_sync
