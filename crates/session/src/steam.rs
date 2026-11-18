@@ -734,15 +734,37 @@ impl Api {
 
 static STEAM_API: Mutex<Option<Arc<Api>>> = Mutex::new(None);
 
+fn compatible_api<T>(
+    paths: impl IntoIterator<Item = PathBuf>,
+    mut load: impl FnMut(&Path) -> Result<T>,
+) -> Result<T> {
+    let mut failures = Vec::new();
+    for path in paths {
+        if !path.is_file() {
+            continue;
+        }
+        match load(&path) {
+            Ok(api) => return Ok(api),
+            Err(error) => failures.push(format!("{}: {error}", path.display())),
+        }
+    }
+    if failures.is_empty() {
+        return Err("steam_api64.dll não encontrada. Instalar ou abrir apenas a Steam não fornece essa biblioteca. Coloque a DLL Steamworks de 64 bits ao lado do Launcher.exe e reabra o Launcher. Não é necessário refazer a build do jogo.".into());
+    }
+    Err(format!(
+        "Nenhuma DLL Steam candidata é compatível ({} verificadas). {}",
+        failures.len(),
+        failures.into_iter().take(4).collect::<Vec<_>>().join("\n")
+    ))
+}
+
 fn ensure_api(local: &Path) -> Result<Arc<Api>> {
     let mut guard = STEAM_API.lock().unwrap();
     if let Some(api) = guard.as_ref() {
         return Ok(api.clone());
     }
-    let dll = find_dll(local).ok_or(
-        "steam_api64.dll não encontrada. Instalar ou abrir apenas a Steam não fornece essa biblioteca. Coloque a DLL Steamworks de 64 bits ao lado do Launcher.exe e reabra o Launcher. Não é necessário refazer a build do jogo.",
-    )?;
-    let api = Api::load(&dll, local)?;
+    // Resolve exports before initialization; a rejected library is released by Api::load.
+    let api = compatible_api(candidate_dll_paths(local), |path| Api::load(path, local))?;
     if !unsafe { (api.is_steam_running)() } {
         return Err("O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.".into());
     }
@@ -1410,6 +1432,39 @@ mod tests {
             .contains("outra versão"));
         assert!(check_pack(Some("sim"), "").is_err());
         assert!(check_pack(Some(&"z".repeat(64)), &id).is_err());
+    }
+
+    #[test]
+    fn incompatible_candidate_does_not_hide_a_compatible_library() {
+        let root = std::env::temp_dir().join(format!("mk8-compatible-dll-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let old = root.join("old.dll");
+        let good = root.join("good.dll");
+        fs::write(&old, b"selection fixture").unwrap();
+        fs::write(&good, b"selection fixture").unwrap();
+        let paths = vec![root.join("missing.dll"), old.clone(), good.clone()];
+        let mut visited = Vec::new();
+        let chosen = compatible_api(paths, |path| {
+            visited.push(path.to_owned());
+            if path == old {
+                Err("required export absent".into())
+            } else {
+                Ok(path.to_owned())
+            }
+        })
+        .unwrap();
+        assert_eq!(chosen, good);
+        assert_eq!(visited, [old.clone(), good.clone()]);
+        let error = compatible_api::<()>([old.clone()], |_| Err("required export absent".into()))
+            .unwrap_err();
+        assert!(error.contains("old.dll") && error.contains("required export absent"));
+        assert!(
+            compatible_api::<()>([root.join("missing.dll")], |_| panic!("missing DLL loaded"))
+                .is_err()
+        );
+        fs::remove_file(old).unwrap();
+        fs::remove_file(good).unwrap();
+        fs::remove_dir(root).unwrap();
     }
 
     #[test]
