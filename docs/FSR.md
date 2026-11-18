@@ -68,8 +68,9 @@ FPS runs on an otherwise idle desktop.
   permutation-table workaround, but `ffxCreateContext` for version 3.1.6 fails
   or stalls before a provider query (`[fsr] requesting version 0xc01006`, then
   no dispatch). The provider is not integrated; a correctly generated Windows
-  SDK/permutation set or a fixed Linux generator is required. FSR 4.1.2 remains
-  the only working version.
+  SDK/permutation set or a fixed Linux generator is required. The context
+  attempt now logs `[fsr] create failed 0x1` (generic FFX error) and stops
+  retrying. FSR 4.1.2 remains the only working version.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).

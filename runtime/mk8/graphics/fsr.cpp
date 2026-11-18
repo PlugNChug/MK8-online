@@ -63,6 +63,7 @@ typedef struct {
     VmaAllocation motion_mem;
     VkImageView motion_view;
     bool primed;
+    bool create_failed;
     VkDescriptorSetLayout mv_layout;
     VkPipelineLayout mv_pipeline_layout;
     VkPipeline mv_pipeline;
@@ -344,8 +345,8 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     ffxContext context = NULL;
     ffxReturnCode_t rc = fsr.create(&context, &upscale.header, NULL);
     if (rc != FFX_API_RETURN_OK || !context) {
-        static int once;
-        if (!once++) fprintf(stderr, "[fsr] create failed 0x%x\n", (unsigned)rc);
+        fprintf(stderr, "[fsr] create failed 0x%x\n", (unsigned)rc);
+        fsr.create_failed = true;
         return false;
     }
     fsr.context = context;
@@ -380,6 +381,7 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
                              uint32_t ow, uint32_t oh, float frame_ms) {
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
     if (!init()) return VK_NULL_HANDLE;
+    if (fsr.create_failed) return VK_NULL_HANDLE;
     if (!color || !color->image) return VK_NULL_HANDLE;
     if (ow <= rw + 1 || oh <= rh + 1) return VK_NULL_HANDLE;  // an upscale only
     if (fsr.context && (fsr.rw != rw || fsr.rh != rh || fsr.ow != ow || fsr.oh != oh)) {
