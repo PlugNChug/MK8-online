@@ -329,23 +329,56 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     backend.deviceContext.vkPhysicalDevice = g_vk.phys;
     backend.deviceContext.vkDeviceProcAddr = vkGetDeviceProcAddr;
 
+    // The version descriptor carries the API version this call site was built
+    // against. Asking for another provider version is done with the 64-bit
+    // ffxOverrideVersion id returned by ffxQuery; the signed 2.4 upscaler
+    // advertises 4.1.2, 3.1.6 and 2.3.4 through that list.
     ffxCreateContextDescUpscaleVersion version = {0};
     version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE_VERSION;
     version.version = FFX_UPSCALER_VERSION;
     const char *want = getenv("MK8_FSR_VERSION");
-    if (want && strcmp(want, "3.1.6") == 0) version.version = (3u << 22) | (1u << 12) | 6u;
-    if (want && strcmp(want, "3.1.4") == 0) version.version = (3u << 22) | (1u << 12) | 4u;
-    { static int once; if (!once++) fprintf(stderr, "[fsr] requesting version %#x\n", version.version); }
+    ffxOverrideVersion override_version = {0};
+    override_version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
+    if (want && *want && fsr.query) {
+        uint64_t count = 0;
+        ffxQueryDescGetVersions versions = {0};
+        versions.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
+        versions.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+        versions.device = &backend.deviceContext;
+        versions.outputCount = &count;
+        if (fsr.query(NULL, &versions.header) == FFX_API_RETURN_OK && count > 0 && count <= 16) {
+            uint64_t ids[16] = {0};
+            const char *names[16] = {0};
+            uint64_t capacity = count;
+            versions.outputCount = &capacity;
+            versions.versionIds = ids;
+            versions.versionNames = names;
+            if (fsr.query(NULL, &versions.header) == FFX_API_RETURN_OK) {
+                for (uint64_t i = 0; i < capacity && i < count; i++) {
+                    if (names[i] && strcmp(names[i], want) == 0) {
+                        override_version.versionId = ids[i];
+                        break;
+                    }
+                }
+            }
+            if (override_version.versionId)
+                fprintf(stderr, "[fsr] selecting version %s (0x%llx)\n", want,
+                        (unsigned long long)override_version.versionId);
+            else
+                fprintf(stderr, "[fsr] provider does not offer version %s\n", want);
+        }
+    }
 
     ffxCreateContextDescUpscale upscale = {0};
     upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
     upscale.maxRenderSize = {rw, rh};
     upscale.maxUpscaleSize = {ow, oh};
     upscale.flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // the game image is perceptual sRGB
-    if (getenv("MK8_FSR_NO_VERSION")) {
-        upscale.header.pNext = &backend.header;
+    upscale.header.pNext = &version.header;
+    if (override_version.versionId) {
+        version.header.pNext = &override_version.header;
+        override_version.header.pNext = &backend.header;
     } else {
-        upscale.header.pNext = &version.header;
         version.header.pNext = &backend.header;
     }
 

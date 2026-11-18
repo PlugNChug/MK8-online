@@ -64,25 +64,32 @@ FPS runs on an otherwise idle desktop.
   `[fsr] depth now game (1920x1080 fmt 100)`, `[fsr] motion now camera`; frame
   `fsr4-jitter2400-02400.png` uses all three inputs. Object motion (karts) is
   not in the vectors yet.
-- **FSR 3.1.6:** the MIT SDK source builds a provider with the local
-  permutation-table workaround, but `ffxCreateContext` for version 3.1.6 fails
-  or stalls before a provider query (`[fsr] requesting version 0xc01006`, then
-  no dispatch). The provider is not integrated; a correctly generated Windows
-  SDK/permutation set or a fixed Linux generator is required. The context
-  attempt now logs `[fsr] create failed 0x1` (generic FFX error) and stops
-  retrying. The available provider source is the `rexglue/FidelityFX-SDK` fork
-  at FSR **3.1.4**, not 3.1.6; requesting 3.1.4 also fails with 0x1, so the
-  permutation/blob set is the blocker, not just the version. The official
-  v2.4.0 GitHub tag contains only `Kits` (no `sdk` backend source or generated
-  headers), and the public forks commit only the `#include` lines, not the
-  generated `*_permutations.h` files. FSR 4.1.2 remains the only working
-  version.
+- **FSR 3.1.6 (Windows provider, verified via Wine):** AMD's signed 2.4
+  `amd_fidelityfx_upscaler_vk.dll` advertises `4.1.2`, `3.1.6` and `2.3.4`
+  through `ffxQuery`. The 32-bit `ffxCreateContextDescUpscaleVersion` field is
+  the API version the application was built against and must stay
+  `FFX_UPSCALER_VERSION`; selecting another provider version requires the
+  64-bit `ffxOverrideVersion` id returned by the query. A standalone Wine
+  probe created a 3.1.6 context, reported `name=3.1.6`, dispatched, and wrote a
+  full 1920x1080 output (8,274,240 of 8,294,400 bytes non-zero). `fsr.cpp` now
+  performs the same query/select and logs `[fsr] selecting version 3.1.6
+  (0x...)`. Requesting `0xc01006` through the old 32-bit field was the cause of
+  the earlier `create failed 0x1`, not a shader-permutation defect in the
+  signed provider.
+- **FSR 3.1.6 (native Linux):** still 4.1.2-only. The GPL provider advertises
+  only FSR 4.1.2, and the game logs `[fsr] provider does not offer version
+  3.1.6` before continuing on 4.1.2; it never reports a 3.1.6 success. Native
+  3.1.6 needs either the 3.1.6 pipelines extracted from the signed DLL plus the
+  Kits host code, or a correctly generated 3.1.6 source provider. That is the
+  next native gate; the 3.1.4 source fork and public 3.1.4 permutation tables
+  are not a substitute.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).
-- **Windows/Proton:** not wired yet. The Windows path should load AMD's signed
-  upscaler/FG DLLs from the user's SDK; no signed binaries or extracted assets
-  are committed.
+- **Windows/Proton:** the FFX loader/upscaler DLL path is verified at the FFX
+  API level under Wine (context, provider name, dispatch and output), but this
+  checkout has no Windows game build/data pair for an in-game Proton run. No
+  signed binaries or extracted assets are committed.
 
 ## Licensing
 
