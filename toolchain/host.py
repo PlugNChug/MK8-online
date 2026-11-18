@@ -325,6 +325,8 @@ def prepare_host_sources(source, output):
     prepare_compact_commands(runtime)
     from output_aspect import prepare as prepare_output_aspect
     prepare_output_aspect(runtime)
+    from snapshot_memory import prepare as prepare_snapshot_memory
+    prepare_snapshot_memory(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
     from texture_readback import prepare as prepare_texture_readback
