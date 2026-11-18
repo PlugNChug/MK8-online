@@ -18,6 +18,7 @@ import vram_trace
 HARNESS = r'''
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
@@ -31,10 +32,14 @@ void plat_sleep_until_ns(uint64_t t) {
     // A fake clock: every poll is 5 s later. Pipelines are built at 100 s and every 5 s from 200 s to 300 s.
     if (atomic_load(&sleeps) >= 90) for (;;) Sleep(1000);
     atomic_store(&now, t);
-    if (t == 100 * S || (t >= 200 * S && t <= 300 * S)) mk8_pipeline_built();
+    if (!getenv("FAIL_FIRST_SAVE") && (t == 100 * S || (t >= 200 * S && t <= 300 * S))) mk8_pipeline_built();
     atomic_fetch_add(&sleeps, 1);
 }
-void vk_pipeline_cache_save(void) { saves[atomic_fetch_add(&nsaves, 1)] = atomic_load(&now) / S; }
+bool mk8_pipeline_cache_save(void) {
+    int i = atomic_fetch_add(&nsaves, 1);
+    saves[i] = atomic_load(&now) / S;
+    return !(getenv("FAIL_FIRST_SAVE") && i == 0);
+}
 void rt_log(const char *fmt, ...) { (void)fmt; }
 void mk8_pipeline_saver_start(void);
 int main(void) {
@@ -136,7 +141,7 @@ class RuntimeStallTests(unittest.TestCase):
             exec_c = (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8')
             self.assertEqual(exec_c.count('mk8_pipeline_built();'), 3)
             device_c = (runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
-            self.assertIn('static void vk_pipeline_cache_save_locked(void) {', device_c)
+            self.assertIn('static bool vk_pipeline_cache_save_locked(void) {', device_c)
             self.assertIn('mk8_pipeline_saver_start();', device_c)
             kernel = (runtime/'kernel.c').read_text(encoding='utf-8')
             dispatch = kernel[kernel.index('case 0x21:'):kernel.index('break;', kernel.index('case 0x21:'))]
@@ -194,6 +199,11 @@ class RuntimeStallTests(unittest.TestCase):
             # Persist the initial build at 60 s; the 100 s build at 120 s (minimum interval).
             # The burst ends at 300 s and saves at 310 s. No new builds means no further writes.
             self.assertEqual(result.stdout.split(), ['60', '120', '310'])
+            import os
+            result = subprocess.run([exe], capture_output=True, text=True, timeout=60,
+                                    env=dict(os.environ, FAIL_FIRST_SAVE='1'))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.split(), ['60', '120'])
 
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
     def test_textures_retired_on_a_game_thread_are_destroyed_by_the_translator(self):

@@ -32,6 +32,8 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 
 New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
 
+Development builds preserve the previous Vulkan pipeline cache when writing or replacing its file fails, and retry failed background saves. This avoids losing cached work on those failures; it does not eliminate first-use shader compilation stutters. Rebuild the runtime to apply this change.
+
 
 Developer preview on `fix-chore`: `MK8_MENU_PROTOTYPE=1` enables an in-game overlay with Play, Nextendo, Social and Settings pages (F1 or Back + Start). Account state and settings use the runtime. Social requests the additional `friends` OAuth permission and reads friends/presence; Nextendo lists live MK8 lobbies and reads the current lobby. Selecting a row shows its details; it does not join the room. Queries run in the background every 30 seconds while either page is open. Permission/network failures are displayed explicitly; illustrative players and rooms have been removed. With Nextendo signed in, enter races through the game's Online Play menu. The panel's lobby list is informational; direct joining from this panel is out of scope. Race invitations are not implemented. This preview is not part of the published 0.3.0 setup.
 
