@@ -22,7 +22,15 @@ code or ABI changes.
 The switch is diagnostic only: `MK8_FSR4=1`, `MK8_FSR_LIB=<provider.so>`,
 `FSR4_ASSET_DIR=<assets>`. It is not exposed in the launcher yet.
 `MK8_FSR4_CAPTURE=1` enables the pass-end depth research path; it is off by
-default because it runs a copy on every depth pass.
+default because it runs a copy on every depth pass. `MK8_FSR_VERSION=<name>`
+selects a provider version through `ffxOverrideVersion`.
+
+`MK8_FSR_LEGACY_ABI=1` builds the context with the deprecated 1.x Vulkan
+backend descriptor. The ABI belongs to the provider build, not to the upscaler
+version: the 3.1.6 provider built from the 2.4 SDK needs the current
+descriptor, while the GPL 4.1.2 port (patched to accept the legacy layout)
+needs the switch. Selecting `MK8_FSR_VERSION=3.1.6` no longer changes the
+descriptor by itself.
 
 ## Performance at native internal resolution
 
@@ -76,13 +84,25 @@ FPS runs on an otherwise idle desktop.
   (0x...)`. Requesting `0xc01006` through the old 32-bit field was the cause of
   the earlier `create failed 0x1`, not a shader-permutation defect in the
   signed provider.
-- **FSR 3.1.6 (native Linux):** still 4.1.2-only. The GPL provider advertises
-  only FSR 4.1.2, and the game logs `[fsr] provider does not offer version
-  3.1.6` before continuing on 4.1.2; it never reports a 3.1.6 success. Native
-  3.1.6 needs either the 3.1.6 pipelines extracted from the signed DLL plus the
-  Kits host code, or a correctly generated 3.1.6 source provider. That is the
-  next native gate; the 3.1.4 source fork and public 3.1.4 permutation tables
-  are not a substitute.
+- **FSR 3.1.6 (native Linux):** built and verified. The private provider is the
+  SDK 2.4 Vulkan host compiled with the 3.1.6 pass shaders extracted from
+  AMD's signed DLL; it advertises only `3.1.6` (`0xf5a5ca1e00c01006`). On the
+  captured 960x540 input it matches the signed Windows 3.1.6 output byte for
+  byte: MAE 0, max 0, PSNR 168.13. Standalone cost at 1920x1080 -> 2560x1440 is
+  **0.551 ms GPU** (30 dispatches, RX 9070 XT/RADV). In-game it logs
+  `[fsr] selecting version 3.1.6`, `[fsr] provider 3.1.6`,
+  `upscale active 1920x1080 -> 2560x1440`, then `depth now game` and
+  `motion now camera`; see `local/qualification/fsr316-*.log`, the menu frame
+  `fsr316-final-01000.png` and the in-race frame `fsr316-race-02400.png`. The
+  provider, the extracted blobs and AMD's
+  signed DLLs stay private (`local/qualification/fsr316-native/`) and are
+  never committed. In-game FPS numbers taken while other builds or GPU
+  applications share the machine are not evidence; the profiler showed the
+  frame stalls were CPU starvation, not upscaler cost.
+- **GPL 4.1.2 provider (legacy ABI):** advertises only `4.1.2` and needs
+  `MK8_FSR_LEGACY_ABI=1`; without it the context creation fails with `0x3`.
+  Asking for `MK8_FSR_VERSION=3.1.6` logs that the provider does not offer it
+  and continues on 4.1.2.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).

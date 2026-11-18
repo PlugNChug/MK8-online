@@ -323,8 +323,11 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     if (!fsr.create) return false;
     ffxCreateBackendVKDesc backend = {0};
     backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
-    const char *ver = getenv("MK8_FSR_VERSION");
-    if (ver && strncmp(ver, "3.", 2) == 0) backend.header.type = 3;  // legacy SDK backend desc
+    // The backend descriptor layout follows the SDK ABI the provider was built
+    // against, not the upscaler version it implements. A 3.1.6 provider built
+    // from the 2.4 SDK takes the current descriptor; only providers built
+    // against the 1.x ABI need the deprecated one.
+    if (getenv("MK8_FSR_LEGACY_ABI")) backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK_DEPRECATED;
     backend.deviceContext.vkDevice = g_vk.dev;
     backend.deviceContext.vkPhysicalDevice = g_vk.phys;
     backend.deviceContext.vkDeviceProcAddr = vkGetDeviceProcAddr;
@@ -420,6 +423,9 @@ static bool init(void) {
 extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, TexBackend *depth, uint32_t rw, uint32_t rh,
                              uint32_t ow, uint32_t oh, float frame_ms) {
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
+    static int seen;
+    if (!seen++) fprintf(stderr, "[fsr] present %ux%u -> %ux%u color %dx%d\n", rw, rh, ow, oh,
+                         color ? (int)color->width : -1, color ? (int)color->height : -1);
     if (!init()) return VK_NULL_HANDLE;
     if (fsr.create_failed) return VK_NULL_HANDLE;
     if (!color || !color->image) return VK_NULL_HANDLE;
