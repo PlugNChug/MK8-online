@@ -34,6 +34,12 @@ static bool native_settings_open;
 bool mk8_settings_page_active(void) { return native_settings_open; }
 static bool clock_controlled;
 static Uint64 clock_ms;
+static SDL_JoystickID virtual_hidapi_id;
+static SDL_GUID fixture_guid(SDL_JoystickID id) {
+    SDL_GUID guid=SDL_GetJoystickGUIDForID(id);
+    if(id==virtual_hidapi_id) guid.data[14]='h';
+    return guid;
+}
 static unsigned rumble_requests;
 static Uint32 last_duration;
 static Uint64 test_ticks(void) { return clock_controlled ? clock_ms : SDL_GetTicks(); }
@@ -56,13 +62,34 @@ void ipc_return_object(IpcResp *r,Service *s) { (void)r;(void)s;CHECK(false); }
 
 CHECKS = r'''
 typedef struct { unsigned calls; Uint16 low,high; } Pulse;
-static Pulse pulse[2];
+static Pulse pulse[3];
+static Uint8 last_packet[10];
+static _Atomic unsigned packet_changes;
+static _Atomic unsigned packet_writes;
+static _Atomic unsigned neutral_writes;
+static Uint64 last_write_ms;
+static bool check_radio_interval;
+static _Atomic bool reject_packet;
 static uint8_t *guest;
 static bool SDLCALL rumble(void *userdata,Uint16 low,Uint16 high) {
     Pulse *p=userdata;
     p->calls++;
     p->low=low;
     p->high=high;
+    return true;
+}
+static bool SDLCALL send_effect(void *userdata,const void *data,int size) {
+    CHECK(userdata==&pulse[2] && size==sizeof last_packet);
+    if(reject_packet) return false;
+    Uint64 now=SDL_GetTicks();
+    if(check_radio_interval && last_write_ms) CHECK(now-last_write_ms>=30);
+    last_write_ms=now;
+    ++packet_writes;
+    bool changed=memcmp(last_packet+2,(const Uint8 *)data+2,8)!=0;
+    memcpy(last_packet,data,sizeof last_packet);
+    static const Uint8 silent_sides[8]={0,1,0x40,0x40,0,1,0x40,0x40};
+    if(!memcmp(last_packet+2,silent_sides,sizeof silent_sides)) ++neutral_writes;
+    if(changed) ++packet_changes;
     return true;
 }
 static SDL_JoystickID attach(unsigned i,bool capable) {
@@ -76,6 +103,11 @@ static SDL_JoystickID attach(unsigned i,bool capable) {
     d.name="Authored vibration regression";
     d.userdata=&pulse[i];
     d.Rumble=capable?rumble:NULL;
+    if(i==2) {
+        d.vendor_id=0x057e;
+        d.product_id=0x2009;
+        d.SendEffect=send_effect;
+    }
     SDL_JoystickID id=SDL_AttachVirtualJoystick(&d);
     CHECK(id);
     return id;
@@ -89,9 +121,9 @@ static void handles(unsigned player,uint32_t out[2]) {
     hid_vibration_handles(&c);
     CHECK(c.x[0]==2);
 }
-static void send_one(uint32_t handle,float low,float high) {
+static void send_tone(uint32_t handle,float low,float low_hz,float high,float high_hz) {
     uint8_t payload[32]={0};
-    float value[4]={low,160.f,high,320.f};
+    float value[4]={low,low_hz,high,high_hz};
     memcpy(payload,&handle,4);
     memcpy(payload+4,value,16);
     IpcReq req={.cmd=201,.data=payload,.data_size=sizeof payload};
@@ -99,17 +131,24 @@ static void send_one(uint32_t handle,float low,float high) {
     hid(NULL,&req,&resp);
     CHECK(resp.result==0);
 }
-static void send_pair(const uint32_t handles[2],float low,float high) {
-    float values[2][4]={{low,160.f,high,320.f},{low,160.f,high,320.f}};
+static void send_one(uint32_t handle,float low,float high) {
+    send_tone(handle,low,160.f,high,320.f);
+}
+static void send_batch(const uint32_t handles[2],const float values[2][4]) {
     memcpy(guest,handles,8);
-    memcpy(guest+128,values,sizeof values);
+    const size_t bytes=2*sizeof values[0];
+    memcpy(guest+128,values,bytes);
     uint64_t aruid=0;
     IpcReq req={.cmd=206,.data=(const uint8_t *)&aruid,.data_size=sizeof aruid,.nx=2};
     req.x[0]=(IpcBuf){(uintptr_t)guest,8};
-    req.x[1]=(IpcBuf){(uintptr_t)(guest+128),sizeof values};
+    req.x[1]=(IpcBuf){(uintptr_t)(guest+128),bytes};
     IpcResp resp={0};
     hid(NULL,&req,&resp);
     CHECK(resp.result==0);
+}
+static void send_pair(const uint32_t handles[2],float low,float high) {
+    const float values[2][4]={{low,160.f,high,320.f},{low,160.f,high,320.f}};
+    send_batch(handles,values);
 }
 static void readback(uint32_t handle,float low,float high) {
     IpcReq req={.cmd=202,.data=(const uint8_t *)&handle,.data_size=4};
@@ -180,10 +219,135 @@ static void permission(bool enabled) {
     hid(NULL,&req,&resp);
     CHECK(!resp.result && resp.data_size==1 && resp.data[0]==enabled);
 }
+static void expect_effect(const Uint8 left[4],const Uint8 right[4]) {
+    Uint64 deadline=SDL_GetTicks()+1000;
+    do {
+        SDL_LockJoysticks();
+        bool matched=last_packet[0]==0x10 && !memcmp(last_packet+2,left,4) && !memcmp(last_packet+6,right,4);
+        SDL_UnlockJoysticks();
+        if(matched) return;
+        SDL_Delay(5);
+    } while(SDL_GetTicks()<deadline);
+    CHECK(false && "expected Nintendo actuator packet was not delivered");
+}
+static void expect_generic_pulse(void) {
+    Uint64 deadline=SDL_GetTicks()+1000;
+    do {
+        SDL_LockJoysticks();
+        bool active=pulse[2].low && pulse[2].high;
+        SDL_UnlockJoysticks();
+        if(active) return;
+        SDL_Delay(5);
+    } while(SDL_GetTicks()<deadline);
+    CHECK(false && "generic rumble did not take over after rejected HD output");
+}
+static void hd_output(void) {
+    /* Independent byte vectors from measured Switch frequency and amplitude tables. */
+    const Uint8 neutral[4]={0x00,0x01,0x40,0x40};
+    const Uint8 original[4]={0x00,0x49,0x40,0x62};
+    const Uint8 retuned[4]={0x80,0x48,0x20,0x62};
+    const Uint8 quiet[4]={0x80,0x22,0xa0,0x41};
+    SDL_JoystickID id=attach(2,true);
+    /* Only the driver's GUID marker is supplied; SDL owns both output callbacks. */
+    virtual_hidapi_id=id;
+    extra_pad[1]=mk8_rumble_open(2,id);
+    CHECK(extra_pad[1] && SDL_IsJoystickVirtual(id));
+    CHECK(SDL_GetGamepadVendor(extra_pad[1])==0x057e && SDL_GetGamepadProduct(extra_pad[1])==0x2009);
+    Uint8 probe[10]={0x10,0};
+    memcpy(probe+2,neutral,4);
+    memcpy(probe+6,neutral,4);
+    CHECK(SDL_SendGamepadEffect(extra_pad[1],probe,sizeof probe));
+    CHECK(!memcmp(last_packet,probe,sizeof probe));
+    packet_changes=0;
+    last_write_ms=0;
+    check_radio_interval=true;
+    uint32_t p3[2];
+    handles(2,p3);
+    send_tone(p3[0],.501433f,160,.250715f,320);
+    expect_effect(original,neutral);
+    CHECK(packet_changes==1);
+    /* Settings can reassign the same physical radio to another player immediately. */
+    mk8_rumble_close(2,extra_pad[1]);
+    extra_pad[1]=NULL;
+    extra_pad[2]=mk8_rumble_open(3,id);
+    CHECK(extra_pad[2]);
+    uint32_t p4[2];
+    handles(3,p4);
+    send_tone(p4[1],.014061f,80,.122671f,160);
+    expect_effect(neutral,quiet);
+    mk8_rumble_close(3,extra_pad[2]);
+    extra_pad[2]=NULL;
+    extra_pad[1]=mk8_rumble_open(2,id);
+    CHECK(extra_pad[1]);
+    send_tone(p3[0],.501433f,160,.250715f,320);
+    expect_effect(original,neutral);
+    send_tone(p3[0],.501433f,80,.250715f,160);
+    expect_effect(retuned,neutral);
+    unsigned stops=neutral_writes;
+    send_one(p3[0],0,0);
+    send_tone(p3[0],.501433f,160,.250715f,320);
+    expect_effect(original,neutral);
+    CHECK(neutral_writes==stops+1);
+    const float stereo[2][4]={{.501433f,160,.250715f,320},{.014061f,80,.122671f,160}};
+    unsigned before_batch=packet_changes;
+    send_batch(p3,stereo);
+    expect_effect(original,quiet);
+    CHECK(packet_changes==before_batch+1);
+    send_one(p3[0],0,0);
+    expect_effect(neutral,quiet);
+    mk8_rumble_focus(false);
+    expect_effect(neutral,neutral);
+    mk8_rumble_focus(true);
+    send_tone(p3[0],9,9000,9,9000);
+    expect_effect((Uint8[]){0xfc,0xc9,0x7f,0x72},neutral);
+    send_tone(p3[0],1,NAN,.122671f,160);
+    expect_effect((Uint8[]){0x80,0x22,0x40,0x40},neutral);
+    mk8_rumble_reset();
+    expect_effect(neutral,neutral);
+    send_tone(p3[1],.014061f,80,.122671f,160);
+    expect_effect(neutral,quiet);
+    unsigned held_writes=packet_writes;
+    Uint64 hold_until=SDL_GetTicks()+350;
+    while(SDL_GetTicks()<hold_until) {
+        mk8_rumble_frame();
+        SDL_Delay(16);
+    }
+    expect_effect(neutral,quiet);
+    CHECK(packet_writes>held_writes);
+    /* A stalled presentation thread cannot call mk8_rumble_frame to stop the hardware. */
+    expect_effect(neutral,neutral);
+    CHECK(!pulse[2].calls);
+    send_tone(p3[0],.501433f,160,.250715f,320);
+    expect_effect(original,neutral);
+    reject_packet=true;
+    send_tone(p3[1],.501433f,160,.250715f,320);
+    expect_generic_pulse();
+    mk8_rumble_reset();
+    CHECK(!pulse[2].low && !pulse[2].high);
+    mk8_rumble_close(2,extra_pad[1]);
+    extra_pad[1]=mk8_rumble_open(2,id);
+    CHECK(extra_pad[1]);
+    /* An unsupported effect on first use also falls back immediately. */
+    send_tone(p3[1],.501433f,160,.250715f,320);
+    expect_generic_pulse();
+    reject_packet=false;
+    mk8_rumble_close(2,extra_pad[1]);
+    /* A Steam/virtual translation can retain the Nintendo VID/PID on a different driver. */
+    virtual_hidapi_id=0;
+    extra_pad[1]=mk8_rumble_open(2,id);
+    CHECK(extra_pad[1]);
+    unsigned before=packet_changes;
+    send_tone(p3[0],.501433f,160,.250715f,320);
+    CHECK(packet_changes==before && pulse[2].low && pulse[2].high);
+    mk8_rumble_close(2,extra_pad[1]);
+    extra_pad[1]=NULL;
+    CHECK(SDL_DetachVirtualJoystick(id));
+}
 int main(void) {
     guest=VirtualAlloc((void *)(GUEST_LO+0x100000),0x20000,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
     CHECK(guest==(void *)(GUEST_LO+0x100000));
     CHECK(SDL_Init(SDL_INIT_GAMEPAD));
+    hd_output();
     SDL_JoystickID ids[2]={attach(0,true),attach(1,true)};
     pad=mk8_rumble_open(0,ids[0]);
     extra_pad[0]=mk8_rumble_open(1,ids[1]);
@@ -356,8 +520,14 @@ class ControllerRumbleTests(unittest.TestCase):
             service=(runtime/'services/hid_set.c').read_text(encoding='utf-8')
             start=service.index('static uint32_t new_event_handle(void)')
             end=service.index('SERVICE("hid:sys"',start)
-            source=PREFIX+'\n#define SDL_GetTicks test_ticks\n#define SDL_RumbleGamepad test_rumble\n'+vibration
-            source+='\n#undef SDL_GetTicks\n#undef SDL_RumbleGamepad\n'+service[start:end]+'\n'+CHECKS
+            source=PREFIX+'''\n#define SDL_GetTicks test_ticks
+#define SDL_RumbleGamepad test_rumble
+#define SDL_GetJoystickGUIDForID fixture_guid
+'''+vibration
+            source+='''\n#undef SDL_GetTicks
+#undef SDL_RumbleGamepad
+#undef SDL_GetJoystickGUIDForID
+'''+service[start:end]+'\n'+CHECKS
             (out/'rumble.c').write_text(source,encoding='utf-8')
             exe=out/'rumble.exe'
             build=subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O1','-UNDEBUG',

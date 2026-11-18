@@ -10,7 +10,9 @@ Na repetição com a versão revisada, o primeiro controle recebeu 951 atualiza�
 
 Na combinação com o menu nativo, o estado da página de configurações é separado do painel SDL. Uma regressão reproduziu a vibração que continuava ao abrir essa página. A combinação interrompe os motores nos dois menus e exige um novo comando do jogo após o retorno à corrida.
 
-A intensidade e a sensação no Switch Pro Controller via Bluetooth ainda dependem de teste físico. Esta etapa cobre vibração de dois motores. O giroscópio continua pendente. `gameplay_verified=false`. [Issue #53](https://github.com/Vnnc1/MK8-online/issues/53)
+Na etapa HD, a repetição de controle em Boo Lake registrou 10.140 valores por lado e zero pacotes nativos. Na versão corrigida, a corrida em tela dividida registrou 10.522 valores enviados pelo jogo e 784 pacotes HD nos dois Pro Controllers virtuais. Houve 47 pacotes com lados diferentes, 59 mudanças só de frequência e 45 paradas. As 2.355 frequências ativas coincidiram com os códigos representáveis mais próximos. As amplitudes ficaram a até um nível da tabela medida. Os 20 testes de controles e da integração host passaram, incluindo os casos de recusa da saída HD, parada entre efeitos e reatribuição do mesmo controle.
+
+O caminho HD atende o Pro Controller original e Joy-Con individuais abertos pela HIDAPI da SDL. Outros controles compatíveis usam os dois motores da SDL. A resposta física via Bluetooth e o giroscópio continuam pendentes. `gameplay_verified=false`. [Issue #53](https://github.com/Vnnc1/MK8-online/issues/53)
 
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 

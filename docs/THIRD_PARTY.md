@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Vibração HD do Nintendo Switch
+
+A identificação de dispositivos HIDAPI, o formato dos relatórios e o intervalo de envio foram conferidos no [driver Switch da SDL 3.4.18](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c). A codificação própria de frequências e amplitudes usa como referência as [medições de dekuNukem e colaboradores](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/252b51b1d88d708565b100a1bf48927df64f7793/rumble_data_table.md). A validação física depende do controle.
+
 ## Vibração dos controles — 18/11/2026
 
 O formato dos identificadores e dos comandos HID foi conferido nas declarações e na implementação da libnx. A conversão das amplitudes para os dois motores usa a API de gamepad da SDL3 já distribuída com o runtime. A implementação local foi testada com dispositivos virtuais. [libnx — tipos HID](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/hid.h) · [libnx — chamadas HID](https://github.com/switchbrew/libnx/blob/master/nx/source/services/hid.c) · [SDL_RumbleGamepad](https://wiki.libsdl.org/SDL3/SDL_RumbleGamepad)

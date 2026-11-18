@@ -100,6 +100,7 @@ int main(void) {
             (root/'test.c').write_text(r'''
 #include <SDL3/SDL.h>
 #include <assert.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <stdlib.h>

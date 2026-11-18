@@ -38,7 +38,7 @@ Development builds preserve visibility-counter reports across the 256-query subm
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
-After rebuilding the development runtime, each player's gamepad can receive race vibration through SDL. The game’s low and high vibration bands drive the two motors on supported controllers. Opening the settings menu or switching away from the game stops vibration. Two virtual controllers passed the split-screen test. A physical controller check is still pending.
+After rebuilding the development runtime, the original Nintendo Switch Pro Controller and individual Joy-Con can receive HD Rumble when SDL opens them directly through HIDAPI. The game controls each grip’s low and high frequencies and amplitudes independently. Other rumble-capable controllers, including those exposed through Steam Input or SDL’s paired Joy-Con driver, use basic two-motor vibration. Opening Settings or switching away stops the effect. Two virtual Pro Controllers passed the split-screen test. Physical Bluetooth confirmation is pending.
 
 The development DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
