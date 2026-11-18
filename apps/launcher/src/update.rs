@@ -33,6 +33,10 @@ pub fn repository() -> Option<String> {
 /// Whether this executable can replace itself: only the packaged launcher; a source checkout updates with git.
 pub fn installable() -> bool {
     cfg!(mk8_portable)
+        && std::env::current_exe()
+            .ok()
+            .and_then(|exe| crate::startup::portable_home(&exe).ok())
+            .is_some_and(|home| home.is_none())
 }
 
 /// (major, minor, patch, release-after-prerelease, prerelease text) of "v1.2.3-alpha.1".

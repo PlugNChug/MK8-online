@@ -75,6 +75,16 @@ def main():
     )
     launcher = OUTPUT / "Launcher.exe"
     shutil.copyfile(BUILD / "release/Launcher.exe", launcher)
+    # A separate archive opts into sibling storage without changing the setup executable's behavior.
+    with ZipFile(OUTPUT / "MK8-online-portable.zip", "w", ZIP_DEFLATED) as archive:
+        archive.write(launcher, "Launcher.exe")
+        archive.writestr("portable.txt", "MK8-online portable mode\n")
+        archive.write(ROOT / "LICENSE", "LICENSE")
+        archive.writestr("README.txt", "Extract to a writable folder. Run Launcher.exe to prepare your own game files.\n"
+                         "Run Launcher.exe --play to start an already prepared game without the launcher window.\n"
+                         "Data is stored in portable/. Keep this folder when updating Launcher.exe.\n"
+                         "Moving a prepared installation may require preparing again because manifests use absolute paths.\n"
+                         "Windows x64 only; game files and keys are not included.\n")
     print(launcher)
 
 

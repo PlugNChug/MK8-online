@@ -389,6 +389,18 @@ impl App {
     }
 
     /// Starts the game (in the connected room when `online`); `auto_lan` makes it enter the LAN room by itself.
+    pub fn play_direct(&mut self) -> Result<()> {
+        self.start_game(false, None, false)?;
+        let mut child = self.game.take().ok_or("O jogo não iniciou")?;
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!(
+                "O jogo encerrou com erro: {status}. Consulte game.log na pasta de dados."
+            ));
+        }
+        Ok(())
+    }
+
     fn start_game(&mut self, online: bool, auto_lan: Option<&str>, nextendo: bool) -> Result<u32> {
         if nextendo && (!mk8_installer::nextendo_available() || online || auto_lan.is_some()) {
             return Err("Nextendo indisponível nesta sessão.".into());

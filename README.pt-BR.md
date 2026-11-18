@@ -35,6 +35,15 @@ Vozes de áudio novas começam com volume anterior zero e usam a rampa existente
 
 ## Novidades da 0.3.0
 
+<!-- Opções novas de desenvolvimento; ainda fora do setup 0.3.0 publicado. -->
+
+**Inicialização direta:** `Launcher.exe --play` abre o jogo solo já preparado sem a janela do launcher. Para selecionar seus dados: `Launcher.exe --play --data-dir "D:\\MK8\\data"`. Mantém validações, bloqueios e logs; não instala ferramentas nem recompila. Salas Steam continuam pelo launcher.
+
+**Modo portátil Windows:** extraia `MK8-online-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
+
+**Limite atual:** manifestos de builds usam caminhos absolutos; mover a pasta ou trocar a letra do disco pode exigir preparar novamente. Não é suporte a Linux/AppImage/Steam Deck. A portabilidade completa de builds preparadas da #35 continua pendente.
+
+
 Prévia de desenvolvimento na `fix-chore`: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados. Não faz parte do setup público 0.3.0.
 
 - **CTGP Deluxe no MK8 4.0.1:** importe os recursos das pistas do CTGP Deluxe 1.1.1 (originalmente para 3.0.3), incluindo 64 pistas em 16 copas adicionais com nomes, imagens, ícones e músicas. A adaptação não executa o plugin original; a compatibilidade é incompleta e ainda há bugs.

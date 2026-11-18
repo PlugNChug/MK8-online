@@ -45,6 +45,13 @@ Developer preview on `fix-chore`: `MK8_MENU_PROTOTYPE=1` enables an in-game over
 
 ## What's new in 0.3.0
 
+Development builds add two startup options (not included in the published 0.3.0 setup):
+
+- **Direct play:** `Launcher.exe --play` opens an already prepared solo game without the launcher window. Use `Launcher.exe --play --data-dir "D:\\MK8\\data"` to select existing data. It still validates files, Vulkan and resource locks; it does not install tools or build the game. Errors return a nonzero exit code. Steam rooms still use the launcher.
+- **Portable Windows package:** extract `MK8-online-portable.zip` to a writable folder. Keep `portable.txt` beside `Launcher.exe`; sources, tools and data are stored under the adjacent `portable` folder. `--data-dir` overrides only the game-data location. Existing installed data is not moved automatically. To update, replace the executable and keep `portable/`; the setup-based updater is disabled in this mode.
+
+The portable package avoids setup/registry installation, but **prepared manifests still use absolute paths**. Moving the folder or changing its drive letter may require preparing the game again; moving between GPUs also requires testing and compatible Vulkan drivers. This is Windows x64 support, not Linux/AppImage or Steam Deck support. Fully relocatable prepared builds remain part of issue #35.
+
 - **CTGP Deluxe on MK8 4.0.1:** import the course resources of CTGP Deluxe 1.1.1 (originally for 3.0.3), including 64 courses in 16 additional cups with names, images, icons and music. This adaptation does not run the original CTGP plugin; compatibility is incomplete and bugs remain.
 - **Redesigned launcher:** horizontal installation stages, modular settings, accessible game language, guided Mii creation, clearer Steam rooms/friends and support reports.
 - **Optional DLC:** import your Booster Course Pass during preparation or later, then enable/disable it without deleting it. Game files, DLC and keys are never distributed.

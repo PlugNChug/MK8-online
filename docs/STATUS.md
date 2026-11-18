@@ -1,5 +1,15 @@
 # Estado técnico — 17/11/2026
 
+## Inicialização direta (#37) e pacote portátil Windows (#35)
+
+`Launcher.exe --play [--data-dir <pasta>]` usa `App::start_game` e o supervisor existente para iniciar solo, sem criar servidor HTTP/WebView/janela do launcher. Mantém validações de candidato, arquivos, Vulkan, recursos Mii/DLC/CTGP e locks; aguarda o jogo e retorna erro em falha. Sem build/preparação automática. Combinação com opções de servidor ou convite Steam é recusada explicitamente. Não oferece sala Steam nem autenticação Nextendo pelo argumento novo.
+
+`portable.txt` ao lado do executável escolhe `<pasta do exe>/portable` para fontes/ferramentas e `portable/data` para dados, com prioridade sobre `mk8-online.json` e LOCALAPPDATA. `--data-dir` continua tendo prioridade sobre a pasta de dados. Empacotamento gera `MK8-online-portable.zip` com Launcher.exe, marcador, licença e instruções; não precisa executar setup. Atualização pelo instalador é desabilitada no modo portátil; atualizar substituindo o exe e preservando portable/. Instalações/saves existentes não foram migrados.
+
+**#35 parcialmente atendida:** instalação portátil Windows disponível, porém os manifestos das builds ainda contêm caminhos absolutos. Mover a pasta/trocar a letra do volume pode exigir preparar novamente. Relocação automática de builds, caches/ferramentas entre máquinas e Linux/AppImage/Steam Deck não implementados nem qualificados. Não encerrar #35 como portabilidade completa.
+
+Validação: 38 testes Rust aprovados, build debug e empacotada release concluídas, formatação e Clippy sem avisos. Dois testes de processo real passaram no debug e no executável empacotado: modo direto sem candidato falha sem servidor; marcador com caminhos com espaços e --data-dir publicam servidor somente na pasta esperada. Smoke real de `--play` empacotado em `local/direct-play-8c8beju4`, saves copiados: chegou ao título MK8 4.0.1 (frame 300 inspecionado), saiu com código 0, sem launcher.json/servidor. Não qualifica corrida completa nesta build. Artefato privado: `D:/Project/MK8-online-build/target/portable/MK8-online-portable.zip`, 48.973.198 bytes, SHA-256 `7570b6a83316c01086d00b23bbd1b36755a5768df5f1a351cb50236f06a7bb6f`. Sem commit, merge ou publicação.
+
 ## Importação de DLC em NSP combinado — #36
 
 Quatro testes de navegador do módulo DLC também aprovados com o launcher debug existente e o Python de desenvolvimento (a primeira tentativa no Python empacotado não iniciou por ausência de Playwright). Eles verificam controles/estados/API da interface; não exercem descriptografia de pacote comercial.
