@@ -327,6 +327,8 @@ def prepare_host_sources(source, output):
     prepare_output_aspect(runtime)
     from snapshot_memory import prepare as prepare_snapshot_memory
     prepare_snapshot_memory(runtime)
+    from depth_clamp import prepare as prepare_depth_clamp
+    prepare_depth_clamp(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
     from controller_discovery import prepare as prepare_controller_discovery
