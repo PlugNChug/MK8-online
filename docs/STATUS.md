@@ -1,5 +1,17 @@
 # Estado técnico — 19/11/2026
 
+## Vibração dos controles — parte da issue #53
+
+Na base `18bbf31`, uma corrida automatizada em tela dividida em GBA Boo Lake enviou 2.936 lotes de vibração e fez 9.752 consultas de estado ao serviço HID. Nenhum dos dois controles virtuais da SDL recebeu vibração. O SDK do jogo já misturava os efeitos. O runtime aceitava os comandos sem acionar os motores.
+
+A adaptação usa os identificadores de jogador e lado emitidos pelo SDK e entrega os efeitos ao controle que a SDL atribuiu a cada jogador. Cada motor recebe a maior amplitude da sua faixa entre os dois lados. O jogo pode consultar o último valor por lado. A perda de foco, o menu F1, a desconexão e a revogação da permissão interrompem a vibração. A regressão nativa usa controles virtuais da SDL para verificar o encaminhamento, a parada, a reconexão e a rejeição de lotes inválidos antes de acionar um motor.
+
+Na repetição com a versão revisada, o primeiro controle recebeu 951 atualizações de motor e o segundo recebeu 494. Todas corresponderam às amplitudes do respectivo jogador, incluindo dez paradas do primeiro controle e quatro do segundo. O processo encerrou com código zero. Os saves, as configurações originais e os 489 arquivos protegidos passaram na verificação de integridade. Os 18 testes nativos de controles e do host passaram.
+
+Na combinação com o menu nativo, o estado da página de configurações é separado do painel SDL. Uma regressão reproduziu a vibração que continuava ao abrir essa página. A combinação interrompe os motores nos dois menus e exige um novo comando do jogo após o retorno à corrida.
+
+A intensidade e a sensação no Switch Pro Controller via Bluetooth ainda dependem de teste físico. Esta etapa cobre vibração de dois motores. O giroscópio continua pendente. `gameplay_verified=false`. [Issue #53](https://github.com/Vnnc1/MK8-online/issues/53)
+
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 
 ## Atualizações de ferramentas e desinstalação no Windows

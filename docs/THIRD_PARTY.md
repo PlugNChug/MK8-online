@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Vibração dos controles — 18/11/2026
+
+O formato dos identificadores e dos comandos HID foi conferido nas declarações e na implementação da libnx. A conversão das amplitudes para os dois motores usa a API de gamepad da SDL3 já distribuída com o runtime. A implementação local foi testada com dispositivos virtuais. [libnx — tipos HID](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/hid.h) · [libnx — chamadas HID](https://github.com/switchbrew/libnx/blob/master/nx/source/services/hid.c) · [SDL_RumbleGamepad](https://wiki.libsdl.org/SDL3/SDL_RumbleGamepad)
+
 ## Transição do instalador e consultas de tamanho de textura — 18/11/2026
 
 A transição do instalador para o launcher foi adaptada da [PR #56 de DieMitchell](https://github.com/Vnnc1/MK8-online/pull/56). O ajuste para consultas de tamanho de textura no tradutor Maxwell vem da [PR #62 de lorenzo-zurini](https://github.com/Vnnc1/MK8-online/pull/62). A [lista de GPUs da NVIDIA](https://download.nvidia.com/XFree86/Linux-x86_64/418.56/README/supportedchips.html) foi consultada para limitar a ativação ao dispositivo `10de:1b81`. As duas adaptações usam dependências já presentes no projeto.

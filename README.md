@@ -38,6 +38,8 @@ Development builds preserve visibility-counter reports across the 256-query subm
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
+After rebuilding the development runtime, each player's gamepad can receive race vibration through SDL. The game’s low and high vibration bands drive the two motors on supported controllers. Opening the settings menu or switching away from the game stops vibration. Two virtual controllers passed the split-screen test. A physical controller check is still pending.
+
 The development DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
 

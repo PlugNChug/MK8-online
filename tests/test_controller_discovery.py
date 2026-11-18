@@ -25,6 +25,7 @@ static unsigned opens, refreshes, styles;
 static bool real_gamepad(unsigned id) { return id != 0; }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++; return id==1 ? NULL : &devices[id]; }
+static SDL_Gamepad *mk8_rumble_open(int player, unsigned id) { assert(player==0); return SDL_OpenGamepad(id); }
 static bool pads_from_p2(void) { return p2; }
 static void open_extra(unsigned id) {
     for (unsigned i=0;i<EXTRA_PADS;i++) if (!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id); return; }

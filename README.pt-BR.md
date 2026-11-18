@@ -32,6 +32,8 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
+Após recompilar o runtime de desenvolvimento, o controle de cada jogador pode receber vibração durante a corrida via SDL. As amplitudes de baixa e alta frequência do jogo acionam os dois motores dos controles compatíveis. Abrir o menu de configurações ou mudar para outra janela interrompe a vibração. Dois controles virtuais passaram no teste de tela dividida. Falta conferir a resposta em um controle físico.
+
 
 Builds de desenvolvimento acrescentam **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
 
