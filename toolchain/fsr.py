@@ -54,11 +54,23 @@ MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
             memcpy(g_fsr_view, u, sizeof g_fsr_view);
             memcpy(g_fsr_proj, u + 28, sizeof g_fsr_proj);
             g_fsr_vp_valid = 1;
+            g_fsr_vp_addr = ub.addr;
+            static uint64_t jitter_frame;
+            uint64_t jf = vk_frame_counter();
+            if (jf != jitter_frame) {
+                jitter_frame = jf;
+                unsigned n = (unsigned)(jf % 8) + 1;
+                float hx = 0.5f, hy = 0.5f, f = 1.0f;
+                for (unsigned v = n, b = 2; v; v /= b, f /= b) hx += (float)(v % b) * f;
+                f = 1.0f;
+                for (unsigned v = n, b = 3; v; v /= b, f /= b) hy += (float)(v % b) * f;
+                g_fsr_jitter_x = hx - 0.5f;
+                g_fsr_jitter_y = hy - 0.5f;
+            }
         }
         { static int once; if (g_fsr_vp_valid && !once++) LOG("[fsr] view/proj captured in main draw\n"); }
     }
 """
-
 PROTOTYPES = """static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
                       const float pc[8], bool clear);
 static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f);

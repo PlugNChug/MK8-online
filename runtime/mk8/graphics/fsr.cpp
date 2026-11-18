@@ -33,6 +33,14 @@
 
 #include "vulkan/vk.h"
 
+extern "C" {
+VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
+VkSampler fsr_vk_default_sampler(bool linear);
+VkImageView fsr_vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv,
+                              uint32_t ly0, uint32_t nly, VkComponentMapping sw, VkImageAspectFlags aspect);
+VkShaderModule fsr_vk_compile_glsl(const char *src, int stage, const char *name);
+}
+
 
 
 typedef struct {
@@ -55,9 +63,25 @@ typedef struct {
     VmaAllocation motion_mem;
     VkImageView motion_view;
     bool primed;
+    VkDescriptorSetLayout mv_layout;
+    VkPipelineLayout mv_pipeline_layout;
+    VkPipeline mv_pipeline;
+    VkBuffer mv_ubo;
+    VmaAllocation mv_ubo_mem;
+    void *mv_ubo_ptr;
+    bool have_prev;
+    float prev_vp[16];
 } Fsr4;
 
 static Fsr4 fsr;
+
+extern "C" {
+extern float g_fsr_view[12];
+extern float g_fsr_proj[16];
+extern int g_fsr_vp_valid;
+extern float g_fsr_jitter_x;
+extern float g_fsr_jitter_y;
+}
 
 static void *load_library(const char *path) {
 #ifdef _WIN32
@@ -123,6 +147,145 @@ static void barrier(VkCommandBuffer cb, VkImage image, VkImageAspectFlags aspect
     vkCmdPipelineBarrier(cb, src_stage, dst_stage, 0, 0, NULL, 0, NULL, 1, &b);
 }
 
+static void mul4(const float a[16], const float b[16], float out[16]) {
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++)
+            out[r * 4 + c] = a[r * 4 + 0] * b[0 * 4 + c] + a[r * 4 + 1] * b[1 * 4 + c] +
+                             a[r * 4 + 2] * b[2 * 4 + c] + a[r * 4 + 3] * b[3 * 4 + c];
+}
+
+static bool invert4(const float m[16], float out[16]) {
+    float a[4][8];
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) a[r][c] = m[r * 4 + c];
+        for (int c = 0; c < 4; c++) a[r][4 + c] = (r == c) ? 1.0f : 0.0f;
+    }
+    for (int c = 0; c < 4; c++) {
+        int pivot = c;
+        for (int r = c + 1; r < 4; r++) if (fabsf(a[r][c]) > fabsf(a[pivot][c])) pivot = r;
+        if (fabsf(a[pivot][c]) < 1e-9f) return false;
+        if (pivot != c) for (int k = 0; k < 8; k++) { float t = a[c][k]; a[c][k] = a[pivot][k]; a[pivot][k] = t; }
+        float d = a[c][c];
+        for (int k = 0; k < 8; k++) a[c][k] /= d;
+        for (int r = 0; r < 4; r++) if (r != c) {
+            float f = a[r][c];
+            if (f == 0.0f) continue;
+            for (int k = 0; k < 8; k++) a[r][k] -= f * a[c][k];
+        }
+    }
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++) out[r * 4 + c] = a[r][4 + c];
+    return true;
+}
+
+static bool create_mv_resources(void) {
+    if (fsr.mv_pipeline) return true;
+    VkDescriptorSetLayoutBinding b[3] = {
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL},
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL}};
+    VkDescriptorSetLayoutCreateInfo li = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    li.bindingCount = 3;
+    li.pBindings = b;
+    if (vkCreateDescriptorSetLayout(g_vk.dev, &li, NULL, &fsr.mv_layout) != VK_SUCCESS) return false;
+    VkPipelineLayoutCreateInfo pli = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &fsr.mv_layout;
+    if (vkCreatePipelineLayout(g_vk.dev, &pli, NULL, &fsr.mv_pipeline_layout) != VK_SUCCESS) return false;
+    static const char *src =
+        "#version 450\n"
+        "layout(local_size_x = 16, local_size_y = 16) in;\n"
+        "layout(set = 0, binding = 0) uniform U { mat4 invVP; mat4 prevVP; vec2 size; } u;\n"
+        "layout(set = 0, binding = 1) uniform sampler2D depthTex;\n"
+        "layout(set = 0, binding = 2, rg16f) uniform image2D mvOut;\n"
+        "void main() {\n"
+        "  ivec2 p = ivec2(gl_GlobalInvocationID.xy);\n"
+        "  if (p.x >= int(u.size.x) || p.y >= int(u.size.y)) return;\n"
+        "  vec2 uv = (vec2(p) + 0.5) / u.size;\n"
+        "  float d = texture(depthTex, uv).r;\n"
+        "  if (d >= 0.9999) { imageStore(mvOut, p, vec4(0.0)); return; }\n"
+        "  vec4 w = u.invVP * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n"
+        "  if (abs(w.w) < 1e-9) { imageStore(mvOut, p, vec4(0.0)); return; }\n"
+        "  w /= w.w;\n"
+        "  vec4 pc = u.prevVP * w;\n"
+        "  if (pc.w <= 0.0) { imageStore(mvOut, p, vec4(0.0)); return; }\n"
+        "  vec2 puv = pc.xy / pc.w * 0.5 + 0.5;\n"
+        "  imageStore(mvOut, p, vec4((puv - uv) * u.size, 0.0, 0.0));\n"
+        "}\n";
+    VkShaderModule module = fsr_vk_compile_glsl(src, VK_SHADER_STAGE_COMPUTE_BIT, "fsr_mv");
+    if (!module) return false;
+    VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = module;
+    ci.stage.pName = "main";
+    ci.layout = fsr.mv_pipeline_layout;
+    VkResult r = vkCreateComputePipelines(g_vk.dev, g_vk.pcache, 1, &ci, NULL, &fsr.mv_pipeline);
+    vkDestroyShaderModule(g_vk.dev, module, NULL);
+    if (r != VK_SUCCESS) return false;
+    VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bci.size = 144;
+    bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VmaAllocationCreateInfo ai = {};
+    ai.usage = VMA_MEMORY_USAGE_AUTO;
+    ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo info = {};
+    if (vmaCreateBuffer(g_vk.vma, &bci, &ai, &fsr.mv_ubo, &fsr.mv_ubo_mem, &info) != VK_SUCCESS) return false;
+    fsr.mv_ubo_ptr = info.pMappedData;
+    return fsr.mv_ubo_ptr != NULL;
+}
+
+static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t rh) {
+    if (!g_fsr_vp_valid || !depth || !depth->image || !fsr.mv_pipeline || !fsr.mv_ubo_ptr) {
+        static int once;
+        if (!once++) fprintf(stderr, "[fsr] motion skipped (vp %d depth %p)\n", g_fsr_vp_valid, depth ? (void *)depth->image : NULL);
+        return false;
+    }
+    float v[16] = {g_fsr_view[0], g_fsr_view[1], g_fsr_view[2], g_fsr_view[3],
+                   g_fsr_view[4], g_fsr_view[5], g_fsr_view[6], g_fsr_view[7],
+                   g_fsr_view[8], g_fsr_view[9], g_fsr_view[10], g_fsr_view[11],
+                   0.0f, 0.0f, 0.0f, 1.0f};
+    float vp[16], inv[16], prev[16];
+    mul4(g_fsr_proj, v, vp);
+    if (!invert4(vp, inv)) return false;
+    if (fsr.have_prev) memcpy(prev, fsr.prev_vp, sizeof prev);
+    else memcpy(prev, vp, sizeof prev);
+    float *u = (float *)fsr.mv_ubo_ptr;
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++) {
+            u[c * 4 + r] = inv[r * 4 + c];
+            u[16 + c * 4 + r] = prev[r * 4 + c];
+        }
+    u[32] = (float)rw;
+    u[33] = (float)rh;
+    barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    VkDescriptorSet set = fsr_vk_alloc_set(fsr.mv_layout);
+    VkDescriptorBufferInfo bi = {fsr.mv_ubo, 0, 144};
+    VkDescriptorImageInfo di = {fsr_vk_default_sampler(true),
+                                fsr_vk_image_view(depth, VK_IMAGE_VIEW_TYPE_2D, depth->format, 0, 1, 0, 1,
+                                              VkComponentMapping{}, (depth->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo oi = {VK_NULL_HANDLE, fsr.motion_view, VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet w[3] = {
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, set, 0, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, NULL, &bi, NULL},
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, set, 1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &di, NULL, NULL},
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, set, 2, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &oi, NULL, NULL}};
+    vkUpdateDescriptorSets(g_vk.dev, 3, w, 0, NULL);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, fsr.mv_pipeline);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, fsr.mv_pipeline_layout, 0, 1, &set, 0, NULL);
+    vkCmdDispatch(cb, (rw + 15) / 16, (rh + 15) / 16, 1);
+    barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    memcpy(fsr.prev_vp, vp, sizeof fsr.prev_vp);
+    fsr.have_prev = true;
+    return true;
+}
+
 static void destroy_images(void) {
     if (fsr.output_view) vkDestroyImageView(g_vk.dev, fsr.output_view, NULL);
     if (fsr.output) { vkDestroyImage(g_vk.dev, fsr.output, NULL); vmaFreeMemory(g_vk.vma, fsr.output_mem); }
@@ -145,7 +308,9 @@ static bool create_images(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
                             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT, &fsr.output_mem);
     fsr.depth = make_image(VK_FORMAT_D32_SFLOAT, rw, rh, sampled, VK_IMAGE_ASPECT_DEPTH_BIT, &fsr.depth_mem);
-    fsr.motion = make_image(VK_FORMAT_R16G16_SFLOAT, rw, rh, sampled, VK_IMAGE_ASPECT_COLOR_BIT, &fsr.motion_mem);
+    fsr.motion = make_image(VK_FORMAT_R16G16_SFLOAT, rw, rh,
+                            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT, &fsr.motion_mem);
     if (!fsr.output || !fsr.depth || !fsr.motion) return false;
     fsr.output_view = image_view(fsr.output, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
     fsr.depth_view = image_view(fsr.depth, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -216,6 +381,7 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
     }
     if (!fsr.context) {
         if (!create_images(rw, rh, ow, oh) || !create_context(rw, rh, ow, oh)) return VK_NULL_HANDLE;
+        create_mv_resources();
         fsr.rw = rw, fsr.rh = rh, fsr.ow = ow, fsr.oh = oh;
     }
     if (!fsr.primed) {
@@ -301,21 +467,28 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
     desc.depth = ffxApiGetResourceVK(depth_image,
         ffxApiGetImageResourceDescriptionVK(depth_image, depth_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    desc.motionVectors = ffxApiGetResourceVK(fsr.motion,
-        ffxApiGetImageResourceDescriptionVK(fsr.motion, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     desc.output = ffxApiGetResourceVK(fsr.output,
         ffxApiGetImageResourceDescriptionVK(fsr.output, output_ci, VK_IMAGE_USAGE_STORAGE_BIT),
         VK_IMAGE_LAYOUT_GENERAL);
     desc.renderSize = {rw, rh};
     desc.upscaleSize = {ow, oh};
-    desc.motionVectorScale = {(float)rw, (float)rh};
-    desc.jitterOffset = {0.0f, 0.0f};
+    bool mv = real_depth && fsr.mv_pipeline && run_mv(cb, depth, rw, rh);
+    static int motion_state = -1;
+    if ((int)mv != motion_state) {
+        motion_state = mv;
+        fprintf(stderr, "[fsr] motion now %s\n", mv ? "camera" : "neutral");
+    }
+    desc.motionVectors = ffxApiGetResourceVK(fsr.motion,
+        ffxApiGetImageResourceDescriptionVK(fsr.motion, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    desc.motionVectorScale = mv ? (struct FfxApiFloatCoords2D){1.0f, 1.0f}
+                                : (struct FfxApiFloatCoords2D){(float)rw, (float)rh};
+    desc.jitterOffset = {g_fsr_jitter_x, g_fsr_jitter_y};
     desc.enableSharpening = true;
     desc.sharpness = 0.2f;
     desc.frameTimeDelta = frame_ms > 0 ? frame_ms : 16.7f;
     desc.preExposure = 1.0f;
-    desc.reset = true;  // neutral inputs: never keep history from another frame
+    desc.reset = !mv;  // real camera motion keeps history; the neutral image resets every frame
     desc.cameraNear = 0.1f;
     desc.cameraFar = 1000.0f;
     desc.cameraFovAngleVertical = 1.0472f;
@@ -327,8 +500,8 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         return VK_NULL_HANDLE;
     }
     static int logged;
-    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion neutral)\n",
-                           rw, rh, ow, oh, real_depth ? "game" : "neutral");
+    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion %s)\n",
+                           rw, rh, ow, oh, real_depth ? "game" : "neutral", mv ? "camera" : "neutral");
     static int timings;
     if (timings++ % 120 == 0) {
         static uint64_t last;

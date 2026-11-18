@@ -54,14 +54,16 @@ FPS runs on an otherwise idle desktop.
   2304x1296` and `[fsr] depth now game (1920x1080 fmt 100)`; the frame at
   `fsr4-capture3600-03600.png` uses that depth. `MK8_FSR4_CAPTURE=1` enables
   the capture; it is off by default until its cost is measured.
-- **Motion vectors/jitter:** still zero and reset per frame. Camera-only motion
-  vectors need the scene view-projection matrices; object motion (karts) and
-  subpixel projection jitter are the remaining gate before temporal quality.
-  `LARECOMP_DEBUG_FRAME=2400 LARECOMP_DEBUG_DATA=1` shows a 3D draw whose
-  `vcb3` holds two 3x4 view matrices followed by a 4x4 projection at offset 32
-  (the projection has the expected x/y scale and `-1, 0` last row). Hypothesis:
-  the two views are the current and previous camera. Validate their frame-to-
-  frame deltas before writing the reprojection pass.
+- **Motion vectors/jitter:** active. The main draw's `vcb3` provides a 3x4
+  view matrix at offset 0 and a 4x4 projection at offset 28; `fsr.cpp` keeps
+  the current/previous view-projection, reconstructs world positions from the
+  captured scene depth in a compute pass, and writes camera motion vectors in
+  pixel space. A Halton (2,3) jitter is applied to the host copy of the scene
+  projection, leaving guest memory and UI/2D untouched; FSR receives the same
+  offset in `jitterOffset`. Logs: `[fsr] view/proj captured in main draw`,
+  `[fsr] depth now game (1920x1080 fmt 100)`, `[fsr] motion now camera`; frame
+  `fsr4-jitter2400-02400.png` uses all three inputs. Object motion (karts) is
+  not in the vectors yet.
 - **FSR 3.1.6:** the SDK source build currently produces empty shader
   permutation tables with the Linux/Wine shader generator, so its provider
   prototype is not integrated. A Windows-generated SDK or a fixed generator is
