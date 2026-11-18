@@ -62,7 +62,7 @@ Read the [0.3.0 release notes in English or Portuguese](docs/releases/0.3.0.md) 
 
 ## Where it stands
 
-Development builds preserve fragment-input interpolation declared by the Maxwell shader header, including flat and screen-linear lighting inputs. The native translator/SPIR-V regression passes; a fresh isolated Music Park/Stadium visual comparison is still pending. Rebuild the runtime to apply this change.
+Development builds preserve fragment-input interpolation declared by the Maxwell shader header, including flat and screen-linear lighting inputs. Native regressions pass, and isolated local tests at 1× restored Music Park's missing plant spotlights and corrected the reported Mario Kart Stadium lighting. Render-target scaling is a separate change; other courses and GPUs remain unqualified. Rebuild the runtime to apply this change.
 
 **120 FPS presentation:** the existing experimental frame-generation option interpolates one image between real frames while the game remains at 60 Hz. It needs a high-refresh display and GPU headroom; it does not unlock native simulation or remove shader stutters. Local investigation measured about 120 presented frames per second in a stable solo section on an RX 580 2048SP / 180 Hz display. This is not full-race or multiplayer qualification. The 0.3.0 runtime also fixes CRLF INI parsing, which could silently disable `frame_gen = 120` and misread other text settings. Details and limitations are in [STATUS.md](docs/STATUS.md).
 
