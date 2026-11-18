@@ -329,6 +329,9 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     ffxCreateContextDescUpscaleVersion version = {0};
     version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE_VERSION;
     version.version = FFX_UPSCALER_VERSION;
+    const char *want = getenv("MK8_FSR_VERSION");
+    if (want && strcmp(want, "3.1.6") == 0) version.version = (3u << 22) | (1u << 12) | 6u;
+    { static int once; if (!once++) fprintf(stderr, "[fsr] requesting version %#x\n", version.version); }
 
     ffxCreateContextDescUpscale upscale = {0};
     upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
@@ -339,7 +342,12 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     version.header.pNext = &backend.header;
 
     ffxContext context = NULL;
-    if (fsr.create(&context, &upscale.header, NULL) != FFX_API_RETURN_OK || !context) return false;
+    ffxReturnCode_t rc = fsr.create(&context, &upscale.header, NULL);
+    if (rc != FFX_API_RETURN_OK || !context) {
+        static int once;
+        if (!once++) fprintf(stderr, "[fsr] create failed 0x%x\n", (unsigned)rc);
+        return false;
+    }
     fsr.context = context;
     ffxQueryGetProviderVersion provider = {0};
     provider.header.type = FFX_API_QUERY_DESC_TYPE_GET_PROVIDER_VERSION;

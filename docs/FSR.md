@@ -64,10 +64,12 @@ FPS runs on an otherwise idle desktop.
   `[fsr] depth now game (1920x1080 fmt 100)`, `[fsr] motion now camera`; frame
   `fsr4-jitter2400-02400.png` uses all three inputs. Object motion (karts) is
   not in the vectors yet.
-- **FSR 3.1.6:** the SDK source build currently produces empty shader
-  permutation tables with the Linux/Wine shader generator, so its provider
-  prototype is not integrated. A Windows-generated SDK or a fixed generator is
-  required.
+- **FSR 3.1.6:** the MIT SDK source builds a provider with the local
+  permutation-table workaround, but `ffxCreateContext` for version 3.1.6 fails
+  or stalls before a provider query (`[fsr] requesting version 0xc01006`, then
+  no dispatch). The provider is not integrated; a correctly generated Windows
+  SDK/permutation set or a fixed Linux generator is required. FSR 4.1.2 remains
+  the only working version.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).
