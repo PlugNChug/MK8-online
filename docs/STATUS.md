@@ -1,5 +1,9 @@
 # Estado técnico — 18/11/2026
 
+## Boo Lake e cores das copas
+
+Em Boo Lake, a cópia de profundidade R16F e o array de luz com duas camadas usavam 1920×1080 enquanto os demais alvos da cena usavam 1152×648. Alinhar a escala desses dois recursos removeu o recorte nos faróis e na água em solo, inclusive com resolução a 50%. Os testes preservam a espera por shaders para esses alvos. Nos ícones das copas, o formato NVN 0x3C guarda vermelho nos bits baixos. O mapeamento Vulkan B5G6R5 corrigiu a troca de vermelho por azul. O testador confirmou ambas as correções em seu PC. Iluminação em outras pistas e em tela dividida ainda requer teste.
+
 ## Integração das PRs #42, #43 e #44 na fix-chore
 
 Integrado o histórico das três PRs com commits de merge separados. Os códigos de saves/Mii (#42), guarda do histórico de cubemaps (#43) e comandos compactos (#44) já estavam presentes nos commits locais `07126fd` e `26a6dce`. Comparação com `53ae368` confirma que os merges não alteraram runtime/toolchain/testes; conflitos foram resolvidos preservando documentação atual, output-aspect, recuperação de memória e demais correções posteriores. README recebeu os esclarecimentos das PRs.
