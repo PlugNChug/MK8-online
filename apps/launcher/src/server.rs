@@ -2254,7 +2254,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mk8-prepare-dlc-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("dlc.json"), b"previous preference").unwrap();
-        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let config = Config {
+            prod_keys: root
+                .join("missing-keys/prod.keys")
+                .to_string_lossy()
+                .into_owned(),
+            ..Config::default()
+        };
+        assert!(!Path::new(&config.prod_keys).exists());
+        let mut app = App::new(root.clone(), root.clone(), config, None);
         // A previous candidate must not start the new import while tools install.
         app.prepare_after_setup = true;
         app.prepare_dlc = Some(root.join("optional.nsp"));
