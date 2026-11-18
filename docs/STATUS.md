@@ -1,5 +1,13 @@
 # Estado técnico — 17/11/2026
 
+## Importação de DLC em NSP combinado — #36
+
+Quatro testes de navegador do módulo DLC também aprovados com o launcher debug existente e o Python de desenvolvimento (a primeira tentativa no Python empacotado não iniciou por ausência de Playwright). Eles verificam controles/estados/API da interface; não exercem descriptografia de pacote comercial.
+
+O importador recusava um pacote com o par de NCAs verificado sempre que existisse qualquer NCA adicional. Agora exige a presença dos dois nomes fixados e extrai apenas esses arquivos, conferindo os mesmos tamanhos e hashes. Seleciona somente o ticket com prefixo do título DLC; zero ou múltiplos tickets correspondentes continuam sendo erro. Outros conteúdos/tickets ficam no pacote, sem extração. A validação LibHac e os hashes do RomFS permanecem obrigatórios. Não habilita versões desconhecidas, DLC comprimido ou bypass de integridade.
+
+Regressão com NSP autoral combinado falhou no código anterior e passou após a mudança. Onze testes de DLC aprovados, incluindo pacote independente, conteúdo ausente/adulterado, ticket ausente/ambíguo, preservação de configuração/backup e seis casos do serviço nativo. Teste de importação usa extrator simulado e arquivos autorais; não valida pacote comercial combinado. Nenhum arquivo privado foi importado/reinstalado. #36 continua sem metadados do pacote do relator, portanto esta correção de compatibilidade não encerra o relato. Sem mudança de runtime/Rust ou novo setup.
+
 ## Descoberta de controles — continuidade da #50
 
 Encontrada falha na enumeração inicial: somente `ids[0]` era tentado para jogador 1; se SDL não conseguisse abri-lo, os demais eram encaminhados a `open_extra`, deixando jogador 1 sem controle. `controller_discovery.py` aplica uma rotina comum à enumeração e a GAMEPAD_ADDED, tentando cada dispositivo válido até preencher jogador 1. IDs já abertos são ignorados, inclusive se jogador 1 desconectar enquanto jogador 2 permanece, sem roubar esse controle em evento duplicado. Mantém `pads_from_p2`; falha de abertura informa erro real SDL, sem chamar APIs de nome com handle nulo. Abertura bem-sucedida atualiza botões e sinaliza mudança de estilo.

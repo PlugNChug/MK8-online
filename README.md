@@ -38,6 +38,8 @@ Development builds also preserve visibility-counter reports across the 256-query
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
+The development DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
+
 
 Developer preview on `fix-chore`: `MK8_MENU_PROTOTYPE=1` enables an in-game overlay with Play, Nextendo, Social and Settings pages (F1 or Back + Start). Account state and settings use the runtime. Social requests the additional `friends` OAuth permission and reads friends/presence; Nextendo lists live MK8 lobbies and reads the current lobby. Selecting a row shows its details; it does not join the room. Queries run in the background every 30 seconds while either page is open. Permission/network failures are displayed explicitly; illustrative players and rooms have been removed. With Nextendo signed in, enter races through the game's Online Play menu. The panel's lobby list is informational; direct joining from this panel is out of scope. Race invitations are not implemented. This preview is not part of the published 0.3.0 setup.
 

@@ -127,6 +127,9 @@ class DlcImportTests(unittest.TestCase):
             hashes = {name: (len(payload), hashlib.sha256(payload).hexdigest()) for name, payload in contents.items()}
             archive = {name.encode(): payload for name, payload in contents.items()}
             archive[b"0100152000023001.fixture.tik"] = b"ticket autoral"
+            # A combined NSP can contain unrelated content and tickets. Only the verified DLC is staged.
+            archive[b"unrelated.nca"] = b"outro conteudo autoral"
+            archive[b"0100000000000000.fixture.tik"] = b"outro ticket autoral"
             package_path = root / "dlc.nsp"
             package_path.write_bytes(package(archive))
             calls = []
@@ -134,11 +137,29 @@ class DlcImportTests(unittest.TestCase):
             def run(args, **kwargs):
                 calls.append(args)
                 if "--dlc" in args:
+                    stage = Path(args[-1]).parent
+                    self.assertEqual({p.name for p in stage.iterdir()}, set(contents) | {"content.tik"})
+                    self.assertEqual((stage / "content.tik").read_bytes(), b"ticket autoral")
                     shutil.copytree(authored, Path(args[-1]) / "romfs")
                 return subprocess.CompletedProcess(args, 0)
 
             with patch.multiple(import_dlc, ROOT=root, FILES=files, CONTENTS=hashes), \
                     patch.object(import_dlc, "require_space"), patch.object(import_dlc.subprocess, "run", side_effect=run):
+                missing = dict(archive)
+                del missing[b"meta.cnmt.nca"]
+                package_path.write_bytes(package(missing))
+                with self.assertRaisesRegex(ValueError, "Booster Course Pass"):
+                    import_dlc.install(package_path, root / "fixture.keys", local)
+                ambiguous = dict(archive)
+                ambiguous[b"0100152000023001.second.tik"] = b"ambiguous"
+                package_path.write_bytes(package(ambiguous))
+                with self.assertRaisesRegex(ValueError, "ticket"):
+                    import_dlc.install(package_path, root / "fixture.keys", local)
+                wrong_ticket = dict(archive)
+                del wrong_ticket[b"0100152000023001.fixture.tik"]
+                package_path.write_bytes(package(wrong_ticket))
+                with self.assertRaisesRegex(ValueError, "ticket"):
+                    import_dlc.install(package_path, root / "fixture.keys", local)
                 archive[b"data.nca"] = b"x" * len(contents["data.nca"])
                 package_path.write_bytes(package(archive))
                 with self.assertRaises(ValueError):
@@ -170,6 +191,9 @@ class DlcImportTests(unittest.TestCase):
                         import_dlc.install(package_path, root / "fixture.keys", local, reinstall=True)
                 self.assertEqual(json.loads((local / "candidate.json").read_text()), before_reinstall)
                 self.assertEqual(list(local.glob("dlc-backup-*")), [])
+                del archive[b"unrelated.nca"]
+                del archive[b"0100000000000000.fixture.tik"]
+                package_path.write_bytes(package(archive))
                 import_dlc.install(package_path, root / "fixture.keys", local, reinstall=True)
                 self.assertEqual(len(calls), 4)
                 self.assertEqual(json.loads((local / "dlc.json").read_text()), {"enabled": False})
