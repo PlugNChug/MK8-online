@@ -1,5 +1,11 @@
 # Estado técnico — 16/11/2026
 
+## #7 — corridas a 1,5 FPS em GTX 1070 — 18/11/2026
+
+Reproduzido em GTX 1070 8 GB (driver NVIDIA 580.196.07, Vulkan 1.4.312, Linux com Proton), mesma GPU do relato [#7](https://github.com/Vnnc1/MK8-online/issues/7): menus a 60 FPS, corridas a 1,5 FPS. `LARECOMP_GPUPROF_AT` atribuía 99,7% do quadro (686 ms) a um único passo de tela cheia, a máscara de sombras em cascata (fs `36d4490c2adee991`, recurso AGL comum a todas as pistas); pulá-lo deixava o chão preto. O GLSL traduzido está correto: a sua SPIR-V, isolada num teste Vulkan mínimo, levou 1,66 s por desenho a 1440×810. O tempo cresce linearmente com o limite `guard` do laço `switch (pc)`, e o resultado também saía errado. O gatilho é o `textureSize` (limite da camada do array) dentro do laço, depois da reconvergência SSY: com a mesma consulta antes do laço, 0,09 ms e valores corretos. É um erro do compilador Pascal; spirv-val aceita o módulo.
+
+`toolchain/texture_size_hoist.py` lê os tamanhos de nível 0 de shaders GLSL com desvios uma vez, antes do laço. Sem desvios e MSL, nada muda. Medido no jogo: o passo foi de 685,97 ms (1440×810) para 0,098 ms (1920×1080), e o quadro inteiro de 687 para 14,9 ms. Cinco minutos de corridas do modo demonstração (seis pistas) ficaram em 59,6–60,4 FPS, com chão e sombras desenhados. A tela de título é igual antes e depois (15,47 ms por quadro). Teste nativo: `tests/test_texture_size_hoist.py`. Falta reteste do relator no Windows e em outras GPUs.
+
 ## Pré-release 0.3.0 — pacote validado em 16/11/2026
 
 Publicação solicitada pelo mantenedor e concluída, reunindo a `fix-chore` e suas PRs aceitas na branch principal **master** (o repositório não usa `main`). Versão de workspace/launcher `0.3.0`, tag `v0.3.0` no commit `47b05c5`, marcada como pré-release mesmo sem sufixo. Merge `c2b4ee6`; branches sincronizadas. Notas em inglês e português, em seções expansíveis, em [releases/0.3.0.md](releases/0.3.0.md); README, README.pt-BR, ROADMAP e instruções de publicação atualizados.
