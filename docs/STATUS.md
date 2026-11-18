@@ -1,5 +1,13 @@
 # Estado técnico — 18/11/2026
 
+## Integração das PRs #42, #43 e #44 na fix-chore
+
+Integrado o histórico das três PRs com commits de merge separados. Os códigos de saves/Mii (#42), guarda do histórico de cubemaps (#43) e comandos compactos (#44) já estavam presentes nos commits locais `07126fd` e `26a6dce`. Comparação com `53ae368` confirma que os merges não alteraram runtime/toolchain/testes; conflitos foram resolvidos preservando documentação atual, output-aspect, recuperação de memória e demais correções posteriores. README recebeu os esclarecimentos das PRs.
+
+Validação conjunta: 54 testes nativos passaram sem skips (177 s), cobrindo saves em processos separados, Mii, layout, texturas, gravação dos 62 tipos de comando, submissão assíncrona, descritores, compute e oclusão. Build `--runtime-only` concluída a partir das fontes: 220 unidades host recompiladas, dependências verificadas e biblioteca guest preservada. A primeira tentativa usou um candidato diagnóstico com referência externa de DLC e foi recusada; a repetição usou `local/pr-integration`, com entradas espelhadas por hardlinks e sem modificar a instalação ou os saves originais. Logs privados: `local/open-prs-tests.log` e `local/open-prs-runtime.log`.
+
+Ensaio automático posterior: `local/race-grand-prix-l3qggao2`, 214,9 s, encerramento 0, sem `FATAL`. Capturas nos frames 3500 e 12000 inspecionadas mostram Mario Kart Stadium nas voltas 1/3 e 3/3. Últimas oito janelas registram 59,9–60 FPS; não representam todas as pistas nem ausência de engasgos. Saves/cache copiados; não houve qualificação de copa completa, persistência de troféus, áudio, controle físico ou multiplayer nesta rodada; `gameplay_verified=false`. A primeira tentativa (`onujjp1j`) entrou em dois jogadores pela sequência antiga e foi interrompida; a repetição removeu o DOWN inicial para escolher um jogador. Não contar essa primeira tentativa como corrida aprovada. Evidência: `local/open-prs-race-final.log`.
+
 ## Realocação do pacote portátil Windows
 
 Adicionado registro `portable-location.json` e reparo de caminhos internos quando a árvore portátil muda de pasta/unidade. Operação usa locks de preparação e build, valida JSON antes de aplicar alterações, preserva backups de metadados e grava a localização nova por último; repetição após interrupção é idempotente. Só percorre metadados próprios conhecidos, sem modificar saves/perfis de identidade, binários, fontes embarcadas ou arquivos do jogo, e sem seguir links/junctions. Referências externas e --data-dir externo não são migrados. Os caminhos home/executable de pyvenv.cfg acompanham o CPython incluído. É preciso abrir esta versão uma vez na pasta original para registrar a localização antes da mudança.
