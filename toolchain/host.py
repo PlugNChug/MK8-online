@@ -403,6 +403,8 @@ def prepare_host_sources(source, output):
         return EXCEPTION_CONTINUE_EXECUTION;
 ''')
     windows.write_text(text, encoding='utf-8')
+    from settings_menu import prepare as prepare_settings_menu
+    prepare_settings_menu(runtime)
     return runtime
 
 
@@ -432,6 +434,8 @@ def build_host(source, output, workers=None):
     # Export only the shared runtime ABI used by the generated game code.
     exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
     exports = output/'exports.def'
+    exported.extend(['mk8_ultrawide_camera', 'mk8_ultrawide_hud', 'mk8_settings_top_event',
+                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_page_frame'])
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'
     directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)
@@ -463,6 +467,7 @@ def build_host(source, output, workers=None):
     sources = [runtime/p.relative_to(source/'runtime') if p.is_relative_to(source/'runtime') else p for p in sources]
     headers = {str(p.relative_to(source)): digest(p) for folder in ['runtime', 'third_party', 'games/mk8d'] for p in (source/folder).rglob('*.h')}
     headers.update({'prepared/'+str(p.relative_to(runtime)): digest(p) for p in runtime.rglob('*.h')})
+    headers.update({str(p.relative_to(ROOT)): digest(p) for p in (ROOT/'runtime/mk8').rglob('*.h')})
     dep_headers = {str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
     environment = hashlib.sha256(json.dumps({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'), 'compiler': digest(DEFAULT_COMPILER), 'flags': common}, sort_keys=True).encode()).hexdigest()
 

@@ -68,6 +68,10 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(baseline, run({}))
             self.assertEqual(baseline.splitlines()[0], "1.00 0 0 0 0 2 0 0")
             self.assertNotIn("bind_", baseline)
+            for value, expected in (("unlocked", 0), ("original", 1), ("ultrawide", 2), ("unknown", 0)):
+                with self.subTest(aspect=value):
+                    output = run(dict(defaults, aspect=value))
+                    self.assertEqual(int(output.splitlines()[1].split()[0]), expected)
             changed = dict(defaults, volume="0.65", resolution="75%", fullscreen="1",
                            show_fps="1", language="fr", upscaler="bilinear", antialias="smaa",
                            frame_gen="120", bind_key_a="Space", bind_pad_a="south")

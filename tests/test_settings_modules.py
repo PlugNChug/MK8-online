@@ -64,6 +64,57 @@ class SettingsModulesTests(unittest.TestCase):
         folder.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(folder/f'config-{name}.png'), full_page=True, animations='disabled')
 
+    def test_native_settings_opt_in_preserves_other_options_and_game_data(self):
+        path = self.local/'debug-options.json'
+        previous = {'graphics_capture':True, 'audio_recording':True, 'native_settings':False}
+        path.write_text(json.dumps(previous), encoding='utf-8')
+        ini = self.local/'user-no-mii/mk8d.ini'
+        original = ini.read_bytes()
+        page = self.page
+        page.reload()
+        switch = page.locator('#debug-settings')
+        expect(switch).not_to_be_checked()
+        switch.check()
+        expect(page.locator('#debug-status')).to_have_text('Preferência salva. A alteração vale ao iniciar o jogo.')
+        expect(switch).to_be_enabled()
+        self.assertEqual(json.loads(path.read_text()), {**previous, 'native_settings':True})
+        self.assertEqual(ini.read_bytes(), original)
+        page.reload()
+        expect(switch).to_be_checked()
+        token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+        invalid = page.request.post(self.url+'/api/debug-options', headers={'X-MK8-Token':token},
+            data=json.dumps({**previous, 'native_settings':'yes'})).json()
+        self.assertFalse(invalid['ok'])
+        self.assertTrue(json.loads(path.read_text())['native_settings'])
+        for language, label in [('en','Enable native settings menu'), ('es','Activar el menú nativo de ajustes')]:
+            page.locator('#language').select_option(language)
+            expect(page.locator('label').filter(has=switch)).to_contain_text(label)
+        self.shot('native-settings')
+        page.set_viewport_size({'width':390,'height':844})
+        self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.shot('native-settings-mobile')
+
+    def test_native_settings_failed_save_restores_saved_value_and_retries(self):
+        page = self.page
+        switch = page.locator('#debug-settings')
+        expect(switch).not_to_be_checked()
+        def reject(route):
+            if route.request.method == 'POST':
+                route.fulfill(status=500,json={'ok':False,'error':'Fixture write failure'})
+            else:
+                route.continue_()
+        page.route('**/api/debug-options',reject)
+        switch.check()
+        expect(page.locator('#debug-status')).to_have_text('Não foi possível salvar a preferência.')
+        expect(switch).to_be_enabled()
+        expect(switch).not_to_be_checked()
+        self.assertFalse((self.local/'debug-options.json').exists())
+        page.unroute('**/api/debug-options',reject)
+        switch.check()
+        expect(page.locator('#debug-status')).to_have_text('Preferência salva. A alteração vale ao iniciar o jogo.')
+        expect(switch).to_be_enabled()
+        self.assertTrue(json.loads((self.local/'debug-options.json').read_text())['native_settings'])
+
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page
         expect(page.locator('#config-tab-fonts')).to_be_enabled()
@@ -105,6 +156,107 @@ class SettingsModulesTests(unittest.TestCase):
         page.evaluate('refresh()')
         expect(page.locator('#config-field-fullscreen')).to_be_disabled()
         expect(page.locator('#config-tab-fonts')).to_be_enabled()
+
+    def test_aspect_stretch_labels_preview_and_legacy_ini_values(self):
+        page = self.page
+        aspect = page.locator('#config-field-aspect')
+        aspect.select_option('original')
+        page.locator('#settings-save').click()
+        expect(page.locator('#settings-save')).to_be_disabled()
+        page.reload()
+        expect(aspect).to_have_value('original')
+        expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
+        self.assertIn('aspect = original', (self.local/'user-no-mii/mk8d.ini').read_text())
+        # The same scene widens; the illustration must not suggest a wider field of view.
+        original = page.locator('.config-track-art circle').first.bounding_box()
+        self.assertAlmostEqual(original['width'] / original['height'], 1, delta=.02)
+        for language, label, caption in [('pt-BR', 'Esticar', 'Imagem esticada'),
+                                         ('en', 'Stretch', 'Stretched image'),
+                                         ('es', 'Estirar', 'Imagen estirada')]:
+            page.locator('#language').select_option(language)
+            expect(aspect.locator('option[value="unlocked"]')).to_have_text(label)
+            aspect.select_option('unlocked')
+            expect(page.locator('#config-scene')).to_have_class('config-scene')
+            expect(page.locator('#config-screen-caption')).to_contain_text(caption)
+        stretched = page.locator('.config-track-art circle').first.bounding_box()
+        self.assertAlmostEqual(stretched['width'] / stretched['height'], 21 / 16, delta=.02)
+        self.assertAlmostEqual(stretched['width'] / original['width'], 21 / 16, delta=.02)
+        page.locator('#settings-save').click()
+        expect(page.locator('#settings-save')).to_be_disabled()
+        page.reload()
+        expect(aspect).to_have_value('unlocked')
+        self.assertIn('aspect = unlocked', (self.local/'user-no-mii/mk8d.ini').read_text())
+        self.shot('aspect-stretch')
+        page.set_viewport_size({'width':390,'height':844})
+        self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.shot('aspect-stretch-mobile')
+
+    def test_ultrawide_round_trip_preview_and_frame_generation_fallback(self):
+        page = self.page
+        aspect = page.locator('#config-field-aspect')
+        expect(aspect).to_have_value('unlocked')
+        expect(aspect.locator('option[value="ultrawide"]')).to_have_count(1)
+        expect(aspect).to_have_attribute('aria-describedby', 'config-field-aspect-hint')
+        aspect.select_option('original')
+        art = page.locator('.config-track-art')
+        original = art.locator('circle').first.bounding_box()
+        clipped = art.bounding_box()
+        sides = art.locator('.config-world-extra')
+        expect(sides).to_have_count(2)
+        left, right = (sides.nth(i).bounding_box() for i in range(2))
+        self.assertLess(left['x'] + left['width'], clipped['x'])
+        self.assertGreater(right['x'], clipped['x'] + clipped['width'])
+        aspect.select_option('ultrawide')
+        wide = art.locator('circle').first.bounding_box()
+        screen = page.locator('.config-screen').bounding_box()
+        self.assertAlmostEqual(wide['width'] / wide['height'], 1, delta=.02)
+        self.assertAlmostEqual(wide['width'], original['width'], delta=.2)
+        self.assertAlmostEqual(wide['height'], original['height'], delta=.2)
+        self.assertAlmostEqual(wide['x'], original['x'], delta=.2)
+        self.assertAlmostEqual(art.bounding_box()['width'], screen['width'], delta=.2)
+        for index in range(2):
+            landmark = sides.nth(index).bounding_box()
+            self.assertGreater(landmark['x'], screen['x'])
+            self.assertLess(landmark['x'] + landmark['width'], screen['x'] + screen['width'])
+        for language, caption in [('pt-BR', 'Campo de visão ampliado'),
+                                  ('en', 'Wider field of view'),
+                                  ('es', 'Campo de visión ampliado')]:
+            page.locator('#language').select_option(language)
+            aspect.focus()
+            expect(aspect.locator('option[value="ultrawide"]')).to_have_text('Ultrawide (experimental)')
+            expect(page.locator('#config-screen-caption')).to_contain_text(caption)
+            expect(page.locator('#config-preview-description')).to_contain_text('16:9')
+            expect(page.locator('#config-preview-description')).to_contain_text('32:9')
+        page.locator('#language').select_option('pt-BR')
+        page.locator('#settings-save').click()
+        expect(page.locator('#settings-save')).to_be_disabled()
+        page.reload()
+        expect(aspect).to_have_value('ultrawide')
+        aspect.focus()
+        ini = self.local/'user-no-mii/mk8d.ini'
+        self.assertIn('aspect = ultrawide', ini.read_text())
+        self.assertIn('future_setting = preserve', ini.read_text())
+        page.locator('#config-field-theme').focus()
+        expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
+        expect(page.locator('#config-screen-caption')).to_contain_text('Menus mantêm 16:9')
+        frame_gen = page.locator('#config-field-frame_gen')
+        frame_gen.select_option('120')
+        expect(aspect).to_have_value('ultrawide')
+        expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
+        expect(page.locator('#config-screen-caption')).to_contain_text('16:9 com geração de quadros')
+        page.locator('#settings-save').click()
+        expect(page.locator('#settings-save')).to_be_disabled()
+        page.reload()
+        expect(aspect).to_have_value('ultrawide')
+        expect(frame_gen).to_have_value('120')
+        self.assertIn('frame_gen = 120', ini.read_text())
+        frame_gen.select_option('off')
+        aspect.focus()
+        expect(page.locator('#config-scene')).to_have_class('config-scene')
+        self.shot('ultrawide')
+        page.set_viewport_size({'width':390,'height':844})
+        self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.shot('ultrawide-mobile')
 
     def test_audio_controller_mappings_and_keyboard_modules(self):
         page = self.page

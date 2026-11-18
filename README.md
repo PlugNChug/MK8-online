@@ -43,6 +43,10 @@ The development DLC importer can select the verified Booster Course Pass from a 
 
 Developer preview on `fix-chore`: `MK8_MENU_PROTOTYPE=1` enables an in-game overlay with Play, Nextendo, Social and Settings pages (F1 or Back + Start). Account state and settings use the runtime. Social requests the additional `friends` OAuth permission and reads friends/presence; Nextendo lists live MK8 lobbies and reads the current lobby. Selecting a row shows its details; it does not join the room. Queries run in the background every 30 seconds while either page is open. Permission/network failures are displayed explicitly; illustrative players and rooms have been removed. With Nextendo signed in, enter races through the game's Online Play menu. The panel's lobby list is informational; direct joining from this panel is out of scope. Race invitations are not implemented. This preview is not part of the published 0.3.0 setup.
 
+Development builds add **Ultrawide (experimental)** under Video settings in the launcher and in-game menu. Click **Save settings** in the launcher before starting the game. It widens supported solo Time Trial, Grand Prix and no-team VS cameras between 16:9 and 32:9, preserves vertical framing, and keeps the HUD proportional at the outer edges. Original 16:9 and Stretch remain available. Unsupported scenes/modes, split-screen and frame generation use 16:9; this does not enable ultrawide online or replay cameras. Rebuild the game, including the affected guest units, to apply it.
+
+The optional **native settings menu** switch is saved automatically for the next launch. It adds the wrench entry to the game's main menu and preserves the existing F1/Back + Start fallback and hub shortcut priority. It shares the runtime settings file, including the aspect choice. The private menu layouts are derived locally from verified game resources; none are distributed. Full qualification remains open; local manual evidence and limits are in [STATUS.md](docs/STATUS.md).
+
 ## What's new in 0.3.0
 
 Development builds add two startup options (not included in the published 0.3.0 setup):

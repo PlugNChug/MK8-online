@@ -4,6 +4,15 @@ O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rod
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
 
+## Ultrawide e menu nativo — entrega experimental
+
+- **Implementado, em revisão isolada:** opção Original/Esticar/Ultrawide no launcher e no jogo; câmeras solo validadas entre 16:9 e 32:9, HUD proporcional nas bordas, transições e banner de classe. Menu nativo opt-in, recursos derivados privados, persistência e integração CTGP. A base é `fix-chore 0085fed`; publicar PR somente após autorização do mantenedor.
+- **Gate desta entrega:** regressões nativas e navegador, Rust/formatação/Clippy, recompilação dos hooks guest e consumidores, revisão independente e ensaio isolado do candidato final. Manter fallback 16:9 nos caminhos sem suporte demonstrado e documentar a matriz real em STATUS.
+- **Validação futura:** todas as pistas/efeitos, equivalência da tinta, MKTV/replays, Batalha/VS com equipes, online e tela dividida; outra GPU e monitor ultrawide físico. Geração de quadros com câmera ampla exige validação própria antes de habilitar. Não extrapolar evidência de uma corrida para todos os modos.
+- **Câmera futura:** investigar distância do personagem separada de proporção/FOV, depois primeira pessoa opt-in; preservar o padrão e testar clipping, culling, traseira, boost, água, planador, antigravidade e resgate antes de expor opções.
+- **Movimento futuro:** Nintendo Switch Pro Controller por Bluetooth; verificar sensores reais na SDL3, eixos/unidades/timestamps, calibração e reconexão antes de ligar o contrato guest. Sem simulação de movimento por teclado.
+- **Multiplayer adiado pelo mantenedor:** o laptop tem o jogo, mas falta uma conta Steam separada. Exigir versões/DLC/CTGP compatíveis, duas contas, corrida inteira/resultados e reconexão em dois PCs, com logs sanitizados. Não bloqueia a entrega solo experimental.
+
 ## Prioridades após a 0.3.0 experimental
 
 A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. Veja as [notas bilíngues](releases/0.3.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.

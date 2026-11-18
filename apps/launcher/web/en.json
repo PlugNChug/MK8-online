@@ -1206,5 +1206,20 @@
   "Diagnóstico": "Diagnostics",
   "Jogar no Nextendo": "Play on Nextendo",
   "Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.": "Sign in to Nextendo in your browser. In the game, choose Online Play. CTGP is disabled for this session.",
-  "Nextendo indisponível nesta sessão.": "Nextendo is unavailable in this session."
+  "Nextendo indisponível nesta sessão.": "Nextendo is unavailable in this session.",
+  "Esticar": "Stretch",
+  "Esticar deforma a imagem; Original 16:9 mantém barras. Ultrawide experimental mostra mais cenário sem deformar. Esta prévia usa uma tela 21:9.": "Stretch distorts the image; Original 16:9 keeps black bars. Experimental Ultrawide shows more scenery without distortion. This preview uses a 21:9 screen.",
+  "Imagem esticada": "Stretched image",
+  "Salvando…": "Saving…",
+  "Menu nativo de configurações (experimental)": "Native settings menu (experimental)",
+  "Ativa o botão de chave e o menu nativo de configurações. F1 abre este menu quando o hub está desativado; caso contrário, abre o hub. Requer uma build com o experimento incluído.": "Enables the wrench button and native settings menu. F1 opens this menu when the hub is disabled; otherwise, it opens the hub. Requires a game build that includes the experiment.",
+  "Ultrawide (experimental)": "Ultrawide (experimental)",
+  "Ultrawide experimental: Contra o Relógio, GP e VS solo sem equipes, entre 16:9 e 32:9. Menus, câmeras sem suporte, outras proporções e geração de quadros usam 16:9. A forma da tinta ainda não foi validada. Salve para usar no próximo início.": "Experimental Ultrawide: solo Time Trial, GP and VS without teams, from 16:9 to 32:9. Menus, unsupported cameras, other aspect ratios and frame generation use 16:9. Ink shape has not yet been validated. Save to use on the next launch.",
+  "Campo de visão ampliado": "Wider field of view",
+  "Ultrawide usa 16:9 com geração de quadros.": "Ultrawide uses 16:9 with frame generation.",
+  "Menus mantêm 16:9.": "Menus keep 16:9.",
+  "Ativar o menu nativo de configurações": "Enable native settings menu",
+  "A opção é salva automaticamente e vale ao iniciar o jogo.": "This option saves automatically and applies the next time you start the game.",
+  "Preferência salva. A alteração vale ao iniciar o jogo.": "Preference saved. The change applies the next time you start the game.",
+  "Não foi possível salvar a preferência.": "Could not save the preference."
 }

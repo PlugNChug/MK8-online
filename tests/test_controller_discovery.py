@@ -56,7 +56,7 @@ class ControllerDiscoveryTests(unittest.TestCase):
             out = Path(folder)
             runtime = prepare_host_sources(ROOT / 'upstream/smm2recomp/recomp', out / 'host')
             text = (runtime / 'hle/input.c').read_text(encoding='utf-8')
-            start = text.index('static void mk8_open_gamepad(')
+            start = text.index('static void mk8_open_gamepad(SDL_JoystickID id) {')
             end = text.index('void input_handle_event(', start)
             (out / 'discovery.inc').write_text(text[start:end], encoding='utf-8')
             (out / 'test.c').write_text(HARNESS, encoding='utf-8')
