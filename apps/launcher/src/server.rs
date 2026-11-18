@@ -1499,10 +1499,14 @@ impl App {
                     return Err("Disponível apenas na janela do Launcher.".into());
                 }
                 fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-                std::process::Command::new("explorer.exe")
-                    .arg(&folder)
-                    .spawn()
-                    .map_err(|e| e.to_string())?;
+                std::process::Command::new(if cfg!(windows) {
+                    "explorer.exe"
+                } else {
+                    "xdg-open"
+                })
+                .arg(&folder)
+                .spawn()
+                .map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Pasta aberta."}))
             }
             ("POST", "/api/support/github") => {
@@ -1519,17 +1523,27 @@ impl App {
                         value["body"].as_str().unwrap_or(""),
                     )?
                 };
-                let executable = std::env::var_os("SystemRoot")
-                    .map(|root| PathBuf::from(root).join("System32/rundll32.exe"))
-                    .filter(|path| path.is_file())
-                    .ok_or("Não foi possível localizar o abridor de links do Windows.")?;
-                let mut command = std::process::Command::new(executable);
-                command.args(["url.dll,FileProtocolHandler", url.as_str()]);
+                #[cfg(target_os = "linux")]
+                let mut command = {
+                    let mut command = std::process::Command::new("xdg-open");
+                    command.arg(url.as_str());
+                    command
+                };
                 #[cfg(windows)]
-                {
-                    use std::os::windows::process::CommandExt;
-                    command.creation_flags(0x08000000);
-                }
+                let mut command = {
+                    let executable = std::env::var_os("SystemRoot")
+                        .map(|root| PathBuf::from(root).join("System32/rundll32.exe"))
+                        .filter(|path| path.is_file())
+                        .ok_or("Não foi possível localizar o abridor de links do Windows.")?;
+                    let mut command = std::process::Command::new(executable);
+                    command.args(["url.dll,FileProtocolHandler", url.as_str()]);
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        command.creation_flags(0x08000000);
+                    }
+                    command
+                };
                 command.spawn().map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Abrindo o GitHub no navegador. Revise antes de publicar."}))
             }
@@ -2104,6 +2118,20 @@ mod tests {
         }
     }
 
+    fn test_shell(windows: &str, unix: &str) -> std::process::Command {
+        let mut command = if cfg!(windows) {
+            std::process::Command::new("cmd.exe")
+        } else {
+            std::process::Command::new("sh")
+        };
+        command.args(if cfg!(windows) {
+            ["/C", windows]
+        } else {
+            ["-c", unix]
+        });
+        command
+    }
+
     #[test]
     fn closed_game_and_idle_guest_release_steam_workers_before_next_join() {
         let root = std::env::temp_dir().join(format!("mk8-rejoin-{}", std::process::id()));
@@ -2127,10 +2155,7 @@ mod tests {
             } else {
                 drop(host);
             }
-            let mut child = std::process::Command::new("cmd.exe")
-                .args(["/C", "exit 0"])
-                .spawn()
-                .unwrap();
+            let mut child = test_shell("exit 0", "exit 0").spawn().unwrap();
             child.wait().unwrap();
             app.game = Some(child);
             app.prepare_steam_join().unwrap();
@@ -2160,8 +2185,7 @@ mod tests {
         drop(host);
         // A running game must never be stopped or detached by a new invitation.
         app.game = Some(
-            std::process::Command::new("cmd.exe")
-                .args(["/C", "set /p value="])
+            test_shell("set /p value=", "read value")
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::null())
                 .spawn()

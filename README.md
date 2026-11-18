@@ -17,7 +17,7 @@
 ![Status](https://img.shields.io/badge/Status-Public_test-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 
-An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows,
+An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows and Linux x86-64,
 with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with friends.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Report an issue](https://github.com/Vnnc1/MK8-online/issues) · [Roadmap](docs/ROADMAP.md)
@@ -73,7 +73,7 @@ MKTV thumbnail readback now copies the rendered GPU image when recording a repla
 
 ## What this project does
 
-The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
+The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows or Linux x86-64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
 
 RatOne develops and maintains the MK8 adaptation, launcher and integration. The translation/runtime foundation comes from **SMM2Recomp and LASRecomp**, with additional credited work from other projects. See [third-party sources and licenses](docs/THIRD_PARTY.md).
 
@@ -81,28 +81,34 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 ### Requirements
 
-- **Windows x64** and WebView2. The Launcher installs a private **Python 3.12 x64** by itself.
+- **Windows x64** with WebView2, or **Linux x86-64** with WebKitGTK 4.1. On Windows, the Launcher installs private Python 3.12 automatically. On Linux, install Python 3.12 with venv support and the native build dependencies below.
 - A GPU and driver exposing **Vulkan 1.3 or newer**. A general minimum CPU/GPU specification has not been qualified.
 - Your own base game, **4.0.1 update** and `prod.keys` from your console, or a supported extracted game folder.
 - About **28 GiB free** for extraction and preparation (including a 4 GiB safety reserve), plus room for tools and caches. An SSD is recommended.
 - Internet for the first tool download (about 0.4 GiB) and for updates.
 - **For Miis:** opening the creator downloads `AFLResHigh_2_3.dat` from an Internet Archive copy of the former Miitomo CDN. The Launcher verifies the ZIP and library by size and SHA-256, then caches the file privately for offline use. It is not bundled in GitHub or the installer. If the archive is unavailable, retry or select a compatible local file; without the library, options remain numbered and faces are not drawn.
-- **For multiplayer:** the **Steam** client, signed in, and any Steam game installed that ships `steam_api64.dll` (or a copy of that file in the Launcher's data folder). No Valve file is bundled.
+- **For multiplayer:** the **Steam** client, signed in, and any Steam game installed that ships the platform’s 64-bit Steamworks library (`steam_api64.dll` on Windows, `libsteam_api.so` on Linux). You can also place that library in the data folder. No Valve file is bundled.
 
 ### Install and play
 
-1. Download `MK8-online-0.3.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. When setup finishes, the same MK8-online window opens the launcher. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
+1. Download your package from [Releases](https://github.com/Vnnc1/MK8-online/releases). Run `*-setup.exe` on Windows. On Linux, mark the `*-linux-x86_64.AppImage` executable and open it, or extract the `*-linux-x86_64.tar.gz` and run `MK8-online/AppRun`. Choose the application and data folders in the app. Installation is per user. When setup finishes, the same MK8-online window opens the launcher. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
 2. Open **Install**. Complete **Tools**, then select the base game and the update in **Game files** (the Launcher finds keys next to the game, or select your own).
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
 
-The Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
+On Windows, the Launcher's **Tools** step prepares private Python directly, without PowerShell or .NET ZIP loading. CPython comes from the pinned official NuGet package; archive and dependency hashes are checked. Interrupted environments are preserved before repair. Keep antivirus protection enabled.
 
 An extracted folder must contain `exefs`, `romfs` and `control.nacp` (or `control/control.nacp`): choose **I already have an extracted game folder**. The active profile is 4.0.1 AArch64; other game versions and XCI/XCZ import are not validated. Supported DLC is imported separately.
 
 Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalling. To use another drive with the portable launcher: `.\Launcher.exe --data-dir E:\MK8-Local`, and keep using the same folder.
 
 **Language:** the Launcher and installer offer **English**, **Português (Brasil)** and **Español** (**Language / Idioma**). The game's own language is separate.
+
+### Linux setup
+
+The Linux packages target Ubuntu 24.04 LTS and CachyOS. Install WebKitGTK 4.1, GTK 3, libarchive tools (`bsdtar`), curl, Python 3.12 with venv, Clang, LLD, LLVM, pkg-config, and the Vulkan, shaderc, and FFmpeg development packages. The Tools step installs the pinned Python wheels and prepares the pinned SDL3 and Vulkan headers when needed. On Ubuntu, it also needs CMake and the SDL X11, Wayland, ALSA, PulseAudio, and udev development dependencies listed in the Linux workflow. The AppImage can also run with `--appimage-extract-and-run` when FUSE is unavailable.
+
+The default data directory is `$XDG_DATA_HOME/MK8-online` or `~/.local/share/MK8-online`. Use the setup folder picker or `--data-dir` for a different location. Keep the tarball application's directory dedicated to MK8-online and store its data elsewhere. **Support → Update now** selects a matching Linux package, verifies its SHA-256, and restores the previous package if the update fails to start. Updates require write access to the application's directory.
 
 ### Create your Mii
 

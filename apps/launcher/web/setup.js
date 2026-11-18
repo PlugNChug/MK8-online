@@ -29,8 +29,9 @@ async function space() {
   const path = $("data").value.trim();
   const text = $("space");
   text.className = "space";
-  if (!/^[a-zA-Z]:[\\/]|^\\\\/.test(path)) {
-    i18n.text(text, "Use um caminho completo, como D:\\Jogos\\MK8-online.");
+  const linux = state?.platform === "linux";
+  if (linux ? !path.startsWith("/") : !/^[a-zA-Z]:[\\/]|^\\\\/.test(path)) {
+    i18n.text(text, linux ? "Escolha pastas com caminhos absolutos." : "Use um caminho completo, como D:\\Jogos\\MK8-online.");
     text.classList.add("bad");
     return;
   }
@@ -67,7 +68,8 @@ document.querySelectorAll("[data-pick]").forEach((button) => {
       });
       if (!result.path) return;
       // A chosen parent folder gets the program's own subfolder.
-      input.value = /mk8-online$/i.test(result.path) ? result.path : result.path.replace(/[\\/]$/, "") + "\\MK8-online";
+      const separator = state?.platform === "linux" ? "/" : "\\";
+      input.value = /mk8-online$/i.test(result.path) ? result.path : result.path.replace(/[\\/]$/, "") + separator + "MK8-online";
       if (input.id === "data") space();
     } catch (error) {
       i18n.text($("paths-error"), error.message);
@@ -145,6 +147,7 @@ $("close").onclick = () => finish(false);
 (async () => {
   await i18n.ready;
   state = await api("state");
+  if (state.platform === "linux") $("windows-registration").hidden = true;
   i18n.text($("version"), "v" + state.version);
   $("app").value = state.app;
   $("data").value = state.data;

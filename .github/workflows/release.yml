@@ -1,4 +1,4 @@
-# Builds the packaged launcher and its setup.exe for a version tag, and publishes them as a GitHub Release.
+# Builds Windows and Linux packages before publishing a tagged GitHub Release.
 # Suffixed tags and v0.3.0 are experimental pre-releases; the updater offers both release types.
 name: release
 
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
@@ -44,21 +44,52 @@ jobs:
           if ($tag) { python scripts/release.py --tag $tag } else { python scripts/release.py }
       - uses: actions/upload-artifact@v4
         with:
-          name: setup
+          name: windows-packages
           path: target/dist/*
-      - name: Release title
-        id: title
-        shell: pwsh
-        run: '"text=" + (Get-Content target/dist/release-title.txt -Raw).Trim() | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8'
-      - name: Publish
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+          if-no-files-found: error
+
+  linux:
+    uses: ./.github/workflows/linux.yml
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          name: ${{ steps.title.outputs.text }}
+          name: windows-packages
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: dist
+      - name: Release information
+        id: release
+        shell: bash
+        run: |
+          printf 'title=%s\n' "$(tr -d '\r\n' < dist/release-title.txt)" >> "$GITHUB_OUTPUT"
+          cat >> dist/release-notes.md <<'NOTES'
+
+          ### Linux x86-64
+
+          Download the AppImage or extract the tarball and run `MK8-online/AppRun`.
+          Both packages prepare the game locally. Each download has a matching SHA-256 file.
+          NOTES
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.release.outputs.title }}
           prerelease: ${{ contains(github.ref_name, '-') || github.ref_name == 'v0.3.0' }}
-          body_path: target/dist/release-notes.md
+          body_path: dist/release-notes.md
+          fail_on_unmatched_files: true
           files: |
-            target/dist/*-setup.exe
-            target/dist/*-setup.exe.sha256
-            target/dist/ffmpeg-9.0.2.tar.xz
-            target/dist/build-ffmpeg.sh
+            dist/*-setup.exe
+            dist/*-setup.exe.sha256
+            dist/ffmpeg-9.0.2.tar.xz
+            dist/build-ffmpeg.sh
+            dist/*-linux-x86_64.AppImage
+            dist/*-linux-x86_64.AppImage.sha256
+            dist/*-linux-x86_64.tar.gz
+            dist/*-linux-x86_64.tar.gz.sha256

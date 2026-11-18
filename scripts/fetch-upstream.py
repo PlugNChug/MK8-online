@@ -32,7 +32,7 @@ def fetch(name):
         work = Path(folder)/'src'
         for args in (['init', '-q', str(work)], ['-C', str(work), 'remote', 'add', 'origin', manifest['repository']],
                      ['-C', str(work), 'fetch', '-q', '--depth', '1', 'origin', manifest['commit']],
-                     ['-C', str(work), 'checkout', '-q', 'FETCH_HEAD']):
+                     ['-C', str(work), '-c', 'core.autocrlf=true', 'checkout', '-q', 'FETCH_HEAD']):
             subprocess.run(['git', *args], check=True)
         staged = Path(folder)/'staged'
         for rel in manifest['files']:

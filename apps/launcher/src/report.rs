@@ -159,11 +159,7 @@ pub fn create(
     fs::create_dir(&stage).map_err(|e| format!("{}: {e}", stage.display()))?;
     let result = fill(local, runtime, &stage, reason, summary).and_then(|files| {
         let zip = reports.join(format!("{name}.zip"));
-        let tar = std::env::var_os("SystemRoot")
-            .map(|root| Path::new(&root).join("System32/tar.exe"))
-            .filter(|p| p.is_file())
-            .ok_or("tar.exe do Windows não encontrado.")?;
-        let mut cmd = Command::new(tar);
+        let mut cmd = crate::archive_command()?;
         cmd.arg("-a")
             .arg("-c")
             .arg("-f")
@@ -171,11 +167,6 @@ pub fn create(
             .arg("-C")
             .arg(&stage)
             .args(&files);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000);
-        }
         let output = cmd.output().map_err(|e| e.to_string())?;
         if !output.status.success() {
             return Err(format!(
@@ -332,12 +323,12 @@ mod tests {
         assert!(download(&local, None).is_err());
         assert!(download(&local, local.join("game.log").to_str()).is_err());
         assert!(download(&local, folder(&local).join("../game.log").to_str()).is_err());
-        let listing =
-            Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
-                .arg("-tf")
-                .arg(&zip)
-                .output()
-                .unwrap();
+        let listing = crate::archive_command()
+            .unwrap()
+            .arg("-tf")
+            .arg(&zip)
+            .output()
+            .unwrap();
         let names = String::from_utf8_lossy(&listing.stdout);
         assert!(names.contains("report.json") && names.contains("game.log"));
         assert!(names.contains("vulkan-check.log"));
@@ -345,13 +336,13 @@ mod tests {
         assert!(names.contains("mk8drecomp.previous.log"));
         assert!(!names.contains("private-save.bin"));
         assert!(!names.contains("save_0"));
-        let content =
-            Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
-                .args(["-xOf"])
-                .arg(&zip)
-                .arg("mk8drecomp.log")
-                .output()
-                .unwrap();
+        let content = crate::archive_command()
+            .unwrap()
+            .args(["-xOf"])
+            .arg(&zip)
+            .arg("mk8drecomp.log")
+            .output()
+            .unwrap();
         assert!(content.status.success());
         assert_eq!(
             String::from_utf8_lossy(&content.stdout),

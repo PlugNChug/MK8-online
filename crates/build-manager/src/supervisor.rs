@@ -50,6 +50,10 @@ pub fn spawn_request(mode: &str, request: &impl Serialize) -> Result<Child> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
+    #[cfg(target_os = "linux")]
+    if mode == "--task-supervisor" {
+        crate::isolate_process_group(&mut cmd);
+    }
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let result = (|| {
         let mut input = child.stdin.take().ok_or("Supervisor sem entrada")?;
@@ -88,6 +92,10 @@ pub fn ready() -> Result<()> {
 
 pub fn run_task() -> Result<i32> {
     let task: Task = read_request()?;
+    #[cfg(target_os = "linux")]
+    if unsafe { libc::getppid() } as u32 != task.parent {
+        return Err("O launcher do processo já foi fechado.".into());
+    }
     #[cfg(windows)]
     let lifetime = windows::Lifetime::new(task.parent)?;
     let _guards = acquire_operation(&task.root, &task.local)?;
@@ -136,6 +144,14 @@ pub fn run_task() -> Result<i32> {
     }
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     // A broken handshake means the launcher disappeared; the job closes on process exit.
+    #[cfg(target_os = "linux")]
+    if let Err(error) = ready() {
+        if unsafe { libc::getpgrp() } == std::process::id() as libc::pid_t {
+            unsafe { libc::killpg(libc::getpgrp(), libc::SIGKILL) };
+        }
+        return Err(error);
+    }
+    #[cfg(not(target_os = "linux"))]
     ready()?;
     loop {
         if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
@@ -143,6 +159,12 @@ pub fn run_task() -> Result<i32> {
         }
         #[cfg(windows)]
         lifetime.check_parent()?;
+        #[cfg(target_os = "linux")]
+        if unsafe { libc::getppid() } as u32 != task.parent
+            && unsafe { libc::getpgrp() } == std::process::id() as libc::pid_t
+        {
+            unsafe { libc::killpg(libc::getpgrp(), libc::SIGKILL) };
+        }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }

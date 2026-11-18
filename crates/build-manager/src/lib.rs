@@ -182,13 +182,33 @@ fn acquire_resources(root: &Path, local: &Path, game: bool) -> Result<Vec<fs::Fi
     Ok(guards)
 }
 
+/// Start Linux operations in their own process group so cancellation includes tool children.
+#[cfg(target_os = "linux")]
+pub fn isolate_process_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
 /// Keep ownership with the caller until termination has been confirmed.
 pub fn terminate_tree(child: &mut Child) -> Result<()> {
     #[cfg(windows)]
     {
         terminate_tree_with(child, "taskkill")
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        if child.try_wait().map_err(|e| e.to_string())?.is_none()
+            && unsafe { libc::killpg(child.id() as libc::pid_t, libc::SIGKILL) } != 0
+        {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error.to_string());
+            }
+        }
+        child.wait().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         child.kill().map_err(|e| e.to_string())?;
         child.wait().map_err(|e| e.to_string())?;
@@ -256,7 +276,11 @@ impl Manager {
         let guards = acquire_operation(root, local)?;
         let log_path = local.join("build.log");
         let log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
-        let python = root.join("local/python/Scripts/python.exe");
+        let python = root.join(if cfg!(windows) {
+            "local/python/Scripts/python.exe"
+        } else {
+            "local/python/bin/python"
+        });
         let mut cmd = if python.is_file() {
             Command::new(python)
         } else {

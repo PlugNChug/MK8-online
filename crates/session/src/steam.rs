@@ -1,4 +1,4 @@
-//! Dynamic Steamworks Lobby + P2P Relay adapter (`steam_api64.dll`).
+//! Dynamic Steamworks lobby and P2P relay adapter.
 //! Uses a local UDP socket bridged to `ISteamNetworking` P2P channels and `ISteamMatchmaking`
 //! lobbies so the existing authenticated `Host` and `Gateway` work over Steam Datagram Relay
 //! without VPN or firewall port forwarding. No proprietary SDK binary is bundled in the repository.
@@ -33,6 +33,10 @@ const STEAM_UNRELIABLE_MAX: usize = 1200;
 const P2P_CHANNEL_CONTROL: c_int = 0;
 const P2P_CHANNEL_DATA: c_int = 1;
 const DEFAULT_APP_ID: &str = "480";
+#[cfg(windows)]
+const STEAM_LIBRARY: &str = "steam_api64.dll";
+#[cfg(not(windows))]
+const STEAM_LIBRARY: &str = "libsteam_api.so";
 // Callbacks delivered through SteamAPI_RegisterCallback (steam_api.h k_i* values).
 const GAME_LOBBY_JOIN_REQUESTED: c_int = 333; // invite accepted in the Steam client
 const GAME_RICH_PRESENCE_JOIN_REQUESTED: c_int = 337; // "Join game" on a friend
@@ -88,29 +92,151 @@ pub fn check_pack(host: Option<&str>, local: &str) -> Result<()> {
     }
 }
 
-#[repr(C, packed(8))]
+// Valve uses 4-byte packing for Linux callback structures and 8 on Windows.
+#[repr(C)]
+#[cfg_attr(target_os = "linux", repr(packed(4)))]
+#[cfg_attr(windows, repr(packed(8)))]
 #[derive(Clone, Copy, Default)]
 struct LobbyCreated {
     result: u32,
     lobby_id: u64,
 }
 
-#[repr(C, packed(8))]
+// Valve uses 4-byte packing for Linux callback structures and 8 on Windows.
+#[repr(C)]
+#[cfg_attr(target_os = "linux", repr(packed(4)))]
+#[cfg_attr(windows, repr(packed(8)))]
 #[derive(Clone, Copy, Default)]
 struct LobbyEnter {
     lobby_id: u64,
     chat_permissions: u32,
-    locked: bool,
+    locked: u8,
     response: u32,
 }
 
-struct Library(isize);
+#[cfg(windows)]
+struct Library(windows_sys::Win32::Foundation::HMODULE);
 
+#[cfg(windows)]
+unsafe impl Send for Library {}
+#[cfg(windows)]
+unsafe impl Sync for Library {}
+
+#[cfg(windows)]
 impl Drop for Library {
     fn drop(&mut self) {
-        #[cfg(windows)]
-        unsafe {
-            windows_sys::Win32::Foundation::FreeLibrary(self.0 as _);
+        unsafe { windows_sys::Win32::Foundation::FreeLibrary(self.0) };
+    }
+}
+
+#[cfg(windows)]
+impl Library {
+    fn open(path: &Path) -> Result<Self> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::LibraryLoader::{
+            LoadLibraryExW, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+        };
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let handle = unsafe {
+            LoadLibraryExW(
+                wide.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+            )
+        };
+        if handle.is_null() {
+            return Err(format!(
+                "Falha ao carregar {}: {}",
+                path.display(),
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(Self(handle))
+    }
+
+    fn symbol<T: Copy>(&self, name: &CStr) -> Result<T> {
+        use windows_sys::Win32::System::LibraryLoader::GetProcAddress;
+        let address = unsafe { GetProcAddress(self.0, name.as_ptr().cast()) }.ok_or_else(|| {
+            format!(
+                "{STEAM_LIBRARY} sem função exigida: {}",
+                name.to_string_lossy()
+            )
+        })?;
+        Ok(unsafe { std::mem::transmute_copy(&address) })
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct Library(libloading::os::unix::Library);
+
+#[cfg(target_os = "linux")]
+impl Library {
+    fn open(path: &Path) -> Result<Self> {
+        use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
+        let path = path
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        unsafe { Library::open(Some(&path), RTLD_NOW | RTLD_LOCAL) }
+            .map(Self)
+            .map_err(|e| format!("Falha ao carregar {}: {e}", path.display()))
+    }
+
+    fn symbol<T: Copy>(&self, name: &CStr) -> Result<T> {
+        unsafe { self.0.get::<T>(name.to_bytes_with_nul()) }
+            .map(|symbol| *symbol)
+            .map_err(|e| {
+                format!(
+                    "{STEAM_LIBRARY} sem função exigida {}: {e}",
+                    name.to_string_lossy()
+                )
+            })
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+struct Library;
+
+#[cfg(not(any(windows, target_os = "linux")))]
+impl Library {
+    fn open(_: &Path) -> Result<Self> {
+        Err("Steam disponível no Windows e Linux.".into())
+    }
+
+    fn symbol<T: Copy>(&self, _: &CStr) -> Result<T> {
+        Err("Steam disponível no Windows e Linux.".into())
+    }
+}
+
+enum SteamInit {
+    Legacy(unsafe extern "C" fn() -> bool),
+    Flat(unsafe extern "C" fn(*mut [c_char; 1024]) -> c_int),
+}
+
+impl SteamInit {
+    fn load(library: &Library) -> Result<Self> {
+        library
+            .symbol(c"SteamAPI_Init")
+            .or_else(|_| library.symbol(c"SteamAPI_InitSafe"))
+            .map(Self::Legacy)
+            .or_else(|_| library.symbol(c"SteamAPI_InitFlat").map(Self::Flat))
+    }
+
+    fn run(&self) -> Result<()> {
+        let message = "Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam e tente novamente.";
+        match self {
+            Self::Legacy(init) if unsafe { init() } => Ok(()),
+            Self::Legacy(_) => Err(message.into()),
+            Self::Flat(init) => {
+                let mut error = [0; 1024];
+                let status = unsafe { init(&mut error) };
+                if status == 0 {
+                    return Ok(());
+                }
+                // Leave a NUL terminator even if the library filled the entire buffer.
+                error[1023] = 0;
+                let detail = unsafe { CStr::from_ptr(error.as_ptr()) }.to_string_lossy();
+                Err(format!("{message} ({status}: {detail})"))
+            }
         }
     }
 }
@@ -120,7 +246,7 @@ type InterfaceAccessor = unsafe extern "C" fn() -> *mut c_void;
 struct Api {
     _library: Library,
     is_steam_running: unsafe extern "C" fn() -> bool,
-    init: unsafe extern "C" fn() -> bool,
+    init: SteamInit,
     shutdown: unsafe extern "C" fn(),
     run_callbacks: unsafe extern "C" fn(),
     steam_user: unsafe extern "C" fn() -> *mut c_void,
@@ -157,8 +283,9 @@ struct Api {
     register_callback: unsafe extern "C" fn(*mut Callback, c_int),
 }
 
-/// FriendGameInfo_t (pack 8): the game a friend is in and the lobby they are in, if any.
+/// FriendGameInfo_t, including the lobby a friend is playing in.
 #[repr(C)]
+#[cfg_attr(target_os = "linux", repr(packed(4)))]
 #[derive(Default)]
 struct FriendGame {
     game_id: u64,
@@ -168,12 +295,14 @@ struct FriendGame {
     lobby: u64,
 }
 
-/// CCallbackBase as steam_api.h lays it out: vtable, flags (u8), callback id. On Windows (MSVC) the vtable holds
-/// Run(void*, bool, SteamAPICall_t) before Run(void*), then GetCallbackSizeBytes (Steamworks.NET uses the same order).
+/// CCallbackBase's virtual slots differ between the MSVC and Itanium C++ ABIs.
 #[repr(C)]
 struct CallbackVTable {
+    #[cfg(windows)]
     run_call_result: unsafe extern "C" fn(*mut Callback, *mut c_void, bool, u64),
     run: unsafe extern "C" fn(*mut Callback, *mut c_void),
+    #[cfg(not(windows))]
+    run_call_result: unsafe extern "C" fn(*mut Callback, *mut c_void, bool, u64),
     size: unsafe extern "C" fn(*mut Callback) -> c_int,
 }
 
@@ -213,7 +342,7 @@ fn callback_size(id: c_int) -> c_int {
         GAME_LOBBY_JOIN_REQUESTED => 16,
         GAME_RICH_PRESENCE_JOIN_REQUESTED => 8 + 256,
         LOBBY_INVITE => 24,
-        LOBBY_ENTER_CALLBACK => 24,
+        LOBBY_ENTER_CALLBACK => std::mem::size_of::<LobbyEnter>() as c_int,
         _ => 8,
     }
 }
@@ -315,26 +444,6 @@ fn pump(api: &Api) {
     unsafe { (api.run_callbacks)() };
 }
 
-#[cfg(windows)]
-fn load_symbol<T>(handle: isize, name: &CStr) -> Result<T> {
-    use windows_sys::Win32::System::LibraryLoader::GetProcAddress;
-    let sym = unsafe { GetProcAddress(handle as _, name.as_ptr().cast()) }.ok_or_else(|| {
-        format!(
-            "steam_api64.dll sem função exigida: {}",
-            name.to_string_lossy()
-        )
-    })?;
-    Ok(unsafe { std::mem::transmute_copy(&sym) })
-}
-
-#[cfg(not(windows))]
-fn load_symbol<T>(_handle: isize, name: &CStr) -> Result<T> {
-    Err(format!(
-        "Steam DLL suportada apenas no Windows ({})",
-        name.to_string_lossy()
-    ))
-}
-
 // Flat C accessors are versioned exports; SteamUser() and friends are normally
 // C++ header helpers, not DLL exports. Keep legacy exports for existing adapters.
 // Do not guess newer ABI versions or substitute an unrelated interface.
@@ -345,15 +454,38 @@ fn resolve_interface(
 ) -> Result<InterfaceAccessor> {
     lookup(versioned).or_else(|_| lookup(legacy)).map_err(|_| {
         format!(
-            "DLL Steam incompatível: interface exigida {} (ou {}) ausente.",
+            "Biblioteca Steam incompatível: interface exigida {} (ou {}) ausente.",
             versioned.to_string_lossy(),
             legacy.to_string_lossy()
         )
     })
 }
 
-fn load_interface(handle: isize, versioned: &CStr, legacy: &CStr) -> Result<InterfaceAccessor> {
-    resolve_interface(versioned, legacy, |name| load_symbol(handle, name))
+fn load_interface(library: &Library, versioned: &CStr, legacy: &CStr) -> Result<InterfaceAccessor> {
+    resolve_interface(versioned, legacy, |name| library.symbol(name))
+}
+
+#[cfg(windows)]
+fn usable_library(path: &Path) -> bool {
+    path.is_file()
+}
+
+#[cfg(target_os = "linux")]
+fn usable_library(path: &Path) -> bool {
+    use std::io::Read;
+    // Ignore incompatible binaries in Steam libraries (notably 32-bit Linux and Android).
+    let mut header = [0; 20];
+    path.is_file()
+        && fs::File::open(path)
+            .and_then(|mut file| file.read_exact(&mut header))
+            .is_ok()
+        && &header[..7] == b"\x7fELF\x02\x01\x01"
+        && header[16..20] == [3, 0, 62, 0] // ET_DYN, EM_X86_64
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn usable_library(_: &Path) -> bool {
+    false
 }
 
 pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
@@ -364,14 +496,14 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
             paths.push(p);
         }
     }
-    paths.push(local.join("steam_api64.dll"));
+    paths.push(local.join(STEAM_LIBRARY));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            paths.push(parent.join("steam_api64.dll"));
+            paths.push(parent.join(STEAM_LIBRARY));
         }
     }
-    // An explicit/local DLL takes priority, including when Steam has no games installed.
-    if paths.iter().any(|path| path.is_file()) {
+    // An explicit/local library takes priority, including when Steam has no games installed.
+    if paths.iter().any(|path| usable_library(path)) {
         return paths;
     }
     // Status polls every two seconds; do not rescan installed games on each poll.
@@ -390,12 +522,33 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
 }
 
 fn steam_roots() -> Vec<PathBuf> {
-    let mut roots = vec![
-        PathBuf::from(r"C:\Program Files (x86)\Steam"),
-        PathBuf::from(r"C:\Program Files\Steam"),
-    ];
+    let mut roots = Vec::new();
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(data) = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+        {
+            roots.push(data.join("Steam"));
+        }
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            roots.extend(
+                [
+                    ".local/share/Steam",
+                    ".steam/steam",
+                    ".steam/root",
+                    ".var/app/com.valvesoftware.Steam/data/Steam",
+                ]
+                .map(|p| home.join(p)),
+            );
+        }
+    }
     #[cfg(windows)]
     {
+        roots.extend([
+            PathBuf::from(r"C:\Program Files (x86)\Steam"),
+            PathBuf::from(r"C:\Program Files\Steam"),
+        ]);
         use windows_sys::Win32::System::Registry::{
             RegGetValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
         };
@@ -468,25 +621,46 @@ fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
     }
     games.sort();
     games.dedup();
+    #[cfg(windows)]
+    const BINARIES: &[&str] = &[
+        "bin/steam_api64.dll",
+        "bin/win64/steam_api64.dll",
+        "game/bin/win64/steam_api64.dll",
+        "bin64/steam_api64.dll",
+        "x64/steam_api64.dll",
+        "Binaries/Win64/steam_api64.dll",
+    ];
+    #[cfg(not(windows))]
+    const BINARIES: &[&str] = &[
+        "bin/libsteam_api.so",
+        "bin/linux64/libsteam_api.so",
+        "bin/linuxsteamrt64/libsteam_api.so",
+        "game/bin/linuxsteamrt64/libsteam_api.so",
+        "lib64/libsteam_api.so",
+        "linux64/libsteam_api.so",
+        "Binaries/Linux/libsteam_api.so",
+    ];
+    #[cfg(windows)]
+    const UNREAL: &str = "Win64/steam_api64.dll";
+    #[cfg(not(windows))]
+    const UNREAL: &str = "x86_64-unknown-linux-gnu/libsteam_api.so";
+    #[cfg(windows)]
+    const UNITY: &[&str] = &["Plugins/steam_api64.dll", "Plugins/x86_64/steam_api64.dll"];
+    #[cfg(not(windows))]
+    const UNITY: &[&str] = &["Plugins/libsteam_api.so", "Plugins/x86_64/libsteam_api.so"];
+
     let mut found = Vec::new();
     // Prefer the game-root layout used by previous releases, before nested layouts.
     for game in &games {
-        let path = game.join("steam_api64.dll");
-        if path.is_file() {
+        let path = game.join(STEAM_LIBRARY);
+        if usable_library(&path) {
             found.push(path);
         }
     }
     for game in games {
-        for relative in [
-            "bin/steam_api64.dll",
-            "bin/win64/steam_api64.dll",
-            "game/bin/win64/steam_api64.dll",
-            "bin64/steam_api64.dll",
-            "x64/steam_api64.dll",
-            "Binaries/Win64/steam_api64.dll",
-        ] {
+        for relative in BINARIES {
             let path = game.join(relative);
-            if path.is_file() {
+            if usable_library(&path) {
                 found.push(path);
             }
         }
@@ -496,8 +670,8 @@ fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
             let mut versions: Vec<_> = versions.flatten().map(|entry| entry.path()).collect();
             versions.sort();
             for version in versions {
-                let path = version.join("Win64/steam_api64.dll");
-                if path.is_file() {
+                let path = version.join(UNREAL);
+                if usable_library(&path) {
                     found.push(path);
                 }
             }
@@ -508,9 +682,9 @@ fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
                 .flatten()
                 .filter(|entry| entry.file_name().to_string_lossy().ends_with("_Data"))
             {
-                for relative in ["Plugins/steam_api64.dll", "Plugins/x86_64/steam_api64.dll"] {
+                for relative in UNITY {
                     let path = entry.path().join(relative);
-                    if path.is_file() {
+                    if usable_library(&path) {
                         found.push(path);
                     }
                 }
@@ -523,7 +697,7 @@ fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
 pub fn find_dll(local: &Path) -> Option<PathBuf> {
     candidate_dll_paths(local)
         .into_iter()
-        .find(|path| path.is_file())
+        .find(|path| usable_library(path))
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -570,127 +744,93 @@ impl SteamCode {
     }
 }
 
+fn configured_app_id() -> String {
+    std::env::var("MK8_STEAM_APPID")
+        .ok()
+        .map(|id| id.trim().to_owned())
+        .filter(|id| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()))
+        .unwrap_or_else(|| DEFAULT_APP_ID.to_owned())
+}
+
+/// Set Steam's application ID before loading native libraries or starting worker threads.
+///
+/// # Safety
+///
+/// The caller must ensure that no other thread can access the process environment.
+#[cfg(target_os = "linux")]
+pub unsafe fn configure_process() {
+    let app_id = configured_app_id();
+    std::env::set_var("SteamAppId", &app_id);
+    std::env::set_var("SteamGameId", &app_id);
+}
+
 impl Api {
     fn load(path: &Path, local: &Path) -> Result<Self> {
+        let library = Library::open(path)?;
+        let init = SteamInit::load(&library)?;
+        let app_id = configured_app_id();
+        let _ = fs::write(local.join("steam_appid.txt"), &app_id);
         #[cfg(windows)]
         {
-            use std::os::windows::ffi::OsStrExt;
-            use windows_sys::Win32::System::LibraryLoader::{
-                LoadLibraryExW, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
-            };
-            if !path.is_file() {
-                return Err(format!(
-                    "steam_api64.dll não encontrada em {}",
-                    path.display()
-                ));
-            }
-            let app_id = std::env::var("MK8_STEAM_APPID")
-                .ok()
-                .filter(|s| !s.trim().is_empty() && s.trim().chars().all(|c| c.is_ascii_digit()))
-                .unwrap_or_else(|| DEFAULT_APP_ID.to_owned());
             std::env::set_var("SteamAppId", &app_id);
             std::env::set_var("SteamGameId", &app_id);
-            let _ = fs::write(local.join("steam_appid.txt"), &app_id);
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(dir) = exe.parent() {
                     let _ = fs::write(dir.join("steam_appid.txt"), &app_id);
                 }
             }
-            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let handle = unsafe {
-                LoadLibraryExW(
-                    wide.as_ptr(),
-                    std::ptr::null_mut(),
-                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
-                )
-            } as isize;
-            if handle == 0 {
-                return Err(format!(
-                    "Falha ao carregar {}: {}",
-                    path.display(),
-                    std::io::Error::last_os_error()
-                ));
-            }
-            // Release the DLL if any required export is absent, including retries.
-            let library = Library(handle);
-            let init = load_symbol::<unsafe extern "C" fn() -> bool>(handle, c"SteamAPI_Init")
-                .or_else(|_| load_symbol(handle, c"SteamAPI_InitSafe"))?;
-            Ok(Self {
-                _library: library,
-                is_steam_running: load_symbol(handle, c"SteamAPI_IsSteamRunning")?,
-                init,
-                shutdown: load_symbol(handle, c"SteamAPI_Shutdown")?,
-                run_callbacks: load_symbol(handle, c"SteamAPI_RunCallbacks")?,
-                steam_user: load_interface(handle, c"SteamAPI_SteamUser_v023", c"SteamUser")?,
-                steam_friends: load_interface(
-                    handle,
-                    c"SteamAPI_SteamFriends_v017",
-                    c"SteamFriends",
-                )?,
-                steam_matchmaking: load_interface(
-                    handle,
-                    c"SteamAPI_SteamMatchmaking_v009",
-                    c"SteamMatchmaking",
-                )?,
-                steam_networking: load_interface(
-                    handle,
-                    c"SteamAPI_SteamNetworking_v006",
-                    c"SteamNetworking",
-                )?,
-                steam_utils: load_interface(handle, c"SteamAPI_SteamUtils_v010", c"SteamUtils")?,
-                get_steam_id: load_symbol(handle, c"SteamAPI_ISteamUser_GetSteamID")?,
-                get_persona_name: load_symbol(handle, c"SteamAPI_ISteamFriends_GetPersonaName")?,
-                activate_invite_dialog: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog",
-                )?,
-                set_rich_presence: load_symbol(handle, c"SteamAPI_ISteamFriends_SetRichPresence")?,
-                clear_rich_presence: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamFriends_ClearRichPresence",
-                )?,
-                create_lobby: load_symbol(handle, c"SteamAPI_ISteamMatchmaking_CreateLobby")?,
-                join_lobby: load_symbol(handle, c"SteamAPI_ISteamMatchmaking_JoinLobby")?,
-                leave_lobby: load_symbol(handle, c"SteamAPI_ISteamMatchmaking_LeaveLobby")?,
-                set_lobby_data: load_symbol(handle, c"SteamAPI_ISteamMatchmaking_SetLobbyData")?,
-                get_lobby_data: load_symbol(handle, c"SteamAPI_ISteamMatchmaking_GetLobbyData")?,
-                accept_p2p: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamNetworking_AcceptP2PSessionWithUser",
-                )?,
-                allow_p2p_relay: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamNetworking_AllowP2PPacketRelay",
-                )?,
-                send_p2p: load_symbol(handle, c"SteamAPI_ISteamNetworking_SendP2PPacket")?,
-                is_p2p_available: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamNetworking_IsP2PPacketAvailable",
-                )?,
-                read_p2p: load_symbol(handle, c"SteamAPI_ISteamNetworking_ReadP2PPacket")?,
-                is_call_completed: load_symbol(handle, c"SteamAPI_ISteamUtils_IsAPICallCompleted")?,
-                get_call_result: load_symbol(handle, c"SteamAPI_ISteamUtils_GetAPICallResult")?,
-                friend_count: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendCount")?,
-                friend_by_index: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendByIndex")?,
-                friend_name: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendPersonaName")?,
-                friend_state: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendPersonaState")?,
-                friend_game: load_symbol(handle, c"SteamAPI_ISteamFriends_GetFriendGamePlayed")?,
-                friend_rich_presence: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamFriends_GetFriendRichPresence",
-                )?,
-                invite_to_lobby: load_symbol(
-                    handle,
-                    c"SteamAPI_ISteamMatchmaking_InviteUserToLobby",
-                )?,
-                register_callback: load_symbol(handle, c"SteamAPI_RegisterCallback")?,
-            })
         }
-        #[cfg(not(windows))]
-        {
-            let _ = (path, local);
-            Err("Steam API disponível apenas no Windows.".into())
-        }
+        Ok(Self {
+            is_steam_running: library.symbol(c"SteamAPI_IsSteamRunning")?,
+            init,
+            shutdown: library.symbol(c"SteamAPI_Shutdown")?,
+            run_callbacks: library.symbol(c"SteamAPI_RunCallbacks")?,
+            steam_user: load_interface(&library, c"SteamAPI_SteamUser_v023", c"SteamUser")?,
+            steam_friends: load_interface(
+                &library,
+                c"SteamAPI_SteamFriends_v017",
+                c"SteamFriends",
+            )?,
+            steam_matchmaking: load_interface(
+                &library,
+                c"SteamAPI_SteamMatchmaking_v009",
+                c"SteamMatchmaking",
+            )?,
+            steam_networking: load_interface(
+                &library,
+                c"SteamAPI_SteamNetworking_v006",
+                c"SteamNetworking",
+            )?,
+            steam_utils: load_interface(&library, c"SteamAPI_SteamUtils_v010", c"SteamUtils")?,
+            get_steam_id: library.symbol(c"SteamAPI_ISteamUser_GetSteamID")?,
+            get_persona_name: library.symbol(c"SteamAPI_ISteamFriends_GetPersonaName")?,
+            activate_invite_dialog: library
+                .symbol(c"SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog")?,
+            set_rich_presence: library.symbol(c"SteamAPI_ISteamFriends_SetRichPresence")?,
+            clear_rich_presence: library.symbol(c"SteamAPI_ISteamFriends_ClearRichPresence")?,
+            create_lobby: library.symbol(c"SteamAPI_ISteamMatchmaking_CreateLobby")?,
+            join_lobby: library.symbol(c"SteamAPI_ISteamMatchmaking_JoinLobby")?,
+            leave_lobby: library.symbol(c"SteamAPI_ISteamMatchmaking_LeaveLobby")?,
+            set_lobby_data: library.symbol(c"SteamAPI_ISteamMatchmaking_SetLobbyData")?,
+            get_lobby_data: library.symbol(c"SteamAPI_ISteamMatchmaking_GetLobbyData")?,
+            accept_p2p: library.symbol(c"SteamAPI_ISteamNetworking_AcceptP2PSessionWithUser")?,
+            allow_p2p_relay: library.symbol(c"SteamAPI_ISteamNetworking_AllowP2PPacketRelay")?,
+            send_p2p: library.symbol(c"SteamAPI_ISteamNetworking_SendP2PPacket")?,
+            is_p2p_available: library.symbol(c"SteamAPI_ISteamNetworking_IsP2PPacketAvailable")?,
+            read_p2p: library.symbol(c"SteamAPI_ISteamNetworking_ReadP2PPacket")?,
+            is_call_completed: library.symbol(c"SteamAPI_ISteamUtils_IsAPICallCompleted")?,
+            get_call_result: library.symbol(c"SteamAPI_ISteamUtils_GetAPICallResult")?,
+            friend_count: library.symbol(c"SteamAPI_ISteamFriends_GetFriendCount")?,
+            friend_by_index: library.symbol(c"SteamAPI_ISteamFriends_GetFriendByIndex")?,
+            friend_name: library.symbol(c"SteamAPI_ISteamFriends_GetFriendPersonaName")?,
+            friend_state: library.symbol(c"SteamAPI_ISteamFriends_GetFriendPersonaState")?,
+            friend_game: library.symbol(c"SteamAPI_ISteamFriends_GetFriendGamePlayed")?,
+            friend_rich_presence: library
+                .symbol(c"SteamAPI_ISteamFriends_GetFriendRichPresence")?,
+            invite_to_lobby: library.symbol(c"SteamAPI_ISteamMatchmaking_InviteUserToLobby")?,
+            register_callback: library.symbol(c"SteamAPI_RegisterCallback")?,
+            _library: library,
+        })
     }
 
     fn wait_call<T: Default + Copy>(&self, call: u64, callback_id: c_int) -> Result<T> {
@@ -739,16 +879,22 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
     if let Some(api) = guard.as_ref() {
         return Ok(api.clone());
     }
-    let dll = find_dll(local).ok_or(
-        "steam_api64.dll não encontrada. Instalar ou abrir apenas a Steam não fornece essa biblioteca. Coloque a DLL Steamworks de 64 bits ao lado do Launcher.exe e reabra o Launcher. Não é necessário refazer a build do jogo.",
-    )?;
-    let api = Api::load(&dll, local)?;
+    let mut paths = candidate_dll_paths(local)
+        .into_iter()
+        .filter(|path| usable_library(path));
+    let first = paths.next().ok_or_else(|| {
+        format!("{STEAM_LIBRARY} não encontrada. Use a biblioteca Steamworks de 64 bits em um jogo instalado na Steam, na pasta de dados do launcher ou no caminho MK8_STEAM_DLL.")
+    })?;
+    let api = match Api::load(&first, local) {
+        Ok(api) => api,
+        Err(error) => paths
+            .find_map(|path| Api::load(&path, local).ok())
+            .ok_or(error)?,
+    };
     if !unsafe { (api.is_steam_running)() } {
         return Err("O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.".into());
     }
-    if !unsafe { (api.init)() } {
-        return Err("Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.".into());
-    }
+    api.init.run()?;
     for (name, accessor) in [
         ("ISteamUser", api.steam_user),
         ("ISteamFriends", api.steam_friends),
@@ -860,8 +1006,9 @@ pub fn friends(local: &Path) -> Result<Vec<Friend>> {
             !value.is_null() && unsafe { CStr::from_ptr(value) }.to_bytes() == b"1"
         };
         // The game id's low 24 bits are the app id.
-        let room = (playing && game.game_id & 0xff_ffff == app && game.lobby != 0 && marked)
-            .then(|| game.lobby.to_string());
+        let lobby = game.lobby;
+        let room = (playing && game.game_id & 0xff_ffff == app && lobby != 0 && marked)
+            .then(|| lobby.to_string());
         list.push(Friend {
             id: id.to_string(),
             name,
@@ -1050,17 +1197,16 @@ impl SteamRoom {
             return Err("ISteamMatchmaking indisponível.".into());
         }
         let call = unsafe { (api.create_lobby)(mm, ELOBBY_TYPE_FRIENDS_ONLY, 12) };
-        let created: LobbyCreated = api.wait_call(call, LOBBY_CREATED_CALLBACK)?;
-        if created.result != 1 || created.lobby_id == 0 {
+        let LobbyCreated { result, lobby_id } = api.wait_call(call, LOBBY_CREATED_CALLBACK)?;
+        if result != 1 || lobby_id == 0 {
             return Err(format!(
-                "Steam recusou a criação do lobby (código {}).",
-                created.result
+                "Steam recusou a criação do lobby (código {result})."
             ));
         }
         let backend = Arc::new(LiveSteamBackend { api: api.clone() });
         let host_steam_id = backend.local_user();
         let (room, host, invite) =
-            Self::host_with_backend(backend, created.lobby_id, host_steam_id, identity, name)?;
+            Self::host_with_backend(backend, lobby_id, host_steam_id, identity, name)?;
         let key_code = CString::new("mk8_code").unwrap();
         let val_code = CString::new(room.code.as_str()).unwrap();
         let key_id = CString::new("mk8_identity").unwrap();
@@ -1071,15 +1217,15 @@ impl SteamRoom {
         let val_pack = CString::new(if pack.is_empty() { "0" } else { pack })
             .map_err(|_| "Identidade do CTGP inválida.")?;
         unsafe {
-            (api.set_lobby_data)(mm, created.lobby_id, key_code.as_ptr(), val_code.as_ptr());
-            (api.set_lobby_data)(mm, created.lobby_id, key_id.as_ptr(), val_id.as_ptr());
-            (api.set_lobby_data)(mm, created.lobby_id, key_dlc.as_ptr(), val_dlc.as_ptr());
-            (api.set_lobby_data)(mm, created.lobby_id, key_pack.as_ptr(), val_pack.as_ptr());
+            (api.set_lobby_data)(mm, lobby_id, key_code.as_ptr(), val_code.as_ptr());
+            (api.set_lobby_data)(mm, lobby_id, key_id.as_ptr(), val_id.as_ptr());
+            (api.set_lobby_data)(mm, lobby_id, key_dlc.as_ptr(), val_dlc.as_ptr());
+            (api.set_lobby_data)(mm, lobby_id, key_pack.as_ptr(), val_pack.as_ptr());
         }
         let friends = unsafe { (api.steam_friends)() };
         if !friends.is_null() {
             let k_connect = CString::new("connect").unwrap();
-            let v_connect = CString::new(format!("+connect_lobby {}", created.lobby_id)).unwrap();
+            let v_connect = CString::new(format!("+connect_lobby {}", lobby_id)).unwrap();
             let k_status = CString::new("status").unwrap();
             let v_status = CString::new("Jogando Mario Kart 8 Deluxe (Sala Steam)").unwrap();
             let k_room = CString::new("mk8_room").unwrap();
@@ -1412,6 +1558,7 @@ mod tests {
         assert!(check_pack(Some(&"z".repeat(64)), &id).is_err());
     }
 
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn dll_search_reads_extra_libraries_and_common_nested_layouts() {
         let root = std::env::temp_dir().join(format!("mk8-dll-discovery-{}", std::process::id()));
@@ -1423,17 +1570,45 @@ mod tests {
         for i in 0..60 {
             fs::create_dir_all(steam.join(format!("steamapps/common/Game {i:03}"))).unwrap();
         }
-        let direct = steam.join("steamapps/common/Game 059/steam_api64.dll");
-        fs::write(&direct, b"authored path fixture, never loaded").unwrap();
-        let nested = library.join("steamapps/common/Test/Binaries/Win64/steam_api64.dll");
-        fs::create_dir_all(nested.parent().unwrap()).unwrap();
-        fs::write(&nested, b"authored path fixture, never loaded").unwrap();
-        let unity = library.join("steamapps/common/Unity/Test_Data/Plugins/x86_64/steam_api64.dll");
-        fs::create_dir_all(unity.parent().unwrap()).unwrap();
-        fs::write(&unity, b"authored path fixture, never loaded").unwrap();
-        let unreal = library.join("steamapps/common/Unreal/Engine/Binaries/ThirdParty/Steamworks/Steamv161/Win64/steam_api64.dll");
-        fs::create_dir_all(unreal.parent().unwrap()).unwrap();
-        fs::write(&unreal, b"authored path fixture, never loaded").unwrap();
+        fn fixture(path: &Path) {
+            #[cfg(target_os = "linux")]
+            let bytes = b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\x03\0\x3e\0";
+            #[cfg(windows)]
+            let bytes = b"authored path fixture, never loaded";
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        let direct = steam.join("steamapps/common/Game 059").join(STEAM_LIBRARY);
+        #[cfg(windows)]
+        let nested_file = "Binaries/Win64/steam_api64.dll";
+        #[cfg(target_os = "linux")]
+        let nested_file = "bin/linux64/libsteam_api.so";
+        #[cfg(windows)]
+        let unity_file = "Plugins/x86_64/steam_api64.dll";
+        #[cfg(target_os = "linux")]
+        let unity_file = "Plugins/x86_64/libsteam_api.so";
+        #[cfg(windows)]
+        let unreal_file = "Win64/steam_api64.dll";
+        #[cfg(target_os = "linux")]
+        let unreal_file = "x86_64-unknown-linux-gnu/libsteam_api.so";
+        let nested = library.join("steamapps/common/Test").join(nested_file);
+        let unity = library
+            .join("steamapps/common/Unity/Test_Data")
+            .join(unity_file);
+        let unreal = library
+            .join("steamapps/common/Unreal/Engine/Binaries/ThirdParty/Steamworks/Steamv161")
+            .join(unreal_file);
+        for path in [&direct, &nested, &unity, &unreal] {
+            fixture(path);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let other = steam.join("steamapps/common/Game 000").join(STEAM_LIBRARY);
+            fixture(&other);
+            let mut header = fs::read(&other).unwrap();
+            header[18] = 183; // AArch64
+            fs::write(&other, header).unwrap();
+        }
         let escaped = library.to_string_lossy().replace('\\', "\\\\");
         for vdf in [
             format!("\"libraryfolders\"\n{{\n\"1\"\n{{\n\"path\" \"{escaped}\"\n}}\n}}"),
@@ -1530,9 +1705,9 @@ mod tests {
         assert!(error.contains("SteamAPI_SteamUser_v023") && error.contains("SteamUser"));
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
-    #[ignore = "requires an installed Steam DLL and a signed-in Steam client; creates a temporary friends-only lobby"]
+    #[ignore = "requires an installed native Steam library and a signed-in Steam client; creates a temporary friends-only lobby"]
     fn live_steam_dll_creates_and_leaves_lobby() {
         let dll = std::env::var("MK8_TEST_STEAM_DLL").expect("Set MK8_TEST_STEAM_DLL explicitly");
         std::env::set_var("MK8_STEAM_DLL", dll);
@@ -1554,6 +1729,22 @@ mod tests {
         assert!(delivered, "Steam must deliver its native lobby callback");
         fs::remove_file(local.join("steam_appid.txt")).unwrap();
         fs::remove_dir(local).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_steam_layouts_match_valve_sdk() {
+        use std::mem::{offset_of, size_of};
+
+        assert_eq!(size_of::<LobbyCreated>(), 12);
+        assert_eq!(offset_of!(LobbyCreated, lobby_id), 4);
+        assert_eq!(callback_size(LOBBY_ENTER_CALLBACK), 20);
+        assert_eq!(offset_of!(LobbyEnter, response), 16);
+        assert_eq!(size_of::<FriendGame>(), 24);
+        assert_eq!(offset_of!(FriendGame, lobby), 16);
+        assert_eq!(size_of::<Callback>(), 16);
+        assert_eq!(offset_of!(Callback, id), 12);
+        assert_eq!(offset_of!(CallbackVTable, run), 0);
     }
 
     type PacketQueue = HashMap<(u64, i32), VecDeque<(u64, Vec<u8>)>>;

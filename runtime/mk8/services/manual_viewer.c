@@ -5,6 +5,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <wchar.h>
+#else
+#include <errno.h>
+#include <spawn.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include "platform.h"
+extern char **environ;
 #endif
 
 // The launcher supplies its own executable, including when the game outlives its window.
@@ -30,7 +37,22 @@ int mk8_manual_run(void) {
     LOG("[mk8:manual] local guide closed (%s)\n", ok ? "ok" : "interrupted");
     return ok;
 #else
-    LOG("[mk8:manual] local guide viewer requires Windows\n");
-    return 0;
+    const char *executable = getenv("MK8_MANUAL_VIEWER");
+    if (!executable || !*executable) return 0;
+    char *const argv[] = {(char *)executable, "--how-to-play", NULL};
+    pid_t pid;
+    int error = posix_spawn(&pid, executable, NULL, NULL, argv, environ);
+    if (error) {
+        LOG("[mk8:manual] cannot open guide: %d\n", error);
+        return 0;
+    }
+    int status;
+    for (;;) {
+        pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done == pid) return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        if (done < 0 && errno != EINTR) return 0;
+        if (g_rt_unwind) return 0;
+        plat_sleep_until_ns(plat_now_ns() + 50 * 1000 * 1000);
+    }
 #endif
 }

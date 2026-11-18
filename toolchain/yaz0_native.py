@@ -9,7 +9,8 @@ through its own byte-order helpers, the -1 / -2 returns, the `size < 1` exit); o
 loop to mk8_yaz0_loop, which returns 0 with MK8_YAZ0_GUEST=1 so the guest loop runs. The generated unit is verified by
 its SHA-256 and changed only in the build copy.
 """
-import hashlib
+
+from guest_source import verified_bytes
 
 UNIT = 'main_230.c'
 SHA256 = '01e1a6019c1191f1708156e3c434fbe3c328cc11e4ff16e1d46e2b80b7d9e3cc'
@@ -36,9 +37,8 @@ def patch_unit(src, output):
     """The build copy of main_230.c with the hook; any other unit unchanged."""
     if src.name != UNIT or src.parent.name != 'main':
         return src
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SHA256:
-        raise ValueError('Native Yaz0 loop requires the verified MK8 4.0.1 generated unit')
+    raw = verified_bytes(src, SHA256,
+                         'Native Yaz0 loop requires the verified MK8 4.0.1 generated unit')
     target = output/'yaz0'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(patch(raw.decode('utf-8').replace('\r\n', '\n')), encoding='utf-8')  # (generated with CRLF)

@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <windows.h>
-#include <shellapi.h>
+#include <SDL3/SDL.h>
+#include "mbedtls/platform_util.h"
 #include "net/nextendo.h"
 #include "net/netcfg.h"
 #include "net/token.h"
@@ -18,7 +18,7 @@ int mk8_nextendo_probe(bool keep_session) {
     }
     puts(url); fflush(stdout); // PKCE challenge only, never the verifier or callback code.
     if (keep_session && !strncmp(url, "https://", 8))
-        ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+        SDL_OpenURL(url);
     for (int i = 0; i < 3100; ++i) {
         NxStatus status; nextendo_status(&status);
         if (status.state == NX_SIGNED_IN) {
@@ -29,7 +29,7 @@ int mk8_nextendo_probe(bool keep_session) {
                 net_config_reload();
                 char jwt[4096];
                 ok = net_backend() == NET_BACKEND_NEXTENDO && net_id_token(jwt, sizeof jwt) > 0;
-                SecureZeroMemory(jwt, sizeof jwt);
+                mbedtls_platform_zeroize(jwt, sizeof jwt);
                 puts(ok ? "BAAS adapter generated a token; server acceptance not verified." : "BAAS adapter unavailable or online access refused.");
             }
             if (!ok || !keep_session) nextendo_sign_out();
@@ -40,7 +40,7 @@ int mk8_nextendo_probe(bool keep_session) {
             nextendo_sign_out();
             return 1;
         }
-        Sleep(100);
+        SDL_Delay(100);
     }
     nextendo_sign_out();
     return 3;

@@ -53,9 +53,12 @@ class MirrorTests(unittest.TestCase):
             path = root/'game-data/id/extracted/romfs'
             path.parent.mkdir(parents=True)
             # Older builds left a junction, which the launcher's RedirectionTrust refuses.
-            subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(path), str(romfs)], check=True, capture_output=True)
+            if os.name == 'nt':
+                subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(path), str(romfs)], check=True, capture_output=True)
+            else:
+                path.symlink_to(romfs, target_is_directory=True)
             pipeline.mirror(path, romfs)
-            self.assertFalse(path.is_junction())
+            self.assertFalse(path.is_symlink() or getattr(path, "is_junction", lambda: False)())
             self.assertTrue((romfs/'Old.bin').is_file(), 'removing the junction must keep its target')
             self.assertTrue(os.path.samefile(path/'Course/Gu_Menu/course.szs', romfs/'Course/Gu_Menu/course.szs'))
             # A new import replaces files: links follow it and stale entries go away.
@@ -208,6 +211,8 @@ class PipelineTests(unittest.TestCase):
 
 class RuntimeDependencyManifestTests(unittest.TestCase):
     def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
+        from host import GAME_NAME, HOST_NAME, WINDOWS
+
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
             local = Path(temporary)
             source = local/'runtime'
@@ -216,7 +221,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             (local/'generation.json').write_text(json.dumps({'source': str(source), 'identity': 'fixture'}))
             output = local/'host'
             output.mkdir()
-            exe, game = output/'runtime.exe', output/'game.dll'
+            exe, game = output/HOST_NAME, output/GAME_NAME
             exe.write_bytes(b'fixture runtime')
             game.write_bytes(b'preserved game')
             save = local/'user-save.bin'
@@ -229,7 +234,8 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             with patch('host.build_host', return_value=exe), patch.object(pipeline.subprocess, 'run', side_effect=dependencies):
                 pipeline.refresh_runtime(local)
             candidate = json.loads((local/'candidate.json').read_text())
-            self.assertEqual(candidate['files']['vulkan-1.dll'], pipeline.file_record(output/'vulkan-1.dll'))
+            if WINDOWS:
+                self.assertEqual(candidate['files']['vulkan-1.dll'], pipeline.file_record(output/'vulkan-1.dll'))
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertFalse(candidate['gameplay_verified'])

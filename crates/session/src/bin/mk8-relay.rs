@@ -40,7 +40,7 @@ impl Relay {
     }
 
     fn handle(&mut self, req: &mut Request) -> Result<Value, &'static str> {
-        if req.method() != &Method::Post || !req.body_length().is_some_and(|n| n <= 2048) {
+        if req.method() != &Method::Post || req.body_length().is_none_or(|n| n > 2048) {
             return Err("Requisição inválida.");
         }
         let mut body = Vec::new();
@@ -99,10 +99,10 @@ impl Relay {
             }
             "/v1/close" => {
                 let code = body["code"].as_str().unwrap_or("");
-                if !self
+                if self
                     .rooms
                     .get(code)
-                    .is_some_and(|room| body["owner"].as_str() == Some(room.owner.as_str()))
+                    .is_none_or(|room| body["owner"].as_str() != Some(room.owner.as_str()))
                 {
                     return Err("Sala encerrada ou credencial inválida.");
                 }

@@ -1,65 +1,97 @@
 //! Runs in a separate process: a broken DLL must not crash the launcher or touch saves.
 use mk8_manifest::Result;
-use std::{ffi::CStr, path::Path};
-use windows_sys::Win32::{
-    Foundation::FreeLibrary,
-    System::LibraryLoader::{
-        GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
-        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
-    },
-};
+#[cfg(windows)]
+use std::ffi::CStr;
+use std::path::Path;
+#[cfg(windows)]
+mod windows {
+    use super::*;
+    use windows_sys::Win32::{
+        Foundation::FreeLibrary,
+        System::LibraryLoader::{
+            GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+        },
+    };
 
-struct Library(windows_sys::Win32::Foundation::HMODULE);
-impl Drop for Library {
-    fn drop(&mut self) {
-        unsafe {
-            FreeLibrary(self.0);
+    struct Library(windows_sys::Win32::Foundation::HMODULE);
+    impl Drop for Library {
+        fn drop(&mut self) {
+            unsafe {
+                FreeLibrary(self.0);
+            }
         }
     }
-}
-impl Library {
-    fn open(path: &Path) -> Result<Self> {
-        use std::os::windows::ffi::OsStrExt;
-        if !path.is_file() {
-            return Err(format!(
+    impl Library {
+        fn open(path: &Path) -> Result<Self> {
+            use std::os::windows::ffi::OsStrExt;
+            if !path.is_file() {
+                return Err(format!(
                 "DLL ausente ou inacessível: {}. Execute Ferramentas e Build; preserve os saves.",
                 path.display()
             ));
+            }
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let handle = unsafe {
+                LoadLibraryExW(
+                    wide.as_ptr(),
+                    std::ptr::null_mut(),
+                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+                )
+            };
+            if handle.is_null() {
+                return Err(format!("Falha ao carregar {} ou suas dependências: {}. O código do Windows não identifica sozinho a DLL dependente ausente. Confira bloqueios e repare Ferramentas/Build sem apagar os dados.", path.display(), std::io::Error::last_os_error()));
+            }
+            Ok(Self(handle))
         }
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let handle = unsafe {
-            LoadLibraryExW(
-                wide.as_ptr(),
-                std::ptr::null_mut(),
-                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
-            )
-        };
-        if handle.is_null() {
-            return Err(format!("Falha ao carregar {} ou suas dependências: {}. O código do Windows não identifica sozinho a DLL dependente ausente. Confira bloqueios e repare Ferramentas/Build sem apagar os dados.", path.display(), std::io::Error::last_os_error()));
+        fn symbol(&self, name: &CStr) -> Result<unsafe extern "system" fn() -> isize> {
+            unsafe { GetProcAddress(self.0, name.as_ptr().cast()) }
+                .ok_or_else(|| format!("DLL sem função exigida: {}", name.to_string_lossy()))
         }
-        Ok(Self(handle))
     }
-    fn symbol(&self, name: &CStr) -> Result<unsafe extern "system" fn() -> isize> {
-        unsafe { GetProcAddress(self.0, name.as_ptr().cast()) }
-            .ok_or_else(|| format!("DLL sem função exigida: {}", name.to_string_lossy()))
+
+    pub fn probe(folder: &Path) -> Result<()> {
+        let folder = crate::canonical(folder).map_err(|e| e.to_string())?;
+        let loader = folder.join("vulkan-1.dll");
+        let vk = Library::open(&loader)?;
+        vk.symbol(c"vkGetInstanceProcAddr")?;
+        let sdl = Library::open(&folder.join("SDL3.dll"))?;
+        sdl.symbol(c"SDL_Vulkan_LoadLibrary")?;
+        sdl.symbol(c"SDL_CreateWindow")?;
+        Ok(())
     }
 }
 
-pub fn probe(folder: &Path) -> Result<()> {
-    let folder = crate::canonical(folder).map_err(|e| e.to_string())?;
-    let loader = folder.join("vulkan-1.dll");
-    let vk = Library::open(&loader)?;
-    vk.symbol(c"vkGetInstanceProcAddr")?;
-    let sdl = Library::open(&folder.join("SDL3.dll"))?;
-    sdl.symbol(c"SDL_Vulkan_LoadLibrary")?;
-    sdl.symbol(c"SDL_CreateWindow")?;
+#[cfg(windows)]
+pub use windows::probe;
+
+#[cfg(target_os = "linux")]
+pub fn probe(_: &Path) -> Result<()> {
+    unsafe {
+        let vk = libloading::Library::new("libvulkan.so.1").map_err(|e| e.to_string())?;
+        let enumerate = vk
+            .get::<unsafe extern "C" fn(*mut u32) -> i32>(b"vkEnumerateInstanceVersion\0")
+            .map_err(|e| e.to_string())?;
+        let mut version = 0;
+        if enumerate(&mut version) != 0 || version < ((1 << 22) | (3 << 12)) {
+            return Err("O loader Vulkan 1.3 é necessário.".into());
+        }
+        let sdk = std::env::var_os("MK8_NATIVE_TOOLS")
+            .map(|path| std::path::PathBuf::from(path).join("linux-sdk/lib/libSDL3.so.0"))
+            .filter(|path| path.is_file());
+        let sdl = libloading::Library::new(sdk.as_deref().unwrap_or(Path::new("libSDL3.so.0")))
+            .map_err(|e| e.to_string())?;
+        sdl.get::<unsafe extern "C" fn()>(b"SDL_Vulkan_LoadLibrary\0")
+            .map_err(|e| e.to_string())?;
+        sdl.get::<unsafe extern "C" fn()>(b"SDL_CreateWindow\0")
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 pub fn check(install: &mk8_manifest::Installation, local: &Path) -> Result<()> {
     use std::{
         fs,
-        os::windows::process::CommandExt,
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
@@ -71,6 +103,7 @@ pub fn check(install: &mk8_manifest::Installation, local: &Path) -> Result<()> {
     let log_path = local.join("vulkan-check.log");
     let log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
     // Check the exact local files, even when Windows has a different system loader.
+    #[cfg(windows)]
     for name in ["vulkan-1.dll", "SDL3.dll"] {
         let result = install
             .files
@@ -89,13 +122,18 @@ pub fn check(install: &mk8_manifest::Installation, local: &Path) -> Result<()> {
             return Err(error);
         }
     }
-    let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
+    let mut command = Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command
         .arg("--check-vulkan")
         .arg(folder)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?))
         .stderr(Stdio::from(log))
-        .creation_flags(0x08000000)
         .spawn()
         .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(20);

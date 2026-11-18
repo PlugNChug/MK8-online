@@ -6,7 +6,6 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
     thread::JoinHandle,
 };
 
@@ -90,14 +89,8 @@ fn extract(archive: &Path) -> Result<Vec<u8>> {
     if identity.bytes != ARCHIVE_BYTES || identity.sha256 != ARCHIVE_SHA256 {
         return Err("O download não corresponde à biblioteca Mii verificada.".into());
     }
-    // Windows ships bsdtar. Extract just this member to memory, after verifying the entire ZIP.
-    let system = std::env::var_os("SystemRoot").ok_or("Pasta do Windows indisponível.")?;
-    let mut cmd = Command::new(PathBuf::from(system).join("System32/tar.exe"));
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
+    // Extract just this member to memory after verifying the entire ZIP.
+    let mut cmd = crate::archive_command()?;
     let out = cmd
         .args(["-xOf"])
         .arg(archive)

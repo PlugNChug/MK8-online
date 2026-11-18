@@ -27,3 +27,6 @@ jobs:
           -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
       - name: Pipeline tests
         run: python -m unittest discover -s tests -p "test_pipeline.py"
+
+  linux:
+    uses: ./.github/workflows/linux.yml

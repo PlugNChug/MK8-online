@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Build e distribuição Linux
+
+O runtime usa a camada Linux da revisão fixada de SMM2Recomp. O bootstrap reutiliza os avisos do SDL 3.4.18, dos headers Vulkan 1.4.363 e do Vulkan Memory Allocator 3.4.0. O loader Vulkan e os drivers são do sistema. [SDL 3.4.18](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18) · [Vulkan-Headers 1.4.363](https://github.com/KhronosGroup/Vulkan-Headers/releases/tag/v1.4.363) · [Vulkan Memory Allocator 3.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/releases/tag/v3.4.0)
+
+O pacote usa appimagetool 1.9.1 na preparação e inclui o runtime Type 2 de 20251108 com licença MIT. Os avisos do runtime .NET acompanham o extrator LibHac. [appimagetool 1.9.1](https://github.com/AppImage/appimagetool/releases/tag/1.9.1) · [Type 2 runtime](https://github.com/AppImage/type2-runtime/releases/tag/20251108)
+
 ## Revisão de compatibilidade — 16/11/2026
 
 Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.

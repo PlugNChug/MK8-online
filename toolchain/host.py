@@ -1,4 +1,4 @@
-"""Build the pinned Windows runtime and link the private game library."""
+"""Build the pinned runtime and link the private game library."""
 import concurrent.futures
 import hashlib
 import json
@@ -9,9 +9,33 @@ import shutil
 import subprocess
 import sys
 
-from native import DEFAULT_COMPILER, ROOT, TOOLS, compiler_env, compiler_path, default_workers, digest
+from native import (DEFAULT_COMPILER, GAME_ABI_ID, ROOT, TARGET, TARGET_FLAGS, TOOLS, WINDOWS, cc,
+                    compiler_env, compiler_path, default_workers, digest)
 
 DEPS = TOOLS / 'deps/packages/ucrt64'
+HOST_NAME = 'mk8drecomp.exe' if WINDOWS else 'mk8drecomp'
+GAME_NAME = 'mk8dgame.dll' if WINDOWS else 'mk8dgame.so'
+LINUX_SDK = TOOLS/'linux-sdk'
+LINUX_PACKAGES = ['sdl3', 'vulkan', 'shaderc', 'libavformat', 'libavcodec', 'libavutil', 'libswscale']
+
+
+def linux_pkg_config(*options):
+    import shlex
+    env = dict(os.environ)
+    pkg_path = str(LINUX_SDK/'lib/pkgconfig')
+    if env.get('PKG_CONFIG_PATH'):
+        pkg_path += os.pathsep + env['PKG_CONFIG_PATH']
+    env['PKG_CONFIG_PATH'] = pkg_path
+    return shlex.split(subprocess.check_output(
+        ['pkg-config', *options, *LINUX_PACKAGES], text=True, env=env))
+
+
+def linux_libraries():
+    libs = linux_pkg_config('--libs')
+    if '-lshaderc' in libs and Path('/usr/lib/libshaderc_shared.so').is_file():
+        libs[libs.index('-lshaderc')] = '-lshaderc_shared'
+    return libs
+
 
 
 def prepare_host_sources(source, output):
@@ -223,6 +247,12 @@ def prepare_host_sources(source, output):
         raise ValueError('TLD4S translator boundary changed')
     text = text.replace(boundary, (ROOT/'runtime/mk8/graphics/maxwell_gather.inc').read_text(encoding='utf-8')+'\n'+boundary)
     text = text.replace(opcode, '    } else if (OPM(0xdf00000000000000ull, 0xffc0000000000000ull)) {  // TLD4S F32\n        mk8_emit_tld4s(c, w);\n'+opcode)
+    # Point draws without a guest size use the default pixel size. Vulkan 1.3 requires
+    # the vertex shader to write it even for point topology selected dynamically.
+    point_size = '        if (info->writes_point_size) sp(&s, "  gl_PointSize = 0.0f;\\n");'
+    if text.count(point_size) != 1:
+        raise ValueError('Vulkan vertex point-size emission changed')
+    text = text.replace(point_size, '        sp(&s, "  gl_PointSize = 1.0f;\\n");')
     translator.write_text(text, encoding='utf-8')
     from maxwell_mip_query import prepare as prepare_maxwell_mip_query
     prepare_maxwell_mip_query(runtime)
@@ -321,7 +351,8 @@ def prepare_host_sources(source, output):
         raise ValueError('Guest host-stack boundary changed')
     # Winpthreads passes an explicit size as a commit request. The PE default reserves
     # 256 MiB and commits on demand instead, retaining room for recompiled recursion.
-    text = text.replace(stack, '    // Use the executable default stack reserve; do not commit 256 MiB per thread.')
+    if WINDOWS:
+        text = text.replace(stack, '    // Use the executable default stack reserve; do not commit 256 MiB per thread.')
     map_copy = '    case 0x04:  // MapMemory(dst, src, size): src is inaccessible while mapped, so copying is equivalent\n'
     if text.count(map_copy) != 1:
         raise ValueError('MapMemory boundary changed')
@@ -344,6 +375,34 @@ def prepare_host_sources(source, output):
     kernel.write_text(text, encoding='utf-8')
     from core_preempt import prepare as prepare_core_preempt
     prepare_core_preempt(runtime)
+    if not WINDOWS:
+        platform = runtime/'platform/linux.c'
+        text = platform.read_text(encoding='utf-8')
+        boundary = '    if (isatty(STDERR_FILENO)) return;'
+        if text.count(boundary) != 1:
+            raise ValueError('Linux logging boundary changed')
+        platform.write_text(text.replace(boundary, boundary + '''
+    // A launcher or a diagnostic capture already supplies its own log destination.
+    struct stat log;
+    if (fstat(STDERR_FILENO, &log) == 0 &&
+        (S_ISREG(log.st_mode) || S_ISFIFO(log.st_mode) || S_ISSOCK(log.st_mode))) return;'''),
+                            encoding='utf-8')
+        main = runtime/'main.c'
+        text = main.read_text(encoding='utf-8')
+        boundary = 'int main(int argc, char **argv) {'
+        if text.count(boundary) != 1:
+            raise ValueError('Runtime entry boundary changed')
+        main.write_text(text.replace(boundary, boundary + '''
+    if (argc == 3 && !strcmp(argv[1], "--check-game-library")) {
+        char why[256];
+        if (setenv("LARECOMP_GAME_LIB", argv[2], 1) != 0) return 1;
+        if (!gamelib_load(NULL, why, sizeof why)) {
+            fprintf(stderr, "Game library: %s\\n", why);
+            return 1;
+        }
+        dispatch_init();
+        return 0;
+    }'''), encoding='utf-8')
     windows = runtime/'platform/windows.c'
     text = windows.read_text(encoding='utf-8')
     boundary = 'static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
@@ -365,32 +424,35 @@ def run(args, log, env):
         raise ValueError(f'{log.name}:\n' + result.stderr.decode('utf-8', 'replace')[-6000:])
 
 
-def build_host(source, output, workers=None):
+def build_host(source, output, workers=None, game_library=None):
     source, output = map(compiler_path, (source, output))
     from storage import require_space
     require_space(output)
     output.mkdir(parents=True, exist_ok=True)
     runtime = prepare_host_sources(source, output)
-    for header in ['SDL3/SDL.h', 'vulkan/vulkan.h', 'shaderc/shaderc.h', 'libavcodec/avcodec.h']:
-        if not (DEPS/'include'/header).is_file():
-            raise ValueError('Dependências do runtime ausentes: execute scripts/setup-runtime-deps.py')
+    if WINDOWS:
+        for header in ['SDL3/SDL.h', 'vulkan/vulkan.h', 'shaderc/shaderc.h', 'libavcodec/avcodec.h']:
+            if not (DEPS/'include'/header).is_file():
+                raise ValueError('Dependências do runtime ausentes: execute scripts/setup-runtime-deps.py')
     env = dict(compiler_env(), PYTHONUTF8='1')
     inc = output/'inc'; inc.mkdir(exist_ok=True)
     # The upstream Makefile replaces non-ASCII bytes in this legacy shader comment text.
     hlsl = (source/'third_party/smaa/SMAA.hlsl').read_bytes().decode('ascii', errors='replace').replace('\ufffd', '?')
     (inc/'smaa_hlsl.inc').write_text('\n'.join(json.dumps(line+'\n', ensure_ascii=True) for line in hlsl.splitlines()), encoding='utf-8')
-    shim = output/'vk_shim.c'
-    run([sys.executable, source/'tools/gen_vk_shim.py', DEPS/'include', source/'runtime/platform/vulkan-1.exports', shim], output/'vk-shim.log', env)
-    # Export only the shared runtime ABI used by the generated game code.
-    exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
-    exports = output/'exports.def'
-    exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
-    export_source = output/'mk8_exports.c'
-    directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)
-    export_source.write_text('__asm__(".section .drectve\\n.ascii \\"'+directives+'\\"\\n.text\\n");\n', encoding='utf-8')
-    common = ['-target', 'x86_64-windows-gnu', '-mcpu=x86_64_v2', '-O2', '-fno-strict-aliasing',
-              '-D_FILE_OFFSET_BITS=64', '-D_POSIX_THREAD_SAFE_FUNCTIONS', '-D_CRT_RAND_S',
-              '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX', '-DGAME_ID="mk8d"',
+    if WINDOWS:
+        shim = output/'vk_shim.c'
+        run([sys.executable, source/'tools/gen_vk_shim.py', DEPS/'include', source/'runtime/platform/vulkan-1.exports', shim], output/'vk-shim.log', env)
+        # Export only the shared runtime ABI used by the generated game code.
+        exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
+        exports = output/'exports.def'
+        exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
+        export_source = output/'mk8_exports.c'
+        directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)
+        export_source.write_text('__asm__(".section .drectve\\n.ascii \\"'+directives+'\\"\\n.text\\n");\n', encoding='utf-8')
+    common = [*TARGET_FLAGS, '-O2', '-fno-strict-aliasing', '-D_FILE_OFFSET_BITS=64',
+              *(['-D_POSIX_THREAD_SAFE_FUNCTIONS', '-D_CRT_RAND_S', '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX']
+                if WINDOWS else ['-Wno-format', '-pthread', '-DGAMELIB_ID="'+GAME_ABI_ID+'"', *linux_pkg_config('--cflags')]),
+              '-DGAME_ID="mk8d"',
               '-DGAME_TITLE="Mario Kart 8 Deluxe - experimental"', '-DGAME_TITLE_ID=0x0100152000022000ull',
               '-DGAME_DISPLAY_VERSION="4.0.1"', '-DGAME_BUNDLE_ID="org.mk8online.mk8d"',
               '-DMBEDTLS_USER_CONFIG_FILE="mbedtls_user_config.h"',
@@ -398,9 +460,10 @@ def build_host(source, output, workers=None):
               # no folder of the machine that built it.
               *('-ffile-prefix-map='+str(path)+'='+name for path, name in
                 ((ROOT, 'mk8-online'), (DEPS, 'deps'), (source, 'runtime'), (output, 'host')))]
-    for p in [runtime, runtime/'nvn', runtime/'net', DEPS/'include',
+    dep_include = DEPS/'include' if WINDOWS else TOOLS/'deps/linux/include'
+    for p in [runtime, runtime/'nvn', runtime/'net', dep_include,
               source/'third_party/mbedtls/include', source/'third_party/imgui', source/'third_party/imgui/backends',
-              source/'third_party/smaa/Textures', inc]:
+              source/'third_party/smaa/Textures', inc, *([] if WINDOWS else [LINUX_SDK/'include'])]:
         common.append('-I'+str(p))
     sources = []
     for pattern in ['runtime/*.c', 'runtime/hle/*.c', 'runtime/services/*.c', 'runtime/nvn/*.c',
@@ -409,20 +472,25 @@ def build_host(source, output, workers=None):
         sources.extend(sorted(source.glob(pattern)))
     sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
     sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
-    sources += [source/'runtime/platform/windows.c', export_source]
+    if WINDOWS:
+        sources += [source/'runtime/platform/windows.c', export_source, shim]
+    else:
+        sources = [p for p in sources if p.name != 'sampler.c']
+        sources += [source/'runtime/platform/linux.c']
     sources += [source/'third_party/imgui'/name for name in ['imgui.cpp', 'imgui_draw.cpp', 'imgui_tables.cpp', 'imgui_widgets.cpp', 'backends/imgui_impl_sdl3.cpp', 'backends/imgui_impl_vulkan.cpp']]
-    sources.append(shim)
     sources = [runtime/p.relative_to(source/'runtime') if p.is_relative_to(source/'runtime') else p for p in sources]
     headers = {str(p.relative_to(source)): digest(p) for folder in ['runtime', 'third_party', 'games/mk8d'] for p in (source/folder).rglob('*.h')}
     headers.update({'prepared/'+str(p.relative_to(runtime)): digest(p) for p in runtime.rglob('*.h')})
-    dep_headers = {str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
+    dep_headers = ({str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
+                   if WINDOWS else {'pkg-config': linux_pkg_config('--modversion'),
+                         'vma': digest(dep_include/'vk_mem_alloc.h')})
     environment = hashlib.sha256(json.dumps({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'), 'compiler': digest(DEFAULT_COMPILER), 'flags': common}, sort_keys=True).encode()).hexdigest()
 
     def relative_of(src):
         return Path('runtime')/src.relative_to(runtime) if src.is_relative_to(runtime) else src.relative_to(source) if src.is_relative_to(source) else Path(src.name)
 
-    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc')}, common, sources, source, output)
-    prebuilt = use_prebuilt(key, output)
+    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc')}, common, sources, source, output) if WINDOWS else None
+    prebuilt = use_prebuilt(key, output) if WINDOWS else None
     if prebuilt:
         copy_runtime_dlls(output)
         print('Runtime Windows pré-compilado do pacote: chave e hashes conferidos, sem recompilar.', flush=True)
@@ -439,9 +507,11 @@ def build_host(source, output, workers=None):
                 return obj
         cpp = src.suffix in ('.mm', '.cpp')
         flags = ['-x', 'c++', '-std=c++17'] if cpp else []
+        if not WINDOWS and src.name == 'option_rows.mm':
+            flags.extend(['-include', 'cstdint'])
         pending = obj.with_suffix('.pending.o')
         require_space(output)
-        run([DEFAULT_COMPILER, 'c++' if cpp else 'cc', *common, *flags, '-c', src, '-o', pending], obj.with_suffix('.log'), env)
+        run([*cc(cpp=cpp), *common, *flags, '-c', src, '-o', pending], obj.with_suffix('.log'), env)
         pending.replace(obj)
         stamp.write_text(json.dumps({'input': key, 'sha256': digest(obj)}), encoding='utf-8')
         return obj
@@ -450,10 +520,19 @@ def build_host(source, output, workers=None):
         objects = []
         for i, obj in enumerate(pool.map(compile_one, sources), 1):
             objects.append(obj)
-            print(f'Runtime Windows: {i}/{len(sources)} unidades', flush=True)
+            print(f'Runtime {TARGET}: {i}/{len(sources)} unidades', flush=True)
     rsp = output/'host.rsp'
     rsp.write_text('\n'.join('"'+str(p).replace('\\','/')+'"' for p in objects), encoding='utf-8')
-    exe = output/'mk8drecomp.exe'
+    exe = output/HOST_NAME
+    if not WINDOWS:
+        pending = exe.with_suffix('.pending')
+        run([*cc(cpp=True), *TARGET_FLAGS, '-fuse-ld=lld', '-rdynamic', '@'+str(rsp),
+             '-o', pending, *linux_libraries(), '-Wl,-rpath,'+str(LINUX_SDK/'lib'), '-lpthread', '-ldl', '-lm',
+             '-Wl,-z,stack-size=268435456'], output/'host-link.log', env)
+        if game_library is not None:
+            run([pending, '--check-game-library', game_library], output/'game-abi.log', env)
+        pending.replace(exe)
+        return exe
     run([DEFAULT_COMPILER, 'c++', '-target', 'x86_64-windows-gnu', '@'+str(rsp), '-o', exe,
          '-L'+str(DEPS/'lib'), '-Wl,--stack,268435456', '-Wl,--export-all-symbols',
          *(DEPS/'lib'/('lib'+lib+'.dll.a') for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']),
@@ -539,7 +618,30 @@ def use_prebuilt(key, output):
     return output/'mk8drecomp.exe'
 
 
+def write_game_entry(output):
+    entry = output/'mk8d-entry.c'
+    text = ('''#include "gamelib.h"
+#define DECLARE(name, base) extern __declspec(dllimport) const uint64_t name##_fn_addrs[], name##_fn_count; extern __declspec(dllimport) const GuestFn name##_fn_ptrs[];
+RECOMP_MODULES(DECLARE)
+#undef DECLARE
+GAMELIB_EXPORT const GameLibTables *recomp_game_tables(void) {
+    static GameLibModule modules[RECOMP_MODULE_COUNT];
+    static const GameLibTables tables = {GAMELIB_ABI, GAMELIB_ID, RECOMP_MODULE_COUNT, modules};
+    unsigned i = 0;
+#define ASSIGN(name, base) modules[i++] = (GameLibModule){#name, base, name##_fn_addrs, name##_fn_ptrs, &name##_fn_count};
+    RECOMP_MODULES(ASSIGN)
+#undef ASSIGN
+    return &tables;
+}
+''')
+    entry.write_text(text if WINDOWS else text.replace('__declspec(dllimport) ', ''), encoding='utf-8')
+    return entry
+
+
+
 def prepare_dll_link(output):
+    if not WINDOWS:
+        return
     """Populate Zig's shared-library CRT cache while the guest objects are still compiling."""
     output.mkdir(parents=True, exist_ok=True)
     source = output/'probe.c'
@@ -552,8 +654,10 @@ def prepare_dll_link(output):
 def link_game(archive, output, source=None, modules=None):
     output = compiler_path(output)
     env = compiler_env()
-    dll = output/'mk8dgame.dll'
+    dll = output/GAME_NAME
     source = compiler_path(source)
+    if not WINDOWS:
+        return link_elf_game(archive, output, source, dll, env)
     objects = compiler_path(archive).parent
     from storage import GIB, require_space
     estimated_dll_bytes = sum(p.stat().st_size for module in modules for p in (objects/module).glob('*.o'))
@@ -621,25 +725,25 @@ def link_game(archive, output, source=None, modules=None):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(modules), default_workers())) as pool:
         imports = list(pool.map(link_module, modules))
-    entry = output/'mk8d-entry.c'
-    entry.write_text('''#include "gamelib.h"
-#define DECLARE(name, base) extern __declspec(dllimport) const uint64_t name##_fn_addrs[], name##_fn_count; extern __declspec(dllimport) const GuestFn name##_fn_ptrs[];
-RECOMP_MODULES(DECLARE)
-#undef DECLARE
-GAMELIB_EXPORT const GameLibTables *recomp_game_tables(void) {
-    static GameLibModule modules[RECOMP_MODULE_COUNT];
-    static const GameLibTables tables = {GAMELIB_ABI, GAMELIB_ID, RECOMP_MODULE_COUNT, modules};
-    unsigned i = 0;
-#define ASSIGN(name, base) modules[i++] = (GameLibModule){#name, base, name##_fn_addrs, name##_fn_ptrs, &name##_fn_count};
-    RECOMP_MODULES(ASSIGN)
-#undef ASSIGN
-    return &tables;
-}
-''', encoding='utf-8')
+    entry = write_game_entry(output)
     run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-shared', '-s', '-I'+str(source/'runtime'),
          '-o', dll, entry, *imports], output/'game-link.log', env)
     (output/'mk8dgame.dll.id').write_text('dev x86-64-v2\n', encoding='utf-8')
     return dll
+
+
+def link_elf_game(archive, output, source, library, env):
+    from storage import require_space
+    objects = compiler_path(archive).parent
+    require_space(output, 4 * 1024**3 + sum(p.stat().st_size for p in objects.glob('*/*.o')))
+    diagnostics = ROOT/'runtime/mk8/support/ubsan_report.c'
+    pending = library.with_suffix('.pending.so')
+    run([*cc(), *TARGET_FLAGS, '-fuse-ld=lld', '-fPIC', '-mcmodel=large', '-shared',
+         '-DGAMELIB_ID="'+GAME_ABI_ID+'"', '-I'+str(source/'runtime'),
+         '-o', pending, diagnostics, '-Wl,--whole-archive', archive, '-Wl,--no-whole-archive'], output/'game-link.log', env)
+    pending.replace(library)
+    library.with_suffix('.so.id').write_text(GAME_ABI_ID+' x86-64-v2\n', encoding='utf-8')
+    return library
 
 
 if __name__ == '__main__':
