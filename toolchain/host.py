@@ -17,6 +17,10 @@ DEPS = TOOLS / 'deps/packages/ucrt64'
 def prepare_host_sources(source, output):
     runtime = output/'runtime'
     shutil.copytree(source/'runtime', runtime, dirs_exist_ok=True)
+    from packed_color import prepare as prepare_packed_color
+    from scene_scale import prepare as prepare_scene_scale
+    prepare_packed_color(runtime)
+    prepare_scene_scale(runtime)
     for dependency in ('zstd', 'bcdec'):
         shutil.copytree(source/'third_party'/dependency, output/'third_party'/dependency, dirs_exist_ok=True)
     settings = runtime/'settings.c'

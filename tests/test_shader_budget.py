@@ -55,8 +55,13 @@ static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
 ''' + timing + budget + r'''
 int main(int argc, char **argv) {
     (void)argv;
-    screen_t.backend = &screen_b; probe_t.backend = &probe_b;
+    screen_t.backend = &screen_b; screen_t.target = 1; screen_t.flags = 8;
+    probe_t.backend = &probe_b;
     target(&screen_t);
+    // Newly scalable lighting resources must retain their previous full shader wait.
+    if (!mk8_targets_redrawn()) return 40;
+    screen_t.target = 4; if (mk8_targets_redrawn()) return 41; screen_t.target = 1;
+    screen_t.flags = 0; if (mk8_targets_redrawn()) return 42; screen_t.flags = 8;
     if (argc > 1 && !strcmp(argv[1], "timing")) {
         JobQueue *q = jobq_create(1);
         BuildJob a = {0};
