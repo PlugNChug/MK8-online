@@ -41,6 +41,11 @@ provider plus the extra command-buffer work, not a 3x slowdown. The late-race
 drop to 20-26 FPS is also present with FSR off (12-22 FPS in the same
 section), so it is the game's existing late-race degradation, not FSR.
 
+**FPS caveat:** Astro can run on the same GPU on this desktop. Any in-game FPS
+number taken while another GPU application is active is not a valid
+comparison; use the isolated provider benchmark for FSR cost and only compare
+FPS runs on an otherwise idle desktop.
+
 ## Not qualified / open
 
 - **Real inputs:** a scene depth target was observed at 960x540 while the
