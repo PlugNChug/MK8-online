@@ -26,12 +26,11 @@ CALL = ANCHOR + """    { extern VkImageView mk8_fsr4_upscale(VkCommandBuffer, Te
       if (fsr4) { vk_full_barrier(cb); vk_frame_resume(); return fsr4; } }
 """
 
-CAPTURE = """    if (getenv("MK8_FSR4") && g_pass_depth && g_pass_depth->backend) {
+CAPTURE = """    if (getenv("MK8_FSR4_CAPTURE") && g_pass_depth && g_pass_depth->backend) {
         TexBackend *db = (TexBackend *)g_pass_depth->backend;
-        TexBackend *cb0 = g_pass_ncolor && g_pass_color[0] ? (TexBackend *)g_pass_color[0]->backend : NULL;
-        { static int cap_log; if (!cap_log++) LOG("[fsr] capture candidate depth %ux%u color %ux%u ncolor %d\\n",
-            db->width, db->height, cb0 ? cb0->width : 0, cb0 ? cb0->height : 0, g_pass_ncolor); }
-        if (db->image && cb0 && cb0->image && db->width == cb0->width && db->height == cb0->height) {
+        if (db->image && db->width >= 640 && db->height >= 360 && db->width * 9 == db->height * 16) {
+            static int cap_log;
+            if (cap_log++ < 3) LOG("[fsr] capture scene depth %ux%u fmt %d\\n", db->width, db->height, db->format);
             TexBackend *cap = post_image(21, db->width, db->height, VK_FORMAT_R32_SFLOAT);
             VkImageAspectFlags da = (db->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                                              : VK_IMAGE_ASPECT_COLOR_BIT;
@@ -43,7 +42,6 @@ CAPTURE = """    if (getenv("MK8_FSR4") && g_pass_depth && g_pass_depth->backend
         }
     }
 """
-
 PROTOTYPES = """static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
                       const float pc[8], bool clear);
 static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f);
