@@ -1,5 +1,7 @@
 # Estado técnico — 18/11/2026
 
+A [PR #58](https://github.com/Vnnc1/MK8-online/pull/58) está aberta para `fix-chore`. A CI anterior passou os testes portáteis e falhou na asserção de liberação da porta UDP do teste de reconexão Steam. Esta atualização somente de documentação solicita uma nova execução; não altera código nem testes e não declara a falha corrigida. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
 ## Rock Rock Mountain — comando de depth clamp respeitado no Vulkan
 
 Branch `codex/fix-depth-clamp-20261118`, sobre `fix-chore 0085fed` conferida após fetch; commit local `a689da7`. O recorder já preservava `CMD_SET_DEPTH_CLAMP`, mas `apply_state` do Vulkan ignorava o comando, tanto no executor quanto na previsão de pipelines. `toolchain/depth_clamp.py` acrescenta o estado ao executor, à chave de cache e à criação do pipeline, mantendo o contrato de bit 0 usado pelo backend Metal. O estado padrão é desligado. A capacidade vem da feature realmente habilitada no dispositivo; solicitação sem suporte falha explicitamente antes de criar um pipeline inválido. Sem mudança de guest, formato de comandos, opção de usuário ou depth bias.
