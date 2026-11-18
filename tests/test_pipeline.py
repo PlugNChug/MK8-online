@@ -209,7 +209,7 @@ class PipelineTests(unittest.TestCase):
 class RuntimeDependencyManifestTests(unittest.TestCase):
     def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
-            local = Path(temporary)
+            local = Path(temporary).resolve()
             source = local/'runtime'
             source.mkdir()
             (local/'runtime-hashes.json').write_text('{}')
