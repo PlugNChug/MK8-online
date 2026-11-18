@@ -332,6 +332,7 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     version.version = FFX_UPSCALER_VERSION;
     const char *want = getenv("MK8_FSR_VERSION");
     if (want && strcmp(want, "3.1.6") == 0) version.version = (3u << 22) | (1u << 12) | 6u;
+    if (want && strcmp(want, "3.1.4") == 0) version.version = (3u << 22) | (1u << 12) | 4u;
     { static int once; if (!once++) fprintf(stderr, "[fsr] requesting version %#x\n", version.version); }
 
     ffxCreateContextDescUpscale upscale = {0};

@@ -70,7 +70,13 @@ FPS runs on an otherwise idle desktop.
   no dispatch). The provider is not integrated; a correctly generated Windows
   SDK/permutation set or a fixed Linux generator is required. The context
   attempt now logs `[fsr] create failed 0x1` (generic FFX error) and stops
-  retrying. FSR 4.1.2 remains the only working version.
+  retrying. The available provider source is the `rexglue/FidelityFX-SDK` fork
+  at FSR **3.1.4**, not 3.1.6; requesting 3.1.4 also fails with 0x1, so the
+  permutation/blob set is the blocker, not just the version. The official
+  v2.4.0 GitHub tag contains only `Kits` (no `sdk` backend source or generated
+  headers), and the public forks commit only the `#include` lines, not the
+  generated `*_permutations.h` files. FSR 4.1.2 remains the only working
+  version.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).
