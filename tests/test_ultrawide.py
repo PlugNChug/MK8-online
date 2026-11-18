@@ -270,7 +270,7 @@ static const unsigned IE=0x13000, IR=0x14000, IO=0x15000, IP=0x16000,
     IT=0x17000, IS=0x18000, IA=0x14100;
 static void intro_setup_at(unsigned kind, unsigned mode, unsigned owner, unsigned source,
                            unsigned table, unsigned subcamera) {
-    setup(); hud_intro=mode==2; w32(Q+8,kind); w32(Q+0x180,12);
+    setup(); hud_intro=mode==2; w32(Q+8,kind); w32(Q+0x180,kind==2 ? 1 : 12);
     w32(W+0xd8,mode==2 ? 4 : 3); w32(W+0x44,mode==2 ? 2 : 1);
     link(S+0x1b0,IE); link(IE+0x228,IR); w64(IR,MAIN_BASE+0x11b8db0);
     w32(IR+0x38,4); w32(IR+0x3c,4); link(IR+0x40,IA); link(IA,owner);
@@ -285,7 +285,7 @@ static void intro_setup_at(unsigned kind, unsigned mode, unsigned owner, unsigne
     memcpy(arena+source,arena+M+0x238,0xc0); wf(source+0xb0,4.f/3.f);
     link(M+0x958,owner+0x30); link(M+0x978,source); link(V+0x68,owner+0x30);
     w32(K+0x80,2); link(T,owner+0x10); w32(T+8,20); w32(T+12,2);
-    arena[M+0x9d7]=mode==2;
+    arena[M+0x9d7]=mode==2 || kind==2;
 }
 static void intro_setup(unsigned kind, unsigned mode) { intro_setup_at(kind,mode,IO,IP,IT,IS); }
 static void check_intro_case(unsigned kind, unsigned mode) {
@@ -293,6 +293,8 @@ static void check_intro_case(unsigned kind, unsigned mode) {
     intro_setup(kind,mode);
     only_aspect(21.f/9.f); assert(wide_active());
     assert(rf(IP+0xb0)==4.f/3.f);  // only the final render projection is widened
+    mk8_ultrawide_drawable(2560,720); only_aspect(32.f/9.f); assert(wide_active());
+    mk8_ultrawide_drawable(1680,720); only_aspect(21.f/9.f);
     arena[M+0x240]=0; unchanged(); assert(wide_active());
     w32(IO+0xdc,UINT32_MAX); unchanged(); assert(wide_active());  // the adjacent raw DWORD is not a capacity
     hud_intro=mode!=2; only_aspect(16.f/9.f); assert(!wide_active());
@@ -331,9 +333,9 @@ static void check_intro_case(unsigned kind, unsigned mode) {
         {IO+8,1},{IO+0x18,1},{IO+0x18,2},{IO+0xd8,0},{IO+0xd8,8},{IO+0xd8,10},
         {IO+0xe8,0},{IO+0xe8,1},{IO+0xe8,4},{IO+0xe8,8},{IO+0xe8,UINT32_MAX},
         {IO+0xec,0},{IO+0xec,1},{IO+0xec,mode==2 ? 3 : 2},{IO+0xec,4},
-        {T+8,10},{T+8,30},{T+12,1},{T+12,3},{Q+8,2},{Q+8,3},{Q+0x188,2},
+        {T+8,10},{T+8,30},{T+12,1},{T+12,3},{Q+8,3},{Q+8,UINT32_MAX},{Q+0x188,2},
         {W+0xd8,mode==2 ? 3 : 4},{W+0xd8,5},{W+0x44,0},{W+0x44,mode==2 ? 1 : 2},{W+0x48,1},
-        {W+0xb4,0},{W+0x58,1},{M+0x9bc,1},{M+0x9d7,mode==2 ? 0 : 1},{M+0x9d7,2}
+        {W+0xb4,0},{W+0x58,1},{M+0x9bc,1},{M+0x9d7,mode==2 || kind==2 ? 0 : 1},{M+0x9d7,2}
     };
     for (unsigned i=0;i<sizeof guards/sizeof *guards;i++) {
         intro_setup(kind,mode); w32(guards[i].at,guards[i].value); unchanged(); assert(!wide_active());
@@ -404,6 +406,9 @@ static void check_intro_case(unsigned kind, unsigned mode) {
 static void check_intro(void) {
     for (unsigned kind=0;kind<=1;kind++)
         for (unsigned mode=2;mode<=3;mode++) check_intro_case(kind,mode);
+    check_intro_case(2,3);
+    // TT has the registered close-up with flag 1, but no verified flyover.
+    intro_setup(2,2); unchanged(); assert(!wide_active());
     puts("flyover/close-up ownership, final-only projection, fallback and page guards passed");
 }
 

@@ -153,10 +153,10 @@ static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8
     uint64_t selected = u64(selection, 0);
     uint8_t *external = mk8_ultrawide_memory(selected, 0xc, false);
     if (external && u64(external, 0) == MAIN_BASE + 0x12c7778 && u32(external, 8) == 0) {
-        // This owner serves other sequences; only the solo GP/VS flyover and close-up are verified.
+        // This owner serves other sequences; only GP/VS flyovers and GP/VS/TT close-ups are verified.
         uint8_t *race = object(scene, 0x1b0, 0x230);
         uint8_t *registry = race ? object(race, 0x228, 0x48) : NULL;
-        if ((kind != 0 && kind != 1) || u32(view, 0x48) != 0 ||
+        if (u32(view, 0x48) != 0 ||
             u32(selection, 8) != 20 || u32(selection, 0xc) != 2 ||
             !registry || u64(registry, 0) != MAIN_BASE + 0x11b8db0 ||
             u32(registry, 0x38) != 4 || u32(registry, 0x3c) != 4) return false;
@@ -170,10 +170,10 @@ static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8
             u64(manager, 0x958) != address + 0x30 || u64(manager, 0x978) != u64(owner, 0x28) ||
             u32(owner, 0xd8) != 9) return false;
         uint32_t mode = u32(owner, 0xe8);
-        if ((mode != 2 && mode != 3) || u32(owner, 0xec) != mode) return false;
+        if ((mode != 2 && mode != 3) || (kind == 2 && mode != 3) || u32(owner, 0xec) != mode) return false;
         bool flyover = mode == 2;
         if (u32(view, 0xd8) != (flyover ? 4u : 3u) ||
-            u32(view, 0x44) != (flyover ? 2u : 1u) || manager[0x9d7] != (flyover ? 1 : 0) ||
+            u32(view, 0x44) != (flyover ? 2u : 1u) || manager[0x9d7] != (flyover || kind == 2 ? 1 : 0) ||
             (!flyover && !mk8_ultrawide_memory(address, 0x138, false))) return false;
         uint8_t *modes = object(owner, 0xe0, 9*8);
         uint8_t *camera = modes ? object(modes, mode*8, 0x10) : NULL;
