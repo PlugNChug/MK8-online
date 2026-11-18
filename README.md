@@ -34,7 +34,7 @@ New audio voices start at zero previous volume and use the mixer’s existing fi
 
 Development builds preserve the previous Vulkan pipeline cache when writing or replacing its file fails, and retry failed background saves. This avoids losing cached work on those failures; it does not eliminate first-use shader compilation stutters. Rebuild the runtime to apply this change.
 
-Development builds also preserve visibility-counter reports across the 256-query submission limit instead of silently dropping them. Native regression tests pass; the reported split-screen headlight flicker still needs a targeted visual retest.
+Development builds preserve visibility-counter reports across the 256-query submission limit. The Maxwell shader translator also honors the fragment-input interpolation modes declared by the game, which reduces lighting flicker in the tested Boo Lake split-screen sequence. Rebuild the runtime to apply the shader correction.
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
