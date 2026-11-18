@@ -16,6 +16,10 @@ enum { FG_DUMMY = 20, N_POST = 21 };
 static void render_pass(void) {
     g_pass_depth = st.rt.depth;
 }
+static void end_pass(void) {
+    vkCmdEndRendering(vk_cmd());
+    in_pass = false;
+}
 static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, double oh_d) {
     extern void vk_frame_suspend(void);
     extern void vk_frame_resume(void);

@@ -322,6 +322,13 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
     static int logged;
     if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion neutral)\n",
                            rw, rh, ow, oh, real_depth ? "game" : "neutral");
+    static int timings;
+    if (timings++ % 120 == 0) {
+        static uint64_t last;
+        uint64_t now = (uint64_t)(clock() * 1000000ull / CLOCKS_PER_SEC);
+        if (last) fprintf(stderr, "[fsr] cpu dispatch %.2f ms\n", (now - last) / 1e6 / 120.0);
+        last = now;
+    }
     barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
             VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);

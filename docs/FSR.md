@@ -21,6 +21,25 @@ code or ABI changes.
 
 The switch is diagnostic only: `MK8_FSR4=1`, `MK8_FSR_LIB=<provider.so>`,
 `FSR4_ASSET_DIR=<assets>`. It is not exposed in the launcher yet.
+`MK8_FSR4_CAPTURE=1` enables the pass-end depth research path; it is off by
+default because it runs a copy on every depth pass.
+
+## Performance at native internal resolution
+
+The 50% test (`LARECOMP_SCALE=0.5`) was only a way to force a large upscale;
+it makes the scene genuinely 960x540. At the default internal resolution
+(1920x1080 -> 2560x1440), one early-race section measured:
+
+| run | frame ~2340 |
+|---|---:|
+| FSR 1 / bilinear (FSR4 off) | 56.4 FPS |
+| FSR 4.1.2 (neutral depth/MV) | 48.0 FPS |
+
+The provider benchmark measures 1.28 ms GPU at 1280x720 -> 2560x1440 and
+2.11 ms at 1920x1080 -> 3840x2160, so the ~3-4 ms in-game difference is the
+provider plus the extra command-buffer work, not a 3x slowdown. The late-race
+drop to 20-26 FPS is also present with FSR off (12-22 FPS in the same
+section), so it is the game's existing late-race degradation, not FSR.
 
 ## Not qualified / open
 
