@@ -1,5 +1,7 @@
 # Estado técnico — 18/11/2026
 
+A [PR #59](https://github.com/Vnnc1/MK8-online/pull/59) está aberta para `fix-chore`. A CI anterior passou os testes portáteis e falhou na asserção de liberação da porta UDP do teste de reconexão Steam. Esta atualização somente de documentação solicita uma nova execução; não altera código nem testes e não declara a falha corrigida. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
 ## Contra o Relógio — close-up inicial incluído no ultrawide
 
 O usuário identificou o close-up inicial em 16:9 na combinação nova. Reprodução automática com o mesmo candidato `ffb6c0ad`/exe `3780192c`, sessão `race-time-trial-qbz7f61i`, confirmou barras no quadro 4000, antes de voltar à corrida ampla. Saída normal 0 em 98,699 s; saves copiados e 489 arquivos protegidos preservados. O observador privado somente leitura verificou identidade do processo, fontes e cadeia de câmera: 15 amostras estáveis de Contra o Relógio compartilham registro, owner e subcâmera de close-up GP/VS, modo 3 registrado em +0x130. As diferenças que bloqueavam a aceitação eram `kind=2` e flag do manager +0x9d7 igual a 1, enquanto GP/VS exige 0. As páginas ativas correspondem ao HUD de corrida, com fade conhecido em três amostras. Leituras transitórias foram excluídas; todos os testes de descendentes/memória do preflight de produção continuam obrigatórios.
