@@ -45,6 +45,7 @@ static bool mk8_async_on(void) {
 enum { MK8_Q_SUBMIT, MK8_Q_PRESENT, MK8_Q_FENCE };
 typedef struct Mk8QItem {
     int kind, n;
+    double ultrawide;
     uint64_t ticket, *handles;
     NvnTexture *tex;
     NvnSync *sync;
@@ -55,7 +56,9 @@ static pthread_cond_t mk8_q_cond = PTHREAD_COND_INITIALIZER;  // (an item queued
 static Mk8QItem *mk8_q_head, *mk8_q_tail;
 static uint64_t mk8_q_issued, mk8_q_done;
 static int mk8_q_presents;  // queued presents not yet done
-static void mk8_present_now(NvnTexture *t);  // (below, with nvnQueuePresentTexture)
+double mk8_ultrawide_take_present(void);
+void mk8_ultrawide_present(double decision);
+static void mk8_present_now(NvnTexture *t, double ultrawide);  // (below, with nvnQueuePresentTexture)
 uint64_t renderer_fence_seq(void);
 void renderer_submit(void);
 static void *mk8_q_worker(void *arg) {
@@ -72,7 +75,7 @@ static void *mk8_q_worker(void *arg) {
             for (int i = 0; i < it->n; i++) backend_execute(it->handles[i]);
             renderer_prefetch_verify();
         } else if (it->kind == MK8_Q_PRESENT) {
-            mk8_present_now(it->tex);
+            mk8_present_now(it->tex, it->ultrawide);
             mk8_texture_release(it->tex);
         } else {
             // (the open submission goes out here, on this thread: a SyncWait then only waits for the GPU and never
@@ -204,6 +207,14 @@ WAIT_NEW = '''    if (mk8_async_on()) {  // (toolchain/async_submit.py) the tran
     else if (whole) renderer_sync();
     else renderer_wait_seq(sync_of(A(0))->seq);  // only the submission that holds this fence'''
 
+PRESENT_ENTRY = '''NVN(nvnQueuePresentTexture) {
+    NvnWindow *w = HOST(NvnWindow, A(1));
+    int i = (int)A(2);
+'''
+PRESENT_SNAPSHOT = PRESENT_ENTRY + '''    // Snapshot before pacing yields: the next guest frame may choose a different camera.
+    double ultrawide = i >= 0 && i < w->num ? mk8_ultrawide_take_present() : 0;
+'''
+
 PRESENT_OLD = '''    if (i >= 0 && i < w->num) {
         pthread_mutex_lock(&g_present_mx);
         backend_present(HOST(NvnTexture, w->textures[i]));
@@ -221,18 +232,20 @@ PRESENT_NEW = '''    if (i >= 0 && i < w->num) {
             if (!it) FATAL("async translation: out of memory\\n");
             it->kind = MK8_Q_PRESENT;
             it->tex = t;
+            it->ultrawide = ultrawide;
             mk8_q_put(it, NULL, 0);
             pthread_mutex_lock(&mk8_q_lock);
             while (mk8_q_presents > ahead) pthread_cond_wait(&mk8_q_cond, &mk8_q_lock);
             pthread_mutex_unlock(&mk8_q_lock);
         } else {
-            mk8_present_now(t);
+            mk8_present_now(t, ultrawide);
         }
     }
     kernel_host_wait_end();
 }
-static void mk8_present_now(NvnTexture *t) {
+static void mk8_present_now(NvnTexture *t, double ultrawide) {
     pthread_mutex_lock(&g_present_mx);
+    mk8_ultrawide_present(ultrawide);
     backend_present(t);
     atomic_store(&g_game_present_ns, plat_now_ns());
     pthread_mutex_unlock(&g_present_mx);
@@ -259,6 +272,6 @@ def prepare(runtime):
     text = objects.read_text(encoding='utf-8')
     text = replace(text, SYNC_OF, SYNC_OF + QUEUE)
     for old, new in [(SUBMIT_OLD, SUBMIT_NEW), (FINISH_OLD, FINISH_NEW), (FENCE_OLD, FENCE_NEW),
-                     (WAIT_OLD, WAIT_NEW), (PRESENT_OLD, PRESENT_NEW)]:
+                     (WAIT_OLD, WAIT_NEW), (PRESENT_ENTRY, PRESENT_SNAPSHOT), (PRESENT_OLD, PRESENT_NEW)]:
         text = replace(text, old, new)
     objects.write_text(text, encoding='utf-8')

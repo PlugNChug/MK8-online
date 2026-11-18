@@ -35,7 +35,7 @@ fn main() {
     assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT").unwrap(), "");
     assert_eq!(env::var("SDL_GAMECONTROLLERCONFIG").unwrap(), "authored-custom-mapping");
     if env::var("MK8_TEST_INPUT_PROBE").is_ok() {
-        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT"]
+        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT", "MK8_SETTINGS_EXPERIMENT"]
             .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
         fs::write("navigation.txt", state).unwrap();
         return;
@@ -93,10 +93,25 @@ class LifetimeTests(unittest.TestCase):
             target=self.fixture.parent/source.name
             shutil.copyfile(source,target)
             manifest['files'][source.name]=identity(target)
-        env=dict(os.environ,MK8_TEST_INPUT_PROBE='1',MK8_AUTO_LAN='host',
+        saves=data/'user-no-mii'
+        (saves/'save').mkdir(parents=True)
+        protected={saves/'mk8d.ini':b'[video]\naspect = original\n[future]\nmarker = preserve\n',
+                   saves/'save/progress.bin':b'authored progress marker'}
+        for path,content in protected.items():
+            path.write_bytes(content)
+        preference=data/'debug-options.json'
+        env=dict(os.environ,MK8_TEST_INPUT_PROBE='1',MK8_AUTO_LAN='host',MK8_GFX_DIAGNOSTICS='0',
                  SDL_GAMECONTROLLERCONFIG='authored-custom-mapping')
-        for role in (None, 'host', 'guest'):
-            with self.subTest(role=role):
+        env.pop('LARECOMP_AUDIO_WAV',None)
+        cases=[(role,None,'1') for role in (None,'host','guest')]+[(None,True,'0'),(None,False,'1')]
+        for role,native,inherited in cases:
+            with self.subTest(role=role,native=native,inherited=inherited):
+                env['MK8_SETTINGS_EXPERIMENT']=inherited
+                if native is not None:
+                    preference.write_text(json.dumps({'graphics_capture':False,'audio_recording':False,
+                                                      'native_settings':native}))
+                else:
+                    self.assertFalse(preference.exists())
                 request={'root':str(data/'root'), 'local':str(data), 'install':manifest,
                          'network':['127.0.0.1:47820',2], 'username':'Test', 'candidate':True, 'auto_lan':role}
                 result=subprocess.run([str(EXE),'--game-supervisor'],input=json.dumps(request)+'\n',
@@ -104,7 +119,10 @@ class LifetimeTests(unittest.TestCase):
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 lines=(data/'user-no-mii/navigation.txt').read_text().splitlines()
                 self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}', 'LARECOMP_LAN_RELAY=127.0.0.1:47820',
-                                        'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2'])
+                                        'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2',
+                                        f'MK8_SETTINGS_EXPERIMENT={inherited if native is None else int(native)}'])
+                for path,content in protected.items():
+                    self.assertEqual(path.read_bytes(),content)
 
     def test_python_tools_ignore_external_home_path_and_user_site(self):
         folder = self.base/'python-environment'

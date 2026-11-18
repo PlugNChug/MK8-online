@@ -802,6 +802,13 @@ impl App {
                 ))
             }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
+            ("POST", "/api/debug-options") => {
+                let options: crate::debug_options::Options =
+                    serde_json::from_str(body).map_err(|e| e.to_string())?;
+                crate::debug_options::write(&self.local, &options)?;
+                Ok(json!({"message":"Preferência salva. A alteração vale ao iniciar o jogo."}))
+            }
             ("GET", "/api/fonts") => crate::fonts::status(&self.local),
             ("POST", "/api/settings")
             | ("POST", "/api/fonts")
@@ -2254,7 +2261,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mk8-prepare-dlc-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("dlc.json"), b"previous preference").unwrap();
-        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let config = Config {
+            prod_keys: root
+                .join("missing-keys/prod.keys")
+                .to_string_lossy()
+                .into_owned(),
+            ..Config::default()
+        };
+        assert!(!Path::new(&config.prod_keys).exists());
+        let mut app = App::new(root.clone(), root.clone(), config, None);
         // A previous candidate must not start the new import while tools install.
         app.prepare_after_setup = true;
         app.prepare_dlc = Some(root.join("optional.nsp"));

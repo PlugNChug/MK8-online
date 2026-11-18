@@ -23,5 +23,16 @@ const char *game_romfs_overlay(void) {
     const char *pack = mk8_romfs_overlay_from(getenv("MK8_ROMFS_OVERLAY"));
     if (pack && !*pack) FATAL("[mk8:pack] MK8_ROMFS_OVERLAY não é uma pasta válida\n");
     if (pack) LOG("[mk8:pack] %s\n", pack);
-    return pack;
+    extern const char *mk8_settings_romfs_overlay(void);
+    const char *settings = mk8_settings_romfs_overlay();
+    if (!settings) return pack;
+    if (!pack) return settings;
+    const char *combined = getenv("MK8_SETTINGS_ROMFS");
+    if (!combined || !*combined)
+        FATAL("[mk8:settings] start through the launcher to combine CTGP and Settings layouts\n");
+    static char overlays[8192];
+    int length = snprintf(overlays, sizeof overlays, "%s\n%s", pack, settings);
+    if (length < 0 || (size_t)length >= sizeof overlays)
+        FATAL("[mk8:settings] combined overlays too long\n");
+    return overlays;
 }

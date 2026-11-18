@@ -23,6 +23,7 @@ class OutputAspectTests(unittest.TestCase):
             source = source.replace('#include "output_scale.h"', '#include "nvn/output_scale.h"')
             source += r'''
 #include <assert.h>
+double mk8_ultrawide_present_mode(void) { return 0; }
 int main(void) {
     double sizes[][2]={{3440,1440},{1280,1024},{1920,1080}};
     for(int i=0;i<3;i++) {

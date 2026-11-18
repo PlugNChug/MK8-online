@@ -237,6 +237,15 @@
           </div>
           <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
           <nav class="settings-index" aria-label="Seções de configurações"><a href="#settings-groups">Vídeo e controles</a><a href="#font-title">Fontes do jogo</a><a href="#settings-dlc-title">Conteúdo adicional</a><a href="#ctgp-title">CTGP Deluxe</a></nav>
+          <article class="card" aria-labelledby="native-settings-title">
+            <h2 id="native-settings-title">Menu nativo de configurações (experimental)</h2>
+            <fieldset id="debug-fields" disabled>
+              <label class="dlc-toggle"><input id="debug-settings" type="checkbox" aria-describedby="debug-settings-hint" /><span>Ativar o menu nativo de configurações</span></label>
+              <p id="debug-settings-hint" class="hint">Ativa o botão de chave e o menu nativo de configurações. F1 abre este menu quando o hub está desativado; caso contrário, abre o hub. Requer uma build com o experimento incluído.</p>
+            </fieldset>
+            <p class="hint">A opção é salva automaticamente e vale ao iniciar o jogo.</p>
+            <p id="debug-status" class="hint" role="status"></p>
+          </article>
           <form id="game-settings">
             <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
             <div class="row settings-actions">
