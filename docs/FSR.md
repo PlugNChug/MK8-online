@@ -93,16 +93,19 @@ FPS runs on an otherwise idle desktop.
   `[fsr] selecting version 3.1.6`, `[fsr] provider 3.1.6`,
   `upscale active 1920x1080 -> 2560x1440`, then `depth now game` and
   `motion now camera`; see `local/qualification/fsr316-*.log`, the menu frame
-  `fsr316-final-01000.png` and the in-race frame `fsr316-race-02400.png`. The
-  provider, the extracted blobs and AMD's
+  `fsr316-final-01000.png` and the in-race frame `fsr316-race-02400.png`. A
+  same-frame A/B against the GPL 4.1.2 provider at frame 1000
+  (`fsr412-cmp1000b-01000.png`) shows the same image. The provider, the
+  extracted blobs and AMD's
   signed DLLs stay private (`local/qualification/fsr316-native/`) and are
   never committed. In-game FPS numbers taken while other builds or GPU
   applications share the machine are not evidence; the profiler showed the
   frame stalls were CPU starvation, not upscaler cost.
-- **GPL 4.1.2 provider (legacy ABI):** advertises only `4.1.2` and needs
-  `MK8_FSR_LEGACY_ABI=1`; without it the context creation fails with `0x3`.
-  Asking for `MK8_FSR_VERSION=3.1.6` logs that the provider does not offer it
-  and continues on 4.1.2.
+- **GPL 4.1.2 provider (legacy ABI):** advertises only `4.1.2` and needs both
+  `MK8_FSR_LEGACY_ABI=1` and `FSR4_ASSET_DIR` (its ML models live outside the
+  provider); without them the context creation fails with `0x3`. Asking for
+  `MK8_FSR_VERSION=3.1.6` logs that the provider does not offer it and
+  continues on 4.1.2.
 - **Frame generation:** FSR FG 3.1.6 source is available; native Linux FG 4.x
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).
