@@ -16,6 +16,21 @@ from windows_file_lock import locked_file
 
 @unittest.skipUnless(os.name == 'nt', 'Windows sharing violations')
 class FileAccessTests(unittest.TestCase):
+    def test_long_filename_is_hardlinked_and_reused_without_extra_storage(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+            root = Path(temporary)
+            src, dst = root/'imports/romfs/Ghost/Fast', root/'game-data/extracted/romfs/Ghost/Fast'
+            src.mkdir(parents=True)
+            name = 'fg' + '0' * 230 + '.dat'
+            original = src/name
+            original.write_bytes(b'synthetic ghost')
+            build.mirror(dst, src)
+            self.assertEqual((dst/name).read_bytes(), b'synthetic ghost')
+            self.assertTrue(os.path.samefile(original, dst/name))
+            with patch.object(build.os, 'link', side_effect=AssertionError('Already linked')):
+                build.mirror(dst, src)
+            self.assertEqual(list(dst.iterdir()), [dst/name])
+
     def test_device_disappearing_during_copy_preserves_destination(self):
         with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
             root = Path(temporary)

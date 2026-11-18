@@ -1,4 +1,20 @@
-# Estado técnico — 16/11/2026
+# Estado técnico — 17/11/2026
+
+## Preparação de arquivos longos — 17/11/2026
+
+Na investigação #38, caminhos totais de 277 caracteres passaram nesta máquina, mas um nome de arquivo válido próximo do limite falhou com WinError 123 quando `mirror` acrescentou `.pending-<pid>-<time>` ao nome. Temporário agora usa nome curto independente do arquivo final, no mesmo diretório, mantendo hardlink e substituição atômica. Regressão nativa de filesystem falhou antes e passou depois; seis testes de acesso passaram, incluindo arquivo bloqueado, origem desconectada/inacessível, preservação do destino e reutilização de hardlink. Não há limpeza de dados pessoais nem cópia adicional do jogo. O relato #38 mostra WinError 3 e não foi reproduzido exatamente; não declarar a issue resolvida por este caso distinto. Não há novo setup publicado com a alteração.
+
+## Persistência de saves e recarga de Mii — 17/11/2026
+
+**Validação humana confirmada:** após reabrir a mesma cópia em `local/save-check-j37cg139`, o mantenedor confirmou que progresso e configuração foram mantidos. Isso qualifica a persistência observada nessa sessão; copa/cilindrada não foram informadas, e não houve reteste nas máquinas dos relatores #39/#40. A correção está aplicada localmente, ainda sem publicação. Qualificação global de gameplay/multiplayer permanece inalterada.
+
+Ensaio humano da aplicação local: mantenedor informou conclusão do teste em `local/save-check-j37cg139`; sessão encerrou normalmente com código 0 após cerca de 855 s. `save_0/userdata.dat` presente com 80.736 bytes. Snapshot privado `after-cup-before-restart` e hashes preservados antes de reabrir a mesma pasta, sem recopiá-la da origem. Reinício iniciado; confirmação visual de troféus/progresso e configuração pelo mantenedor ainda pendente. Escrita do arquivo e boot não bastam para qualificar persistência completa.
+
+Aplicação local da PR #42 (`ebb6c063`) sobre `fix-chore 7e8836e`, a pedido do mantenedor, sem commit/merge remoto. Nesta rodada passaram 19 testes nativos (1 de saves, 5 de Miis, 13 de layout) e 15 testes OAuth/Nextendo/Social. Runtime host recompilado reutilizando guest verificado, SHA-256 `3ce3eac5a831488ffceef2ed87d5e6133db2b038e5ee961cf9948858e26dbb8e`. Ensaio humano solo aberto em `local/save-check-j37cg139`, com cópia dos saves/perfil/cache e sem Nextendo. Aguardando copa completa, fechamento e reabertura da mesma cópia para validar troféus/configurações; não declarar qualificação antes desse retorno. Investigação inicial #38: espelhamento sintético de caminho final com 232 caracteres passou nesta máquina; causa do relato ainda não reproduzida, sem patch especulativo.
+
+O FSP lia `FsSaveDataAttribute.type` no offset do identificador de save de sistema, fazendo conta/dispositivo/temporário coincidirem em `save_0`. O adapter valida o payload e separa os tipos; a conta mantém `save_0`, sem mover ou apagar arquivos antigos. Consultas Mii de recarga fazem parte da mesma correção: devem retornar o CharInfo da identidade local ou resultados reais de não encontrado/não atualizado, nunca sucesso com dados vazios.
+
+Branch atualizada para `fix-chore 7e8836e`: 19 testes nativos de saves, Mii e layout host passaram sem skips. A regressão exerce escrita, limpeza de outros mounts e reabertura em outro processo; a de Mii cobre atualização, ausência de identidade, campos inválidos e limites do payload. Na build combinada anterior, saves copiados antigo/novo recarregaram, e o usuário confirmou uma thumbnail MKTV nova e sua persistência após reinício do processo. A mesma combinação completou uma Shell Cup 200cc com quatro thumbnails corretas e emblema 200cc; troféu de vencedor e persistência da copa não foram qualificados. Não houve nova corrida ou rebuild completo nesta branch isolada. Não recupera progresso já apagado nem thumbnails antigas corrompidas; brilho intermitente do lobby/editor permanece separado. Relacionada às issues #39/#40, ainda sem reteste dos relatores. `gameplay_verified=false`.
 
 ## Retomada Nextendo na fix-chore — 16/11/2026
 

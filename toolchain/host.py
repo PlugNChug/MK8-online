@@ -167,6 +167,33 @@ def prepare_host_sources(source, output):
     if text.count(old) != 1:
         raise ValueError('Mii IsUpdated boundary changed upstream')
     text = text.replace(old, '    case 0: OUT(uint8_t, 0) = mk8_mii_updated; mk8_mii_updated = false; resp_size(resp, 1); break;\n    case 1: case 20:')
+    old = '    case 22: break;'
+    if text.count(old) != 1:
+        raise ValueError('Mii refresh/index boundary changed upstream')
+    text = text.replace(old, '''    case 5: case 21: { // UpdateLatest / GetIndex for the local database entry.
+        if (!req->data || req->data_size < (req->cmd == 5 ? 0x5c : 0x58)) {
+            resp->result = 0x27e; break; // InvalidArgument
+        }
+        if (!mk8_charinfo_valid(req->data)) {
+            resp->result = 0xc87e; break; // InvalidCharInfo
+        }
+        uint8_t current[0x58];
+        bool found = mk8_mii_get(current, sizeof current, sizeof current, 1, one_mii()) == 1
+            && !memcmp(current, req->data, 16);
+        if (req->cmd == 21) {
+            OUT(int32_t, 0) = found ? 0 : -1;
+            resp_size(resp, 4);
+            if (!found) resp->result = 0x87e; // NotFound
+        } else if (!(IN(uint32_t, 0x58) & 1) || !found || current[0x2b] != req->data[0x2b]) {
+            resp->result = 0x87e;
+        } else {
+            memcpy(resp->data, current, sizeof current);
+            resp_size(resp, sizeof current);
+            if (!memcmp(current, req->data, sizeof current)) resp->result = 0x67e; // NotUpdated
+        }
+        break;
+    }
+'''+old)
     mii.write_text(text+'\n'+(ROOT/'runtime/mk8/mii/mii_editor.inc').read_text(encoding='utf-8'), encoding='utf-8')
     from mii_applet import adapt as adapt_mii_applet
     fs = runtime/'services/fs.c'
@@ -276,6 +303,8 @@ def prepare_host_sources(source, output):
     prepare_ipc_core_release(runtime)
     from save_file_close import prepare as prepare_save_file_close
     prepare_save_file_close(runtime)
+    from save_data import prepare as prepare_save_data
+    prepare_save_data(runtime)
     from vram_trace import prepare as prepare_vram_trace
     prepare_vram_trace(runtime)
     from auto_lan import prepare as prepare_auto_lan

@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+## Saves e consultas Mii — 17/11/2026
+
+Layout de `FsSaveDataAttribute`, tipos e payload dos comandos 51/53 conferidos no [header libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/fs.h) e nos [wrappers FSP](https://github.com/switchbrew/libnx/blob/master/nx/source/services/fs.c). O relato do [NX Native sobre CommonSave/UserSave](https://nx-native.com/games/mario-kart-8-deluxe#files-and-saves) direcionou a investigação anterior da branch de saves; o offset e os efeitos foram conferidos localmente.
+
+Contratos de `UpdateLatest`/`GetIndex` e resultados Mii consultados no [IDatabaseService](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/StaticService/IDatabaseService.cs), [DatabaseImpl](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/DatabaseImpl.cs) e [ResultCode](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/ResultCode.cs) de Ryujinx/Ryubing, e na [lista Switchbrew](https://switchbrew.org/wiki/Shared_Database_services#IDatabaseService). Implementação C própria para a entrada local já existente; nenhum código C# ou dependência adicional incorporado. Avisos existentes preservados; resultados externos não qualificam esta build.
+
 ## Nextendo Social — 16/11/2026
 
 Listagem de salas: contrato de `/api/status/live` e tratamento de `games[].titles`, `lobbies`, `players` e `roomsAvailable` conferidos no [cliente público de status do Nextendo](https://nextendo.network/assets/js/pages.js). Implementação própria, sem copiar o cliente. `0100152000022000` filtra exclusivamente MK8 Deluxe; posição de sala na lista nunca é tratada como identificador NEX. Pesquisa de ingresso: [Matchmake Extension](https://github.com/Kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol) e [extensões MK8D](https://github.com/kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol-%28MK8D%29), referências de protocolo, sem incorporar biblioteca/código. Métodos documentados não constituem validação contra o servidor atual Nextendo ou contra esta build.

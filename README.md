@@ -170,6 +170,10 @@ sessions use the game's cups (each machine would otherwise decide on its own whi
 
 ## Build and contribute
 
+Game-data preparation uses short temporary filenames so valid long game filenames do not exceed Windows' filename limit during hard-link creation. Existing hardlinks are reused without duplicating file data. This fixes a reproduced filename-boundary failure; issue #38 still needs verification on the reporter's installation.
+
+The save-data routing fix keeps existing account progress in `save/save_0` and separates device, temporary and other save types into `save/save_type_<type>`. Mii refresh/index queries now return valid local-profile data when progress is reloaded. Together these prevent cross-save cleanup and the reload crash exposed by retaining progress. Rebuild the game/runtime to apply them. Existing saves are not moved or deleted; already lost progress and corrupted thumbnails are not recovered. Native tests pass, and a new MKTV replay/thumbnail survived a process restart in copied-save testing of the combined local build. Full gameplay and trophy persistence remain unqualified.
+
 The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
 
 This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. It does not establish a fix for Stadium flashing or a general VRAM leak.

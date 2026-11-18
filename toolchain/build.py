@@ -241,7 +241,8 @@ def mirror(path, target, copy_ok=False):
             if copy_ok and (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns):
                 continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{time.time_ns()}')
+        # Appending to a valid game filename can exceed Windows' component limit.
+        pending = dst.with_name(f'.mk8-{os.getpid()}-{time.time_ns()}.pending')
         try:
             os.link(src, pending)
         except OSError as error:
