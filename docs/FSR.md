@@ -48,14 +48,15 @@ FPS runs on an otherwise idle desktop.
 
 ## Not qualified / open
 
-- **Real inputs:** a scene depth target was observed at 960x540 while the
-  presented color is 1920x1080. The hook records the last scene depth and
-  contains a depth-copy pass to the color size, but the pointer is not usable at
-  present time (the texture has been retired by then), so the prototype still
-  falls back to a neutral depth image and zero motion vectors, resets history
-  every frame, and uses zero jitter. The next step is a pass-end copy into a
-  persistent depth image; real scene color/depth pairing, camera motion vectors,
-  jitter and UI separation remain the gate.
+- **Real depth:** the pass-end hook captures a 16:9 scene depth target
+  (2304x1296 observed) into a persistent R32F image and resamples it to the
+  presented 1920x1080 color. The log shows `[fsr] capture scene depth
+  2304x1296` and `[fsr] depth now game (1920x1080 fmt 100)`; the frame at
+  `fsr4-capture3600-03600.png` uses that depth. `MK8_FSR4_CAPTURE=1` enables
+  the capture; it is off by default until its cost is measured.
+- **Motion vectors/jitter:** still zero and reset per frame. Camera-only motion
+  vectors need the scene view-projection matrices; object motion (karts) and
+  subpixel projection jitter are the remaining gate before temporal quality.
 - **FSR 3.1.6:** the SDK source build currently produces empty shader
   permutation tables with the Linux/Wine shader generator, so its provider
   prototype is not integrated. A Windows-generated SDK or a fixed generator is

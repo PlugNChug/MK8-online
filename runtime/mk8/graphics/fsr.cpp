@@ -271,7 +271,14 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                 VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
-    if (!depth_logged++) fprintf(stderr, "[fsr] depth %s %ux%u fmt %d\n",
+    static int depth_state = -1;
+    if ((int)real_depth != depth_state) {
+        depth_state = real_depth;
+        fprintf(stderr, "[fsr] depth now %s (%ux%u fmt %d)\n", real_depth ? "game" : "neutral",
+                real_depth ? depth->width : rw, real_depth ? depth->height : rh,
+                real_depth ? depth_format : VK_FORMAT_D32_SFLOAT);
+    }
+    if (!depth_logged++) fprintf(stderr, "[fsr] depth source %s %ux%u fmt %d\n",
                                  real_depth ? "game" : "neutral", real_depth ? depth->width : rw,
                                  real_depth ? depth->height : rh, real_depth ? depth_format : VK_FORMAT_D32_SFLOAT);
     VkImageCreateInfo depth_ci = color_ci;
