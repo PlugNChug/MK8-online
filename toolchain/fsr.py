@@ -54,7 +54,6 @@ MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
             memcpy(g_fsr_view, u, sizeof g_fsr_view);
             memcpy(g_fsr_proj, u + 28, sizeof g_fsr_proj);
             g_fsr_vp_valid = 1;
-            g_fsr_vp_addr = ub.addr;
             static uint64_t jitter_frame;
             uint64_t jf = vk_frame_counter();
             if (jf != jitter_frame) {
@@ -68,7 +67,7 @@ MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
                 g_fsr_jitter_y = hy - 0.5f;
             }
         }
-        { static int once; if (g_fsr_vp_valid && !once++) LOG("[fsr] view/proj captured in main draw\n"); }
+        { static int once; if (g_fsr_vp_valid && !once++) LOG("[fsr] view/proj captured in main draw\\n"); }
     }
 """
 PROTOTYPES = """static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
@@ -107,7 +106,10 @@ def prepare_exec(runtime):
     if text.count(old) != 1:
         raise ValueError('Pass depth declaration changed upstream')
     if 'TexBackend *g_fsr_captured;' not in text:
-        text = text.replace(old, old + '\nNvnTexture *g_fsr_depth;\nTexBackend *g_fsr_captured;', 1)
+        text = text.replace(old, old + '\nNvnTexture *g_fsr_depth;\nTexBackend *g_fsr_captured;'
+                            '\nfloat g_fsr_view[12], g_fsr_proj[16];'
+                            '\nint g_fsr_vp_valid;'
+                            '\nfloat g_fsr_jitter_x, g_fsr_jitter_y;', 1)
     if 'NvnTexture *mk8_fsr_last_depth(void)' not in text:
         text = text.replace('TexBackend *g_fsr_captured;',
                             'TexBackend *g_fsr_captured;\nNvnTexture *mk8_fsr_last_depth(void) { return g_fsr_depth; }', 1)
@@ -129,9 +131,14 @@ def prepare_exec(runtime):
         raise ValueError('Pass end boundary changed upstream')
     if 'g_fsr_captured = cap;' not in text:
         text = text.replace(old, old + CAPTURE, 1)
-    draw_anchor = '    if (g_debug_frame) debug_draw(pr, r, indexed);'
-    if draw_anchor in text and 'view/proj captured' not in text:
-        text = text.replace(draw_anchor, MATRIX_SCAN + draw_anchor, 1)
+    # The draw call line carries a trailing marker from another adapter, so anchor
+    # on the call itself and fail loudly if it disappears.
+    draw_anchor = 'debug_draw(pr, r, indexed);'
+    if text.count(draw_anchor) != 1:
+        raise ValueError('Main draw boundary changed upstream')
+    if 'view/proj captured' not in text:
+        line = text.rfind('\n', 0, text.find(draw_anchor)) + 1
+        text = text[:line] + MATRIX_SCAN + text[line:]
     exec_c.write_text(text, encoding='utf-8')
 
 

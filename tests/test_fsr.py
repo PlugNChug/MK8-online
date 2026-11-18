@@ -15,6 +15,7 @@ static NvnTexture *g_pass_depth;  // (its depth target)
 enum { FG_DUMMY = 20, N_POST = 21 };
 static void render_pass(void) {
     g_pass_depth = st.rt.depth;
+    if (g_debug_frame || mk8_rtt_pass) debug_draw(pr, r, indexed);  // (toolchain/texture_pool.py)
 }
 static void end_pass(void) {
     vkCmdEndRendering(vk_cmd());
@@ -68,6 +69,24 @@ class FsrPatchTests(unittest.TestCase):
         self.assertIn('mk8_fsr_last_depth', exec_c)
         self.assertIn('g_fsr_depth = st.rt.depth;', exec_c)
         self.assertGreater(exec_c.index('mk8_fsr4_upscale'), exec_c.index('vk_frame_suspend();'))
+
+    def test_defines_the_matrix_globals_and_scans_the_main_draw(self):
+        runtime = self.runtime()
+        fsr.prepare(runtime)
+        exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
+        self.assertIn('float g_fsr_view[12], g_fsr_proj[16];', exec_c)
+        self.assertIn('float g_fsr_jitter_x, g_fsr_jitter_y;', exec_c)
+        # The log format must survive as an escape, not as a real newline in the C string.
+        self.assertIn('view/proj captured in main draw\\n")', exec_c)
+        self.assertLess(exec_c.index('if (getenv("MK8_FSR4"))'),
+                        exec_c.index('debug_draw(pr, r, indexed);'))
+
+    def test_rejects_a_missing_main_draw(self):
+        runtime = self.runtime()
+        path = runtime / 'nvn/vulkan/exec.c'
+        path.write_text(EXEC.replace('debug_draw(pr, r, indexed);', 'debug_draw(pr, r, 0);'), encoding='utf-8')
+        with self.assertRaises(ValueError):
+            fsr.prepare(runtime)
 
     def test_enables_the_fp8_device_features(self):
         runtime = self.runtime()
