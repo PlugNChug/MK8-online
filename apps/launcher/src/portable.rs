@@ -250,7 +250,10 @@ mod tests {
     use super::*;
     #[test]
     fn move_preserves_saves_hashes_and_external_paths() {
-        let base = std::env::temp_dir().join(format!("mk8-relocate-{}", std::process::id()));
+        // Match run_at's canonical paths even when TEMP uses a different Windows spelling.
+        let base = crate::canonical(&std::env::temp_dir())
+            .unwrap()
+            .join(format!("mk8-relocate-{}", std::process::id()));
         let old = base.join("before/portable");
         let new = base.join("after/portable");
         let version = "0123456789abcdef";
@@ -320,8 +323,9 @@ mod tests {
 
     #[test]
     fn invalid_metadata_leaves_location_and_other_files_unchanged() {
-        let base =
-            std::env::temp_dir().join(format!("mk8-invalid-relocate-{}", std::process::id()));
+        let base = crate::canonical(&std::env::temp_dir())
+            .unwrap()
+            .join(format!("mk8-invalid-relocate-{}", std::process::id()));
         fs::create_dir_all(base.join("data")).unwrap();
         let old = base.join("previous");
         mk8_manifest::save(
