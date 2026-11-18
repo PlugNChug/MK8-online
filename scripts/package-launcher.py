@@ -16,7 +16,7 @@ OUTPUT = TARGET / "portable"
 # (its own target folder: the packaged build embeds the payload, unlike target/release used in development)
 BUILD = TARGET / "package"
 MANIFEST = ROOT / "upstream/manifests/smm2recomp.json"
-SOURCE_EXTENSIONS = {".c", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
+SOURCE_EXTENSIONS = {".c", ".h", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
 
 
 def payload_files():
