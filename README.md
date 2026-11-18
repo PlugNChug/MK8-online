@@ -45,6 +45,8 @@ Developer preview on `fix-chore`: `MK8_MENU_PROTOTYPE=1` enables an in-game over
 
 ## What's new in 0.3.0
 
+Development builds restore Rock Rock Mountain's missing start-banner shadow by honoring the game's depth-clamp state. Rebuild the runtime to apply this fix; it is not in the published 0.3.0 setup. See [technical status](docs/STATUS.md) for the tested conditions.
+
 Development builds add two startup options (not included in the published 0.3.0 setup):
 
 - **Direct play:** `Launcher.exe --play` opens an already prepared solo game without the launcher window. Use `Launcher.exe --play --data-dir "D:\\MK8\\data"` to select existing data. It still validates files, Vulkan and resource locks; it does not install tools or build the game. Errors return a nonzero exit code. Steam rooms still use the launcher.

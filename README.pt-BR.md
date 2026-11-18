@@ -35,6 +35,8 @@ Vozes de áudio novas começam com volume anterior zero e usam a rampa existente
 
 ## Novidades da 0.3.0
 
+Builds de desenvolvimento restauram a sombra ausente do banner de largada de Rock Rock Mountain, respeitando o estado de depth clamp solicitado pelo jogo. Reconstrua o runtime para aplicar o fix; ele ainda não faz parte do setup 0.3.0 publicado. Condições verificadas no [estado técnico](docs/STATUS.md).
+
 <!-- Opções novas de desenvolvimento; ainda fora do setup 0.3.0 publicado. -->
 
 **Inicialização direta:** `Launcher.exe --play` abre o jogo solo já preparado sem a janela do launcher. Para selecionar seus dados: `Launcher.exe --play --data-dir "D:\\MK8\\data"`. Mantém validações, bloqueios e logs; não instala ferramentas nem recompila. Salas Steam continuam pelo launcher.
