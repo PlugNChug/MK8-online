@@ -2,6 +2,14 @@
 
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 
+## Integração das PRs #55, #58, #59 e #60
+
+A `fix-chore` recebeu os merges `02b32c4` (#55, escala dos alvos de Boo Lake e RGB565), `a252360` (#58, depth clamp), `7680814` (#59, ultrawide solo e configurações experimentais) e `eaf6c04` (#60, interpolação). O tradutor da #60 já constava em `13bcaee`, e o merge registra a sua origem. Os conflitos foram resolvidos mantendo a documentação e as atribuições de ambos os lados.
+
+Validação conjunta: 96 testes Rust passaram, com um teste Steam ao vivo ignorado. Build do launcher, formatação e Clippy passaram. Também passaram 43 testes nativos e de pipeline, sem skips, e oito testes de configuração no navegador. O build combinado recompilou 226 unidades host e oito unidades guest, com reaproveitamento de 476 objetos conferidos por hash. Relink dos três módulos, preparação dos layouts de configuração e 13 verificações de binários concluídos.
+
+Em processo real, a combinação gráfica #55/#58/#60 rodou Boo Lake em tela dividida a 1920×1080, com as cores da Rock Cup conferidas na seleção. Encerrou normalmente na primeira volta em 110,8 s. A build final `7e9870d0f027`, que inclui a #59, abriu configurações dentro do jogo em tela cheia via F1 com a opção experimental habilitada. Encerrou em 34,2 s. Ensaios com saves isolados, registrados em `local/lighting-fullscreen/merged-graphics` e `local/lighting-fullscreen/merged-pr59-menu`. São testes de integração, sem qualificação de gameplay completa ou da sombra de Rock Rock Mountain nesta combinação. A #56 segue como rascunho e a #62 aponta para `master`.
+
 ## Iluminação em tela cheia com qualidade padrão
 
 Reproduzida a cintilação em Boo Lake a 1920×1080 em tela cheia na RX 580 2048SP, com dois jogadores locais, saves copiados e apenas `fullscreen = 1` no INI inicial. A resolução seguiu o modo padrão Match, com geração de quadros desligada pelo padrão do runtime. Em vídeo, a luminância de uma região fixa do piso da tela 2 caiu de 159 para 55 entre dois quadros vizinhos. Uma sessão de diagnóstico que aguardou integralmente os shaders manteve a alternância. Essa espera foi usada apenas para isolar a hipótese.
