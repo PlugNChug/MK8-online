@@ -1,6 +1,8 @@
 # Estado técnico — 18/11/2026
 
-A [PR #59](https://github.com/Vnnc1/MK8-online/pull/59) está aberta para `fix-chore`. A CI anterior passou os testes portáteis e falhou na asserção de liberação da porta UDP do teste de reconexão Steam. Esta atualização somente de documentação solicita uma nova execução; não altera código nem testes e não declara a falha corrigida. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+A [PR #59](https://github.com/Vnnc1/MK8-online/pull/59) está aberta para `fix-chore`. A [repetição de CI em `aa472b1`](https://github.com/Vnnc1/MK8-online/actions/runs/44358328861) passou formatação, Clippy e testes Rust, inclusive a liberação de porta Steam. O pipeline Python falhou depois: o fixture sintético de atualização do runtime não fornecia os arquivos de menu exigidos pela preparação de Settings. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
+Reproduzida a mesma ausência de `UI/cmn/menu.sarc` com Python 3.12.10, como na CI. Corrigido somente o fixture de `test_runtime_refresh_records_new_dll_without_changing_game_or_saves`: a fronteira de preparação fornece duas saídas autorais; a atualização real verifica seus registros no manifesto, os argumentos de preparação e a preservação da biblioteca guest, save e recibo nativo. A derivação real e a rejeição de hashes continuam cobertas por `test_settings_layout.py`; nenhuma validação de produção foi removida. Após o fix, passaram os nove testes do pipeline e os sete de layouts, sem skips, com revisão independente aprovada. A execução completa precisou de permissão para criar a junction temporária do teste já existente. Nova CI pendente; nenhum código de runtime/launcher, dado privado ou qualificação de gameplay mudou.
 
 ## Contra o Relógio — close-up inicial incluído no ultrawide
 
