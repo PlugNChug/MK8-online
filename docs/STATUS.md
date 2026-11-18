@@ -1,4 +1,18 @@
-# Estado técnico — 17/11/2026
+# Estado técnico — 18/11/2026
+
+## Realocação do pacote portátil Windows
+
+Adicionado registro `portable-location.json` e reparo de caminhos internos quando a árvore portátil muda de pasta/unidade. Operação usa locks de preparação e build, valida JSON antes de aplicar alterações, preserva backups de metadados e grava a localização nova por último; repetição após interrupção é idempotente. Só percorre metadados próprios conhecidos, sem modificar saves/perfis de identidade, binários, fontes embarcadas ou arquivos do jogo, e sem seguir links/junctions. Referências externas e --data-dir externo não são migrados. Os caminhos home/executable de pyvenv.cfg acompanham o CPython incluído. É preciso abrir esta versão uma vez na pasta original para registrar a localização antes da mudança.
+
+Arquivos thin archive agora usam referências relativas aos objetos. O fluxo --finish reconstrói arquivos antigos a partir dos objetos verificados antes da ligação e atualiza o hash do recibo. Runtime-only continua reutilizando a biblioteca do jogo. Empacotamento preserva objetos do host em vez de apagar a pasta de build inteira, reutilizando fontes preparadas com hashes e conjunto de arquivos conferidos.
+
+Testes: 42 testes Rust passaram, incluindo três de realocação e notificação nativa de thread pelos caminhos vetorizado e de exceção não tratada; formatação e Clippy sem avisos. Sete testes Python de cache/arquivo nativo aprovados, três de SDL/Vulkan e dois de inicialização no executável release empacotado aprovados.
+
+Teste real entre C: e D: concluído em cópia isolada de aproximadamente 13 GB, com o caminho original renomeado e indisponível. Metadados passaram a apontar para a árvore nova, saves permaneceram byte a byte iguais durante a mudança e o CPython/venv realocado executou `import ssl, pip`. O pacote final abriu MK8 4.0.1 com `--play`, chegou ao título (frame 300 inspecionado) e encerrou com código 0 em 23,6 s. Evidência privada: `local/portable-cross-drive-result.json` e `local/portable-cross-drive-final.log`. Não foi uma corrida completa nem teste em outra máquina/GPU; `gameplay_verified` permanece falso.
+
+Durante a validação, o pré-teste Vulkan release abortava ao encerrar SDL com a notificação legada `DeviceHotplugThread` (0x406d1388), também fora da árvore portátil. O subprocesso agora trata somente a notificação continuável de nome de thread com parâmetros reconhecidos, tanto no handler vetorizado quanto no filtro de exceção não tratada, mantendo-os até sair. Falhas de acesso, notificações inválidas/não continuáveis e erros reais SDL/Vulkan não recebem sucesso fictício. Logs registram as etapas. Não foi isolado por que o caminho vetorizado sozinho não bastou neste ambiente; não atribuir a causa ao antivírus/driver sem evidência adicional.
+
+Artefato: `D:/Project/MK8-online-build/target/portable/MK8-online-portable.zip`, 48.989.649 bytes, SHA-256 `7dbacd52ebe4dd8162cc25b9ad106b5344f44b9d8b4338ae0182cfb7108b87e9`. Linux/AppImage/Steam Deck, caminhos UNC e qualificação em outra máquina/GPU não foram validados. Recursos selecionados fora da pasta continuam externos. Sem commit ou publicação.
 
 ## Inicialização direta (#37) e pacote portátil Windows (#35)
 
@@ -6,7 +20,7 @@
 
 `portable.txt` ao lado do executável escolhe `<pasta do exe>/portable` para fontes/ferramentas e `portable/data` para dados, com prioridade sobre `mk8-online.json` e LOCALAPPDATA. `--data-dir` continua tendo prioridade sobre a pasta de dados. Empacotamento gera `MK8-online-portable.zip` com Launcher.exe, marcador, licença e instruções; não precisa executar setup. Atualização pelo instalador é desabilitada no modo portátil; atualizar substituindo o exe e preservando portable/. Instalações/saves existentes não foram migrados.
 
-**#35 parcialmente atendida:** instalação portátil Windows disponível, porém os manifestos das builds ainda contêm caminhos absolutos. Mover a pasta/trocar a letra do volume pode exigir preparar novamente. Relocação automática de builds, caches/ferramentas entre máquinas e Linux/AppImage/Steam Deck não implementados nem qualificados. Não encerrar #35 como portabilidade completa.
+**Estado anterior da #35, superado no Windows pela seção acima:** o primeiro pacote portátil ainda exigia repreparação após mover a pasta. A realocação interna agora está implementada e testada entre unidades locais. Linux/AppImage/Steam Deck e outra máquina continuam sem qualificação; não encerrar a issue como suporte universal.
 
 Validação: 38 testes Rust aprovados, build debug e empacotada release concluídas, formatação e Clippy sem avisos. Dois testes de processo real passaram no debug e no executável empacotado: modo direto sem candidato falha sem servidor; marcador com caminhos com espaços e --data-dir publicam servidor somente na pasta esperada. Smoke real de `--play` empacotado em `local/direct-play-8c8beju4`, saves copiados: chegou ao título MK8 4.0.1 (frame 300 inspecionado), saiu com código 0, sem launcher.json/servidor. Não qualifica corrida completa nesta build. Artefato privado: `D:/Project/MK8-online-build/target/portable/MK8-online-portable.zip`, 48.973.198 bytes, SHA-256 `7570b6a83316c01086d00b23bbd1b36755a5768df5f1a351cb50236f06a7bb6f`. Sem commit, merge ou publicação.
 

@@ -16,6 +16,25 @@ TOOLS = Path(os.environ.get('MK8_NATIVE_TOOLS') or ROOT / 'local/native-tools')
 DEFAULT_COMPILER = TOOLS / 'zig-x86_64-windows-0.17.0/zig.exe'
 
 
+def write_archive(compiler, archive, objects):
+    """Thin archive references follow the objects when their containing tree moves."""
+    compiler = Path(compiler).absolute()
+    archive = Path(archive).absolute()
+    names = []
+    for obj in objects:
+        try:
+            name = os.path.relpath(Path(obj).absolute(), archive.parent)
+        except ValueError:  # Objects on a different drive are explicitly non-portable.
+            name = str(Path(obj).absolute())
+        names.append('"' + name.replace('\\', '/') + '"')
+    response = archive.parent / 'archive.rsp'
+    response.write_text('\n'.join(names), encoding='utf-8')
+    pending = archive.with_suffix(f'.{time.time_ns()}.pending.a')
+    subprocess.run([str(compiler), 'ar', 'rcsT', pending.name, '@archive.rsp'],
+                   cwd=archive.parent, check=True, env=compiler_env())
+    pending.replace(archive)
+
+
 def compiler_path(path):
     # Rust canonicalize supplies extended Windows paths; clang's -I does not accept that prefix.
     value = str(path)
@@ -238,13 +257,9 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     objects = [obj for _, obj in entries]
     if reused:
         print(f'Cache de objetos: {len(reused)} de {len(entries)} unidades reaproveitadas sem recompilar.', flush=True)
-    response = output/'archive.rsp'
-    response.write_text('\n'.join('"'+str(p).replace('\\','/')+'"' for p in objects), encoding='utf-8')
     archive = output/'mk8d-game-code.a'
-    pending = output/'mk8d-game-code.pending.a'
     # Thin archives reference cached objects instead of duplicating several GB of debug code.
-    subprocess.run([str(compiler), 'ar', 'rcsT', str(pending), '@'+str(response)], check=True, env=env)
-    pending.replace(archive)
+    write_archive(compiler, archive, objects)
     receipt = {'state': 'native_objects', 'archive': str(archive), 'sha256': digest(archive),
                'object_files': [{'path': str(p), 'sha256': digest(p)} for p in objects],
                'modules': list(modules), 'objects': len(objects), 'optimization': optimization, 'gameplay_verified': False,

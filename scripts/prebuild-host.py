@@ -5,6 +5,7 @@ same way a build prepares it. `prebuilt/host/manifest.json` records the portable
 host_key) and the file hashes; a build uses these files only when its own key is identical, and compiles otherwise.
 """
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -27,13 +28,34 @@ def main():
     if WORK.exists():
         if WORK.is_symlink() or WORK.is_junction() or not WORK.resolve().is_relative_to(TARGET.resolve()):
             raise ValueError(f'Pasta de trabalho inesperada: {WORK}')
-        shutil.rmtree(WORK)
-    WORK.mkdir(parents=True)
+    WORK.mkdir(parents=True, exist_ok=True)
+    # Keep host objects; source preparation is immutable and verified before reuse.
+    source_inputs = [ROOT / 'runtime/prepare.py', PROFILE, ROOT / 'upstream/manifests/smm2recomp.json',
+                     *sorted(path for path in (ROOT / 'games/mk8d').rglob('*') if path.is_file())]
+    source_key = hashlib.sha256(b''.join(str(path.relative_to(ROOT)).encode() + b'\0' + path.read_bytes()
+                                      for path in source_inputs)).hexdigest()[:16]
+    source = WORK / ('runtime-' + source_key)
+    receipt = WORK / ('runtime-' + source_key + '.json')
+    if source.exists():
+        if source.is_symlink() or source.is_junction():
+            raise ValueError(f'Link na fonte preparada: {source}')
+        recorded = json.loads(receipt.read_text(encoding='utf-8'))
+        paths = list(source.rglob('*'))
+        if any(path.is_symlink() or path.is_junction() for path in paths) or \
+                {path.relative_to(source).as_posix() for path in paths if path.is_file()} != set(recorded):
+            raise ValueError('Conjunto de fontes preparadas alterado')
+        for name, expected in recorded.items():
+            path = source / name
+            if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise ValueError(f'Fonte preparada alterada: {path}')
     # Same layout as a build job: <job>/runtime (prepared) and <job>/host-optimized.
-    subprocess.run([sys.executable, ROOT / 'runtime/prepare.py', '--upstream', ROOT / 'upstream/smm2recomp',
-                    '--output', WORK / 'runtime', '--profile', PROFILE], check=True)
+    else:
+        subprocess.run([sys.executable, ROOT / 'runtime/prepare.py', '--upstream', ROOT / 'upstream/smm2recomp',
+                        '--output', source, '--profile', PROFILE], check=True)
+        receipt.write_text(json.dumps({path.relative_to(source).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                                      for path in source.rglob('*') if path.is_file()}, sort_keys=True), encoding='utf-8')
     output = WORK / 'host-optimized'
-    build_host(WORK / 'runtime', output)
+    build_host(source, output)
     recorded = json.loads((output / 'host-key.json').read_text(encoding='utf-8'))
     PREBUILT.mkdir(parents=True, exist_ok=True)
     for name in HOST_FILES:

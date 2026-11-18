@@ -11,6 +11,7 @@ mod installer;
 mod language;
 mod manual;
 mod mii_download;
+mod portable;
 mod python_setup;
 mod relay;
 mod report;
@@ -92,6 +93,14 @@ fn main() {
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--check-vulkan") {
+        // Driver worker threads may still notify after SDL_Quit; retain until process exit.
+        let _thread_names = match vulkan::ThreadNameHandler::register() {
+            Ok(handler) => handler,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
         let result = args
             .get(2)
             .ok_or_else(|| "Pasta do runtime ausente".to_string())
@@ -311,6 +320,9 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         .unwrap_or(default_data);
     fs::create_dir_all(&local)?;
     let local = canonical(&local)?;
+    if let Some(home) = startup::portable_home(&std::env::current_exe()?)? {
+        portable::relocate(&home, &root, &local)?;
+    }
     let mut config = if local.join("config.json").exists() {
         load(&local.join("config.json"))?
     } else {

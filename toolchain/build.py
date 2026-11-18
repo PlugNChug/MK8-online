@@ -288,6 +288,12 @@ def finish(config, local, executable=None):
     if not nacp.is_file() or nacp.read_bytes()[0x3060:0x3070].split(b'\0')[0] != b'4.0.1':
         raise ValueError('Esta build experimental exige NACP do MK8 4.0.1')
     output = job/('host-debug' if native['optimization'] == '-O0' else 'host-optimized')
+    # Old thin archives can still name objects at the portable tree's previous absolute location.
+    if native.get('object_files'):
+        from native import write_archive, DEFAULT_COMPILER
+        write_archive(DEFAULT_COMPILER, native['archive'], [obj['path'] for obj in native['object_files']])
+        native['sha256'] = sha(native['archive'])
+        atomic_json(local/'native.json', native)
     exe = executable if executable is not None else build_host(source, output)
     dll = link_game(native['archive'], output, source, native['modules'])
     subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
