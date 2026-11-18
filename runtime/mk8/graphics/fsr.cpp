@@ -1,0 +1,331 @@
+// FSR 4.1.2 / 3.1.6 upscaling bridge (host side, no guest changes).
+//
+// Loads an FFX upscaler provider, creates a context for the game image and the
+// window size, and records one upscale into the current command buffer. The
+// provider owns its history and model assets; this file only supplies the
+// colour, depth and motion-vector images and the output image.
+//
+// The first integration runs with a neutral depth image and zero motion
+// vectors. Real MK8 depth/motion vectors are a separate qualification step;
+// the callers log that state so a prototype is never mistaken for qualified
+// output.
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+#include <math.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
+#if !defined(_WIN32)
+#define __declspec(x)
+#endif
+
+#include "ffx/ffx_api.h"
+#include "ffx/ffx_upscale.h"
+#include "ffx/vk/ffx_api_vk.h"
+
+#include "vulkan/vk.h"
+
+extern "C" NvnTexture *mk8_fsr_last_depth(void);
+
+
+typedef struct {
+    bool tried;
+    bool available;
+    void *library;
+    PfnFfxCreateContext create;
+    PfnFfxDestroyContext destroy;
+    PfnFfxQuery query;
+    PfnFfxDispatch dispatch;
+    ffxContext context;
+    uint32_t rw, rh, ow, oh;
+    VkImage output;
+    VmaAllocation output_mem;
+    VkImageView output_view;
+    VkImage depth;
+    VmaAllocation depth_mem;
+    VkImageView depth_view;
+    VkImage motion;
+    VmaAllocation motion_mem;
+    VkImageView motion_view;
+    bool primed;
+} Fsr4;
+
+static Fsr4 fsr;
+
+static void *load_library(const char *path) {
+#ifdef _WIN32
+    return (void *)LoadLibraryA(path);
+#else
+    return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+#endif
+}
+
+static void *load_symbol(void *library, const char *name) {
+#ifdef _WIN32
+    return (void *)GetProcAddress((HMODULE)library, name);
+#else
+    return dlsym(library, name);
+#endif
+}
+
+static VkImageView image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect) {
+    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.format = format;
+    vi.subresourceRange = (VkImageSubresourceRange){aspect, 0, 1, 0, 1};
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(g_vk.dev, &vi, NULL, &view) != VK_SUCCESS) return VK_NULL_HANDLE;
+    return view;
+}
+
+static VkImage make_image(VkFormat format, uint32_t w, uint32_t h, VkImageUsageFlags usage,
+                          VkImageAspectFlags aspect, VmaAllocation *allocation) {
+    VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.format = format;
+    ci.extent = (VkExtent3D){w, h, 1};
+    ci.mipLevels = 1;
+    ci.arrayLayers = 1;
+    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ci.usage = usage;
+    ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocationCreateInfo ai = {};
+    ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (vmaCreateImage(g_vk.vma, &ci, &ai, &image, allocation, NULL) != VK_SUCCESS) return VK_NULL_HANDLE;
+    (void)aspect;
+    return image;
+}
+
+static void barrier(VkCommandBuffer cb, VkImage image, VkImageAspectFlags aspect,
+                    VkImageLayout old_layout, VkImageLayout new_layout,
+                    VkAccessFlags src, VkAccessFlags dst,
+                    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage) {
+    VkImageMemoryBarrier b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.srcAccessMask = src;
+    b.dstAccessMask = dst;
+    b.oldLayout = old_layout;
+    b.newLayout = new_layout;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = image;
+    b.subresourceRange = (VkImageSubresourceRange){aspect, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cb, src_stage, dst_stage, 0, 0, NULL, 0, NULL, 1, &b);
+}
+
+static void destroy_images(void) {
+    if (fsr.output_view) vkDestroyImageView(g_vk.dev, fsr.output_view, NULL);
+    if (fsr.output) { vkDestroyImage(g_vk.dev, fsr.output, NULL); vmaFreeMemory(g_vk.vma, fsr.output_mem); }
+    if (fsr.depth_view) vkDestroyImageView(g_vk.dev, fsr.depth_view, NULL);
+    if (fsr.depth) { vkDestroyImage(g_vk.dev, fsr.depth, NULL); vmaFreeMemory(g_vk.vma, fsr.depth_mem); }
+    if (fsr.motion_view) vkDestroyImageView(g_vk.dev, fsr.motion_view, NULL);
+    if (fsr.motion) { vkDestroyImage(g_vk.dev, fsr.motion, NULL); vmaFreeMemory(g_vk.vma, fsr.motion_mem); }
+    fsr.output = VK_NULL_HANDLE;
+    fsr.output_view = VK_NULL_HANDLE;
+    fsr.depth = VK_NULL_HANDLE;
+    fsr.depth_view = VK_NULL_HANDLE;
+    fsr.motion = VK_NULL_HANDLE;
+    fsr.motion_view = VK_NULL_HANDLE;
+    fsr.primed = false;
+}
+
+static bool create_images(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
+    VkImageUsageFlags sampled = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    fsr.output = make_image(VK_FORMAT_R8G8B8A8_UNORM, ow, oh,
+                            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT, &fsr.output_mem);
+    fsr.depth = make_image(VK_FORMAT_D32_SFLOAT, rw, rh, sampled, VK_IMAGE_ASPECT_DEPTH_BIT, &fsr.depth_mem);
+    fsr.motion = make_image(VK_FORMAT_R16G16_SFLOAT, rw, rh, sampled, VK_IMAGE_ASPECT_COLOR_BIT, &fsr.motion_mem);
+    if (!fsr.output || !fsr.depth || !fsr.motion) return false;
+    fsr.output_view = image_view(fsr.output, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    fsr.depth_view = image_view(fsr.depth, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    fsr.motion_view = image_view(fsr.motion, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    return fsr.output_view && fsr.depth_view && fsr.motion_view;
+}
+
+static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
+    if (!fsr.create) return false;
+    ffxCreateBackendVKDesc backend = {0};
+    backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
+    backend.deviceContext.vkDevice = g_vk.dev;
+    backend.deviceContext.vkPhysicalDevice = g_vk.phys;
+    backend.deviceContext.vkDeviceProcAddr = vkGetDeviceProcAddr;
+
+    ffxCreateContextDescUpscaleVersion version = {0};
+    version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE_VERSION;
+    version.version = FFX_UPSCALER_VERSION;
+
+    ffxCreateContextDescUpscale upscale = {0};
+    upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+    upscale.maxRenderSize = {rw, rh};
+    upscale.maxUpscaleSize = {ow, oh};
+    upscale.flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // the game image is perceptual sRGB
+    upscale.header.pNext = &version.header;
+    version.header.pNext = &backend.header;
+
+    ffxContext context = NULL;
+    if (fsr.create(&context, &upscale.header, NULL) != FFX_API_RETURN_OK || !context) return false;
+    fsr.context = context;
+    ffxQueryGetProviderVersion provider = {0};
+    provider.header.type = FFX_API_QUERY_DESC_TYPE_GET_PROVIDER_VERSION;
+    if (fsr.query && fsr.query(&context, &provider.header) == FFX_API_RETURN_OK)
+        fprintf(stderr, "[fsr] provider %s\n", provider.versionName ? provider.versionName : "(unknown)");
+    return true;
+}
+
+static bool init(void) {
+    if (fsr.tried) return fsr.available;
+    fsr.tried = true;
+    const char *path = getenv("MK8_FSR_LIB");
+    if (!path || !*path) path = "libamd_fidelityfx_upscaler_vk.so";
+    fsr.library = load_library(path);
+    if (!fsr.library) {
+        fprintf(stderr, "[fsr] provider not loaded: %s\n", path);
+        return false;
+    }
+    fsr.create = (PfnFfxCreateContext)load_symbol(fsr.library, "ffxCreateContext");
+    fsr.destroy = (PfnFfxDestroyContext)load_symbol(fsr.library, "ffxDestroyContext");
+    fsr.query = (PfnFfxQuery)load_symbol(fsr.library, "ffxQuery");
+    fsr.dispatch = (PfnFfxDispatch)load_symbol(fsr.library, "ffxDispatch");
+    fsr.available = fsr.create && fsr.destroy && fsr.query && fsr.dispatch;
+    if (!fsr.available) fprintf(stderr, "[fsr] provider %s lacks FFX exports\n", path);
+    return fsr.available;
+}
+
+// Returns the upscaled view, or VK_NULL_HANDLE so the caller keeps FSR 1/bilinear.
+extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, uint32_t rw, uint32_t rh,
+                             uint32_t ow, uint32_t oh, float frame_ms) {
+    if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
+    if (!init()) return VK_NULL_HANDLE;
+    if (!color || !color->image) return VK_NULL_HANDLE;
+    if (ow <= rw + 1 || oh <= rh + 1) return VK_NULL_HANDLE;  // an upscale only
+    if (fsr.context && (fsr.rw != rw || fsr.rh != rh || fsr.ow != ow || fsr.oh != oh)) {
+        fsr.destroy(&fsr.context, NULL);
+        fsr.context = NULL;
+        destroy_images();
+    }
+    if (!fsr.context) {
+        if (!create_images(rw, rh, ow, oh) || !create_context(rw, rh, ow, oh)) return VK_NULL_HANDLE;
+        fsr.rw = rw, fsr.rh = rh, fsr.ow = ow, fsr.oh = oh;
+    }
+    if (!fsr.primed) {
+        // One-time initialisation of the neutral inputs and the output layout.
+        barrier(cb, fsr.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkClearDepthStencilValue clear_depth = {1.0f, 0};
+        VkImageSubresourceRange depth_range = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+        vkCmdClearDepthStencilImage(cb, fsr.depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_depth, 1, &depth_range);
+        barrier(cb, fsr.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkClearColorValue clear_motion = {{0, 0, 0, 0}};
+        VkImageSubresourceRange motion_range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, fsr.motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_motion, 1, &motion_range);
+        barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        barrier(cb, fsr.output, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        fsr.primed = true;
+    }
+    // The provider expects the colour/depth/motion inputs in SHADER_READ_ONLY and the output in GENERAL.
+    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    VkImageCreateInfo color_ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    color_ci.imageType = VK_IMAGE_TYPE_2D;
+    color_ci.format = color->format;
+    color_ci.extent = (VkExtent3D){rw, rh, 1};
+    color_ci.mipLevels = 1;
+    color_ci.arrayLayers = 1;
+    color_ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    color_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    color_ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkImage depth_image = fsr.depth;
+    VkFormat depth_format = VK_FORMAT_D32_SFLOAT;
+    NvnTexture *game_depth = mk8_fsr_last_depth();
+    static int depth_logged;
+    if (game_depth && game_depth->backend) {
+        TexBackend *db = (TexBackend *)game_depth->backend;
+        if (!depth_logged++) fprintf(stderr, "[fsr] game depth %ux%u fmt %d backend %p\n",
+                                     db->width, db->height, db->format, (void *)db->image);
+        if (db->image && db->width == rw && db->height == rh) {
+            depth_image = db->image;
+            depth_format = db->format;
+            barrier(cb, depth_image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        }
+    }
+    VkImageCreateInfo depth_ci = color_ci;
+    depth_ci.format = depth_format;
+    depth_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImageCreateInfo motion_ci = color_ci;
+    motion_ci.format = VK_FORMAT_R16G16_SFLOAT;
+    motion_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImageCreateInfo output_ci = color_ci;
+    output_ci.format = VK_FORMAT_R8G8B8A8_UNORM;
+    output_ci.extent = (VkExtent3D){ow, oh, 1};
+    output_ci.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+    ffxDispatchDescUpscale desc = {0};
+    desc.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
+    desc.commandList = cb;
+    desc.color = ffxApiGetResourceVK(color->image,
+        ffxApiGetImageResourceDescriptionVK(color->image, color_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    desc.depth = ffxApiGetResourceVK(depth_image,
+        ffxApiGetImageResourceDescriptionVK(depth_image, depth_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    desc.motionVectors = ffxApiGetResourceVK(fsr.motion,
+        ffxApiGetImageResourceDescriptionVK(fsr.motion, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    desc.output = ffxApiGetResourceVK(fsr.output,
+        ffxApiGetImageResourceDescriptionVK(fsr.output, output_ci, VK_IMAGE_USAGE_STORAGE_BIT),
+        VK_IMAGE_LAYOUT_GENERAL);
+    desc.renderSize = {rw, rh};
+    desc.upscaleSize = {ow, oh};
+    desc.motionVectorScale = {(float)rw, (float)rh};
+    desc.jitterOffset = {0.0f, 0.0f};
+    desc.enableSharpening = true;
+    desc.sharpness = 0.2f;
+    desc.frameTimeDelta = frame_ms > 0 ? frame_ms : 16.7f;
+    desc.preExposure = 1.0f;
+    desc.reset = true;  // neutral inputs: never keep history from another frame
+    desc.cameraNear = 0.1f;
+    desc.cameraFar = 1000.0f;
+    desc.cameraFovAngleVertical = 1.0472f;
+    desc.viewSpaceToMetersFactor = 1.0f;
+    desc.flags = FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB;
+    if (fsr.dispatch(&fsr.context, &desc.header) != FFX_API_RETURN_OK) {
+        static int warned;
+        if (warned++ < 3) fprintf(stderr, "[fsr] dispatch failed\n");
+        return VK_NULL_HANDLE;
+    }
+    static int logged;
+    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s %ux%u, motion neutral)\n",
+                           rw, rh, ow, oh, depth_image == fsr.depth ? "neutral" : "game",
+                           (unsigned)rw, (unsigned)rh);
+    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    return fsr.output_view;
+}

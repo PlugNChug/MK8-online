@@ -292,6 +292,8 @@ def prepare_host_sources(source, output):
     prepare_shader_budget(runtime)
     from shader_storage import prepare as prepare_shader_storage
     prepare_shader_storage(runtime)
+    from fsr import prepare as prepare_fsr
+    prepare_fsr(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread
@@ -472,6 +474,7 @@ def build_host(source, output, workers=None, game_library=None):
         sources.extend(sorted(source.glob(pattern)))
     sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
     sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
+    sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.cpp')))
     if WINDOWS:
         sources += [source/'runtime/platform/windows.c', export_source, shim]
     else:
