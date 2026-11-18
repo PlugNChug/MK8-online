@@ -16,18 +16,22 @@ code or ABI changes.
 - In-game evidence: `[fsr] provider FSR 4.1.2`, `[fsr] upscale active
   1920x1080 -> 2560x1440`, correct colors with
   `FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB`; screenshots `fsr4-srgb-03600.png`
-  and `fsr4-3600` in `local/qualification`.
+  and `fsr4-3600` in `local/qualification`. The dispatch now runs after
+  `vk_frame_suspend`, outside the window render pass.
 
 The switch is diagnostic only: `MK8_FSR4=1`, `MK8_FSR_LIB=<provider.so>`,
 `FSR4_ASSET_DIR=<assets>`. It is not exposed in the launcher yet.
 
 ## Not qualified / open
 
-- **Real inputs:** the last scene depth is 960x540 while the presented color is
-  1920x1080, so the prototype falls back to a neutral depth image and zero
-  motion vectors, resets history every frame, and uses zero jitter. This is not
-  the final quality path; real scene color/depth pairing, camera motion vectors,
-  jitter and UI separation are the next gate.
+- **Real inputs:** a scene depth target was observed at 960x540 while the
+  presented color is 1920x1080. The hook records the last scene depth and
+  contains a depth-copy pass to the color size, but the pointer is not usable at
+  present time (the texture has been retired by then), so the prototype still
+  falls back to a neutral depth image and zero motion vectors, resets history
+  every frame, and uses zero jitter. The next step is a pass-end copy into a
+  persistent depth image; real scene color/depth pairing, camera motion vectors,
+  jitter and UI separation remain the gate.
 - **FSR 3.1.6:** the SDK source build currently produces empty shader
   permutation tables with the Linux/Wine shader generator, so its provider
   prototype is not integrated. A Windows-generated SDK or a fixed generator is

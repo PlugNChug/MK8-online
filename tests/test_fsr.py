@@ -12,6 +12,7 @@ import fsr
 
 EXEC = '''\
 static NvnTexture *g_pass_depth;  // (its depth target)
+enum { FG_DUMMY = 20, N_POST = 21 };
 static void render_pass(void) {
     g_pass_depth = st.rt.depth;
 }
@@ -46,6 +47,13 @@ class FsrPatchTests(unittest.TestCase):
         (root / 'nvn/vulkan').mkdir(parents=True)
         (root / 'nvn/vulkan/exec.c').write_text(EXEC, encoding='utf-8')
         (root / 'nvn/vulkan/device.c').write_text(DEVICE, encoding='utf-8')
+        (root / 'nvn/vulkan/shaders.c').write_text(
+            'static const char *shader(const char *name, int *stage) {\n'
+            '    if (!strcmp(name, "easu.frag")) {\n'
+            '        *stage = 0; return "";\n'
+            '    }\n'
+            '    return NULL;\n'
+            '}\n', encoding='utf-8')
         return root
 
     def test_inserts_the_present_call_and_depth_getter(self):
@@ -55,7 +63,7 @@ class FsrPatchTests(unittest.TestCase):
         self.assertIn('mk8_fsr4_upscale', exec_c)
         self.assertIn('mk8_fsr_last_depth', exec_c)
         self.assertIn('g_fsr_depth = st.rt.depth;', exec_c)
-        self.assertLess(exec_c.index('mk8_fsr4_upscale'), exec_c.index('vk_frame_suspend();'))
+        self.assertGreater(exec_c.index('mk8_fsr4_upscale'), exec_c.index('vk_frame_suspend();'))
 
     def test_enables_the_fp8_device_features(self):
         runtime = self.runtime()

@@ -33,7 +33,6 @@
 
 #include "vulkan/vk.h"
 
-extern "C" NvnTexture *mk8_fsr_last_depth(void);
 
 
 typedef struct {
@@ -204,7 +203,7 @@ static bool init(void) {
 }
 
 // Returns the upscaled view, or VK_NULL_HANDLE so the caller keeps FSR 1/bilinear.
-extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, uint32_t rw, uint32_t rh,
+extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, TexBackend *depth, uint32_t rw, uint32_t rh,
                              uint32_t ow, uint32_t oh, float frame_ms) {
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
     if (!init()) return VK_NULL_HANDLE;
@@ -261,20 +260,20 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, u
 
     VkImage depth_image = fsr.depth;
     VkFormat depth_format = VK_FORMAT_D32_SFLOAT;
-    NvnTexture *game_depth = mk8_fsr_last_depth();
+    VkImageAspectFlags depth_aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    bool real_depth = depth && depth->image && depth->width == rw && depth->height == rh;
     static int depth_logged;
-    if (game_depth && game_depth->backend) {
-        TexBackend *db = (TexBackend *)game_depth->backend;
-        if (!depth_logged++) fprintf(stderr, "[fsr] game depth %ux%u fmt %d backend %p\n",
-                                     db->width, db->height, db->format, (void *)db->image);
-        if (db->image && db->width == rw && db->height == rh) {
-            depth_image = db->image;
-            depth_format = db->format;
-            barrier(cb, depth_image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_GENERAL,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-        }
+    if (real_depth) {
+        depth_image = depth->image;
+        depth_format = depth->format;
+        depth_aspect = (depth->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier(cb, depth_image, depth_aspect, VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
+    if (!depth_logged++) fprintf(stderr, "[fsr] depth %s %ux%u fmt %d\n",
+                                 real_depth ? "game" : "neutral", real_depth ? depth->width : rw,
+                                 real_depth ? depth->height : rh, real_depth ? depth_format : VK_FORMAT_D32_SFLOAT);
     VkImageCreateInfo depth_ci = color_ci;
     depth_ci.format = depth_format;
     depth_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -321,9 +320,8 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, u
         return VK_NULL_HANDLE;
     }
     static int logged;
-    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s %ux%u, motion neutral)\n",
-                           rw, rh, ow, oh, depth_image == fsr.depth ? "neutral" : "game",
-                           (unsigned)rw, (unsigned)rh);
+    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion neutral)\n",
+                           rw, rh, ow, oh, real_depth ? "game" : "neutral");
     barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
             VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
