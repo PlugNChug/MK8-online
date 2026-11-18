@@ -76,6 +76,8 @@ A bounded TMML.B adapter now translates the static texture-handle pattern found 
 
 Steam improvements in 0.3.0: Steam DLL discovery supports additional libraries and nested game layouts, and loads versioned C interface exports. All friends are searchable, including offline friends. Oversized LAN datagrams use Steam's reliable fragmentation; smaller packets keep their previous mode. Closing the game releases its Steam session so another invitation can be accepted without restarting the launcher. Both PCs must update; a complete two-PC race is still unqualified.
 
+Development builds prevent a Windows child process from keeping the gateway's UDP ports open through inherited socket duplicates after the session closes. Rebuild the launcher to apply this correction. It does not qualify Steam reconnection or a full race between two PCs.
+
 Multiplayer offers **Create Room (Automatic)** and **Play (Manual Room)**. Both create a Steam host lobby; guests accept an invite and can choose automatic or manual in-game navigation. Automatic entry keeps the active Mii selected. The Mii converter corrects the glasses texture channels: regenerate derived Mii resources and rebuild the runtime for these Mii fixes.
 
 **Install → Game files** accepts an optional Booster Course Pass NSP. It is imported after a successful build in the same preparation flow, using the existing verified importer. An empty field preserves existing DLC. Later import remains under **Install → Additional content**, with a shortcut from **Play**; enabling/disabling DLC remains under **Settings**. Steam still requires matching DLC and CTGP states. No Valve DLL or game assets are distributed.
