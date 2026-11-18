@@ -1,5 +1,13 @@
 # Estado técnico — 18/11/2026
 
+## Mount Wario — compensação do bias de profundidade pela escala
+
+O par estacionado confirmou a faixa angular em 2× e sua ausência em 1×. As imagens antes/depois isolam a contribuição do strip de transição neve/gelo. No replay privado com D32 completo de cada captura, o strip aceita 606.574 de 664.722 pixels em 1× e 1.826.258 de 2.658.799 em 2×. Duplicar somente o slope em 2× aumenta a cobertura para 2.425.025 e remove a região triangular rejeitada, preservando a oclusão do kart; duplicar somente o termo constante chega a 1.837.167 e mantém quase todo o defeito. Todas as profundidades permanecem byte a byte iguais. A repetição do controle conserva a máscara original. Evidência em `local/iu17/mount-ice-shader/scene-replay`, com revisão independente; geometria, constantes e capturas comerciais continuam privadas.
+
+A adaptação própria multiplica somente o slope pela escala uniforme, positiva e finita do passe. O termo constante, clamp, tolerância EQUAL, estado guest e reset de clear não mudam. Alvos não escaláveis continuam em 1×; o cache compara o bias efetivo e atualiza ao trocar resolução. Escalas diferentes entre os eixos conservam o comportamento anterior, pois um único fator não restaura os dois gradientes.
+
+A regressão nativa compila o bloco real preparado, o cache de estado e o resolvedor de escala. Planos sintéticos reproduziram a perda do decal em 2× antes da mudança. Depois, passaram os dois testes, incluindo escalas fracionárias, sinais opostos, cache, alvos não escaláveis, bias desligado, EQUAL e recusa de limites alterados/duplicados; nenhum dado do jogo entra no teste público. O replay usa cobertura sólida e estado de bias observado em coleta anterior, sem reproduzir todos os materiais da cena. Reteste visual do jogo recompilado, outras pistas/GPUs e qualificação completa continuam pendentes; `gameplay_verified=false`. Nenhuma publicação ou alteração da instalação.
+
 ## Integração das PRs #42, #43 e #44 na fix-chore
 
 Integrado o histórico das três PRs com commits de merge separados. Os códigos de saves/Mii (#42), guarda do histórico de cubemaps (#43) e comandos compactos (#44) já estavam presentes nos commits locais `07126fd` e `26a6dce`. Comparação com `53ae368` confirma que os merges não alteraram runtime/toolchain/testes; conflitos foram resolvidos preservando documentação atual, output-aspect, recuperação de memória e demais correções posteriores. README recebeu os esclarecimentos das PRs.

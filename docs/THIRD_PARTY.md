@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Bias de profundidade Vulkan — 18/11/2026
+
+Consultada a [especificação Khronos de depth bias](https://docs.vulkan.org/spec/latest/chapters/primsrast.html#primsrast-depthbias): o termo slope depende do maior gradiente de profundidade em coordenadas do framebuffer; o termo constante é separado. A compensação própria considera a escala uniforme real do alvo e preserva os demais termos. O replay privado também segue as [regras de store do render pass](https://docs.vulkan.org/spec/latest/chapters/renderpass.html#renderpass-store-operations) para sincronizar a imagem de profundidade. Nenhum código dessas páginas foi copiado; dados comerciais permanecem privados e resultados externos não qualificam esta build.
+
 ## Saves e consultas Mii — 17/11/2026
 
 Layout de `FsSaveDataAttribute`, tipos e payload dos comandos 51/53 conferidos no [header libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/fs.h) e nos [wrappers FSP](https://github.com/switchbrew/libnx/blob/master/nx/source/services/fs.c). O relato do [NX Native sobre CommonSave/UserSave](https://nx-native.com/games/mario-kart-8-deluxe#files-and-saves) direcionou a investigação anterior da branch de saves; o offset e os efeitos foram conferidos localmente.

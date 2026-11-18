@@ -325,6 +325,8 @@ def prepare_host_sources(source, output):
     prepare_compact_commands(runtime)
     from output_aspect import prepare as prepare_output_aspect
     prepare_output_aspect(runtime)
+    from depth_bias import prepare as prepare_depth_bias
+    prepare_depth_bias(runtime)
     from snapshot_memory import prepare as prepare_snapshot_memory
     prepare_snapshot_memory(runtime)
     from controller_applet import prepare as prepare_controller_applet
