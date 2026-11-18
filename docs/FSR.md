@@ -57,6 +57,11 @@ FPS runs on an otherwise idle desktop.
 - **Motion vectors/jitter:** still zero and reset per frame. Camera-only motion
   vectors need the scene view-projection matrices; object motion (karts) and
   subpixel projection jitter are the remaining gate before temporal quality.
+  `LARECOMP_DEBUG_FRAME=2400 LARECOMP_DEBUG_DATA=1` shows a 3D draw whose
+  `vcb3` holds two 3x4 view matrices followed by a 4x4 projection at offset 32
+  (the projection has the expected x/y scale and `-1, 0` last row). Hypothesis:
+  the two views are the current and previous camera. Validate their frame-to-
+  frame deltas before writing the reprojection pass.
 - **FSR 3.1.6:** the SDK source build currently produces empty shader
   permutation tables with the Linux/Wine shader generator, so its provider
   prototype is not integrated. A Windows-generated SDK or a fixed generator is
