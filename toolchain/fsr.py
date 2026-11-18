@@ -42,6 +42,23 @@ CAPTURE = """    if (getenv("MK8_FSR4_CAPTURE") && g_pass_depth && g_pass_depth-
         }
     }
 """
+
+MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
+        for (int c = 3; c < 21; c++) {
+            Range ub = st.ubuf[0][c - 3];
+            if (!((pr->vi->cbuf_mask >> c) & 1) || !ub.addr || ub.size < 44 * 4) continue;
+            const float *u = (const float *)(uintptr_t)ub.addr;
+            if (fabsf(u[38] + 1.0f) > 0.02f || fabsf(u[42] + 1.0f) > 0.02f ||
+                fabsf(u[43]) > 0.001f || fabsf(u[31]) > 0.001f || fabsf(u[35]) > 0.001f)
+                continue;
+            memcpy(g_fsr_view, u, sizeof g_fsr_view);
+            memcpy(g_fsr_proj, u + 28, sizeof g_fsr_proj);
+            g_fsr_vp_valid = 1;
+        }
+        { static int once; if (g_fsr_vp_valid && !once++) LOG("[fsr] view/proj captured in main draw\n"); }
+    }
+"""
+
 PROTOTYPES = """static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
                       const float pc[8], bool clear);
 static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f);
@@ -100,6 +117,9 @@ def prepare_exec(runtime):
         raise ValueError('Pass end boundary changed upstream')
     if 'g_fsr_captured = cap;' not in text:
         text = text.replace(old, old + CAPTURE, 1)
+    draw_anchor = '    if (g_debug_frame) debug_draw(pr, r, indexed);'
+    if draw_anchor in text and 'view/proj captured' not in text:
+        text = text.replace(draw_anchor, MATRIX_SCAN + draw_anchor, 1)
     exec_c.write_text(text, encoding='utf-8')
 
 
