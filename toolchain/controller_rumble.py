@@ -11,8 +11,10 @@ def replace(text, old, new, count=1):
 def prepare(runtime):
     input_path = runtime/'hle/input.c'
     service_path = runtime/'services/hid_set.c'
+    device_path = runtime/'nvn/vulkan/device.c'
     text = input_path.read_text(encoding='utf-8')
     service = service_path.read_text(encoding='utf-8')
+    device = device_path.read_text(encoding='utf-8')
     implementation = (Path(__file__).resolve().parents[1]/'runtime/mk8/services/rumble.inc').read_text(encoding='utf-8')
     marker = 'static SDL_Gamepad *pad;'
     declarations = ('static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id);\n'
@@ -48,5 +50,8 @@ def prepare(runtime):
     case 203: case 207: case 208: case 209: break;  // other vibration commands''')
     marker = 'SERVICE("hid", hid) {'
     service = replace(service, marker, 'extern void mk8_hid_rumble(IpcReq *req, IpcResp *resp);\n\n' + marker)
+    marker = 'static void quick_exit_handler(void) {'
+    device = replace(device, marker, marker + '\n    extern void mk8_joycon_shutdown(void);\n    mk8_joycon_shutdown();')
     input_path.write_text(text, encoding='utf-8')
     service_path.write_text(service, encoding='utf-8')
+    device_path.write_text(device, encoding='utf-8')

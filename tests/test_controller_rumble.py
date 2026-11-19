@@ -35,6 +35,7 @@ bool mk8_settings_page_active(void) { return native_settings_open; }
 static bool clock_controlled;
 static Uint64 clock_ms;
 static SDL_JoystickID virtual_hidapi_id;
+static Uint16 switch_product=0x2009;
 static SDL_GUID fixture_guid(SDL_JoystickID id) {
     SDL_GUID guid=SDL_GetJoystickGUIDForID(id);
     if(id==virtual_hidapi_id) guid.data[14]='h';
@@ -42,10 +43,15 @@ static SDL_GUID fixture_guid(SDL_JoystickID id) {
 }
 static unsigned rumble_requests;
 static Uint32 last_duration;
+static SDL_Semaphore *basic_stop_entered,*release_basic_stop;
 static Uint64 test_ticks(void) { return clock_controlled ? clock_ms : SDL_GetTicks(); }
 static bool test_rumble(SDL_Gamepad *p,Uint16 low,Uint16 high,Uint32 duration) {
     rumble_requests++;
     last_duration=duration;
+    if(basic_stop_entered && !low && !high) {
+        SDL_SignalSemaphore(basic_stop_entered);
+        SDL_WaitSemaphore(release_basic_stop);
+    }
     return SDL_RumbleGamepad(p,low,high,duration);
 }
 #define EXTRA_PADS 3
@@ -61,6 +67,67 @@ void ipc_return_object(IpcResp *r,Service *s) { (void)r;(void)s;CHECK(false); }
 uint32_t mk8_motion_control(const uint8_t *data, size_t size, bool start) {
     (void)data; (void)size; (void)start; abort();  // Vibration commands must never dispatch to motion.
 }
+'''
+
+PAIR_FIXTURE = r'''
+/* SDL's virtual driver has no HID endpoints. Substitute only the discovery and raw-output boundary. */
+static SDL_hid_device_info endpoints[3];
+static _Atomic int live_halves, raw_writes[2], raw_active[2], rejected_side=-1;
+static _Atomic bool reject_next_right;
+static SDL_Semaphore *entered_write,*release_write,*polled;
+static _Atomic bool block_next_left;
+static SDL_Mutex *raw_lock;
+static Uint64 raw_at[2], previous_at[2];
+static Uint8 raw_packet[2][49];
+static SDL_JoystickID *pair_ids(int *count) {
+    SDL_JoystickID *ids=SDL_calloc(2,sizeof(*ids));
+    CHECK(ids);
+    ids[0]=virtual_hidapi_id;
+    *count=1;
+    return ids;
+}
+static SDL_hid_device_info *test_enumerate(Uint16 vid,Uint16 pid) {
+    CHECK(vid==0x057e && !pid);
+    return endpoints;
+}
+static SDL_hid_device *test_open(const char *path) {
+    for(int i=0;i<2;i++) if(!strcmp(path,endpoints[i].path)) {
+        live_halves++;
+        return (SDL_hid_device *)&endpoints[i];
+    }
+    return NULL;
+}
+static int test_hid_write(SDL_hid_device *dev,const unsigned char *data,size_t size) {
+    int side=dev==(SDL_hid_device *)&endpoints[1];
+    CHECK(dev==(SDL_hid_device *)&endpoints[side] && size==49 && data[0]==0x10 && data[1]<16);
+    for(size_t i=10;i<size;i++) CHECK(!data[i]);
+    if(!side && block_next_left) {
+        block_next_left=false;
+        SDL_SignalSemaphore(entered_write);
+        SDL_WaitSemaphore(release_write);
+    }
+    SDL_LockMutex(raw_lock);
+    previous_at[side]=raw_at[side];raw_at[side]=SDL_GetTicks();
+    bool fail=rejected_side==side || (side==1 && atomic_exchange(&reject_next_right,false));
+    if(!fail) {
+        memcpy(raw_packet[side],data,size);
+        raw_writes[side]++;
+        const Uint8 silent[8]={0,1,0x40,0x40,0,1,0x40,0x40};
+        if(memcmp(data+2,silent,8)) raw_active[side]++;
+    }
+    SDL_UnlockMutex(raw_lock);
+    return fail?-1:(int)size;
+}
+#define SDL_GetGamepads pair_ids
+#define SDL_GetRealGamepadTypeForID(id) SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR
+#define SDL_GetGamepadPath(device) "nintendo_joycons_combined"
+#define SDL_GetGamepadConnectionState(device) SDL_JOYSTICK_CONNECTION_WIRELESS
+#define SDL_hid_enumerate test_enumerate
+#define SDL_hid_free_enumeration(list) ((void)(list))
+#define SDL_hid_open_path test_open
+#define SDL_hid_close(dev) ((void)(dev),live_halves--)
+#define SDL_hid_get_device_info(dev) ((SDL_hid_device_info *)(dev))
+#define SDL_hid_write test_hid_write
 '''
 
 CHECKS = r'''
@@ -108,7 +175,7 @@ static SDL_JoystickID attach(unsigned i,bool capable) {
     d.Rumble=capable?rumble:NULL;
     if(i==2) {
         d.vendor_id=0x057e;
-        d.product_id=0x2009;
+        d.product_id=switch_product;
         d.SendEffect=send_effect;
     }
     SDL_JoystickID id=SDL_AttachVirtualJoystick(&d);
@@ -346,11 +413,184 @@ static void hd_output(void) {
     extra_pad[1]=NULL;
     CHECK(SDL_DetachVirtualJoystick(id));
 }
+static int SDLCALL submit_tone(void *arg) {
+    send_tone(*(uint32_t *)arg,.2f,160,0,320);
+    return 0;
+}
+static int SDLCALL poll_and_submit(void *arg) {
+    SDL_LockJoysticks();
+    CHECK(SDL_GetGamepadFromID(virtual_hidapi_id)==pad);
+    SDL_UnlockJoysticks();
+    send_tone(*(uint32_t *)arg,.4f,80,0,320);
+    SDL_SignalSemaphore(polled);
+    return 0;
+}
+static void expect_raw(int side,const Uint8 left[4],const Uint8 right[4]) {
+    Uint64 until=SDL_GetTicks()+1000;
+    do {
+        SDL_LockMutex(raw_lock);
+        bool same=raw_packet[side][0]==0x10 && !memcmp(raw_packet[side]+2,left,4) && !memcmp(raw_packet[side]+6,right,4);
+        SDL_UnlockMutex(raw_lock);
+        if(same)return;
+        SDL_Delay(2);
+    } while(SDL_GetTicks()<until);
+    CHECK(false && "Joy-Con did not receive the expected report");
+}
+static void wait_pair_closed(void) {
+    Uint64 until=SDL_GetTicks()+1500;
+    while(SDL_GetAtomicInt(&mk8_pair_lease) && SDL_GetTicks()<until) SDL_Delay(2);
+    CHECK(SDL_GetAtomicInt(&mk8_pair_lease)==MK8_PAIR_FREE && !live_halves);
+}
+static void joycon_output(void) {
+    const Uint8 neutral[4]={0,1,0x40,0x40}, lo[4]={0,1,0x40,0x62}, hi[4]={0x80,0x22,0x40,0x40};
+    const Uint8 mixed[4]={0x80,0x22,0x40,0x62};
+    uint32_t h[2];
+    handles(0,h);
+    for(switch_product=0x2006;switch_product<=0x2007;switch_product++) {
+        SDL_JoystickID id=attach(2,true);
+        virtual_hidapi_id=id; pad=mk8_rumble_open(0,id);
+        CHECK(pad && mk8_rumble_pads[0].hd);
+        /* Both logical grips drive the one physical actuator, even for a right Joy-Con on P1. */
+        const float bands[2][4]={{.501433f,160,0,320},{0,160,.122671f,160}};
+        send_batch(h,bands);
+        expect_effect(switch_product==0x2006?mixed:neutral,switch_product==0x2007?mixed:neutral);
+        mk8_rumble_focus(false);
+        expect_effect(neutral,neutral);
+        mk8_rumble_focus(true);
+        const float bad_frequency[2][4]={{.9f,NAN,.122671f,160},{.501433f,160,.9f,0}};
+        send_batch(h,bad_frequency);
+        expect_effect(switch_product==0x2006?mixed:neutral,switch_product==0x2007?mixed:neutral);
+        mk8_rumble_close(0,pad);
+        CHECK(!memcmp(last_packet+2,neutral,4) && !memcmp(last_packet+6,neutral,4));
+        CHECK(SDL_DetachVirtualJoystick(id));
+    }
+    switch_product=0x2008;
+    raw_lock=SDL_CreateMutex();CHECK(raw_lock);
+    SDL_JoystickID id=attach(2,true);
+    virtual_hidapi_id=id;
+    for(int i=0;i<2;i++) endpoints[i]=(SDL_hid_device_info){.vendor_id=0x057e,.product_id=(Uint16)(0x2006+i),
+        .path=i?"right":"left",.manufacturer_string=L"Nintendo",.usage_page=1,.usage=5,
+        .bus_type=SDL_HID_API_BUS_BLUETOOTH,.next=i?NULL:&endpoints[1]};
+    endpoints[2]=endpoints[0];endpoints[2].next=NULL;endpoints[1].next=&endpoints[2];
+    pad=mk8_rumble_open(0,id);
+    CHECK(pad && !mk8_rumble_pads[0].hd && live_halves==0);
+    send_pair(h,.2f,.3f);
+    CHECK(pulse[2].low && pulse[2].high);
+    quick_exit_handler();
+    CHECK(fake_exit_called && !pulse[2].low && !pulse[2].high);
+    /* The rendering process would terminate here. Reset the exit latch for the next fixture. */
+    SDL_SetAtomicInt(&mk8_pair_exiting,0);fake_exit_called=false;
+    send_pair(h,.2f,.3f);
+    basic_stop_entered=SDL_CreateSemaphore(0);release_basic_stop=SDL_CreateSemaphore(0);
+    Uint64 basic_exit=SDL_GetTicks();
+    quick_exit_handler();
+    CHECK(fake_exit_called && SDL_GetTicks()-basic_exit<450 && SDL_TryWaitSemaphore(basic_stop_entered));
+    SDL_SignalSemaphore(release_basic_stop);
+    Uint64 stop_deadline=SDL_GetTicks()+1000;
+    while(!SDL_GetAtomicInt(&mk8_pair_stop_done) && SDL_GetTicks()<stop_deadline) SDL_Delay(2);
+    CHECK(SDL_GetAtomicInt(&mk8_pair_stop_done) && !pulse[2].low && !pulse[2].high);
+    SDL_DestroySemaphore(basic_stop_entered);SDL_DestroySemaphore(release_basic_stop);
+    basic_stop_entered=NULL;release_basic_stop=NULL;
+    SDL_SetAtomicInt(&mk8_pair_exiting,0);fake_exit_called=false;
+    mk8_rumble_close(0,pad);
+    endpoints[1].next=NULL;
+    pad=mk8_rumble_open(0,id);
+    CHECK(pad && mk8_rumble_pads[0].hd && live_halves==2);
+    const float bands[2][4]={{.501433f,160,0,320},{0,160,.122671f,160}};
+    send_batch(h,bands);
+    for(int i=0;i<2;i++) expect_raw(i,lo,hi);
+    mk8_rumble_focus(false);
+    for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    mk8_rumble_focus(true);
+    /* First active report succeeds on left only; it must receive neutral before basic fallback. */
+    rejected_side=1;
+    send_batch(h,bands);
+    Uint64 until=SDL_GetTicks()+1000;
+    while(mk8_rumble_pads[0].hd && SDL_GetTicks()<until) {mk8_rumble_frame();SDL_Delay(3);}
+    expect_generic_pulse();
+    CHECK(!mk8_rumble_pads[0].hd && !live_halves);
+    expect_raw(0,neutral,neutral);
+    mk8_rumble_close(0,pad);
+    wait_pair_closed();
+    /* Close immediately after an active report; right rejects the first permitted neutral. */
+    rejected_side=-1;
+    pad=mk8_rumble_open(0,id);
+    send_batch(h,bands);
+    for(int i=0;i<2;i++) expect_raw(i,lo,hi);
+    int before_close[2]={raw_writes[0],raw_writes[1]};
+    reject_next_right=true;
+    mk8_rumble_close(0,pad);
+    wait_pair_closed();
+    CHECK(!reject_next_right && raw_writes[0]==before_close[0]+2 && raw_writes[1]==before_close[1]+1);
+    CHECK(raw_at[1]-previous_at[1]>=30);
+    for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    pad=mk8_rumble_open(0,id);
+    int idle_writes=raw_writes[0]+raw_writes[1];
+    mk8_rumble_close(0,pad);
+    wait_pair_closed();
+    CHECK(raw_writes[0]+raw_writes[1]==idle_writes);
+    pad=mk8_rumble_open(0,id);
+    entered_write=SDL_CreateSemaphore(0);release_write=SDL_CreateSemaphore(0);polled=SDL_CreateSemaphore(0);
+    block_next_left=true;
+    SDL_Thread *sender=SDL_CreateThread(submit_tone,"submit",&h[0]);
+    CHECK(SDL_WaitSemaphoreTimeout(entered_write,1000));
+    SDL_Thread *poller=SDL_CreateThread(poll_and_submit,"unrelated-poll",&h[0]);
+    bool responsive=SDL_WaitSemaphoreTimeout(polled,200);
+    int previous_right=raw_active[1];
+    if(responsive) {
+        mk8_rumble_close(0,pad);
+        pad=mk8_rumble_open(0,id);
+        CHECK(pad && mk8_rumble_pads[0].waiting_for_pair && live_halves==2);
+        send_tone(h[0],.25f,160,0,320);
+        mk8_rumble_close(0,pad);
+    }
+    SDL_SignalSemaphore(release_write);
+    SDL_WaitThread(poller,NULL);SDL_WaitThread(sender,NULL);
+    CHECK(responsive && "HID write held joystick polling or a subsequent game submission");
+    wait_pair_closed();
+    CHECK(raw_active[1]==previous_right);
+    for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    /* Without another presented frame, the queued tone expires while the first half is blocked. */
+    pad=mk8_rumble_open(0,id);
+    int before_expiry=raw_writes[0];
+    block_next_left=true;
+    send_tone(h[0],.3f,160,0,320);
+    CHECK(SDL_WaitSemaphoreTimeout(entered_write,1000));
+    SDL_Delay(275);
+    SDL_SignalSemaphore(release_write);
+    until=SDL_GetTicks()+1000;
+    while(raw_writes[0]<before_expiry+2 && SDL_GetTicks()<until) SDL_Delay(2);
+    CHECK(raw_writes[0]>=before_expiry+2 && raw_active[1]==previous_right);
+    expect_raw(0,neutral,neutral);
+    mk8_rumble_close(0,pad);
+    wait_pair_closed();
+    /* Drive the production window-exit handler while a radio is stalled. */
+    pad=mk8_rumble_open(0,id);
+    block_next_left=true;
+    send_tone(h[0],.3f,160,0,320);
+    CHECK(SDL_WaitSemaphoreTimeout(entered_write,1000));
+    previous_right=raw_active[1];
+    Uint64 exit_start=SDL_GetTicks();
+    quick_exit_handler();
+    CHECK(fake_exit_called && SDL_GetTicks()-exit_start<450);
+    send_tone(h[0],.5f,240,0,320);
+    SDL_SignalSemaphore(release_write);
+    wait_pair_closed();
+    CHECK(raw_active[1]==previous_right);
+    for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    mk8_rumble_close(0,pad);
+    SDL_DestroySemaphore(polled);SDL_DestroySemaphore(release_write);SDL_DestroySemaphore(entered_write);
+    SDL_DestroyMutex(raw_lock);
+    CHECK(!live_halves && SDL_DetachVirtualJoystick(id));
+    memset(pulse,0,sizeof pulse);
+    rejected_side=-1;virtual_hidapi_id=0;switch_product=0x2009;pad=NULL;
+}
 int main(void) {
     guest=VirtualAlloc((void *)(GUEST_LO+0x100000),0x20000,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
     CHECK(guest==(void *)(GUEST_LO+0x100000));
     CHECK(SDL_Init(SDL_INIT_GAMEPAD));
     hd_output();
+    joycon_output();
     SDL_JoystickID ids[2]={attach(0,true),attach(1,true)};
     pad=mk8_rumble_open(0,ids[0]);
     extra_pad[0]=mk8_rumble_open(1,ids[1]);
@@ -523,14 +763,25 @@ class ControllerRumbleTests(unittest.TestCase):
             service=(runtime/'services/hid_set.c').read_text(encoding='utf-8')
             start=service.index('static uint32_t new_event_handle(void)')
             end=service.index('SERVICE("hid:sys"',start)
-            source=PREFIX+'''\n#define SDL_GetTicks test_ticks
+            source=PREFIX+PAIR_FIXTURE+'''\n#define SDL_GetTicks test_ticks
 #define SDL_RumbleGamepad test_rumble
 #define SDL_GetJoystickGUIDForID fixture_guid
 '''+vibration
             source+='''\n#undef SDL_GetTicks
 #undef SDL_RumbleGamepad
 #undef SDL_GetJoystickGUIDForID
-'''+service[start:end]+'\n'+CHECKS
+'''+service[start:end]
+            device=(runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
+            exit_start=device.index('static void quick_exit_handler(void) {')
+            source+='''
+#undef LOG
+#define LOG(...) ((void)0)
+static struct {void *dev;} g_vk;
+static bool fake_exit_called;
+void plat_terminate(void) { fake_exit_called=true; }
+static void device_wait_idle(void) { abort(); }
+static void vk_pipeline_cache_save(void) { abort(); }
+'''+device[exit_start:device.index('\n}',exit_start)+2]+'\n'+CHECKS
             (out/'rumble.c').write_text(source,encoding='utf-8')
             exe=out/'rumble.exe'
             build=subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O1','-UNDEBUG',

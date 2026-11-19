@@ -16,6 +16,20 @@ typedef struct {
 static const Mk8SwitchRumble mk8_switch_neutral = {0x10, 0, {{0, 1, 0x40, 0x40}, {0, 1, 0x40, 0x40}}};
 static Uint64 mk8_switch_reopen_after;
 
+enum { MK8_PAIR_FREE, MK8_PAIR_ACTIVE, MK8_PAIR_RETIRING };
+static SDL_AtomicInt mk8_pair_lease;
+static SDL_AtomicInt mk8_pair_exiting;
+static SDL_AtomicInt mk8_pair_basic_mask;
+static SDL_AtomicInt mk8_pair_stop_done;
+struct Mk8JoyConPair {
+    SDL_hid_device *halves[2];
+    SDL_Mutex *lock;
+    SDL_Condition *wake;
+    Mk8SwitchRumble wanted;
+    Uint64 expires;
+    bool neutral_first, closing, broken, drained;
+};
+
 // SDL's joystick lock also protects the player assignments and guest readback.
 static struct Mk8RumblePad {
     SDL_JoystickID id;
@@ -23,24 +37,199 @@ static struct Mk8RumblePad {
     Uint16 low, high;
     Uint64 sent_at;
     bool hd, stop_first;
+    Uint16 product;
+    struct Mk8JoyConPair *pair;
+    bool waiting_for_pair;
     Mk8SwitchRumble wanted, last;
     Uint64 expires_at;
     SDL_TimerID timer;
 } mk8_rumble_pads[1 + EXTRA_PADS];
+
+static bool mk8_joycon_endpoint(const SDL_hid_device_info *d, Uint16 product) {
+    return d && d->vendor_id == 0x057e && d->product_id == product && d->path &&
+           d->bus_type == SDL_HID_API_BUS_BLUETOOTH && d->usage_page == 1 && d->usage == 5 &&
+           d->manufacturer_string && SDL_wcscmp(d->manufacturer_string, L"Nintendo") == 0;
+}
+
+static bool mk8_joycon_endpoints(SDL_Gamepad *device, SDL_hid_device *halves[2]) {
+    const char *path = SDL_GetGamepadPath(device);
+    if (!path || strcmp(path, "nintendo_joycons_combined") != 0 ||
+        SDL_GetGamepadConnectionState(device) != SDL_JOYSTICK_CONNECTION_WIRELESS) return false;
+    // SDL gives all combined pairs the same path and no child IDs. Only an unambiguous pair is safe.
+    int count = 0, pairs = 0;
+    bool separate = false;
+    SDL_JoystickID *ids = SDL_GetGamepads(&count);
+    for (int i = 0; i < count; i++) {
+        SDL_GamepadType type = SDL_GetRealGamepadTypeForID(ids[i]);
+        if (type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR) pairs++;
+        if (type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT ||
+            type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT) separate = true;
+    }
+    SDL_free(ids);
+    if (pairs != 1 || separate) return false;
+    SDL_hid_device_info *devices = SDL_hid_enumerate(0x057e, 0);
+    const char *paths[2] = {NULL, NULL};
+    bool ok = true;
+    for (SDL_hid_device_info *d = devices; d; d = d->next) {
+        if (d->product_id == 0x200e) ok = false; // A charging grip can also supply children to SDL.
+        if (d->product_id != 0x2006 && d->product_id != 0x2007) continue;
+        int side = d->product_id - 0x2006;
+        if (paths[side] || !mk8_joycon_endpoint(d, d->product_id)) ok = false;
+        paths[side] = d->path;
+    }
+    ok = ok && paths[0] && paths[1];
+    for (int i = 0; i < 2 && ok; i++) {
+        halves[i] = SDL_hid_open_path(paths[i]);
+        const SDL_hid_device_info *d = halves[i] ? SDL_hid_get_device_info(halves[i]) : NULL;
+        ok = mk8_joycon_endpoint(d, (Uint16)(0x2006 + i)) && strcmp(d->path, paths[i]) == 0;
+    }
+    SDL_hid_free_enumeration(devices);
+    if (!ok) {
+        for (int i = 0; i < 2; i++) {
+            if (halves[i]) SDL_hid_close(halves[i]);
+            halves[i] = NULL;
+        }
+    }
+    return ok;
+}
+
+static bool mk8_pair_needs_neutral(const struct Mk8JoyConPair *p, Uint64 now) {
+    return p->closing || SDL_GetAtomicInt(&mk8_pair_exiting) || p->neutral_first || p->broken || now >= p->expires;
+}
+
+static void mk8_pair_release_radios(struct Mk8JoyConPair *p) {
+    for (int i = 0; i < 2; i++) {
+        if (p->halves[i]) SDL_hid_close(p->halves[i]);
+        p->halves[i] = NULL;
+    }
+}
+
+static int SDLCALL mk8_pair_worker(void *userdata) {
+    struct Mk8JoyConPair *p = userdata;
+    Mk8SwitchRumble last = mk8_switch_neutral;
+    Uint64 sent_at = 0;
+    unsigned sequence = 0, neutral_failures = 0;
+    bool active = false;
+    SDL_LockMutex(p->lock);
+    for (;;) {
+        Uint64 now = SDL_GetTicks();
+        if (!active) {
+            p->neutral_first = false;
+            if (p->closing) break;
+            if (p->broken && !p->drained) {
+                SDL_UnlockMutex(p->lock);
+                mk8_pair_release_radios(p);
+                SDL_LockMutex(p->lock);
+                p->drained = true;
+                continue;
+            }
+        }
+        bool stop = mk8_pair_needs_neutral(p, now);
+        if (stop && !active) {
+            SDL_WaitCondition(p->wake, p->lock);
+            continue;
+        }
+        Mk8SwitchRumble next = stop ? mk8_switch_neutral : p->wanted;
+        Uint64 due = sent_at + (!stop && !memcmp(&last, &next, sizeof(next)) ? 45 : 30);
+        if (!stop && p->expires < due) due = p->expires;
+        if (sent_at && now < due) {
+            SDL_WaitConditionTimeout(p->wake, p->lock, (Sint32)(due - now));
+            continue;
+        }
+        // Windows HID writes can block for a second per half. Only this worker owns these handles.
+        Uint8 raw[49] = {0};
+        memcpy(raw, &next, sizeof(next));
+        raw[1] = sequence++ & 15;
+        bool ok = true;
+        for (int side = 0; side < 2; side++) {
+            // Close, expiry or a newer effect can arrive while the first physical write is in flight.
+            if (!stop && (mk8_pair_needs_neutral(p, SDL_GetTicks()) || memcmp(&next, &p->wanted, sizeof(next)))) break;
+            SDL_UnlockMutex(p->lock);
+            int written = SDL_hid_write(p->halves[side], raw, sizeof(raw));
+            SDL_LockMutex(p->lock);
+            if (written != sizeof(raw)) {
+                ok = false;
+                p->broken = true;
+            }
+        }
+        sent_at = SDL_GetTicks();
+        last = next;
+        // An unsuccessful active write may still have reached one device. Stop both before fallback.
+        active = !stop || (!ok && ++neutral_failures < 2);
+    }
+    SDL_UnlockMutex(p->lock);
+    mk8_pair_release_radios(p);
+    SDL_DestroyCondition(p->wake);
+    SDL_DestroyMutex(p->lock);
+    SDL_free(p);
+    SDL_hid_exit();
+    SDL_SetAtomicInt(&mk8_pair_lease, MK8_PAIR_FREE);
+    return 0;
+}
+
+static struct Mk8JoyConPair *mk8_pair_open(SDL_Gamepad *device) {
+    if (SDL_GetAtomicInt(&mk8_pair_exiting)) return NULL;
+    if (!SDL_CompareAndSwapAtomicInt(&mk8_pair_lease, MK8_PAIR_FREE, MK8_PAIR_ACTIVE)) return NULL;
+    if (SDL_hid_init() == 0) {
+        struct Mk8JoyConPair *p = SDL_calloc(1, sizeof(*p));
+        if (p) {
+            p->lock = SDL_CreateMutex();
+            p->wake = SDL_CreateCondition();
+            if (p->lock && p->wake && mk8_joycon_endpoints(device, p->halves)) {
+                SDL_Thread *thread = SDL_CreateThread(mk8_pair_worker, "Joy-Con rumble", p);
+                if (thread) {
+                    SDL_DetachThread(thread);
+                    return p;
+                }
+                mk8_pair_release_radios(p);
+            }
+            SDL_DestroyCondition(p->wake);
+            SDL_DestroyMutex(p->lock);
+            SDL_free(p);
+        }
+        SDL_hid_exit();
+    }
+    SDL_SetAtomicInt(&mk8_pair_lease, MK8_PAIR_FREE);
+    return NULL;
+}
+
+static bool mk8_pair_request(struct Mk8JoyConPair *p, const Mk8SwitchRumble *next, Uint64 expires) {
+    SDL_LockMutex(p->lock);
+    if (!expires) p->neutral_first = true;
+    p->wanted = *next;
+    p->expires = expires;
+    bool available = !p->drained;
+    SDL_SignalCondition(p->wake);
+    SDL_UnlockMutex(p->lock);
+    return available;
+}
+
+static void mk8_pair_close(struct Mk8JoyConPair *p) {
+    SDL_LockMutex(p->lock);
+    SDL_SetAtomicInt(&mk8_pair_lease, MK8_PAIR_RETIRING);
+    p->closing = true;
+    SDL_SignalCondition(p->wake);
+    SDL_UnlockMutex(p->lock);
+}
 
 static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
     SDL_LockJoysticks();
     SDL_Gamepad *device = SDL_OpenGamepad(id);
     if (device && SDL_GetBooleanProperty(SDL_GetGamepadProperties(device), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) {
         Uint16 product = SDL_GetGamepadProduct(device);
-        // SDL 3.4 marks HIDAPI GUIDs with 'h'. Its combined Joy-Con driver rejects raw effects.
-        bool native = SDL_GetJoystickGUIDForID(id).data[14] == 'h' && SDL_GetGamepadVendor(device) == 0x057e &&
-                      (product == 0x2009 || product == 0x2006 || product == 0x2007);
+        struct Mk8RumblePad *p = &mk8_rumble_pads[player];
+        *p = (struct Mk8RumblePad){.id = id, .product = product, .side = {mk8_silent, mk8_silent},
+                                  .wanted = mk8_switch_neutral};
+        // SDL 3.4 marks HIDAPI GUIDs with 'h'. Its combined driver only forwards basic rumble.
+        if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && SDL_GetGamepadVendor(device) == 0x057e) {
+            p->waiting_for_pair = product >= 0x2006 && product <= 0x2008 &&
+                                  SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING;
+            if (product == 0x2008 && !p->waiting_for_pair) p->pair = mk8_pair_open(device);
+            p->hd = product == 0x2009 || product == 0x2006 || product == 0x2007 || p->pair;
+        }
         // A settings rescan can move a just-stopped device into another slot.
         Uint64 now = SDL_GetTicks();
-        if (native && now < mk8_switch_reopen_after) SDL_Delay((Uint32)(mk8_switch_reopen_after - now));
-        mk8_rumble_pads[player] = (struct Mk8RumblePad){.id = id, .side = {mk8_silent, mk8_silent},
-                                                       .hd = native, .wanted = mk8_switch_neutral};
+        if (p->hd && now < mk8_switch_reopen_after) SDL_Delay((Uint32)(mk8_switch_reopen_after - now));
     }
     SDL_UnlockJoysticks();
     return device;
@@ -48,6 +237,13 @@ static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
 
 static bool mk8_switch_playing(const struct Mk8RumblePad *p) {
     return p->last.report && memcmp(&p->last, &mk8_switch_neutral, sizeof(p->last));
+}
+
+static void mk8_pair_track_basic(struct Mk8RumblePad *p) {
+    if (p->product != 0x2008) return;
+    int bit = 1 << (p - mk8_rumble_pads);
+    int mask = SDL_GetAtomicInt(&mk8_pair_basic_mask);
+    SDL_SetAtomicInt(&mk8_pair_basic_mask, (p->low || p->high) ? mask | bit : mask & ~bit);
 }
 
 static void mk8_rumble_basic(struct Mk8RumblePad *p, Uint64 now) {
@@ -62,6 +258,7 @@ static void mk8_rumble_basic(struct Mk8RumblePad *p, Uint64 now) {
     }
     p->low = low;
     p->high = high;
+    mk8_pair_track_basic(p);
     p->sent_at = now;
 }
 
@@ -117,6 +314,7 @@ static void mk8_rumble_stop(struct Mk8RumblePad *p) {
     p->side[0] = p->side[1] = mk8_silent;
     p->wanted = mk8_switch_neutral;
     p->expires_at = 0;
+    if (p->pair) mk8_pair_request(p->pair, &p->wanted, 0);
     p->stop_first = mk8_switch_playing(p);
     if (p->stop_first) mk8_switch_write(p, SDL_GetTicks());
     if (p->low || p->high) {
@@ -124,6 +322,7 @@ static void mk8_rumble_stop(struct Mk8RumblePad *p) {
         if (device) SDL_RumbleGamepad(device, 0, 0, 0);
     }
     p->low = p->high = 0;
+    mk8_pair_track_basic(p);
 }
 
 static void mk8_rumble_close(int player, SDL_Gamepad *device) {
@@ -131,19 +330,53 @@ static void mk8_rumble_close(int player, SDL_Gamepad *device) {
     struct Mk8RumblePad *p = &mk8_rumble_pads[player];
     if (p->id && p->id == SDL_GetGamepadID(device)) {
         mk8_rumble_stop(p);
-        if (p->stop_first) {
-            // Reassignment closes the handle. Give its final neutral a valid write slot first.
+        // Closing can precede the first permitted neutral slot. Allow one retry if that write fails.
+        for (int attempt = 0; p->stop_first && attempt < 2; attempt++) {
             Uint64 elapsed = SDL_GetTicks() - p->sent_at;
             if (elapsed < 30) SDL_Delay((Uint32)(30 - elapsed));
             mk8_switch_write(p, SDL_GetTicks());
         }
         if (p->timer) SDL_RemoveTimer(p->timer);
+        if (p->pair) mk8_pair_close(p->pair);
+        p->pair = NULL;
+        p->waiting_for_pair = false;
         if (p->last.report && p->sent_at + 30 > mk8_switch_reopen_after) mk8_switch_reopen_after = p->sent_at + 30;
         p->timer = 0;
         p->id = 0;
     }
     SDL_CloseGamepad(device);
     SDL_UnlockJoysticks();
+}
+
+static int SDLCALL mk8_pair_stop_output(void *unused) {
+    (void)unused;
+    SDL_LockJoysticks();
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
+        struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->pair) {
+            mk8_pair_close(p->pair);
+            p->pair = NULL;
+            p->hd = false;
+            p->expires_at = 0;
+        }
+        if (p->product == 0x2008 && (p->low || p->high)) mk8_rumble_stop(p);
+    }
+    SDL_UnlockJoysticks();
+    SDL_SetAtomicInt(&mk8_pair_stop_done, 1);
+    return 0;
+}
+
+void mk8_joycon_shutdown(void) {
+    if (SDL_SetAtomicInt(&mk8_pair_exiting, 1)) return;
+    if (SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_FREE && !SDL_GetAtomicInt(&mk8_pair_basic_mask)) return;
+    // Keep even SDL's basic fallback and its joystick lock off the bounded window-exit path.
+    Uint64 until = SDL_GetTicks() + 150;
+    SDL_SetAtomicInt(&mk8_pair_stop_done, 0);
+    SDL_Thread *thread = SDL_CreateThread(mk8_pair_stop_output, "Stop Joy-Con rumble", NULL);
+    if (!thread) return;
+    SDL_DetachThread(thread);
+    while (SDL_GetTicks() < until && (!SDL_GetAtomicInt(&mk8_pair_stop_done) ||
+           SDL_GetAtomicInt(&mk8_pair_lease) != MK8_PAIR_FREE)) SDL_Delay(1);
 }
 
 static struct Mk8RumblePad *mk8_rumble_pad(uint32_t handle) {
@@ -184,15 +417,54 @@ static void mk8_switch_actuator(Uint8 out[4], Mk8Vibration value) {
     out[3] = (Uint8)(64 + (low >> 1));
 }
 
+static bool mk8_stronger_band(float amplitude, float hz, float other_amplitude, float other_hz) {
+    return isfinite(hz) && hz > 0 && (!isfinite(other_hz) || other_hz <= 0 || amplitude > other_amplitude);
+}
+
 static void mk8_rumble_apply(struct Mk8RumblePad *p, Uint64 now) {
+    if (p->product == 0x2008 && SDL_GetAtomicInt(&mk8_pair_exiting)) return;
+    if (p->waiting_for_pair) {
+        if (SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING) {
+            p->expires_at = now + 250;
+            return;
+        }
+        p->waiting_for_pair = false;
+        if (p->product == 0x2008) {
+            SDL_Gamepad *device = SDL_GetGamepadFromID(p->id);
+            p->pair = device ? mk8_pair_open(device) : NULL;
+            p->hd = p->pair != NULL;
+        }
+    }
     if (!p->hd) {
         if (!p->stop_first) mk8_rumble_basic(p, now);
         return;
     }
-    for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side]);
+    if (p->product == 0x2006 || p->product == 0x2007) {
+        // The game sees a FullKey with two grips even when one horizontal Joy-Con is the whole pad.
+        Mk8Vibration single = p->side[0], right = p->side[1];
+        if (mk8_stronger_band(right.low, right.low_hz, single.low, single.low_hz)) {
+            single.low = right.low;
+            single.low_hz = right.low_hz;
+        }
+        if (mk8_stronger_band(right.high, right.high_hz, single.high, single.high_hz)) {
+            single.high = right.high;
+            single.high_hz = right.high_hz;
+        }
+        mk8_switch_actuator(p->wanted.side[p->product - 0x2006], single);
+    } else {
+        for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side]);
+    }
     bool active = memcmp(&p->wanted, &mk8_switch_neutral, sizeof(p->wanted)) != 0;
     if (!active && mk8_switch_playing(p)) p->stop_first = true;
     p->expires_at = active ? now + 250 : 0;
+    if (p->pair) {
+        if (!mk8_pair_request(p->pair, &p->wanted, p->expires_at)) {
+            p->hd = false;
+            p->expires_at = 0;
+            mk8_rumble_basic(p, now);
+        }
+        return;
+    }
     if (active && !p->timer) p->timer = SDL_AddTimer(10, mk8_switch_timer, p);
     if (active && !p->timer) {
         p->hd = false;
@@ -211,8 +483,14 @@ static void mk8_rumble_frame(void) {
     Uint64 now = SDL_GetTicks();
     for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) {
         struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->waiting_for_pair) {
+            if (now >= p->expires_at || mk8_rumble_menu_open()) mk8_rumble_stop(p);
+            if (SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING) continue;
+            mk8_rumble_apply(p, now);
+        }
         if (p->hd && p->expires_at) {
             if (now >= p->expires_at || mk8_rumble_menu_open()) mk8_rumble_stop(p);
+            else if (p->pair) mk8_rumble_apply(p, now);
             else p->expires_at = now + 250;
             continue;
         }
