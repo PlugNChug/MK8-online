@@ -340,6 +340,8 @@ def prepare_host_sources(source, output):
     prepare_acquire_bound(runtime)
     from prefetch_nowait import prepare as prepare_prefetch_nowait
     prepare_prefetch_nowait(runtime)
+    from skip_empty import prepare as prepare_skip_empty
+    prepare_skip_empty(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
     from texture_readback import prepare as prepare_texture_readback
