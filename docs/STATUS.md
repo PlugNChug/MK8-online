@@ -1,5 +1,15 @@
 # Estado técnico — 19/11/2026
 
+## Joy-Con via Bluetooth — alternância de modo e vibração HD
+
+Dois Joy-Con oficiais passaram de um controle combinado para dois controles horizontais e voltaram ao modo combinado com a SDL 3.4.18 em execução. A opção também funcionou quando acionada pela thread das configurações. O Pro Controller manteve o mesmo identificador e a mesma posição de jogador. O teste do menu nativo verificou a gravação e a leitura da opção em outra execução.
+
+No teste físico do caminho de vibração do runtime, o usuário distinguiu esquerda, direita e dois tons no lado esquerdo do par, com silêncio entre os pulsos. No modo individual, confirmou quatro pulsos apenas no Joy-Con esquerdo e depois apenas no direito, incluindo a mudança de frequência em cada um. A regressão nativa verificou a liberação dos dispositivos e a interrupção dos efeitos. Se a SDL não identificar as duas metades de um único par sem ambiguidade, o runtime usa a vibração padrão da SDL. `gameplay_verified=false`.
+
+Na versão integrada, o jogo detectou os Joy-Con como um único controle no modo combinado. Após a troca em F1, o jogo detectou o direito como jogador 1 e o esquerdo como jogador 2. O usuário confirmou a seleção independente de personagens, a direção por movimento de cada Joy-Con na mesma corrida e o funcionamento conjunto do analógico esquerdo e do botão A direito após voltar ao modo combinado. O arquivo de configurações da sessão isolada registrou as duas trocas.
+
+Os envios por Bluetooth do par combinado rodam fora da thread do jogo. Nos testes com uma escrita bloqueada, os outros controles responderam, um efeito vencido deixou de avançar para o segundo lado e o fechamento normal da janela respeitou o limite de 150 ms para enviar o comando de parada. Uma conexão que continua bloqueada após esse prazo depende da interrupção do efeito pelo controle. A suíte integrada passou nos dez testes de controle.
+
 ## Direção por movimento com o controle
 
 Na base `fix-chore ab9ebf8`, o MK8 4.0.1 iniciava o sensor FullKey e pedia as últimas 16 amostras durante a corrida. Mesmo com os controles por movimento ativados, o SDK devolvia zero amostras. O runtime passou a fornecer a aceleração, a velocidade angular e a orientação do controle atribuído ao jogador. O jogo continua responsável pela sensibilidade e pelo botão que ativa a direção por movimento.

@@ -38,7 +38,9 @@ Development builds preserve visibility-counter reports across the 256-query subm
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
-After rebuilding the development runtime, the original Nintendo Switch Pro Controller and individual Joy-Con can receive HD Rumble when SDL opens them directly through HIDAPI. The game controls each grip’s low and high frequencies and amplitudes independently. Other rumble-capable controllers, including those exposed through Steam Input or SDL’s paired Joy-Con driver, use basic two-motor vibration. Opening Settings or switching away stops the effect. Two virtual Pro Controllers passed the split-screen test. Physical Bluetooth confirmation is pending.
+In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The change takes effect during play and is saved for the next launch.
+
+The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
 The development DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
