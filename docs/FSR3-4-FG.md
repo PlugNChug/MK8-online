@@ -73,6 +73,17 @@ Status 20/11/2026. Extends `docs/FSR.md`.
 - The SDK's generated `*_permutations.h` blob tables are absent; the next build step is to generate them for the
   default permutation set (wave32, fp32, no low-res/jitter/inverted depth) and implement the provider's
   `frameInterpolationGet*PermutationBlobByIndex` to return those blobs, then add the other variants.
+## Provider build state (20/11/2026)
+
+- Generated `fg_blobs.cpp`: the 23 FSR 3.1.7 `CS` modules embedded, implementing
+  `frameInterpolationGetPermutationBlobByIndex`/`IsWave64` and the optical-flow equivalents, so the SDK's missing
+  generated permutation headers are bypassed.
+- CMake build of the provider (API + VK backend + frame-interpolation/optical-flow + VK swapchain) reaches the
+  SDK's loader-internal boundary: `ffx_api.cpp` needs `ffxProviderExternal`, a type **not shipped in the SDK
+  source** (it exists only in the loader component). The provider class itself
+  (`ffxProvider_Fsr3FrameGenerationSwapChain`) carries CreateContext/Query.
+- Decision: write a thin provider export layer (`ffxCreateContext`/`ffxQuery`/`ffxDestroyContext`) around that
+  class instead of linking the loader-internal API, then verify `ffxQuery` reports 3.1.7.
 ## Evidence so far
 
 - `tools/extract_fg_spv.py` on `amd_fidelityfx_framegeneration_vk.dll`: 194 modules / 12.5 MB, names above.
