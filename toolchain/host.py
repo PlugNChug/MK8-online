@@ -328,6 +328,10 @@ def prepare_host_sources(source, output):
     prepare_texture_retire(runtime)
     from view_batch import prepare as prepare_view_batch
     prepare_view_batch(runtime)
+    from gmem_cap import prepare as prepare_gmem_cap
+    prepare_gmem_cap(runtime)
+    from gmem_map import prepare as prepare_gmem_map
+    prepare_gmem_map(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
     from texture_readback import prepare as prepare_texture_readback
