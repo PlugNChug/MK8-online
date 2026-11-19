@@ -84,6 +84,30 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   (`ffxProvider_Fsr3FrameGenerationSwapChain`) carries CreateContext/Query.
 - Decision: write a thin provider export layer (`ffxCreateContext`/`ffxQuery`/`ffxDestroyContext`) around that
   class instead of linking the loader-internal API, then verify `ffxQuery` reports 3.1.7.
+## Provider built and validated on Linux (20/11/2026)
+
+- `tools/gen_fg_blobs.py` compiles every frame-interpolation and optical-flow pass from the SDK HLSL with DXC
+  (`cs_6_0`, `-fspv-target-env=vulkan1.2`), reflects the SPIR-V descriptors, rewrites the bindings to the scheme the
+  SDK Vulkan backend expects (samplers 320/321, CBVs 128+, SRV textures 0+, UAV textures 64+, SRV buffers 192+,
+  UAV buffers 224+), reassembles with `spirv-as`, and emits `fg_blobs.cpp` with a `FfxShaderBlob` per pass:
+  **11 frame-interpolation passes x 2 depth conventions + 7 optical-flow passes**.
+- The SDK's loader-internal `ffxProviderExternal` and the per-effect provider list are not part of the published
+  source; the build adds a minimal external-provider stub and `fg_provider_list.cpp` registering
+  `ffxProvider_Fsr3FrameGeneration` and `ffxProvider_Fsr3FrameGenerationSwapChain`.
+- Linux build adaptations (in the prepared SDK copy, not committed AMD source): `Windows.h` compatibility
+  (events, threads, QPC, critical sections), `_countof`/`strncpy_s`/`wcscpy_s`/`swprintf_s`, zlib-backed
+  `mz_uncompress`, `<codecvt>` removal for GCC 16, `0ui64` literals, backslash includes, Win32-only
+  full-screen-exclusive swapchain structs, and a doubled `FFX_FRAMEINTERPOLATION_CONTEXT_SIZE` because `wchar_t` is
+  4 bytes on Linux (the private context embeds 259 `wchar_t[64]` bindings per pipeline).
+- **Verification (real hardware, RADV GFX1201, AMD RX 9070 XT):**
+  - `ffxQuery` version enumeration for `FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK` returns `3.1.7`.
+  - `ffxCreateContext(FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION, 1920x1080)` returns `FFX_API_RETURN_OK`:
+    the full optical-flow + frame-interpolation pipeline set and all internal resources are created from the
+    generated blobs; `ffxDestroyContext` returns OK.
+- The source provider also carries the MLFI camera-matrix path (`ffxDispatchDescFrameGenerationPrepareCameraInfo`),
+  i.e. the FSR 4 ML frame-interpolation path is present in this provider build; the ML model banks are not part of
+  the SDK source and come from the user's own signed AMD DLL in the download/patch step.
+
 ## Evidence so far
 
 - `tools/extract_fg_spv.py` on `amd_fidelityfx_framegeneration_vk.dll`: 194 modules / 12.5 MB, names above.
