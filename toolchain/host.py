@@ -332,6 +332,10 @@ def prepare_host_sources(source, output):
     prepare_gmem_cap(runtime)
     from gmem_map import prepare as prepare_gmem_map
     prepare_gmem_map(runtime)
+    from submit_profile import prepare as prepare_submit_profile
+    prepare_submit_profile(runtime)
+    from acquire_bound import prepare as prepare_acquire_bound
+    prepare_acquire_bound(runtime)
     from prefetch_nowait import prepare as prepare_prefetch_nowait
     prepare_prefetch_nowait(runtime)
     from controller_applet import prepare as prepare_controller_applet
