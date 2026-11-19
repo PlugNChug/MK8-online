@@ -16,11 +16,12 @@
 ![Release](https://img.shields.io/badge/Release-0.3.0-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Teste_público-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Entrar-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
 Projeto experimental de recompilação estática de **Mario Kart 8 Deluxe 4.0.1** para Windows,
 com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Steam.
 
-[Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Relatar um problema](https://github.com/Vnnc1/MK8-online/issues) · [Roteiro](docs/ROADMAP.md)
+[Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Relatar um problema](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roteiro](docs/ROADMAP.md)
 
 </div>
 
