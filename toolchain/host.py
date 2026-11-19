@@ -423,6 +423,8 @@ def prepare_host_sources(source, output):
     windows.write_text(text, encoding='utf-8')
     from settings_menu import prepare as prepare_settings_menu
     prepare_settings_menu(runtime)
+    from joycon_modes import prepare as prepare_joycon_modes
+    prepare_joycon_modes(runtime)
     return runtime
 
 
