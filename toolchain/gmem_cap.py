@@ -11,8 +11,9 @@ imports the whole heap (the previous behaviour).
 """
 from pathlib import Path
 
-# Measured: 1024 MB is the largest cap that stayed stall-free across every run (1280/1536/1792/2048/3100 all
-# produced 0.5-18 s stalls at least once); above it vertex/index reads fall back to copies, which are correct.
+# Measured: above 1024 MB the pinned heap drives 0.5-18 s stalls. Below it, the above-cap vertex/index work grows:
+# with toolchain/vcache_above.py one 512 MB run was clean, but two repeats showed 220-537 ms exec spikes at 753-860
+# draws, so 1024 MB stays the default (the cache still helps the >1 GB ranges there).
 DEFAULT_MB = 1024
 
 HELPER = '''static uint64_t mk8_gmem_cap(uint64_t size) {  // MK8 (toolchain/gmem_cap.py)

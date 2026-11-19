@@ -332,6 +332,8 @@ def prepare_host_sources(source, output):
     prepare_gmem_cap(runtime)
     from gmem_map import prepare as prepare_gmem_map
     prepare_gmem_map(runtime)
+    from vcache_above import prepare as prepare_vcache_above
+    prepare_vcache_above(runtime)
     from submit_profile import prepare as prepare_submit_profile
     prepare_submit_profile(runtime)
     from acquire_bound import prepare as prepare_acquire_bound
