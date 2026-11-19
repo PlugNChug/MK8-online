@@ -16,6 +16,42 @@ Na RX 580 2048SP, o candidato `1c977d963a5b` rodou em tela cheia a 1920×1080, c
 
 Luigi Circuit atingiu 1.974 MiB de VRAM dedicada amostrada e terminou em 1.718 MiB. Boo Lake teve coleta parcial de memória, com pico amostrado de 1.974 MiB. Persistiram pausas de carregamento e avisos de textura/cubemap já vistos antes. Evidências privadas em `local/audit-fullscreen/pr62-boo` e `local/audit-fullscreen/pr62-luigi`. A ativação permanece desligada na RX 580. Estes ensaios direcionados mantêm `gameplay_verified=false`.
 
+## Auditoria nativa em tela cheia — `fix-chore` `ab9ebf8`
+
+O candidato `7e9870d0f027` (MK8 4.0.1) rodou a 1920×1080 na RX 580 2048SP, com resolução Match, qualidade padrão e geração de quadros desativada. Foram usados saves isolados, entradas roteirizadas e uma instância por vez. Os resumos abaixo usam janelas de aproximadamente 2 s do runtime e excluem janelas que incluem capturas. As repetições copiaram o cache local. O cache do driver permaneceu no estado normal da máquina.
+
+| Ensaio | FPS mediano no trecho de jogo | Maior quadro medido |
+|---|---:|---:|
+| GP no Mario Kart Stadium, primeira passagem | 60,0 | 461 ms durante a corrida, 2.878 ms na carga |
+| GP no Mario Kart Stadium, cache reaproveitado | 60,0 | 35 ms durante a corrida, 522 ms na carga |
+| Contra o Relógio, Mario Kart Stadium | 60,0 | 18 ms durante a primeira volta amostrada |
+| VS, Boo Lake, dois jogadores | 60,0 | 62 ms durante a primeira volta amostrada |
+| VS, Rock Rock Mountain, dois jogadores | 60,0 | 71 ms durante a primeira volta amostrada |
+| Batalha de Balões, Battle Stadium | 60,0 | 20 ms no trecho ativo |
+| Renegade Roundup, Battle Stadium | 53,6 | 163 ms no trecho ativo, mínimo de 43,4 FPS por janela |
+| Renegade Roundup, Battle Stadium, cache reaproveitado | 60,0 | 37 ms no trecho comparado, mínimo de 57,5 FPS por janela |
+| CTGP Koopa Troopa Beach, primeira passagem | 60,0 | 42 ms durante a corrida, 2.200 ms na carga |
+| CTGP Koopa Troopa Beach, cache reaproveitado | 60,0 | 23 ms durante a corrida, 171 ms na carga |
+| CTGP Luigi Circuit, primeira passagem | 60,0 | 34 ms durante a corrida, 1.567 ms na carga |
+| CTGP Luigi Circuit, dois jogadores, cache frio | 60,0 | 871 ms na primeira volta, mínimo de 25,3 FPS por janela |
+| CTGP Luigi Circuit, dois jogadores, cache reaproveitado | 60,0 | 310 ms na primeira volta, mínimo de 46,6 FPS por janela |
+
+A Copa Cogumelo completou Mario Kart Stadium, Water Park, Sweet Sweet Canyon e Thwomp Ruins, voltou à escolha de copa e iniciou outra corrida. Saída 0 após 18,4 min. A VRAM dedicada do processo, medida pelo WDDM, subiu de 428 para um pico amostrado de 2.752 MiB e terminou em 2.239 MiB. Memória gráfica compartilhada chegou a 3.352 MiB e o conjunto de trabalho do processo a 5.680 MiB. A saída deixou quatro novos replays. Os nove arquivos de replay do save de teste mantiveram os hashes ao reabrir a build com uma cópia desse save. O MKTV exibiu a miniatura e reproduziu o replay novo de Thwomp Ruins em outro processo, com saída normal após 84,7 s.
+
+As maiores pausas de carga coincidiram com centenas de compilações registradas. Em Rock Rock Mountain, uma janela de corrida ficou em 50,1 FPS com zero compilações registradas. Seleção de personagens e karts em dois jogadores sustentou 60 FPS nas janelas amostradas. O Mii local apareceu com retrato e traje coloridos em Contra o Relógio. O aviso de textura 2D onde um cubemap é esperado apareceu em várias sessões, incluindo Boo Lake, sem causa visual isolada nesta auditoria. Nenhuma das corridas dessa amostra encerrou com crash.
+
+Uma sessão separada gravou 60 s de Boo Lake e mostrou faróis e reflexos nas duas câmeras. Na região do piso do jogador 2, entre 8 e 32 s dos vídeos, a maior diferença de luminância média de um quadro capturado para o seguinte caiu de 103,57 na build anterior à correção para 36,74 no candidato combinado. Mudanças de câmera, efeitos e cadência das capturas variam entre as sessões. O vídeo reforça a melhora no trecho observado, com análise de FPS feita em outra execução.
+
+Os cinco tipos de Batalha foram observados em rodada, com os oito mapas confirmados pelos logs de leitura. Renegade Roundup ainda compilava shaders durante o trecho ativo e chegou a 2.872 MiB de VRAM dedicada amostrada. Batalha de Balões utilizou cache reaproveitado. Renegade acrescenta seleção de equipes. O roteiro inicial caiu no Battle Stadium e serviu como teste do modo e da arena efetivamente carregada. Os retestes em Batalha de Balões confirmaram Sweet Sweet Kingdom e Battle Course 1 com saída normal.
+
+As 160 pistas entraram em Contra o Relógio por meio de 40 sessões encadeadas, com quatro pistas por processo. São 48 do jogo base, 48 do Booster Course Pass e 64 do CTGP. Os logs confirmam os 160 caminhos distintos, e todas as sessões encerraram com código 0, sem erro fatal de execução, de memória de GPU ou de dispositivo Vulkan. As 160 amostras curtas no início das voltas tiveram medianas de 59 a 60 FPS. Os maiores quadros no recorte anterior às capturas foram 1.289 ms em Snow Land, 1.038 ms em Piranha Plant Slide e 565 ms em Athens Dash. Essa rodada registrava leituras de arquivos para confirmar a pista. As comparações direcionadas da tabela mantêm um recorte separado.
+
+Snow Land foi reaberta em outro processo com o cache copiado da varredura. As 16 janelas válidas do trecho de corrida ficaram a 60 FPS e o maior quadro foi de 23 ms. Piranha Plant Slide também foi repetida com esse procedimento, com 12 janelas a 60 FPS e pico de 18 ms. Os picos anteriores de 1.289 ms e 1.038 ms, respectivamente, não se repetiram nesses ensaios. A ordem de entrada no mapa e o estado do cache do driver variaram. O maior uso dedicado amostrado nas 40 sessões da varredura foi de 2.487 MiB. Em Luigi Circuit com dois jogadores, o mesmo roteiro e o cache reaproveitado reduziram a queda, mas ainda houve uma janela com 46,6 FPS e quadro de 310 ms. Os dois pilotos ficaram perto da parede no fim dos roteiros, o que limita a comparação à parte amostrada da primeira volta.
+
+A triagem de brilho nas 160 imagens sinalizou quatro capturas. A revisão mostrou neve em Mount Wario, areia iluminada em Vacay Bay, piso claro em Peach Gardens e uma parede branca próxima da câmera em Daisy Cruiser. Geometria e HUD estavam presentes nessas quatro amostras. A varredura cobre o início de cada pista e a variante verão de Animal Crossing. O inventário confere também os arquivos das outras três estações e os 1.309 arquivos do pacote CTGP por presença e tamanho. As oito arenas aparecem no seletor com os arquivos de configuração de batalha.
+
+Evidências privadas em `local/audit-fullscreen`, com `sweep-summary.json` (carregamento e tempos de quadro) e `visual-summary.csv` (capturas). Nextendo adiado a pedido do usuário. Corridas inteiras fora da Copa Cogumelo, cintilação em toda a extensão das pistas, áudio, controle físico, 3–4 jogadores locais e multiplayer em duas máquinas seguem sem qualificação. `gameplay_verified=false`.
+
 ## Integração das PRs #55, #58, #59 e #60
 
 A `fix-chore` recebeu os merges `02b32c4` (#55, escala dos alvos de Boo Lake e RGB565), `a252360` (#58, depth clamp), `7680814` (#59, ultrawide solo e configurações experimentais) e `eaf6c04` (#60, interpolação). O tradutor da #60 já constava em `13bcaee`, e o merge registra a sua origem. Os conflitos foram resolvidos mantendo a documentação e as atribuições de ambos os lados.
