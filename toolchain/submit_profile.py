@@ -21,6 +21,11 @@ SUBMIT_NEW = '''        PROF_ADD(prof_submit);
         extern uint64_t prof_tex_full;
         uint64_t full = prof_tex_full;
         double ms = (SDL_GetTicksNS() - st0) / 1e6;
+        double pre = (st0 - t_ent) / 1e6;
+        if (pre > 50) {
+            extern uint64_t renderer_present_count(void);
+            LOG("[submit] pre %.1f ms frame %llu\\n", pre, (unsigned long long)renderer_present_count());
+        }
         LOG("[submit] %.1f ms lock %.1f call %.1f upload %d copies %llu layouts %llu full %llu draws %llu passes %llu\\n",
             ms, mk8_lock_ns / 1e6, mk8_call_ns / 1e6,
             (int)s->upload_begun, (unsigned long long)mk8_submit_copies,
@@ -121,12 +126,35 @@ def unprepare(runtime: Path):
     dev.write_text(text, encoding='utf-8')
 
 
+ENTRY_OLD = 'void vk_submit_extra(VkSemaphore wait, VkSemaphore signal, VkCommandBuffer extra) {\n'
+ENTRY_NEW = ENTRY_OLD + '    uint64_t t_ent = SDL_GetTicksNS();  // MK8 (toolchain/submit_profile.py): before vkEndCommandBuffer/vc_flush\n'
+
+PFLUSH_OLD = '''void vk_present_flush(void) {
+    pthread_mutex_lock(&dp_lock);
+    while (dp.pending) pthread_cond_wait(&dp_cond, &dp_lock);
+    pthread_mutex_unlock(&dp_lock);
+}
+'''
+PFLUSH_NEW = '''void vk_present_flush(void) {
+    uint64_t t_pf = SDL_GetTicksNS();  // MK8 (toolchain/submit_profile.py)
+    pthread_mutex_lock(&dp_lock);
+    while (dp.pending) pthread_cond_wait(&dp_cond, &dp_lock);
+    pthread_mutex_unlock(&dp_lock);
+    double pf = (SDL_GetTicksNS() - t_pf) / 1e6;
+    if (pf > 50) {
+        extern uint64_t renderer_present_count(void);
+        LOG("[present] flush %.1f ms frame %llu\\n", pf, (unsigned long long)renderer_present_count());
+    }
+}
+'''
+
 def prepare(runtime: Path):
     ex = runtime/'nvn/vulkan/exec.c'
     text = ex.read_text(encoding='utf-8')
     if 'mk8_lock_ns' not in text:
-        if text.count(SUBMIT_SPLIT_OLD) != 1:
+        if text.count(SUBMIT_SPLIT_OLD) != 1 or text.count(ENTRY_OLD) != 1:
             raise ValueError('submit split boundary changed')
+        text = text.replace(ENTRY_OLD, ENTRY_NEW, 1)
         text = text.replace(SUBMIT_SPLIT_OLD, SUBMIT_SPLIT_NEW, 1)
         ex.write_text(text, encoding='utf-8')
     dev = runtime/'nvn/vulkan/device.c'
@@ -134,6 +162,9 @@ def prepare(runtime: Path):
     if 'MK8 (toolchain/submit_profile.py)' not in text:
         if text.count(DEV_PRESENT_OLD) != 2 or text.count(DEV_ACQUIRE_OLD) != 1:
             raise ValueError('present/acquire boundary changed')
+        if text.count(PFLUSH_OLD) != 1:
+            raise ValueError('present flush boundary changed')
+        text = text.replace(PFLUSH_OLD, PFLUSH_NEW, 1)
         text = text.replace(DEV_PRESENT_OLD, DEV_PRESENT_NEW)
         text = text.replace(DEV_ACQUIRE_OLD, DEV_ACQUIRE_NEW, 1)
         dev.write_text(text, encoding='utf-8')
