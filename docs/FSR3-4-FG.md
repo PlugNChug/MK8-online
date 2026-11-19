@@ -63,6 +63,16 @@ Status 20/11/2026. Extends `docs/FSR.md`.
 6. **Packaging**: rebuild the AppImage and tarball with the launcher and runtime, **without** FSR artifacts; verify
    both packages start and the FSR page shows the download option.
 
+## Build state (20/11/2026)
+
+- The signed FG DLL's 194 SPIR-V modules split into: 23 `CS` entry points (FSR 3.1.7 FG pass variants),
+  MLFI layers named `mlfi_4k_pass*/mlfi_8k_pass*` (FSR 4 ML), and UI/debug `main`/`mainPS` shaders.
+- **All 20 SDK FG/optical-flow/UI HLSL shaders compile with DXC**: compute with
+  `-T cs_6_0 -E CS -fspv-target-env=vulkan1.2 -DFFX_GPU=1 -DFFX_HLSL=1` (the pyramid/wave shaders need the
+  Vulkan 1.2 target), UI composition with `-T ps_6_0 -E mainPS`. Result: `ok=20 fail=0`.
+- The SDK's generated `*_permutations.h` blob tables are absent; the next build step is to generate them for the
+  default permutation set (wave32, fp32, no low-res/jitter/inverted depth) and implement the provider's
+  `frameInterpolationGet*PermutationBlobByIndex` to return those blobs, then add the other variants.
 ## Evidence so far
 
 - `tools/extract_fg_spv.py` on `amd_fidelityfx_framegeneration_vk.dll`: 194 modules / 12.5 MB, names above.
