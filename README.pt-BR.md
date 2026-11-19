@@ -140,7 +140,7 @@ Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e sobrevivem a atualiz
 2. Digite um nome e toque em **Criar Mii**. Passe pelas abas e toque na opção que quiser: cada botão mostra seu Mii com aquela opção. Em **Corpo** ficam tipo, altura, porte e cor favorita, e a prévia mostra o corpo inteiro (ou só o rosto).
 3. Toque em **Salvar Mii**. Na primeira vez o launcher prepara os modelos Mii do jogo; o jogo usa seu Mii na próxima vez que abrir.
 
-**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Se um controle XInput deixar de responder com a Steam conectada, abra **Steam → Biblioteca → Spacewar → Propriedades → Controle**, selecione **Desativar a Entrada Steam** somente para esse jogo e feche e reabra o MK8 e o Launcher. A Steam continua conectada para amigos e salas. Esvaziar apenas os filtros SDL herdados não resolve o remapeamento forçado pela Entrada Steam. O GameSir T4n Lite pelo receptor USB foi confirmado funcionando no menu após esse ajuste, com a API Steam conectada.
+**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Você pode manter a Entrada Steam ativada para o Spacewar ao jogar solo ou em uma sala Steam. Se a SDL não detectar o controle na inicialização, o MK8 passa a procurá-lo pelo GameInput do Windows. Se o seu controle não responder, informe o modelo e o tipo de conexão junto com o relatório de **Suporte → Gerar relatório**.
 
 Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente.
 

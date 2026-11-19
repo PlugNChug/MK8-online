@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Controles Steam no Windows
+
+A integração usa a interface GameInput v0 fornecida pelo Windows e a API pública de controles virtuais da SDL 3. As assinaturas COM e os formatos de leitura e vibração foram conferidos com o Windows SDK 10.0.26100.0. [Windows SDK — GameInput.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/GameInput.h) · [SDL — controles virtuais](https://wiki.libsdl.org/SDL3/SDL_AttachVirtualJoystick)
+
 ## Direção por movimento — 18/11/2026
 
 As unidades e os eixos de entrada seguem a [documentação de sensores da SDL](https://wiki.libsdl.org/SDL3/SDL_SensorType). O relógio de amostragem vem do [evento de sensor do controle](https://wiki.libsdl.org/SDL3/SDL_GamepadSensorEvent). Conferimos a conversão para voltas por segundo e a convenção de gravidade no [histórico do backend SDL do yuzu](https://ni.4a.si/anonymous/yuzu/commit/?id=6c78c2ae38cbcdf80f2dcab40513110a072c6c18). A estrutura de saída e a ordem das colunas da matriz foram conferidas no [exemplo sixaxis do switchbrew](https://github.com/switchbrew/switch-examples/blob/master/hid/sixaxis/source/main.c). A integração e os testes são próprios.

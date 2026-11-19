@@ -1,5 +1,15 @@
 # Estado técnico — 19/11/2026
 
+## Detecção de controles com a Entrada Steam
+
+Com **Ativar a Entrada Steam** selecionado antes de reiniciar o launcher e o jogo, o GameSir T4n Lite pelo receptor USB voltou a falhar. No processo lançado pela Steam, XInput retornou 1167 e a SDL enumerou zero controles. Na mesma prova, a API GameInput do Windows abriu o dispositivo e leu seu estado. Tentar os drivers Raw Input e Windows.Gaming.Input da SDL instalada também deixou a lista vazia.
+
+Nas sessões Steam, o runtime acompanha os controles pelo GameInput do Windows desde a inicialização. Cada dispositivo ausente da SDL pode ser apresentado como um gamepad SDL, com botões, eixos e vibração quando há motores disponíveis. O monitor continua ativo se a Steam mudar o driver durante a abertura do jogo. Se o receptor despertar antes da notificação de conexão, o runtime consulta a leitura atual para recuperar o dispositivo. A compilação verificou 13 executáveis e DLLs. A regressão com duas entradas independentes exercitou L + R, analógicos, gatilhos, vibração, leitura indisponível, desconexão e deduplicação quando um controle passa a ser visível à SDL.
+
+No reteste físico, a opção **Ativar a Entrada Steam** ficou selecionada antes de abrir o launcher. O launcher criou uma nova sala de amigos, o runtime registrou o receptor `3537:1040` e abriu `Windows GameInput Controller`. O usuário confirmou que o controle funcionou no jogo. Esse teste valida a entrada local do anfitrião. Uma corrida entre dois PCs exige qualificação separada.
+
+Na primeira tentativa solo, o controle voltou a falhar. Depois de manter o monitor ativo durante a troca de driver e recuperar o receptor pela leitura atual do Windows, uma nova execução de **Jogar solo** com a Steam conectada registrou o mesmo receptor. O usuário confirmou L + R e a navegação com o analógico nessa sessão, com a Entrada Steam ativada.
+
 ## Validação das PRs #65 e #66 na fix-chore
 
 A [PR #65](https://github.com/Vnnc1/MK8-online/pull/65) passou no CI do Windows. Na árvore integrada, os dez testes de controles passaram, incluindo movimento por jogador, reconexão e interrupção da vibração em dispositivos SDL virtuais. A build `--runtime-only` concluiu as 227 unidades e verificou 13 executáveis e DLLs em uma cópia de teste. Em Boo Lake, duas entradas roteirizadas chegaram à corrida na primeira volta, com os dois jogadores visíveis na captura do quadro 6100. O processo encerrou com código 0. As verificações físicas de giroscópio e vibração descritas abaixo foram feitas pelo colaborador da PR.

@@ -542,7 +542,7 @@
   "Amigos da Steam": "Steam friends",
   "Procurar amigo": "Search friend",
   "Como funciona": "How it works",
-  "Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.": "Controller not responding with Steam open? In Steam → Library → Spacewar → Properties → Controller, choose Disable Steam Input. Then close and reopen the game and the Launcher. Keep Steam open for friends and rooms.",
+  "Com a Entrada Steam ativa, o MK8 procura o controle automaticamente. Se ele não responder, informe o modelo e o tipo de conexão ao gerar um relatório em Suporte.": "With Steam Input enabled, MK8 looks for the controller automatically. If it does not respond, include the model and connection type when generating a report in Support.",
   "Cada pessoa instala o Launcher, prepara o jogo com os próprios arquivos (versão 4.0.1) e cria seu Mii em Perfil Mii.": "Each person installs the Launcher, prepares the game from their own files (version 4.0.1) and creates their Mii in Mii profile.",
   "Os dois abrem a Steam e deixam o Launcher aberto nesta aba. O Launcher aparece na Steam como \"Spacewar\", o aplicativo de testes da Steam.": "Both open Steam and keep the Launcher open on this tab. Steam shows the Launcher as \"Spacewar\", Steam's test app.",
   "O anfitrião toca em Criar sala e depois em Convidar ao lado do amigo (ou usa Convidar pela Steam). O jogo do anfitrião abre e cria a sala LAN sozinho.": "The host chooses Create room, then Invite next to a friend (or Invite through Steam). The host's game opens and creates the LAN room by itself.",

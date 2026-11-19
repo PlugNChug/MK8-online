@@ -152,7 +152,7 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 2. Type a name and choose **Create Mii**. Then go through the tabs and tap the option you like: each button shows your Mii with that option. **Body** has type, height, build and favorite color, and the preview shows the whole body (or just the face).
 3. Choose **Save Mii**. The Launcher prepares the in-game Mii models the first time; the game uses your Mii the next time it opens.
 
-**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. If an XInput controller stops responding while Steam is connected, open **Steam → Library → Spacewar → Properties → Controller**, select **Disable Steam Input** for that game, then close and reopen both MK8 and the Launcher. Steam remains connected for friends and rooms. Clearing Steam's inherited SDL device filters alone does not resolve forced Steam Input remapping. A GameSir T4n Lite through its USB receiver was confirmed working in the menu after this adjustment, with the Steam API connected.
+**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. You can leave Steam Input enabled for Spacewar when playing solo or in a Steam room. If SDL cannot detect a controller at startup, MK8 listens for controllers through Windows GameInput. If your controller does not respond, include its model and connection type with the report from **Support → Generate report**.
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 
