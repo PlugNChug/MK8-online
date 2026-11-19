@@ -1,5 +1,35 @@
 # Estado técnico — 19/11/2026
 
+## Joy-Con via Bluetooth — alternância de modo e vibração HD
+
+Dois Joy-Con oficiais passaram de um controle combinado para dois controles horizontais e voltaram ao modo combinado com a SDL 3.4.18 em execução. A opção também funcionou quando acionada pela thread das configurações. O Pro Controller manteve o mesmo identificador e a mesma posição de jogador. O teste do menu nativo verificou a gravação e a leitura da opção em outra execução.
+
+No teste físico do caminho de vibração do runtime, o usuário distinguiu esquerda, direita e dois tons no lado esquerdo do par, com silêncio entre os pulsos. No modo individual, confirmou quatro pulsos apenas no Joy-Con esquerdo e depois apenas no direito, incluindo a mudança de frequência em cada um. A regressão nativa verificou a liberação dos dispositivos e a interrupção dos efeitos. Se a SDL não identificar as duas metades de um único par sem ambiguidade, o runtime usa a vibração padrão da SDL. `gameplay_verified=false`.
+
+Na versão integrada, o jogo detectou os Joy-Con como um único controle no modo combinado. Após a troca em F1, o jogo detectou o direito como jogador 1 e o esquerdo como jogador 2. O usuário confirmou a seleção independente de personagens, a direção por movimento de cada Joy-Con na mesma corrida e a vibração HD durante a prova. Ao voltar ao modo combinado, o analógico esquerdo e o botão A direito funcionaram juntos. O arquivo de configurações da sessão isolada registrou as duas trocas.
+
+Os envios por Bluetooth do par combinado rodam fora da thread do jogo. Nos testes com uma escrita bloqueada, os outros controles responderam, um efeito vencido deixou de avançar para o segundo lado e o fechamento normal da janela respeitou o limite de 150 ms para enviar o comando de parada. Uma conexão que continua bloqueada após esse prazo depende da interrupção do efeito pelo controle. A suíte integrada passou nos dez testes de controle.
+
+## Direção por movimento com o controle
+
+Na base `fix-chore ab9ebf8`, o MK8 4.0.1 iniciava o sensor FullKey e pedia as últimas 16 amostras durante a corrida. Mesmo com os controles por movimento ativados, o SDK devolvia zero amostras. O runtime passou a fornecer a aceleração, a velocidade angular e a orientação do controle atribuído ao jogador. O jogo continua responsável pela sensibilidade e pelo botão que ativa a direção por movimento.
+
+O Switch Pro Controller original via Bluetooth forneceu 309 pares de leituras de aceleração e giroscópio com o mesmo timestamp de dispositivo a 200 Hz. Os testes nativos cobrem inclinação mantida para os dois lados, unidades e eixos, controle sem sensores, atribuição por jogador, perda de foco, reconexão e retorno à direção pelo analógico quando as leituras deixam de chegar. Em corrida, o piloto confirmou a direção para os dois lados, o retorno ao centro, o planador e a ativação e desativação dos controles por movimento. `gameplay_verified=false`.
+
+## Vibração dos controles — parte da issue #53
+
+Na base `18bbf31`, uma corrida automatizada em tela dividida em GBA Boo Lake enviou 2.936 lotes de vibração e fez 9.752 consultas de estado ao serviço HID. Nenhum dos dois controles virtuais da SDL recebeu vibração. O SDK do jogo já misturava os efeitos. O runtime aceitava os comandos sem acionar os motores.
+
+A adaptação usa os identificadores de jogador e lado emitidos pelo SDK e entrega os efeitos ao controle que a SDL atribuiu a cada jogador. Cada motor recebe a maior amplitude da sua faixa entre os dois lados. O jogo pode consultar o último valor por lado. A perda de foco, o menu F1, a desconexão e a revogação da permissão interrompem a vibração. A regressão nativa usa controles virtuais da SDL para verificar o encaminhamento, a parada, a reconexão e a rejeição de lotes inválidos antes de acionar um motor.
+
+Na repetição com a versão revisada, o primeiro controle recebeu 951 atualizações de motor e o segundo recebeu 494. Todas corresponderam às amplitudes do respectivo jogador, incluindo dez paradas do primeiro controle e quatro do segundo. O processo encerrou com código zero. Os saves, as configurações originais e os 489 arquivos protegidos passaram na verificação de integridade. Os 18 testes nativos de controles e do host passaram.
+
+Na combinação com o menu nativo, o estado da página de configurações é separado do painel SDL. Uma regressão reproduziu a vibração que continuava ao abrir essa página. A combinação interrompe os motores nos dois menus e exige um novo comando do jogo após o retorno à corrida.
+
+Na etapa HD, a repetição de controle em Boo Lake registrou 10.140 valores por lado e zero pacotes nativos. Na versão corrigida, a corrida em tela dividida registrou 10.522 valores enviados pelo jogo e 784 pacotes HD nos dois Pro Controllers virtuais. Houve 47 pacotes com lados diferentes, 59 mudanças só de frequência e 45 paradas. As 2.355 frequências ativas coincidiram com os códigos representáveis mais próximos. As amplitudes ficaram a até um nível da tabela medida. Os 20 testes de controles e da integração host passaram, incluindo os casos de recusa da saída HD, parada entre efeitos e reatribuição do mesmo controle.
+
+Nos testes físicos do Pro Controller original via Bluetooth, o piloto distinguiu esquerda, direita e dois tons, percebeu silêncio entre os pulsos e sentiu a vibração durante a corrida em Rock Rock Mountain. Os resultados dos Joy-Con estão na seção acima. Outros controles compatíveis usam a vibração padrão da SDL. `gameplay_verified=false`. [Issue #53](https://github.com/Vnnc1/MK8-online/issues/53)
+
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 
 ## Atualizações de ferramentas e desinstalação no Windows

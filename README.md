@@ -39,6 +39,10 @@ Development builds preserve visibility-counter reports across the 256-query subm
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
+In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
+
+The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
+
 The development DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
 
@@ -215,6 +219,8 @@ Game-data preparation uses short temporary filenames so valid long game filename
 The save-data routing fix keeps existing account progress in `save/save_0` and separates device, temporary and other save types into `save/save_type_<type>`. Mii refresh/index queries now return valid local-profile data when progress is reloaded. Together these prevent cross-save cleanup and the reload crash exposed by retaining progress. Rebuild the game/runtime to apply them. Existing saves are not moved or deleted; already lost progress and corrupted thumbnails are not recovered. Native tests pass, and a new MKTV replay/thumbnail survived a process restart in copied-save testing of the combined local build. Full gameplay and trophy persistence remain unqualified.
 
 The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
+
+To try motion steering in a development build, connect a controller that exposes both a gyroscope and an accelerometer to SDL. In the race pause menu, press **Y** to turn on **Tilt Controls** (the yellow curved arrow). Hold the controller like a steering wheel and tilt left or right. Rebuild the runtime once to get this feature.
 
 This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. It does not establish a fix for Stadium flashing or a general VRAM leak.
 

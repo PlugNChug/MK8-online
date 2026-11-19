@@ -33,6 +33,10 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
+Em **F1 → Controls → Joy-Con mode**, escolha **Combined** para usar as duas metades como um controle ou **Individual (horizontal)** para cada jogador usar um Joy-Con de lado. A escolha vale para todos os Joy-Con conectados e fica salva para a próxima sessão. O Pro Controller pode ser usado junto com os Joy-Con nos dois modos.
+
+O Pro Controller original do Switch, os Joy-Con individuais e um único par identificável de Joy-Con oficiais via Bluetooth têm vibração HD. No modo combinado, o jogo controla a frequência e a intensidade de cada lado separadamente. No modo horizontal, cada Joy-Con recebe os dois canais de vibração daquele jogador. Os demais controles compatíveis usam a vibração da SDL. Abrir as configurações ou trocar de janela interrompe a vibração.
+
 
 Builds de desenvolvimento acrescentam **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
 
@@ -199,6 +203,8 @@ as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha
 ## Compilar e contribuir
 
 O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Controls. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
+
+Para experimentar a direção por movimento em uma build de desenvolvimento, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
 
 No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
 

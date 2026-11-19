@@ -41,13 +41,21 @@ static bool real_gamepad(unsigned id) { return id!=0; }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++;return id==1 ? NULL : &devices[id]; }
 static void SDL_CloseGamepad(SDL_Gamepad *p) { assert(p==&devices[2] || p==&devices[3]);closes++; }
+static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
+    assert(player>=0 && player<=EXTRA_PADS);
+    return SDL_OpenGamepad(id);
+}
+static void mk8_rumble_close(int player, SDL_Gamepad *p) {
+    assert(player>=0 && player<=EXTRA_PADS);
+    SDL_CloseGamepad(p);
+}
 static SDL_JoystickID *SDL_GetGamepads(int *count) {
     static SDL_JoystickID ids[]={0,1,2,3};*count=4;enumerations++;return ids;
 }
 static void SDL_free(void *p) { (void)p; }
 static bool pads_from_p2(void) { return p2; }
 static void open_extra(unsigned id) {
-    for(unsigned i=0;i<EXTRA_PADS;i++) if(!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id);return; }
+    for(unsigned i=0;i<EXTRA_PADS;i++) if(!extra_pad[i]) { extra_pad[i]=mk8_rumble_open(i+1,id);return; }
 }
 static void note_family(void) {}
 static void recompute_pad(void) {}
@@ -87,9 +95,12 @@ int main(void) {
             source += full[full.index('// Events a test pushes'):full.index('// Controller family')]
             start = full.index('static void mk8_open_gamepad(SDL_JoystickID id) {')
             discovery = full[start:full.index('\n}', start)+2]
+            start = full.index('typedef struct {', full.index('// Vibration devices:'))
+            lifecycle = full[start:full.index('static struct Mk8RumblePad *mk8_rumble_pad(', start)]
             (root/'test.c').write_text(r'''
 #include <SDL3/SDL.h>
 #include <assert.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <stdlib.h>
@@ -99,11 +110,15 @@ int main(void) {
 Settings g_settings;
 int16_t g_bind_pad[BIND_PAD_COUNT], g_bind_key[BIND_KEY_COUNT];
 bool padscript_active(void) { return false; }
-''' + source + r'''
+''' + source + lifecycle + r'''
 static void style_changed(void) {}
 static void note_family(void) {}
-static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id); }
+static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id) && SDL_IsJoystickVirtual(id); }
 ''' + discovery + r'''
+static bool SDLCALL rumble(void *userdata, Uint16 low, Uint16 high) {
+    (void)userdata; (void)low; (void)high;
+    return true;
+}
 static void released(SDL_Joystick *j, int button) {
     SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
     assert(SDL_SetJoystickVirtualButton(j,button,false));
@@ -127,9 +142,11 @@ int main(void) {
     d.type=SDL_JOYSTICK_TYPE_GAMEPAD; d.naxes=SDL_GAMEPAD_AXIS_COUNT; d.nbuttons=SDL_GAMEPAD_BUTTON_COUNT;
     d.button_mask=(1u<<SDL_GAMEPAD_BUTTON_COUNT)-1; d.axis_mask=(1u<<SDL_GAMEPAD_AXIS_COUNT)-1;
     d.name="Settings reassignment test";
+    d.Rumble=rumble;
     SDL_JoystickID id=SDL_AttachVirtualJoystick(&d); assert(id);
     SDL_Joystick *j=SDL_OpenJoystick(id); assert(j);
     scan_gamepads(); assert(SDL_GetGamepadFromID(id));
+    assert(mk8_rumble_pads[0].id==id);
     for(int i=0;i<4;i++) {
         int b=i&1 ? SDL_GAMEPAD_BUTTON_DPAD_RIGHT : SDL_GAMEPAD_BUTTON_EAST;
         assert(SDL_SetJoystickVirtualButton(j,b,true));
@@ -138,6 +155,8 @@ int main(void) {
         assert(scanned);
         assert(SDL_GetGamepadFromID(id));
         assert(g_settings.pads_from_p2 ? !pad && extra_pad[0] : pad!=NULL);
+        unsigned player=g_settings.pads_from_p2 ? 1 : 0;
+        assert(mk8_rumble_pads[player].id==id && !mk8_rumble_pads[1-player].id);
         released(j,b);
     }
     SDL_CloseJoystick(j); SDL_DetachVirtualJoystick(id); SDL_Quit();

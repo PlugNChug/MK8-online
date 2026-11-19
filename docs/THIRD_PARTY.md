@@ -1,5 +1,19 @@
 # Dependências e atribuições
 
+## Direção por movimento — 18/11/2026
+
+As unidades e os eixos de entrada seguem a [documentação de sensores da SDL](https://wiki.libsdl.org/SDL3/SDL_SensorType). O relógio de amostragem vem do [evento de sensor do controle](https://wiki.libsdl.org/SDL3/SDL_GamepadSensorEvent). Conferimos a conversão para voltas por segundo e a convenção de gravidade no [histórico do backend SDL do yuzu](https://ni.4a.si/anonymous/yuzu/commit/?id=6c78c2ae38cbcdf80f2dcab40513110a072c6c18). A estrutura de saída e a ordem das colunas da matriz foram conferidas no [exemplo sixaxis do switchbrew](https://github.com/switchbrew/switch-examples/blob/master/hid/sixaxis/source/main.c). A integração e os testes são próprios.
+
+## Vibração HD do Nintendo Switch
+
+A alternância dos Joy-Con usa os modos de combinação e orientação da SDL 3.4.18. A identificação do par e o formato do relatório Bluetooth de vibração foram conferidos nos drivers HIDAPI da mesma versão. [Combinação dos Joy-Con na SDL](https://wiki.libsdl.org/SDL3/SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS) · [Driver de pareamento](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapijoystick.c) · [Driver do Switch](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c)
+
+A identificação de dispositivos HIDAPI, o formato dos relatórios e o intervalo de envio foram conferidos no [driver Switch da SDL 3.4.18](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c). A codificação própria de frequências e amplitudes usa como referência as [medições de dekuNukem e colaboradores](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/252b51b1d88d708565b100a1bf48927df64f7793/rumble_data_table.md). A validação física depende do controle.
+
+## Vibração dos controles — 18/11/2026
+
+O formato dos identificadores e dos comandos HID foi conferido nas declarações e na implementação da libnx. A conversão das amplitudes para os dois motores usa a API de gamepad da SDL3 já distribuída com o runtime. A implementação local foi testada com dispositivos virtuais. [libnx — tipos HID](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/hid.h) · [libnx — chamadas HID](https://github.com/switchbrew/libnx/blob/master/nx/source/services/hid.c) · [SDL_RumbleGamepad](https://wiki.libsdl.org/SDL3/SDL_RumbleGamepad)
+
 ## Transição do instalador e consultas de tamanho de textura — 18/11/2026
 
 A transição do instalador para o launcher foi adaptada da [PR #56 de DieMitchell](https://github.com/Vnnc1/MK8-online/pull/56). O ajuste para consultas de tamanho de textura no tradutor Maxwell vem da [PR #62 de lorenzo-zurini](https://github.com/Vnnc1/MK8-online/pull/62). A [lista de GPUs da NVIDIA](https://download.nvidia.com/XFree86/Linux-x86_64/418.56/README/supportedchips.html) foi consultada para limitar a ativação ao dispositivo `10de:1b81`. As duas adaptações usam dependências já presentes no projeto.

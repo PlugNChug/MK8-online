@@ -343,6 +343,12 @@ def prepare_host_sources(source, output):
     prepare_controller_applet(runtime)
     from controller_discovery import prepare as prepare_controller_discovery
     prepare_controller_discovery(runtime)
+    from controller_rumble import prepare as prepare_controller_rumble
+    prepare_controller_rumble(runtime)
+    from controller_sensors import prepare as prepare_controller_sensors
+    prepare_controller_sensors(runtime)
+    from controller_motion import prepare as prepare_controller_motion
+    prepare_controller_motion(runtime)
     from texture_readback import prepare as prepare_texture_readback
     prepare_texture_readback(runtime)
     from entry_trace import prepare as prepare_entry_trace  # (read-only tracing for reverse engineering)
@@ -417,6 +423,8 @@ def prepare_host_sources(source, output):
     windows.write_text(text, encoding='utf-8')
     from settings_menu import prepare as prepare_settings_menu
     prepare_settings_menu(runtime)
+    from joycon_modes import prepare as prepare_joycon_modes
+    prepare_joycon_modes(runtime)
     return runtime
 
 
