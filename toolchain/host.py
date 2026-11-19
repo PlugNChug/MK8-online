@@ -304,6 +304,8 @@ def prepare_host_sources(source, output):
     prepare_descriptor_lifetime(runtime)
     from pipeline_cache_save import prepare as prepare_pipeline_cache_save
     prepare_pipeline_cache_save(runtime)
+    from pipeline_warm import prepare as prepare_pipeline_warm
+    prepare_pipeline_warm(runtime)
     from ipc_core_release import prepare as prepare_ipc_core_release
     prepare_ipc_core_release(runtime)
     from save_file_close import prepare as prepare_save_file_close

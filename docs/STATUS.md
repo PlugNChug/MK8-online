@@ -1,4 +1,14 @@
-# Estado técnico — 18/11/2026
+# Estado técnico — 19/11/2026
+
+## Pré-aquecimento de pipelines gráficos — 19/11/2026
+
+O primeiro desenho que usa cada pipeline o compila no caminho de render/submit. Uma tentativa de pré-aquecer o cache do driver a partir de um catálogo gravado (`toolchain/pipeline_warm.py`, `cache/pipeline_recipes2.bin`) foi implementada e testada, mas **não demonstrou ganho na comparação controlada**: com o mesmo binário, a mesma pasta de dados e cache de driver quente, a pior entrada ficou em **174 ms com o replay e 178 ms sem ele** (janela de quadros 2000–2600); o pior quadro da corrida foi 1.613 ms com e 1.040 ms sem, dentro do ruído do host. O pico de 4.117 ms de uma execução anterior não se repetiu e foi atribuído a contenção do host, não a compilação de pipeline. O catálogo cobre apenas pipelines que uma execução anterior já viu; não cobre a primeira passagem por uma pista ou efeito, que continua compilando sob demanda (a execução com cache de driver frio teve 223 compilações e 1,4 s na entrada).
+
+A gravação e o replay são **opt-in** (`MK8_PIPELINE_WARM=1`) e sua função é recuperar um cache de driver perdido (por exemplo, uma sessão encerrada sem salvar), não eliminar a primeira compilação. Cada receita usa um `Prog` privado, traduz e compila na própria thread e não usa as filas nem as tabelas de programas/pipelines do jogo; com cache de driver frio (`vk_pipelines.bin` ausente ou menor que 1 MiB) o replay é pulado. Uma primeira tentativa chamava `get_program` na thread de replay: ela corrompeu a tabela de programas, o jogo passou a pular 10.777 draws/s e a imagem mostrou artefatos. A versão atual usa programas privados e ficou com **0 draws pulados**; a captura `active1-03600.png` está normal. Uma tentativa intermediária usava as filas de build do jogo e fez o prefetch esperar 79,8 s; a versão final não usa nenhuma das duas.
+
+**Testes:** `tests.test_pipeline_warm` 2 aprovados e `tests.test_fsr` 5 aprovados. `tests.test_pipeline` e `tests.test_texture_retire` falham no ambiente atual (gen.py do upstream com Python 3.14 e link cruzado do clang), sem relação com esta mudança. O runtime ativo foi recompilado com `--runtime-only` (219 unidades).
+
+**Pendente:** a primeira passagem por cada pista/efeito continua compilando pipelines sob demanda, e as pausas de vários segundos sob contenção do host (outros processos compilando, 22 GB em zram) continuam. A execução de referência de 18/11, em máquina ociosa, fez 60 FPS sem essas pausas. Qualificar e atacar a primeira passagem exige uma máquina ociosa e uma reprodução concreta (pista/cena).
 
 ## Portabilidade Linux x86-64
 

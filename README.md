@@ -49,6 +49,8 @@ Read the [0.3.0 release notes in English or Portuguese](docs/releases/0.3.0.md) 
 
 Performance fixes in 0.3.0 use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. For keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
 
+An optional pipeline catalog (`MK8_PIPELINE_WARM=1`) records pipeline keys and shader bytes in `cache/pipeline_recipes2.bin` and replays them to recover a driver cache lost between sessions. It does not remove a course's first-ever compile: a controlled same-binary comparison found no warm-cache benefit (174 ms versus 178 ms race entry), so it stays off by default. First-visit shader/pipeline compilation and host CPU contention remain open.
+
 Version 0.3.0 integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. Commit `8202c32` also merged CTGP phase B (additional cups and its guest hooks). Integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
 
 A bounded TMML.B adapter now translates the static texture-handle pattern found in the failed particle effects. Synthetic tests and three complete private shaders pass translation/SPIR-V checks; live rendering and the blur defect remain unqualified.
