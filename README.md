@@ -37,6 +37,8 @@ Development builds preserve the previous Vulkan pipeline cache when writing or r
 
 Development builds preserve visibility-counter reports across the 256-query submission limit. The Maxwell shader translator also honors the fragment-input interpolation modes declared by the game, which reduces lighting flicker in the tested Boo Lake split-screen sequence. Rebuild the runtime to apply the shader correction.
 
+If cup emblems and countdown numbers appear blue in 0.3.0, the development runtime corrects their RGB565 colours. Rebuild the game with the updated runtime to see the change.
+
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
 In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.

@@ -286,3 +286,5 @@ Projeto comunitário independente, sem afiliação nem endosso da Nintendo ou da
 A renderização condicional aguarda reports de oclusão pendentes nos dois operandos antes de comparar as contagens reais. Corrige desaparecimentos transitórios nos previews, preservando resultados legítimos de objetos ocultos. A preparação aplica o patch; é necessário reconstruir o jogo/runtime.
 
 O tradutor de shaders Maxwell passou a respeitar a interpolação declarada pelo jogo para entradas de fragmento. Isso reduziu a cintilação no trecho testado de Boo Lake em tela dividida. Recompile o runtime para aplicar a correção.
+
+Se os emblemas das copas e os números da largada aparecem azuis na 0.3.0, o runtime de desenvolvimento corrige as cores dessas texturas RGB565. Recompile o jogo com o runtime atualizado para aplicar a correção.

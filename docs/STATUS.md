@@ -1,5 +1,17 @@
 # Estado técnico — 19/11/2026
 
+## Copa Casco 50 cc, encerramento do MKTV e cores da largada — issues #67 e #68
+
+O comparativo usou a RX 580 2048SP a 1920×1080 em tela cheia, MK8 4.0.1, Mario, kart padrão e cópias isoladas do mesmo save inicial (seis arquivos conferidos por SHA-256). O executável da instalação 0.3.0 corresponde ao hash do runtime do pacote publicado (`2908f20f3141…`). O candidato da `fix-chore` tem identidade `81adc6756b9e…`. Os arquivos de menu, HUD e as geometrias, colisões e configurações das quatro pistas conferidos nas duas instalações coincidem.
+
+Na 0.3.0, os emblemas das copas e os três números da largada ficaram azuis. No candidato, os emblemas apareceram dourados, o cogumelo vermelho e os números amarelos na largada de Moo Moo Meadows. Tanto os ícones quanto as texturas dos números usam RGB565. A [PR #55](https://github.com/Vnnc1/MK8-online/pull/55) corrigiu a ordem dos canais vermelho e azul desse formato no Vulkan. Passaram as duas regressões de formato, incluindo a execução nativa antes/depois. A [#67](https://github.com/Vnnc1/MK8-online/issues/67) foi reproduzida e retestada no mesmo hardware com as duas versões.
+
+No candidato, o log confirmou Moo Moo Meadows, Mario Circuit (GBA), Cheep Cheep Beach e Toad’s Turnpike em Grand Prix. Ao selecionar **View Results**, o jogo carregou Moo Moo Meadows para o resumo do MKTV. As imagens mostram os karts na pista, a classificação com Mario em primeiro (57 pontos) e o troféu de ouro. O jogo voltou ao menu e foi fechado pela janela com código 0, antes do limite de captura do roteiro. Os quatro replays desta copa estavam no diretório temporário ao encerrar. Outro processo recebeu uma cópia idêntica dos dez arquivos do save final e exibiu o ouro com duas estrelas no seletor da Copa Casco. Também passou a regressão nativa de isolamento de saves e reabertura em outro processo.
+
+Na 0.3.0, após as mesmas quatro pistas, **View Results** reproduziu o sintoma da [#68](https://github.com/Vnnc1/MK8-online/issues/68). O MKTV mostrou os karts fora da pista junto à cachoeira. O log registrou consultas sem encontrar o replay final da Toad’s Turnpike e, em seguida, carregou `Gu_MarioCircuit`, o circuito do jogo base que não faz parte da Copa Casco. O Mario Circuit desta copa é a versão GBA (`Gagb_MarioCircuit`). A sessão antiga foi encerrada nessa cena a pedido do mantenedor. O anexo Markdown da issue descreve as cores da #67 e não contém um log da máquina do relator.
+
+Na versão publicada, o jogo usou a mesma pasta para os saves da conta e os replays temporários, com cinco replays anteriores no início do teste. Na `fix-chore`, a separação dos tipos de save da [PR #42](https://github.com/Vnnc1/MK8-online/pull/42) deixou os quatro replays da nova copa em espaços próprios. Essa diferença e a escolha de cenário explicam o sintoma observado; o comparativo abrange várias mudanças entre as builds e não isolou um único commit como causa. Evidências locais em `local/cup-68`. A RTX 3050 citada no relato ainda não foi retestada.
+
 ## SteamFriends e sobreposição no modo solo — issue #71
 
 O executável público da 0.3.0, conferido pelo SHA-256 da release, reproduziu a falha da [issue #71](https://github.com/Vnnc1/MK8-online/issues/71) com a DLL x64 do Counter-Strike 2 na pasta de dados. Ela oferece `SteamAPI_SteamFriends_v018`; o launcher procura `SteamAPI_SteamFriends_v017` ou o export legado `SteamFriends`. A DLL testada de Brawlhalla oferece `v017` e a 0.3.0 conseguiu listar amigos com ela.
