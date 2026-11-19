@@ -1,5 +1,15 @@
 # Estado técnico — 19/11/2026
 
+## SteamFriends e sobreposição no modo solo — issue #71
+
+O executável público da 0.3.0, conferido pelo SHA-256 da release, reproduziu a falha da [issue #71](https://github.com/Vnnc1/MK8-online/issues/71) com a DLL x64 do Counter-Strike 2 na pasta de dados. Ela oferece `SteamAPI_SteamFriends_v018`; o launcher procura `SteamAPI_SteamFriends_v017` ou o export legado `SteamFriends`. A DLL testada de Brawlhalla oferece `v017` e a 0.3.0 conseguiu listar amigos com ela.
+
+A [PR #33](https://github.com/Vnnc1/MK8-online/pull/33) entrou na 0.3.0. A tentativa de validar várias candidatas só chegou depois, no [commit 26a6dce](https://github.com/Vnnc1/MK8-online/commit/26a6dce). Na `fix-chore` em `a9aa55b`, a DLL `v018` na pasta de dados ainda impediu a busca nas bibliotecas de jogos, mesmo com Brawlhalla instalado. Em processos novos, a lista de amigos abriu tanto na busca automática sem DLL local quanto com a DLL incompatível nos dados e a compatível junto ao executável. O ZIP do PC do relator não acompanhou a issue.
+
+Em duas execuções solo com o mesmo runtime, o usuário confirmou que Shift+Tab falhou após o erro de DLL e abriu a sobreposição quando o launcher listou os amigos antes de iniciar o jogo. O carregamento de `gameoverlayrenderer64.dll` no processo do MK8 acompanhou esse resultado. Na 0.3.0 pública, `MK8_STEAM_DLL` apontando para a cópia compatível também permitiu listar amigos mesmo com a DLL incompatível presente na pasta de dados.
+
+As cópias testadas de Counter-Strike 2 e Deadlock têm o mesmo SHA-256. Uma prova isolada inicializou essa DLL, obteve a interface `v018` e leu a identidade e a contagem de amigos usando funções exportadas pela própria DLL. O launcher continua sem suporte explícito a essa versão. Salas, convites e transporte com `v018` permanecem sem validação.
+
 ## Detecção de controles com a Entrada Steam
 
 Com **Ativar a Entrada Steam** selecionado antes de reiniciar o launcher e o jogo, o GameSir T4n Lite pelo receptor USB voltou a falhar. No processo lançado pela Steam, XInput retornou 1167 e a SDL enumerou zero controles. Na mesma prova, a API GameInput do Windows abriu o dispositivo e leu seu estado. Tentar os drivers Raw Input e Windows.Gaming.Input da SDL instalada também deixou a lista vazia.
