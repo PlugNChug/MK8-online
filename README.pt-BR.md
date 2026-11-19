@@ -32,7 +32,7 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
-Em **F1 → Controls → Joy-Con mode**, escolha **Combined** para usar as duas metades como um controle ou **Individual (horizontal)** para cada jogador usar um Joy-Con de lado. A mudança vale durante o jogo e fica salva para a próxima sessão.
+Em **F1 → Controls → Joy-Con mode**, escolha **Combined** para usar as duas metades como um controle ou **Individual (horizontal)** para cada jogador usar um Joy-Con de lado. A escolha vale para todos os Joy-Con conectados e fica salva para a próxima sessão. O Pro Controller pode ser usado junto com os Joy-Con nos dois modos.
 
 O Pro Controller original do Switch, os Joy-Con individuais e um único par identificável de Joy-Con oficiais via Bluetooth têm vibração HD. No modo combinado, o jogo controla a frequência e a intensidade de cada lado separadamente. No modo horizontal, cada Joy-Con recebe os dois canais de vibração daquele jogador. Os demais controles compatíveis usam a vibração da SDL. Abrir as configurações ou trocar de janela interrompe a vibração.
 

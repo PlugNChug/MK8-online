@@ -38,7 +38,7 @@ Development builds preserve visibility-counter reports across the 256-query subm
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
-In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The change takes effect during play and is saved for the next launch.
+In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
