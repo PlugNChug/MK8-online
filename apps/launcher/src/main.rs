@@ -309,7 +309,8 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     startup::validate_args(args)?;
     // The packaged launcher unpacks each version beside the others; its data stays in one folder for all
     // versions, so an update keeps the import, tools, builds and saves.
-    let default_data = if let Some(home) = startup::portable_home(&std::env::current_exe()?)? {
+    let portable_home = startup::portable_home(&std::env::current_exe()?)?;
+    let default_data = if let Some(home) = &portable_home {
         home.join("data")
     } else if cfg!(mk8_portable) {
         root.parent().ok_or("pasta do launcher")?.join("data")
@@ -321,52 +322,22 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         .unwrap_or(default_data);
     fs::create_dir_all(&local)?;
     let local = canonical(&local)?;
-    if let Some(home) = startup::portable_home(&std::env::current_exe()?)? {
+    if let Some(home) = portable_home {
         portable::relocate(&home, &root, &local)?;
     }
-    let mut config = if local.join("config.json").exists() {
-        load(&local.join("config.json"))?
-    } else {
-        Config {
-            upstream: root.join("upstream/smm2recomp").display().to_string(),
-            ..Config::default()
-        }
-    };
-    if cfg!(mk8_portable) {
-        // (a data folder written by an earlier version names that version's sources)
-        config.upstream = root.join("upstream/smm2recomp").display().to_string();
-    }
+    let parent = (!headless).then(|| Arc::new(OnceLock::new()));
+    let mut app = launcher_app(root, &local, parent.clone())?;
     if args.iter().any(|arg| arg == "--play") {
-        let mut app = server::App::new(root, local, config, None);
         return app.play_direct().map_err(Into::into);
     }
-    let port = argument(args, "--port")
-        .unwrap_or_else(|| "0".into())
-        .parse::<u16>()?;
-    let server = Server::http(("127.0.0.1", port))?;
-    let authority = server.server_addr().to_string();
-    let url = format!("http://{authority}");
-    let token = mk8_transport::random::<32>()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-    let parent = (!headless).then(|| Arc::new(OnceLock::new()));
-    let mut app = server::App::new(root, local.clone(), config, parent.clone());
-    if let Some(lobby) = argument(args, "+connect_lobby") {
-        app.auto_join_steam_lobby(&lobby);
-    }
-    save(
-        &local.join("launcher.json"),
-        &json!({"url":url,"pid":std::process::id()}),
-    )?;
-    println!("MK8-online: {url}");
+    let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
+    println!("MK8-online: {page}");
     let Some(parent) = parent else {
-        server::serve(app, server, authority, url, token);
+        server::serve(app, server, authority, page, token);
         return Ok(());
     };
-    let page = url.clone();
-    std::thread::spawn(move || server::serve(app, server, authority, url, token));
     let target: tauri::Url = page.parse()?;
+    std::thread::spawn(move || server::serve(app, server, authority, page, token));
     let origin = target.origin();
     tauri::Builder::default()
         .setup(move |tauri_app| {
@@ -385,6 +356,70 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         })
         .run(tauri::generate_context!())?;
     Ok(())
+}
+
+type LauncherServer = (Server, server::App, String, String, String);
+
+fn launcher_app(
+    root: PathBuf,
+    local: &Path,
+    parent: Option<Arc<OnceLock<tauri::WebviewWindow>>>,
+) -> Result<server::App, Error> {
+    let mut config = if local.join("config.json").exists() {
+        load(&local.join("config.json"))?
+    } else {
+        Config {
+            upstream: root.join("upstream/smm2recomp").display().to_string(),
+            ..Config::default()
+        }
+    };
+    if cfg!(mk8_portable) {
+        // (a data folder written by an earlier version names that version's sources)
+        config.upstream = root.join("upstream/smm2recomp").display().to_string();
+    }
+    Ok(server::App::new(root, local.to_path_buf(), config, parent))
+}
+
+fn launcher_server(
+    mut app: server::App,
+    local: &Path,
+    args: &[String],
+) -> Result<LauncherServer, Error> {
+    let port = argument(args, "--port")
+        .unwrap_or_else(|| "0".into())
+        .parse::<u16>()?;
+    let server = Server::http(("127.0.0.1", port))?;
+    let authority = server.server_addr().to_string();
+    let url = format!("http://{authority}");
+    let token = mk8_transport::random::<32>()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    if let Some(lobby) = argument(args, "+connect_lobby") {
+        app.auto_join_steam_lobby(&lobby);
+    }
+    save(
+        &local.join("launcher.json"),
+        &json!({"url":url,"pid":std::process::id()}),
+    )?;
+    Ok((server, app, authority, url, token))
+}
+
+#[cfg(windows)]
+fn launcher_after_setup(
+    base: &Path,
+    parent: Arc<OnceLock<tauri::WebviewWindow>>,
+) -> Result<tauri::Url, Error> {
+    #[cfg(mk8_portable)]
+    let root = unpack_payload(base)?;
+    #[cfg(not(mk8_portable))]
+    let root = project_root()?;
+    let local = canonical(&base.join("data"))?;
+    let app = launcher_app(root, &local, Some(parent))?;
+    let (server, app, authority, page, token) = launcher_server(app, &local, &[])?;
+    let target = page.parse()?;
+    std::thread::spawn(move || server::serve(app, server, authority, page, token));
+    Ok(target)
 }
 
 #[cfg(test)]

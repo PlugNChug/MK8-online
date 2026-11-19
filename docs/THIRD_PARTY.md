@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Transição do instalador e consultas de tamanho de textura — 18/11/2026
+
+A transição do instalador para o launcher foi adaptada da [PR #56 de DieMitchell](https://github.com/Vnnc1/MK8-online/pull/56). O ajuste para consultas de tamanho de textura no tradutor Maxwell vem da [PR #62 de lorenzo-zurini](https://github.com/Vnnc1/MK8-online/pull/62). A [lista de GPUs da NVIDIA](https://download.nvidia.com/XFree86/Linux-x86_64/418.56/README/supportedchips.html) foi consultada para limitar a ativação ao dispositivo `10de:1b81`. As duas adaptações usam dependências já presentes no projeto.
+
 ## Bias de profundidade Vulkan — 18/11/2026
 
 Consultada a [especificação Khronos de depth bias](https://docs.vulkan.org/spec/latest/chapters/primsrast.html#primsrast-depthbias): o termo slope depende do maior gradiente de profundidade em coordenadas do framebuffer; o termo constante é separado. A compensação própria considera a escala uniforme real do alvo e preserva os demais termos. O replay privado também segue as [regras de store do render pass](https://docs.vulkan.org/spec/latest/chapters/renderpass.html#renderpass-store-operations) para sincronizar a imagem de profundidade. Nenhum código dessas páginas foi copiado; dados comerciais permanecem privados e resultados externos não qualificam esta build.

@@ -2,6 +2,20 @@
 
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 
+## Integração das PRs #56 e #62 na `fix-chore`
+
+- [#56](https://github.com/Vnnc1/MK8-online/pull/56) abre o launcher na janela do instalador e reaproveita a pasta de dados selecionada. O WebView2 real passou em instalação nova com programa no C: e dados no D:, atualização da 0.3.0 com idioma e saves de teste preservados e conclusão com a abertura automática desmarcada. O teste de navegador também verifica uma única tentativa automática, apresentação do erro e nova tentativa manual. O fluxo reaproveita a configuração comum do launcher e preserva as entradas `--play`, portátil e atualização silenciosa.
+- [#62](https://github.com/Vnnc1/MK8-online/pull/62) aplica o ajuste de shader apenas à GTX 1070 desktop (`10de:1b81`). O teste nativo recompila o GLSL em SPIR-V e confirma saída GLSL idêntica com a opção desativada, além do layout do `ShaderKey`. A rotina de compilação antecipada recebe a mesma chave. O runtime 4.0.1 recompilou em modo `--runtime-only`, com as bibliotecas do jogo preservadas. O ganho de desempenho relatado na PR vem de uma GTX 1070 em Linux/Proton. Medição física em GTX 1070 no Windows segue pendente.
+
+Na RX 580 2048SP, o candidato `1c977d963a5b` rodou em tela cheia a 1920×1080, com qualidade padrão e dois jogadores locais. Os dois testes usaram entradas roteirizadas, caches reaproveitados e saves isolados. Ambos encerraram com código 0 e sem erro Vulkan. As capturas mostram a pista, a iluminação e o HUD nas duas telas. Os dados abaixo cobrem janelas da primeira volta, excluídas as capturas.
+
+| Pista | FPS mediano | Menor janela de FPS | Maior quadro |
+|---|---:|---:|---:|
+| Boo Lake | 60,0 | 48,4 | 69 ms |
+| Luigi Circuit (CTGP) | 59,8 | 46,8 | 49 ms |
+
+Luigi Circuit atingiu 1.974 MiB de VRAM dedicada amostrada e terminou em 1.718 MiB. Boo Lake teve coleta parcial de memória, com pico amostrado de 1.974 MiB. Persistiram pausas de carregamento e avisos de textura/cubemap já vistos antes. Evidências privadas em `local/audit-fullscreen/pr62-boo` e `local/audit-fullscreen/pr62-luigi`. A ativação permanece desligada na RX 580. Estes ensaios direcionados mantêm `gameplay_verified=false`.
+
 ## Integração das PRs #55, #58, #59 e #60
 
 A `fix-chore` recebeu os merges `02b32c4` (#55, escala dos alvos de Boo Lake e RGB565), `a252360` (#58, depth clamp), `7680814` (#59, ultrawide solo e configurações experimentais) e `eaf6c04` (#60, interpolação). O tradutor da #60 já constava em `13bcaee`, e o merge registra a sua origem. Os conflitos foram resolvidos mantendo a documentação e as atribuições de ambos os lados.

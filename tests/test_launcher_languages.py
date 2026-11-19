@@ -320,5 +320,62 @@ class LanguageTests(unittest.TestCase):
             page.close()
 
 
+    def test_installer_finishes_once_and_can_retry_opening(self):
+        for launch in (True, False):
+            with self.subTest(launch=launch):
+                page = self.browser.new_page(locale="en-US")
+                page.clock.install()
+                progress = []
+                finishes = []
+
+                def route(request):
+                    path = request.request.url.removeprefix("http://mk8.test")
+                    if path == "/api/progress":
+                        progress.append(request)
+                        return
+                    if path == "/api/finish":
+                        finishes.append(request.request.post_data_json["launch"])
+                        if launch and len(finishes) == 1:
+                            request.fulfill(status=400, json={"ok": False, "error": "Initialization failed"})
+                            return
+                    if path.startswith("/api/"):
+                        request.fulfill(json={"ok": True, "data": {
+                            "version": "0.3.0", "app": r"C:\Apps\MK8-online", "data": r"D:\Games\MK8-online",
+                            "desktop": False, "update": False, "needed_gib": 30, "free_gib": 40,
+                        }})
+                        return
+                    file = WEB / ("setup.html" if path == "/" else path[1:])
+                    request.fulfill(path=file)
+
+                try:
+                    page.route("http://mk8.test/**", route)
+                    page.goto("http://mk8.test/")
+                    page.locator("#go-paths").click()
+                    expect(page.locator("#data")).to_have_value(r"D:\Games\MK8-online")
+                    page.locator("#launch").set_checked(launch)
+                    page.locator("#install").click()
+                    expect(page.locator("#progress")).to_be_visible()
+                    with page.expect_request("**/api/progress"):
+                        page.clock.run_for(250)
+                    page.clock.run_for(1000)
+                    self.assertEqual(len(progress), 1)
+                    progress[0].fulfill(json={"ok": True, "data": {"percent": 100, "state": "done"}})
+                    expect(page.locator("#done")).to_be_visible()
+                    if launch:
+                        expect(page.get_by_role("alert")).to_have_text("Initialization failed")
+                        self.assertEqual(finishes, [True])
+                        with page.expect_response("**/api/finish"):
+                            page.locator("#open").click()
+                        self.assertEqual(finishes, [True, True])
+                    else:
+                        page.clock.run_for(1000)
+                        self.assertEqual(finishes, [])
+                        with page.expect_response("**/api/finish"):
+                            page.locator("#close").click()
+                        self.assertEqual(finishes, [False])
+                finally:
+                    page.close()
+
+
 if __name__ == "__main__":
     unittest.main()

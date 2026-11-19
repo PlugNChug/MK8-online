@@ -51,6 +51,10 @@ The optional **native settings menu** switch is saved automatically for the next
 
 Development builds restore Rock Rock Mountain's missing start-banner shadow by honoring the game's depth-clamp state. Rebuild the runtime to apply this fix; it is not in the published 0.3.0 setup. See [technical status](docs/STATUS.md) for the tested conditions.
 
+The development installer can open the launcher in the same window after setup. The option is selected by default, and the launcher uses the data folder chosen during setup, including a folder on another drive.
+
+Development runtimes include a Vulkan shader workaround for the desktop GTX 1070 (PCI device `10de:1b81`). It moves eligible constant texture-size queries outside fragment-shader branches. Other GPUs keep the existing shader path. Rebuild the runtime to apply it. See the [technical status](docs/STATUS.md) for verification and hardware still to test.
+
 Development builds add two startup options (not included in the published 0.3.0 setup):
 
 - **Direct play:** `Launcher.exe --play` opens an already prepared solo game without the launcher window. Use `Launcher.exe --play --data-dir "D:\\MK8\\data"` to select existing data. It still validates files, Vulkan and resource locks; it does not install tools or build the game. Errors return a nonzero exit code. Steam rooms still use the launcher.
