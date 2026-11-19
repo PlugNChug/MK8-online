@@ -26,12 +26,13 @@ SUBMIT_NEW = '''        PROF_ADD(prof_submit);
             extern uint64_t renderer_present_count(void);
             LOG("[submit] pre %.1f ms frame %llu\\n", pre, (unsigned long long)renderer_present_count());
         }
-        LOG("[submit] %.1f ms lock %.1f call %.1f upload %d copies %llu layouts %llu full %llu draws %llu passes %llu\\n",
+        LOG("[submit] %.1f ms lock %.1f call %.1f upload %d copies %llu layouts %llu full %llu draws %llu passes %llu wait %d signal %d\\n",
             ms, mk8_lock_ns / 1e6, mk8_call_ns / 1e6,
             (int)s->upload_begun, (unsigned long long)mk8_submit_copies,
             (unsigned long long)mk8_submit_layouts, (unsigned long long)(full >= last_full ? full - last_full : 0),
             (unsigned long long)(stat_draws >= last_draws ? stat_draws - last_draws : 0),
-            (unsigned long long)(stat_passes >= last_passes ? stat_passes - last_passes : 0));
+            (unsigned long long)(stat_passes >= last_passes ? stat_passes - last_passes : 0),
+            (int)(wait != VK_NULL_HANDLE), (int)(signal != VK_NULL_HANDLE));
         last_draws = stat_draws;
         last_passes = stat_passes;
         last_full = full;
