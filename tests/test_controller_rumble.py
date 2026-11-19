@@ -58,6 +58,9 @@ Service *service_new(const char *name,ServiceHandler h,void *state) {
     (void)name;(void)h;(void)state;CHECK(false);return NULL;
 }
 void ipc_return_object(IpcResp *r,Service *s) { (void)r;(void)s;CHECK(false); }
+uint32_t mk8_motion_control(const uint8_t *data, size_t size, bool start) {
+    (void)data; (void)size; (void)start; abort();  // Vibration commands must never dispatch to motion.
+}
 '''
 
 CHECKS = r'''
