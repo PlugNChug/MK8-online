@@ -13,6 +13,7 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 - **Câmera futura:** investigar distância do personagem separada de proporção/FOV, depois primeira pessoa opt-in; preservar o padrão e testar clipping, culling, traseira, boost, água, planador, antigravidade e resgate antes de expor opções.
 - **Movimento futuro:** Nintendo Switch Pro Controller por Bluetooth; verificar sensores reais na SDL3, eixos/unidades/timestamps, calibração e reconexão antes de ligar o contrato guest. Sem simulação de movimento por teclado.
 - **Multiplayer adiado pelo mantenedor:** o laptop tem o jogo, mas falta uma conta Steam separada. Exigir versões/DLC/CTGP compatíveis, duas contas, corrida inteira/resultados e reconexão em dois PCs, com logs sanitizados. Não bloqueia a entrega solo experimental.
+- **Direção por movimento:** o runtime já entrega ao jogo leituras do controle por meio da SDL3. O Switch Pro Controller via Bluetooth forneceu aceleração e giroscópio a 200 Hz. Falta qualificar em corrida a direção física para os dois lados, o retorno ao centro e a alternância com o analógico.
 
 ## Prioridades após a 0.3.0 experimental
 

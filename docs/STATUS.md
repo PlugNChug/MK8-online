@@ -1,5 +1,11 @@
 # Estado técnico — 19/11/2026
 
+## Direção por movimento com o controle
+
+Na base `fix-chore ab9ebf8`, o MK8 4.0.1 iniciava o sensor FullKey e pedia as últimas 16 amostras durante a corrida. Mesmo com os controles por movimento ativados, o SDK devolvia zero amostras. O runtime passou a fornecer a aceleração, a velocidade angular e a orientação do controle atribuído ao jogador. O jogo continua responsável pela sensibilidade e pelo botão que ativa a direção por movimento.
+
+O Switch Pro Controller original via Bluetooth forneceu 309 pares de leituras de aceleração e giroscópio com o mesmo timestamp de dispositivo a 200 Hz. Os testes nativos cobrem inclinação mantida para os dois lados, unidades e eixos, controle sem sensores, atribuição por jogador, perda de foco, reconexão e retorno à direção pelo analógico quando as leituras deixam de chegar. A validação física da direção em corrida fica pendente. `gameplay_verified=false`.
+
 ## Vibração dos controles — parte da issue #53
 
 Na base `18bbf31`, uma corrida automatizada em tela dividida em GBA Boo Lake enviou 2.936 lotes de vibração e fez 9.752 consultas de estado ao serviço HID. Nenhum dos dois controles virtuais da SDL recebeu vibração. O SDK do jogo já misturava os efeitos. O runtime aceitava os comandos sem acionar os motores.

@@ -345,6 +345,10 @@ def prepare_host_sources(source, output):
     prepare_controller_discovery(runtime)
     from controller_rumble import prepare as prepare_controller_rumble
     prepare_controller_rumble(runtime)
+    from controller_sensors import prepare as prepare_controller_sensors
+    prepare_controller_sensors(runtime)
+    from controller_motion import prepare as prepare_controller_motion
+    prepare_controller_motion(runtime)
     from texture_readback import prepare as prepare_texture_readback
     prepare_texture_readback(runtime)
     from entry_trace import prepare as prepare_entry_trace  # (read-only tracing for reverse engineering)

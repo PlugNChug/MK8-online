@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Direção por movimento — 18/11/2026
+
+As unidades e os eixos de entrada seguem a [documentação de sensores da SDL](https://wiki.libsdl.org/SDL3/SDL_SensorType). O relógio de amostragem vem do [evento de sensor do controle](https://wiki.libsdl.org/SDL3/SDL_GamepadSensorEvent). Conferimos a conversão para voltas por segundo e a convenção de gravidade no [histórico do backend SDL do yuzu](https://ni.4a.si/anonymous/yuzu/commit/?id=6c78c2ae38cbcdf80f2dcab40513110a072c6c18). A estrutura de saída e a ordem das colunas da matriz foram conferidas no [exemplo sixaxis do switchbrew](https://github.com/switchbrew/switch-examples/blob/master/hid/sixaxis/source/main.c). A integração e os testes são próprios.
+
 ## Vibração HD do Nintendo Switch
 
 A identificação de dispositivos HIDAPI, o formato dos relatórios e o intervalo de envio foram conferidos no [driver Switch da SDL 3.4.18](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c). A codificação própria de frequências e amplitudes usa como referência as [medições de dekuNukem e colaboradores](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/252b51b1d88d708565b100a1bf48927df64f7793/rumble_data_table.md). A validação física depende do controle.

@@ -217,6 +217,8 @@ The save-data routing fix keeps existing account progress in `save/save_0` and s
 
 The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
 
+To try motion steering in a development build, connect a controller that exposes both a gyroscope and an accelerometer to SDL. In the race pause menu, press **Y** to turn on **Tilt Controls** (the yellow curved arrow). Hold the controller like a steering wheel and tilt left or right. Rebuild the runtime once to get this feature.
+
 This branch compares texture descriptions semantically and releases each texture initializer reference once, including copied guest texture objects. It does not establish a fix for Stadium flashing or a general VRAM leak.
 
 On Windows, shared-font dialogs use Segoe UI before Arial when no console font dump or explicit `LARECOMP_FONT` is supplied. This avoids the tall, narrow appearance of the Arial fallback in race-exit confirmations. These remain substitute fonts; dumped console fonts retain priority.
