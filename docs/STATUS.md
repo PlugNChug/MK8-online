@@ -10,6 +10,8 @@ A gravação e o replay são **opt-in** (`MK8_PIPELINE_WARM=1`) e sua função �
 
 **Pendente:** a primeira passagem por cada pista/efeito continua compilando pipelines sob demanda, e as pausas de vários segundos sob contenção do host (outros processos compilando, 22 GB em zram) continuam. A execução de referência de 18/11, em máquina ociosa, fez 60 FPS sem essas pausas. Qualificar e atacar a primeira passagem exige uma máquina ociosa e uma reprodução concreta (pista/cena).
 
+**Perfil da primeira visita (19/11/2026):** com cache de driver frio, a entrada teve 223 compilações de pipeline, mas só 85 ms de espera no caminho do desenho; o custo de 1,19 s foi a criação de **2.221 image views** e 91,6 MB de texturas no primeiro uso, além de 8.500 draws pulados pelo orçamento de 4 ms. `MK8_SHADER_BURST_WAIT_MS` (padrão 0, desligado) espera durante um surto de mais de 64 builds e pelos 120 quadros seguintes: 250 ms reduziu os pulos para 2.500; a espera total eliminou os pulos, mas a entrada foi 2,36 s contra 1,20 s. O gargalo real é a criação de views/texturas; corrigi-lo exige criá-las fora da thread do jogo (backend de textura thread-safe), uma mudança maior. O orçamento original continua sendo o padrão.
+
 ## Portabilidade Linux x86-64
 
 A etapa inicial de instalação abre o launcher na mesma janela. O pipeline Linux gera objetos ELF PIC e carrega a biblioteca de jogo com validação de versão e tabelas. O teste sintético gerou sete módulos, ligou o host e o guest, rejeitou uma biblioteca inválida e preservou a biblioteca do guest ao recompilar o host. O adaptador Steam abriu e encerrou uma sala privada em um cliente Linux com callback nativo.

@@ -51,6 +51,7 @@ static uint64_t SDL_GetTicksNS(void) {
 }
 static uint64_t frame_no;
 uint64_t vk_frame_counter(void) { return frame_no; }
+int build_inflight(void) { return 0; }
 static void slow(void *arg) { Sleep((DWORD)(uintptr_t)arg); }
 ''' + timing + budget + r'''
 int main(int argc, char **argv) {
