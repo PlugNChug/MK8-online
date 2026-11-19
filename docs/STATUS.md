@@ -1,5 +1,13 @@
 # Estado técnico — 19/11/2026
 
+## Validação das PRs #65 e #66 na fix-chore
+
+A [PR #65](https://github.com/Vnnc1/MK8-online/pull/65) passou no CI do Windows. Na árvore integrada, os dez testes de controles passaram, incluindo movimento por jogador, reconexão e interrupção da vibração em dispositivos SDL virtuais. A build `--runtime-only` concluiu as 227 unidades e verificou 13 executáveis e DLLs em uma cópia de teste. Em Boo Lake, duas entradas roteirizadas chegaram à corrida na primeira volta, com os dois jogadores visíveis na captura do quadro 6100. O processo encerrou com código 0. As verificações físicas de giroscópio e vibração descritas abaixo foram feitas pelo colaborador da PR.
+
+Ao todo passaram 39 testes de controles, configurações e integração do runtime e mais oito de configurações no navegador. Boo Lake voltou a registrar o mesmo aviso de tipo de textura da sessão anterior à PR. A corrida foi executada enquanto outros testes compilavam, portanto as medições de FPS dessa sessão não permitem atribuir uma variação à mudança de controles.
+
+A [PR #66](https://github.com/Vnnc1/MK8-online/pull/66) adiciona o Discord aos READMEs em inglês e português. O convite corresponde ao servidor **MK8-online Community**, e as duas imagens dos badges responderam com HTTP 200.
+
 ## Joy-Con via Bluetooth — alternância de modo e vibração HD
 
 Dois Joy-Con oficiais passaram de um controle combinado para dois controles horizontais e voltaram ao modo combinado com a SDL 3.4.18 em execução. A opção também funcionou quando acionada pela thread das configurações. O Pro Controller manteve o mesmo identificador e a mesma posição de jogador. O teste do menu nativo verificou a gravação e a leitura da opção em outra execução.
