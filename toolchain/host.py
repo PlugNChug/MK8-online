@@ -326,6 +326,8 @@ def prepare_host_sources(source, output):
     prepare_vertex_cache_age(runtime)
     from texture_retire import prepare as prepare_texture_retire
     prepare_texture_retire(runtime)
+    from view_batch import prepare as prepare_view_batch
+    prepare_view_batch(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
     from texture_readback import prepare as prepare_texture_readback
