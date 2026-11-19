@@ -1,6 +1,16 @@
-# Estado técnico — 18/11/2026
+# Estado técnico — 19/11/2026
 
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
+
+## Atualizações de ferramentas e desinstalação no Windows
+
+Na `fix-chore`, uma build anterior já presente no disco podia liberar a etapa de recompilação mesmo com ferramentas ausentes. O launcher agora abre em Ferramentas nesse caso. Depois da verificação, segue para Build se as entradas estiverem prontas ou para Arquivos do jogo se faltar alguma. O backend também verifica os pré-requisitos antes de iniciar a build.
+
+A limpeza de atualização reconhece os pacotes extraídos pelo launcher e remove ambientes Python obsoletos e cópias privadas de ferramentas. Para remover um compilador Zig compartilhado substituído, confere a versão anterior e o hash do executável registrado na instalação. A limpeza fica fora dos diretórios de saves e builds.
+
+O setup instala `Uninstall.exe` ao lado do launcher e registra esse executável em Aplicativos Instalados do Windows. O modo padrão preserva a pasta de dados para reinstalação. O modo completo exige confirmação, verifica os bloqueios do jogo e da build e recusa árvores com junctions. Em pastas de dados preexistentes sem marca de propriedade, remove somente itens reconhecidos do MK8-online.
+
+O teste nativo em pastas de teste no C: e no D: atualizou a versão 0.3.0, cancelou uma desinstalação, removeu o launcher preservando um save, reinstalou e executou a remoção completa. Um arquivo vizinho à pasta de dados sobreviveu às duas opções. O teste restaurou o registro de instalação e o atalho anteriores.
 
 ## Integração das PRs #56 e #62 na `fix-chore`
 

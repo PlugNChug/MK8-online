@@ -711,8 +711,8 @@ function renderInstall(status) {
   if (buildRunning) i18n.append($("build-summary"), " · " + percentText(build.percent || 0));
 
   // The step to act on is open; finished ones close unless the user opened them.
-  const current = buildRunning || build.state === "failed" || done || stale ? "step-build"
-    : toolsState !== "done" && !filesReady ? "step-tools"
+  const current = buildRunning ? "step-build" : toolsState !== "done" ? "step-tools"
+    : build.state === "failed" || done || stale ? "step-build"
       : !filesReady ? "step-files" : "step-build";
   const open = new Set([current, ...userOpened]);
   if (toolsState !== "done" && !filesReady) open.add("step-files"); // (files can be chosen while tools download)
@@ -962,7 +962,7 @@ async function refresh() {
     const status = await refresh();
     const linkedTab = location.hash.slice(1);
     if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
-    else if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
+    else if (status.tools_ready && (status.candidate || status.installed) && !status.candidate_stale) showTab("play");
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");

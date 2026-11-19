@@ -1221,5 +1221,17 @@
   "Ativar o menu nativo de configurações": "Activar el menú nativo de ajustes",
   "A opção é salva automaticamente e vale ao iniciar o jogo.": "Esta opción se guarda automáticamente y se aplica la próxima vez que inicies el juego.",
   "Preferência salva. A alteração vale ao iniciar o jogo.": "Preferencia guardada. El cambio se aplica la próxima vez que inicies el juego.",
-  "Não foi possível salvar a preferência.": "No se pudo guardar la preferencia."
+  "Não foi possível salvar a preferência.": "No se pudo guardar la preferencia.",
+  "Desinstalação": "Desinstalación",
+  "Desinstalar MK8-online": "Desinstalar MK8-online",
+  "Escolha o que deseja remover deste computador.": "Elige qué quieres eliminar de este equipo.",
+  "Remover o launcher e guardar meus dados": "Eliminar el lanzador y conservar mis datos",
+  "Mantenha seus saves, Miis, configurações, ferramentas e jogo preparado para uma reinstalação.": "Conserva tus partidas, Miis, ajustes, herramientas y el juego preparado para una futura instalación.",
+  "Remover o launcher e todos os dados do MK8-online": "Eliminar el lanzador y todos los datos de MK8-online",
+  "Confirmo a exclusão permanente dos saves, Miis, ferramentas e builds desta instalação.": "Confirmo la eliminación permanente de partidas, Miis, herramientas y compilaciones de esta instalación.",
+  "Desinstalar": "Desinstalar",
+  "Desinstalação concluída": "Desinstalación completada",
+  "Removendo arquivos…": "Eliminando archivos…",
+  "Os arquivos gerenciados foram removidos.": "Se eliminaron los archivos administrados.",
+  "Seus dados foram preservados.": "Se conservaron tus datos."
 }

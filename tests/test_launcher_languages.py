@@ -239,6 +239,37 @@ class LanguageTests(unittest.TestCase):
         expect(rebuild).to_have_text("Start build")
         self.assertEqual(errors, [])
 
+    def test_uninstaller_uses_saved_language_and_requires_full_removal_confirmation(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        submissions = []
+
+        def route(request):
+            path = request.request.url.removeprefix("http://mk8.test/")
+            if path == "api/state":
+                request.fulfill(json={"ok": True, "data": {"version": "test", "data": "D:/Games/MK8"}})
+            elif path == "api/uninstall":
+                submissions.append(request.request.post_data_json)
+                request.fulfill(json={"ok": True, "data": {}})
+            elif not path:
+                html = (WEB / "uninstall.html").read_text(encoding="utf-8")
+                request.fulfill(body=html.replace("__LANGUAGE__", "en"), content_type="text/html; charset=utf-8")
+            else:
+                request.fulfill(path=WEB / path)
+
+        page.route("http://mk8.test/**", route)
+        for purge in (False, True):
+            page.goto("http://mk8.test/")
+            expect(page.locator("html")).to_have_attribute("lang", "en")
+            expect(page.locator("[value=keep]")).to_be_checked()
+            if purge:
+                page.locator("[value=all]").check()
+                expect(page.locator("#remove")).to_be_disabled()
+                page.locator("#confirm").check()
+            page.locator("#remove").click()
+            expect(page.locator("#done")).to_be_visible()
+            self.assertEqual(submissions[-1], {"purge": purge, "confirmed": purge})
+
     def test_installer_defaults_to_spanish_for_other_locales(self):
         page = self.browser.new_page(locale="es-MX", viewport={"width": 880, "height": 620})
 

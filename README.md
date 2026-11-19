@@ -53,6 +53,10 @@ Development builds restore Rock Rock Mountain's missing start-banner shadow by h
 
 The development installer can open the launcher in the same window after setup. The option is selected by default, and the launcher uses the data folder chosen during setup, including a folder on another drive.
 
+After an update, Installation opens **Tools** if the new launcher needs to repair its toolchain. Once verification finishes, it opens **Game build** if your game files are ready, or **Game files** if an input is missing. A successful tool installation removes recognized obsolete tool copies from earlier launcher versions.
+
+Open **Uninstall.exe** next to **Launcher.exe** to uninstall. The default keeps saves, Miis, settings and the prepared game. Select the same data folder when reinstalling to use them again. The full removal option shows the data location and requires confirmation.
+
 Development runtimes include a Vulkan shader workaround for the desktop GTX 1070 (PCI device `10de:1b81`). It moves eligible constant texture-size queries outside fragment-shader branches. Other GPUs keep the existing shader path. Rebuild the runtime to apply it. See the [technical status](docs/STATUS.md) for verification and hardware still to test.
 
 Development builds add two startup options (not included in the published 0.3.0 setup):

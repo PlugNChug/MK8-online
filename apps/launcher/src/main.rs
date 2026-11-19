@@ -10,6 +10,7 @@ mod game_session;
 mod game_settings;
 mod installer;
 mod language;
+mod managed;
 mod manual;
 mod mii_download;
 mod portable;
@@ -260,6 +261,8 @@ fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> R
 #[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
 fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
     let shared = base.join("native-tools");
+    managed::direct(&shared)?;
+    managed::direct(&root.join("local"))?;
     let tools = |dir: &Path| dir.join("local").join("native-tools");
     let own = tools(root);
     if let Ok(target) = fs::read_link(&own) {
@@ -271,8 +274,9 @@ fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
     if !shared.exists() {
         let previous = std::iter::once(root.to_path_buf())
             .chain(fs::read_dir(base)?.filter_map(|entry| entry.ok().map(|e| e.path())))
+            .filter(|dir| managed::payload(dir))
             .map(|dir| tools(&dir))
-            .find(|dir| fs::read_link(dir).is_err() && dir.is_dir());
+            .find(|dir| managed::direct(dir).is_ok() && dir.is_dir());
         if let Some(previous) = previous {
             // Two launchers may start together (multiplayer tests): one of them moves it.
             if let Err(error) = fs::rename(&previous, &shared) {
@@ -282,7 +286,11 @@ fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
             }
         }
     }
-    fs::create_dir_all(&shared)?;
+    match fs::create_dir(&shared) {
+        Ok(()) => fs::write(shared.join(".mk8-managed-tools"), b"MK8-online tools v1")?,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && shared.is_dir() => (),
+        Err(e) => return Err(e.into()),
+    }
     Ok(shared)
 }
 
@@ -431,7 +439,11 @@ mod tests {
     fn versions_share_one_tool_folder() {
         let base = std::env::temp_dir().join(format!("mk8-share-tools-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
-        let old = base.join("aaaa");
+        let old = base.join("aaaaaaaaaaaaaaaa");
+        fs::create_dir_all(old.join("upstream/manifests")).unwrap();
+        fs::create_dir_all(old.join("scripts")).unwrap();
+        fs::write(old.join("upstream/manifests/smm2recomp.json"), "{}").unwrap();
+        fs::write(old.join("scripts/setup-native.py"), "").unwrap();
         fs::create_dir_all(old.join("local/native-tools/deps")).unwrap();
         fs::write(old.join("local/native-tools/deps/x.done"), "hash").unwrap();
         // An update unpacks a new version first: it adopts the older version's download.

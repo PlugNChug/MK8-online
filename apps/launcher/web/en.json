@@ -1221,5 +1221,17 @@
   "Ativar o menu nativo de configurações": "Enable native settings menu",
   "A opção é salva automaticamente e vale ao iniciar o jogo.": "This option saves automatically and applies the next time you start the game.",
   "Preferência salva. A alteração vale ao iniciar o jogo.": "Preference saved. The change applies the next time you start the game.",
-  "Não foi possível salvar a preferência.": "Could not save the preference."
+  "Não foi possível salvar a preferência.": "Could not save the preference.",
+  "Desinstalação": "Uninstall",
+  "Desinstalar MK8-online": "Uninstall MK8-online",
+  "Escolha o que deseja remover deste computador.": "Choose what to remove from this computer.",
+  "Remover o launcher e guardar meus dados": "Remove the launcher and keep my data",
+  "Mantenha seus saves, Miis, configurações, ferramentas e jogo preparado para uma reinstalação.": "Keep saves, Miis, settings, tools and the prepared game for a future installation.",
+  "Remover o launcher e todos os dados do MK8-online": "Remove the launcher and all MK8-online data",
+  "Confirmo a exclusão permanente dos saves, Miis, ferramentas e builds desta instalação.": "Permanently delete the saves, Miis, tools and builds from this installation.",
+  "Desinstalar": "Uninstall",
+  "Desinstalação concluída": "Uninstall complete",
+  "Removendo arquivos…": "Removing files…",
+  "Os arquivos gerenciados foram removidos.": "Managed files were removed.",
+  "Seus dados foram preservados.": "Your data was kept."
 }

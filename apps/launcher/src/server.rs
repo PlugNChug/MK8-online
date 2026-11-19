@@ -609,6 +609,10 @@ impl App {
     }
 
     fn start_build(&mut self) -> Result<()> {
+        self.tools = setup::tool_checks(&self.root);
+        if !self.tools.iter().all(|check| check["ok"] == true) {
+            return Err("Instale as ferramentas antes de iniciar a build.".into());
+        }
         if self.imports_running() {
             return Err("Aguarde a importação do DLC ou do CTGP.".into());
         }

@@ -817,7 +817,7 @@ class LauncherTests(unittest.TestCase):
         real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
         started=int(time.time()*1000)-125000
         def status(route):
-            data=dict(real)
+            data=dict(real, tools_ready=True)
             data['build']={'state':'running','detail':'Preparando o jogo.','pid':1,'percent':37.5,
                            'phase':'Compilando para o seu PC','started_ms':started,'duration_s':None}
             route.fulfill(json={'ok':True,'data':data})
@@ -839,7 +839,7 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#build-log')).to_be_visible()
         page.screenshot(path=str(ROOT/"local/screenshots/launcher-build.png"),full_page=True)
         def done(route):
-            data=dict(real);data['candidate']=True
+            data=dict(real, tools_ready=True);data['candidate']=True
             data['build']={'state':'candidate','detail':'ok','pid':None,'percent':100,'phase':'Concluído',
                            'started_ms':started,'duration_s':1218.5}
             route.fulfill(json={'ok':True,'data':data})
@@ -856,17 +856,31 @@ class LauncherTests(unittest.TestCase):
         token=page.locator('meta[name="mk8-token"]').get_attribute('content')
         real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
         self.assertFalse(real['candidate_stale'])  # (no game in this data folder)
+        tools_installed = False
+        files_ready = True
         def status(route):
             data=dict(real);data['candidate']=True;data['candidate_stale']=True;data['candidate_version']='0.1.2'
+            data.update(tools_ready=tools_installed, files=dict(real['files'], ready=files_ready, folder=False),
+                        setup=dict(real['setup'], state='done' if tools_installed else 'idle'))
             data['build']={'state':'idle','detail':'','pid':None,'percent':0,'phase':'','started_ms':None,'duration_s':None}
             route.fulfill(json={'ok':True,'data':data})
         page.route('**/api/status',status)
         page.reload()
+        expect(page.locator('#flow-step-0')).to_have_attribute('aria-current', 'step')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        tools_installed = True
+        expect(page.locator('#flow-step-2')).to_have_attribute('aria-current', 'step')
         expect(page.locator('#build-stale')).to_be_visible()
         expect(page.locator('#build-stale')).to_contain_text('versão 0.1.2')
         expect(page.get_by_role('button',name='Atualizar a build',exact=True)).to_be_visible()
         expect(page.locator('#prepare-state')).to_have_text('Atualizar')
         expect(page.locator('#build-done')).to_be_hidden()
+        tools_installed = files_ready = False
+        page.reload()
+        expect(page.locator('#flow-step-0')).to_have_attribute('aria-current', 'step')
+        tools_installed = True
+        expect(page.locator('#flow-step-1')).to_have_attribute('aria-current', 'step')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         self.assertFalse(errors);page.close()
 
     def test_mii_resource_stream_finishes_before_wasm_request(self):
