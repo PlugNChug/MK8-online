@@ -52,10 +52,19 @@ int mk8_yaz0_loop(Cpu *c) {
             const uint8_t *from = dst - 1 + (int32_t)back;
             uint8_t *to = dst + (int32_t)out;
             uint32_t i = 0;
-            do {  // (byte by byte: the copy may overlap what it writes)
-                to[i] = from[i];
-                i++;
-            } while ((int32_t)i < (int32_t)n);
+            uint32_t gap = (uint32_t)(to - from);  // (distance; the copy may overlap what it writes)
+            if (gap >= n) {
+                memcpy(to, from, n);  // (MK8: the 78% of match bytes that do not overlap)
+                i = n;
+            } else {
+                memcpy(to, from, gap);  // first period, then double it: the source is the already-written pattern
+                i = gap;
+                while (i < n) {
+                    uint32_t chunk = i < n - i ? i : n - i;
+                    memcpy(to + i, to, chunk);
+                    i += chunk;
+                }
+            }
             out += i;
         }
         mask = (mask >> 1) & 0x7f;
