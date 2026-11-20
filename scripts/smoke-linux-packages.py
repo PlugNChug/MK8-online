@@ -9,7 +9,28 @@ import tempfile
 import time
 import urllib.request
 
+from package_guard import audit_tree
 from release import DIST, sha256, workspace_version
+
+# The Linux package installs the launcher and builds the host runtime from this payload. If any of these
+# disappears, the package starts but the first "Build the game" cannot produce the current runtime.
+REQUIRED_RUNTIME_SOURCES = (
+    "toolchain/host.py",
+    "toolchain/build.py",
+    "runtime/mk8/support/yaz0.c",
+    "runtime/mk8/graphics/fsr_bridge.c",
+    "runtime/mk8/graphics/fsr.cpp",
+    "runtime/mk8/graphics/ffx/ffx_api.h",
+    "runtime/mk8/graphics/ffx/ffx_upscale.h",
+    "runtime/mk8/graphics/ffx/vk/ffx_api_vk.h",
+)
+
+
+def verify_payload(project):
+    missing = [name for name in REQUIRED_RUNTIME_SOURCES if not (project / name).is_file()]
+    if missing:
+        raise RuntimeError(f"Runtime sources missing from the package: {', '.join(missing)}")
+    audit_tree(project)
 
 
 def run(entry, arguments, folder):
@@ -40,6 +61,7 @@ def run(entry, arguments, folder):
                                 cwd=folder, timeout=30, env=env).returncode
         if status != 2:
             raise RuntimeError(f"Embedded importer could not run (exit {status})")
+        verify_payload(importer.parents[2])
     finally:
         try:
             os.killpg(child.pid, signal.SIGTERM)

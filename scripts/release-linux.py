@@ -12,7 +12,10 @@ import tarfile
 import tempfile
 
 from downloads import fetch
+from package_guard import ForbiddenArtifact, audit_archive, audit_tree
 from release import DIST, ROOT, TARGET, TAURI, VERSION, sha256, workspace_version
+
+PAYLOAD = TARGET / "portable/launcher-source.zip"
 
 TOOL_URL = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
 TOOL_SHA256 = "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
@@ -88,6 +91,18 @@ def appimage(app, asset):
     asset.chmod(0o755)
 
 
+def audit_release(app):
+    """Fail before publishing a package that carries an AMD FidelityFX artifact."""
+    try:
+        audit_tree(app)
+        if not PAYLOAD.is_file():
+            raise ForbiddenArtifact(f"embedded source payload not found: {PAYLOAD}")
+        audit_archive(PAYLOAD)
+    except ForbiddenArtifact as error:
+        raise SystemExit(f"Release blocked: {error}") from error
+    print(f"AMD FidelityFX artifact check passed: {app} and {PAYLOAD}", flush=True)
+
+
 def build(tag=None, skip_package=False):
     if sys.platform != "linux" or platform.machine() != "x86_64":
         raise SystemExit("Build Linux x86-64 packages on Linux x86-64.")
@@ -108,6 +123,7 @@ def build(tag=None, skip_package=False):
         scratch = Path(scratch)
         app = scratch / "MK8-online.AppDir"
         stage(app, launcher)
+        audit_release(app)
         archive = scratch / f"{basename}.tar.gz"
         image = scratch / f"{basename}.AppImage"
         write_marker(app, "tar.gz", version)
@@ -126,5 +142,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag")
     parser.add_argument("--skip-package", action="store_true")
+    parser.add_argument("--audit", type=Path, metavar="PATH",
+                        help="check a directory, zip or tar for AMD FidelityFX artifacts and exit")
     args = parser.parse_args()
-    build(args.tag, args.skip_package)
+    if args.audit:
+        try:
+            if args.audit.is_dir():
+                audit_tree(args.audit)
+            else:
+                audit_archive(args.audit)
+        except ForbiddenArtifact as error:
+            raise SystemExit(f"Release blocked: {error}") from error
+        print(f"AMD FidelityFX artifact check passed: {args.audit}")
+    else:
+        build(args.tag, args.skip_package)

@@ -37,6 +37,13 @@ def payload_files():
         for path in sorted((ROOT / folder).rglob("*")):
             if path.is_file() and path.suffix in SOURCE_EXTENSIONS:
                 yield path
+    if not WINDOWS:
+        # Linux builds the host runtime from these sources after the user supplies the game. The FSR bridge is
+        # optional at run time, but host.py compiles it unconditionally and needs its MIT FFX headers.
+        yield ROOT / "runtime/mk8/graphics/fsr.cpp"
+        yield ROOT / "runtime/mk8/graphics/ffx/LICENSE"
+        for path in sorted((ROOT / "runtime/mk8/graphics/ffx").rglob("*.h")):
+            yield path
     if WINDOWS:
         # The runtime executable built from these same sources (scripts/prebuild-host.py); a build checks its key.
         for name in ("mk8drecomp.exe", "mk8drecomp.dll.a", "manifest.json"):
