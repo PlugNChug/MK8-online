@@ -1916,6 +1916,16 @@ pub fn provider_version(path: &Path) -> Result<String> {
 }
 
 pub fn provider_version_for(path: &Path, create_desc_type: u64) -> Result<String> {
+    provider_versions_for(path, create_desc_type)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "O provedor compilado não informou o nome da versão.".into())
+}
+
+/// All versions a provider advertises for one FFX effect descriptor. Windows
+/// uses this to distinguish AMD's 3.1.6/2.3.4 DLLs from a provider that really
+/// exposes 4.1.2.
+pub fn provider_versions_for(path: &Path, create_desc_type: u64) -> Result<Vec<String>> {
     unsafe {
         let library = libloading::Library::new(path).map_err(|error| {
             format!(
@@ -1960,16 +1970,21 @@ pub fn provider_version_for(path: &Path, create_desc_type: u64) -> Result<String
                 "ffxQuery falhou ao ler o nome da versão do provedor (código 0x{rc:x})."
             ));
         }
+        let mut versions = Vec::new();
         for name in names.iter().take(available as usize) {
             if name.is_null() {
                 continue;
             }
             let value = CStr::from_ptr(*name).to_string_lossy().into_owned();
             if !value.is_empty() {
-                return Ok(value);
+                versions.push(value);
             }
         }
-        Err("O provedor compilado não informou o nome da versão.".into())
+        if versions.is_empty() {
+            Err("O provedor compilado não informou o nome da versão.".into())
+        } else {
+            Ok(versions)
+        }
     }
 }
 
@@ -2526,6 +2541,82 @@ uint32_t ffxQuery(void* context, Header* header) {{
                 None
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn fake_ffx_library_versions(dir: &Path, versions: &[&str]) -> Option<PathBuf> {
+        let source = dir.join("fake-versions.c");
+        let library = dir.join("libfake_ffx_versions.so");
+        let names = versions
+            .iter()
+            .map(|version| format!("\"{version}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(
+            &source,
+            format!(
+                r#"
+#include <stdint.h>
+typedef struct {{ uint64_t type; void* next; }} Header;
+typedef struct {{
+    Header header;
+    uint64_t createDescType;
+    void* device;
+    uint64_t* outputCount;
+    uint64_t* versionIds;
+    const char** versionNames;
+}} Query;
+static const char* names[] = {{ {names} }};
+static const uint32_t total = {total};
+uint32_t ffxQuery(void* context, Header* header) {{
+    (void)context;
+    if (!header || header->type != 4) return 1;
+    Query* query = (Query*)header;
+    if (!query->outputCount) return 1;
+    if (*query->outputCount == 0) {{ *query->outputCount = total; return 0; }}
+    uint32_t limit = *query->outputCount;
+    for (uint32_t i = 0; i < total && i < limit; i++) {{
+        if (query->versionIds) query->versionIds[i] = 0x1000 + i;
+        if (query->versionNames) query->versionNames[i] = names[i];
+    }}
+    *query->outputCount = total < limit ? total : limit;
+    return 0;
+}}
+"#,
+                total = versions.len()
+            ),
+        )
+        .unwrap();
+        let compiled = Command::new("cc")
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg("-o")
+            .arg(&library)
+            .arg(&source)
+            .status();
+        match compiled {
+            Ok(status) if status.success() => Some(library),
+            _ => None,
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn provider_version_lists_expose_every_offered_version() {
+        let dir = temp("ffx-versions");
+        let Some(library) = fake_ffx_library_versions(&dir, &["3.1.6", "2.3.4"]) else {
+            fs::remove_dir_all(dir).unwrap();
+            return;
+        };
+        assert_eq!(
+            provider_versions_for(&library, FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE).unwrap(),
+            vec!["3.1.6".to_string(), "2.3.4".to_string()]
+        );
+        assert_eq!(
+            provider_version_for(&library, FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE).unwrap(),
+            "3.1.6"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

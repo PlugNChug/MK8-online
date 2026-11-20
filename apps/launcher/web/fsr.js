@@ -16,6 +16,22 @@
     failed: 'Falhou',
   };
 
+  function fsr4Reason(fsr4) {
+    const versions = (fsr4.versions || []).join(', ');
+    switch (fsr4.reason_code) {
+      case 'gpu-missing':
+        return i18n.t('Não foi possível identificar a GPU Vulkan. FSR 4.1.2 exige AMD RDNA 4; use um provedor manual ou selecione FSR 3.1.6.');
+      case 'not-rdna4':
+        return i18n.t('FSR 4.1.2 exige AMD RDNA 4; as DLLs assinadas da AMD expõem FSR 3.1.6 nesta GPU.')
+          + (fsr4.gpu ? ` (${fsr4.gpu})` : '');
+      case 'dll-no-412':
+        return i18n.t('As DLLs assinadas da AMD instaladas expõem apenas {0}; FSR 4.1.2 exige AMD RDNA 4.')
+          .replace('{0}', versions || '3.1.6');
+      default:
+        return fsr4.reason || '';
+    }
+  }
+
   function text(id, value) {
     const element = get(id);
     if (element && element.textContent !== value) i18n.text(element, value);
@@ -38,19 +54,34 @@
     setValue(get('fsr-dxc'), settings.dxc);
 
     const off = settings.upscaling === 'off';
+    const fsr4 = data.fsr4 || {};
+    const fsr4Override = !!settings.provider_lib;
+    const fsr4Blocked = !!fsr4.blocked && !fsr4Override;
+    const fsr4SelectedBlocked = fsr4Blocked && settings.upscaling === '4.1.2';
+    const fsr4Option = get('fsr-upscaling').querySelector('option[value="4.1.2"]');
+    fsr4Option.disabled = fsr4Blocked;
+    fsr4Option.title = fsr4.blocked ? fsr4Reason(fsr4) : '';
+    get('fsr-fsr4-gate').hidden = !fsr4.blocked;
+    text('fsr-fsr4-gate', fsr4.blocked
+      ? (fsr4Override ? `${fsr4Reason(fsr4)} O provedor manual continua valendo.` : fsr4Reason(fsr4))
+      : '');
+    const mlfiOption = get('fsr-fg').querySelector('option[value="fsr4"]');
+    if (fsr4.blocked) {
+      mlfiOption.title = fsr4Reason(fsr4);
+      text('fsr-fg-hint', fsr4Reason(fsr4));
+    }
     get('fsr-provider').disabled = off || saving;
     get('fsr-provider').closest('.fsr-path-row').querySelector('button').disabled = off || saving;
     text('fsr-upscaling-hint', off
       ? 'A ampliação fica desligada e o jogo usa FSR 1/bilinear como antes.'
-      : windows
-        ? 'O launcher aponta o runtime para a DLL assinada da AMD. Instale os componentes abaixo.'
-        : settings.upscaling === '3.1.6'
-          ? 'FSR 3.1.6 é compilado localmente a partir do código MIT da AMD e roda nativamente; nenhum binário é incluído no launcher. O provedor é instalado abaixo.'
-          : 'FSR 4.1.2 é compilado localmente a partir do port GPL-3.0 do projeto e do SDK MIT da AMD; a ABI legada é ativada automaticamente e nada é incluído no launcher. O provedor, os assets e as licenças são instalados abaixo.');
+      : fsr4SelectedBlocked
+        ? fsr4Reason(fsr4)
+        : windows
+          ? 'O launcher aponta o runtime para a DLL assinada da AMD. Instale os componentes abaixo.'
+          : settings.upscaling === '3.1.6'
+            ? 'FSR 3.1.6 é compilado localmente a partir do código MIT da AMD e roda nativamente; nenhum binário é incluído no launcher. O provedor é instalado abaixo.'
+            : 'FSR 4.1.2 é compilado localmente a partir do port GPL-3.0 do projeto e do SDK MIT da AMD; a ABI legada é ativada automaticamente e nada é incluído no launcher. O provedor, os assets e as licenças são instalados abaixo.');
 
-    const dxcRow = get('fsr-dxc').closest('.fsr-path-row');
-    dxcRow.hidden = windows;
-    get('fsr-dxc-detail').hidden = windows;
     text('fsr-install-title', windows ? 'Componentes AMD FidelityFX (DLLs assinadas)' : 'Componentes AMD FidelityFX (provedor local)');
     text('fsr-install-intro', windows
       ? 'O launcher baixa somente as DLLs assinadas e oficiais do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e as guarda neste computador. Nada da AMD é distribuído com o launcher e nenhuma compilação é feita no Windows.'
@@ -80,7 +111,8 @@
     get('fsr-license-accept').disabled = accepted;
     get('fsr-license-save').hidden = accepted;
     get('fsr-license-save').disabled = accepted || !get('fsr-license-accept').checked || !license.verified;
-    get('fsr-install').disabled = !accepted || state === 'building' || saving;
+    get('fsr-install').disabled = !accepted || state === 'building' || saving
+      || fsr4SelectedBlocked;
     get('fsr-cancel').hidden = state !== 'building';
     text('fsr-license-load', license.present ? 'Ver licença da AMD' : 'Ler licença da AMD');
     text('fsr-license-source', license.verified

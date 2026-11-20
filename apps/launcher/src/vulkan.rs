@@ -76,6 +76,181 @@ impl Drop for ThreadNameHandler {
     }
 }
 
+/// A Vulkan physical device, reduced to what the FSR page needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GpuInfo {
+    pub api_version: u32,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub device_type: u32,
+    pub device_name: String,
+}
+
+impl GpuInfo {
+    pub fn vendor(&self) -> &'static str {
+        match self.vendor_id {
+            0x1002 => "AMD",
+            0x10de => "NVIDIA",
+            0x8086 => "Intel",
+            _ => "desconhecido",
+        }
+    }
+
+    /// AMD's native FSR 4 path is gated to RDNA 4. The shipped Windows DLLs
+    /// also hide 4.1.2 on other hardware. Device names are the only stable
+    /// signal exposed by both AMD's Windows driver and RADV.
+    pub fn is_amd_rdna4(&self) -> bool {
+        let name = self.device_name.to_ascii_lowercase();
+        self.vendor_id == 0x1002
+            && ["rx 9", "radeon 9", "rdna 4", "gfx12"]
+                .iter()
+                .any(|marker| name.contains(marker))
+    }
+}
+
+static GPU: std::sync::OnceLock<Option<GpuInfo>> = std::sync::OnceLock::new();
+
+/// Probes the first usable Vulkan device once per launcher process. `None`
+/// means there is no Vulkan loader/device (or the probe was refused).
+pub fn gpu_info() -> Option<GpuInfo> {
+    GPU.get_or_init(|| probe_gpu().ok()).clone()
+}
+
+#[cfg(windows)]
+const VULKAN_LOADER: &str = "vulkan-1.dll";
+#[cfg(not(windows))]
+const VULKAN_LOADER: &str = "libvulkan.so.1";
+
+#[repr(C)]
+struct VkApplicationInfo {
+    s_type: u32,
+    p_next: *const std::ffi::c_void,
+    p_application_name: *const std::ffi::c_char,
+    application_version: u32,
+    p_engine_name: *const std::ffi::c_char,
+    engine_version: u32,
+    api_version: u32,
+}
+
+#[repr(C)]
+struct VkInstanceCreateInfo {
+    s_type: u32,
+    p_next: *const std::ffi::c_void,
+    flags: u32,
+    p_application_info: *const VkApplicationInfo,
+    enabled_layer_count: u32,
+    pp_enabled_layer_names: *const *const std::ffi::c_char,
+    enabled_extension_count: u32,
+    pp_enabled_extension_names: *const *const std::ffi::c_char,
+}
+
+#[repr(C, align(8))]
+struct VkPhysicalDevicePropertiesRaw {
+    bytes: [u8; 1024],
+}
+
+fn probe_gpu() -> Result<GpuInfo> {
+    use std::ffi::c_void;
+    unsafe {
+        let loader = libloading::Library::new(VULKAN_LOADER)
+            .map_err(|error| format!("Vulkan indisponível: {error}"))?;
+        let create: libloading::Symbol<
+            unsafe extern "system" fn(
+                *const VkInstanceCreateInfo,
+                *const c_void,
+                *mut *mut c_void,
+            ) -> i32,
+        > = loader
+            .get(b"vkCreateInstance\0")
+            .map_err(|error| error.to_string())?;
+        let enumerate: libloading::Symbol<
+            unsafe extern "system" fn(*mut c_void, *mut u32, *mut *mut c_void) -> i32,
+        > = loader
+            .get(b"vkEnumeratePhysicalDevices\0")
+            .map_err(|error| error.to_string())?;
+        let properties: libloading::Symbol<
+            unsafe extern "system" fn(*mut c_void, *mut VkPhysicalDevicePropertiesRaw),
+        > = loader
+            .get(b"vkGetPhysicalDeviceProperties\0")
+            .map_err(|error| error.to_string())?;
+        let destroy: libloading::Symbol<unsafe extern "system" fn(*mut c_void, *const c_void)> =
+            loader
+                .get(b"vkDestroyInstance\0")
+                .map_err(|error| error.to_string())?;
+        let app_name = b"MK8-online\0";
+        let app = VkApplicationInfo {
+            s_type: 0,
+            p_next: std::ptr::null(),
+            p_application_name: app_name.as_ptr().cast(),
+            application_version: 0,
+            p_engine_name: std::ptr::null(),
+            engine_version: 0,
+            api_version: 1 << 22,
+        };
+        let create_info = VkInstanceCreateInfo {
+            s_type: 1,
+            p_next: std::ptr::null(),
+            flags: 0,
+            p_application_info: &app,
+            enabled_layer_count: 0,
+            pp_enabled_layer_names: std::ptr::null(),
+            enabled_extension_count: 0,
+            pp_enabled_extension_names: std::ptr::null(),
+        };
+        let mut instance = std::ptr::null_mut();
+        let rc = create(&create_info, std::ptr::null(), &mut instance);
+        if rc != 0 || instance.is_null() {
+            return Err(format!("vkCreateInstance retornou {rc}."));
+        }
+        let mut count = 0u32;
+        let rc = enumerate(instance, &mut count, std::ptr::null_mut());
+        if rc != 0 || count == 0 {
+            destroy(instance, std::ptr::null());
+            return Err(format!("Nenhum dispositivo Vulkan (código {rc})."));
+        }
+        let mut devices = vec![std::ptr::null_mut(); count as usize];
+        let rc = enumerate(instance, &mut count, devices.as_mut_ptr());
+        if rc != 0 {
+            destroy(instance, std::ptr::null());
+            return Err(format!("vkEnumeratePhysicalDevices retornou {rc}."));
+        }
+        let mut best: Option<(GpuInfo, u8)> = None;
+        for device in devices.into_iter().take(count as usize) {
+            let mut raw = VkPhysicalDevicePropertiesRaw { bytes: [0; 1024] };
+            properties(device, &mut raw);
+            let read = |offset: usize| {
+                u32::from_ne_bytes(
+                    raw.bytes[offset..offset + 4]
+                        .try_into()
+                        .expect("quatro bytes"),
+                )
+            };
+            let name_end = raw.bytes[20..276]
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(256);
+            let info = GpuInfo {
+                api_version: read(0),
+                vendor_id: read(8),
+                device_id: read(12),
+                device_type: read(16),
+                device_name: String::from_utf8_lossy(&raw.bytes[20..20 + name_end]).into_owned(),
+            };
+            let rank = match info.device_type {
+                2 => 3, // discrete
+                1 => 2, // integrated
+                _ => 1,
+            };
+            if best.as_ref().is_none_or(|(_, current)| rank > *current) {
+                best = Some((info, rank));
+            }
+        }
+        destroy(instance, std::ptr::null());
+        best.map(|(info, _)| info)
+            .ok_or_else(|| "Nenhum dispositivo Vulkan utilizável.".into())
+    }
+}
+
 /// The thread-name notification is a Win32 debugger event; other systems have none to intercept.
 #[cfg(not(windows))]
 pub(crate) struct ThreadNameHandler;
@@ -334,5 +509,32 @@ mod tests {
         record.NumberParameters = 4;
         record.ExceptionInformation[0] = 0;
         assert_eq!(check(&mut record), 0);
+    }
+}
+
+#[cfg(test)]
+mod gpu_tests {
+    use super::*;
+
+    fn gpu(vendor_id: u32, name: &str) -> GpuInfo {
+        GpuInfo {
+            api_version: 0,
+            vendor_id,
+            device_id: 0,
+            device_type: 2,
+            device_name: name.into(),
+        }
+    }
+
+    #[test]
+    fn classifies_vendors_and_only_amd_rdna4_for_the_native_ml_path() {
+        assert_eq!(gpu(0x1002, "AMD Radeon RX 9070 XT").vendor(), "AMD");
+        assert_eq!(gpu(0x10de, "NVIDIA GeForce RTX 5080").vendor(), "NVIDIA");
+        assert_eq!(gpu(0x8086, "Intel Arc B580").vendor(), "Intel");
+        assert!(gpu(0x1002, "AMD Radeon RX 9070 XT").is_amd_rdna4());
+        assert!(gpu(0x1002, "AMD Radeon RX 9060 (RDNA 4)").is_amd_rdna4());
+        assert!(!gpu(0x1002, "AMD Radeon RX 7900 XTX").is_amd_rdna4());
+        assert!(!gpu(0x10de, "NVIDIA GeForce RTX 5080").is_amd_rdna4());
+        assert!(!gpu(0x8086, "Intel Arc B580").is_amd_rdna4());
     }
 }

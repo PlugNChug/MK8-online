@@ -334,6 +334,7 @@
                 <button type="button" class="ghost" data-browse="fsr-provider" data-kind="fsr-library" aria-label="Escolher o provedor FFX">Escolher</button>
               </div>
               <p id="fsr-upscaling-hint" class="hint">O runtime carrega a biblioteca escolhida. Sem uma biblioteca própria, a opção fica indisponível no jogo.</p>
+              <p id="fsr-fsr4-gate" class="hint" role="status" hidden></p>
             </article>
 
             <article class="card">
@@ -342,10 +343,10 @@
                 <select id="fsr-fg">
                   <option value="off">Desativada</option>
                   <option value="fsr3">FSR 3</option>
-                  <option value="fsr4" disabled title="Indisponível até os modelos do provedor serem instalados">FSR 4 MLFI — aguardando assets</option>
+                  <option value="fsr4" disabled title="Indisponível nesta versão do launcher; no Windows exige AMD RDNA 4">FSR 4 MLFI — indisponível nesta versão</option>
                 </select>
               </label>
-              <p id="fsr-fg-hint" class="hint">FSR 3 usa o provedor de frame generation compilado abaixo. FSR 4 MLFI fica visível, mas desativado: os modelos não fazem parte do SDK e ainda não foram instalados.</p>
+              <p id="fsr-fg-hint" class="hint">FSR 3 usa o provedor de frame generation compilado abaixo. FSR 4 MLFI fica visível, mas desativado nesta versão do launcher; no Windows ele também exige AMD RDNA 4.</p>
               <p id="fsr-fg-state" class="hint" role="status"></p>
             </article>
           </div>

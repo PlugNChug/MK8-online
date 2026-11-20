@@ -119,6 +119,125 @@ fn provider_platform_error(provider_lib: &str, windows: bool) -> Option<String> 
     })
 }
 
+/// Windows FSR 4.1.2/MLFI availability. AMD's shipped DLLs gate ML upscaling
+/// to RDNA 4 and only expose 3.1.6/2.3.4 elsewhere.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fsr4Gate {
+    /// The hardware or the installed DLLs do not offer 4.1.2.
+    pub blocked: bool,
+    /// A user-supplied provider bypasses the hardware gate.
+    pub override_active: bool,
+    pub reason_code: &'static str,
+    pub reason: String,
+    pub gpu: Option<String>,
+    pub vendor: Option<String>,
+    pub versions: Vec<String>,
+    pub framegeneration_versions: Vec<String>,
+}
+
+impl Fsr4Gate {
+    pub fn allowed(&self) -> bool {
+        !self.blocked || self.override_active
+    }
+}
+
+/// Only the 4.1.2 selection is affected; FSR 3.1.6 remains selectable on
+/// NVIDIA/Intel and on AMD hardware older than RDNA 4.
+pub fn fsr4_selection_blocked(settings: &Settings, gate: &Fsr4Gate) -> bool {
+    settings.upscaling == FSR_412 && !gate.allowed()
+}
+
+pub fn windows_fsr4_gate(
+    settings: &Settings,
+    gpu: Option<&crate::vulkan::GpuInfo>,
+    upscaler_versions: &[String],
+    framegeneration_versions: &[String],
+) -> Fsr4Gate {
+    let override_active = !settings.provider_lib.is_empty();
+    let vendor = gpu.map(|gpu| gpu.vendor().to_owned());
+    let gpu_label = gpu.map(|gpu| format!("{} {}", gpu.vendor(), gpu.device_name));
+    let rdna4 = gpu.is_some_and(crate::vulkan::GpuInfo::is_amd_rdna4);
+    let offers_412 = upscaler_versions.iter().any(|version| version == FSR_412);
+    let (blocked, reason_code, reason) = if gpu.is_none() {
+        (
+            true,
+            "gpu-missing",
+            "Não foi possível identificar a GPU Vulkan. FSR 4.1.2 exige AMD RDNA 4; sem identificação, use um provedor manual ou selecione FSR 3.1.6.".to_owned(),
+        )
+    } else if !rdna4 {
+        (
+            true,
+            "not-rdna4",
+            format!(
+                "FSR 4.1.2 exige AMD RDNA 4; as DLLs assinadas da AMD expõem FSR 3.1.6 nesta GPU ({}).",
+                gpu_label.as_deref().unwrap_or("GPU desconhecida")
+            ),
+        )
+    } else if !upscaler_versions.is_empty() && !offers_412 {
+        (
+            true,
+            "dll-no-412",
+            format!(
+                "As DLLs assinadas da AMD instaladas expõem apenas {}; FSR 4.1.2 exige AMD RDNA 4.",
+                upscaler_versions.join(", ")
+            ),
+        )
+    } else {
+        (false, "ok", String::new())
+    };
+    Fsr4Gate {
+        blocked,
+        override_active,
+        reason_code,
+        reason,
+        gpu: gpu_label,
+        vendor,
+        versions: upscaler_versions.to_vec(),
+        framegeneration_versions: framegeneration_versions.to_vec(),
+    }
+}
+
+/// Capability used by the page and by the game-launch guard. Linux ports are
+/// native and are not gated by Windows driver capabilities.
+pub fn fsr4_gate(settings: &Settings) -> Fsr4Gate {
+    if !cfg!(windows) {
+        return Fsr4Gate {
+            blocked: false,
+            override_active: !settings.provider_lib.is_empty(),
+            reason_code: "native",
+            reason: "FSR 4.1.2 é o provedor nativo Linux deste projeto.".into(),
+            gpu: None,
+            vendor: None,
+            versions: Vec::new(),
+            framegeneration_versions: Vec::new(),
+        };
+    }
+    let dir = data_dir();
+    let upscaler = upscaler_for(&dir, FSR_412);
+    let framegeneration = framegeneration_lib(&dir);
+    let (versions, framegeneration_versions) = signed_dll_versions(&upscaler, &framegeneration);
+    let gpu = crate::vulkan::gpu_info();
+    windows_fsr4_gate(settings, gpu.as_ref(), &versions, &framegeneration_versions)
+}
+
+/// The signed DLLs are tens of megabytes; the page polls status every two
+/// seconds. Load them once when they exist, then reuse the version lists.
+fn signed_dll_versions(upscaler: &Path, framegeneration: &Path) -> (Vec<String>, Vec<String>) {
+    static VERSIONS: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
+    if let Some(cached) = VERSIONS.get() {
+        return cached.clone();
+    }
+    if !upscaler.is_file() && !framegeneration.is_file() {
+        return (Vec::new(), Vec::new());
+    }
+    let versions = install::provider_versions_for(upscaler, 0x0001_0000).unwrap_or_default();
+    let framegeneration_versions =
+        install::provider_versions_for(framegeneration, 0x0004_0001).unwrap_or_default();
+    let value = (versions, framegeneration_versions);
+    let _ = VERSIONS.set(value.clone());
+    value
+}
+
 pub fn settings_path(local: &Path) -> PathBuf {
     local.join(SETTINGS_FILE)
 }
@@ -147,6 +266,15 @@ pub fn write_settings(local: &Path, settings: &Settings) -> Result<()> {
     settings.validate()?;
     if let Some(error) = settings.compatibility_error() {
         return Err(error);
+    }
+    if cfg!(windows) && settings.upscaling == FSR_412 {
+        let gate = fsr4_gate(settings);
+        if fsr4_selection_blocked(settings, &gate) {
+            return Err(format!(
+                "{} Se você tem um provedor AMD RDNA 4, informe o caminho manual.",
+                gate.reason
+            ));
+        }
     }
     let path = settings_path(local);
     let mut root: Value = match fs::read_to_string(&path) {
@@ -395,6 +523,15 @@ pub fn configure(local: &Path) -> Result<()> {
     if let Some(error) = settings.compatibility_error() {
         return Err(error);
     }
+    if cfg!(windows) && settings.upscaling == FSR_412 {
+        let gate = fsr4_gate(&settings);
+        if fsr4_selection_blocked(&settings, &gate) {
+            return Err(format!(
+                "{} Selecione FSR 3.1.6 ou informe um provedor RDNA 4 manual.",
+                gate.reason
+            ));
+        }
+    }
     environment(&settings).apply();
     Ok(())
 }
@@ -443,6 +580,18 @@ pub fn page(root: &Path, local: &Path, running: bool) -> Result<Value> {
     let mut value = install::status(&dir, &settings, root, running);
     value["settings"] = serde_json::to_value(&settings).map_err(|error| error.to_string())?;
     value["settings_error"] = json!(settings.compatibility_error());
+    let gate = fsr4_gate(&settings);
+    value["fsr4"] = json!({
+        "blocked": gate.blocked,
+        "allowed": gate.allowed(),
+        "override": gate.override_active,
+        "reason_code": gate.reason_code,
+        "reason": gate.reason,
+        "gpu": gate.gpu,
+        "vendor": gate.vendor,
+        "versions": gate.versions,
+        "framegeneration_versions": gate.framegeneration_versions,
+    });
     value["license"] = license_status(&dir);
     value["data_dir"] = json!(dir);
     value["provider_expected"] = json!(provider_path(&dir));
@@ -632,6 +781,82 @@ mod tests {
         assert!(value_of(&env, "MK8_FSR_FG_LIB")
             .unwrap()
             .ends_with("provider/libamd_fidelityfx_framegeneration_vk.so"));
+    }
+
+    #[test]
+    fn windows_fsr4_gate_blocks_non_rdna4_and_keeps_316_selectable() {
+        fn gpu(vendor_id: u32, name: &str) -> crate::vulkan::GpuInfo {
+            crate::vulkan::GpuInfo {
+                api_version: 0,
+                vendor_id,
+                device_id: 0,
+                device_type: 2,
+                device_name: name.into(),
+            }
+        }
+        let fsr4 = Settings {
+            upscaling: FSR_412.into(),
+            provider_lib: String::new(),
+            frame_generation: FG_OFF.into(),
+            dxc: String::new(),
+            legacy_abi: false,
+        };
+        let nvidia = gpu(0x10de, "NVIDIA GeForce RTX 5080");
+        let gate = windows_fsr4_gate(&fsr4, Some(&nvidia), &[], &[]);
+        assert!(gate.blocked);
+        assert!(!gate.allowed());
+        assert_eq!(gate.reason_code, "not-rdna4");
+        assert!(gate.reason.contains("RDNA 4"));
+        assert!(!nvidia.is_amd_rdna4());
+
+        let fsr3 = Settings {
+            upscaling: FSR_316.into(),
+            ..fsr4.clone()
+        };
+        assert!(!fsr4_selection_blocked(&fsr3, &gate));
+
+        let amd = gpu(0x1002, "AMD Radeon RX 9070 XT");
+        assert!(amd.is_amd_rdna4());
+        assert!(!gpu(0x1002, "AMD Radeon RX 7900 XTX").is_amd_rdna4());
+        let gate = windows_fsr4_gate(
+            &fsr4,
+            Some(&amd),
+            &["3.1.6".into(), "2.3.4".into()],
+            &["3.1.7".into()],
+        );
+        assert!(gate.blocked);
+        assert_eq!(gate.reason_code, "dll-no-412");
+        assert!(!fsr4_selection_blocked(&fsr3, &gate));
+
+        let gate = windows_fsr4_gate(
+            &fsr4,
+            Some(&amd),
+            &["4.1.2".into(), "3.1.6".into()],
+            &["4.0.2".into()],
+        );
+        assert!(!gate.blocked);
+        assert!(gate.allowed());
+
+        let override_settings = Settings {
+            provider_lib: "C:\\fsr\\amd_fidelityfx_upscaler_vk.dll".into(),
+            ..fsr4.clone()
+        };
+        let gate = windows_fsr4_gate(&override_settings, Some(&nvidia), &[], &[]);
+        assert!(gate.blocked);
+        assert!(gate.override_active);
+        assert!(gate.allowed());
+        assert_eq!(gate.reason_code, "not-rdna4");
+
+        let missing = windows_fsr4_gate(&fsr4, None, &[], &[]);
+        assert!(missing.blocked);
+        assert_eq!(missing.reason_code, "gpu-missing");
+        assert!(!missing.allowed());
+
+        // Linux keeps the native 4.1.2/MLFI path and is not hardware-gated.
+        let native = fsr4_gate(&fsr4);
+        assert!(!native.blocked);
+        assert!(native.allowed());
+        assert_eq!(native.reason_code, "native");
     }
 
     #[test]

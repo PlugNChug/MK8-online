@@ -1062,6 +1062,12 @@ impl App {
                     );
                 }
                 let settings = crate::fsr::read_settings(&self.local)?;
+                if cfg!(windows) {
+                    let gate = crate::fsr::fsr4_gate(&settings);
+                    if crate::fsr::fsr4_selection_blocked(&settings, &gate) {
+                        return Err(gate.reason);
+                    }
+                }
                 if cfg!(target_os = "linux")
                     && settings.upscaling != "3.1.6"
                     && settings.upscaling != "4.1.2"

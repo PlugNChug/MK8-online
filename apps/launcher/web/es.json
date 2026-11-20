@@ -1349,5 +1349,12 @@
   "Desinstalação concluída": "Desinstalación completada",
   "Removendo arquivos…": "Eliminando archivos…",
   "Os arquivos gerenciados foram removidos.": "Se eliminaron los archivos administrados.",
-  "Seus dados foram preservados.": "Se conservaron tus datos."
+  "Seus dados foram preservados.": "Se conservaron tus datos.",
+  "Não foi possível identificar a GPU Vulkan. FSR 4.1.2 exige AMD RDNA 4; use um provedor manual ou selecione FSR 3.1.6.": "No se pudo identificar la GPU Vulkan. FSR 4.1.2 requiere AMD RDNA 4; usa un proveedor manual o selecciona FSR 3.1.6.",
+  "FSR 4.1.2 exige AMD RDNA 4; as DLLs assinadas da AMD expõem FSR 3.1.6 nesta GPU.": "FSR 4.1.2 requiere AMD RDNA 4; las DLL firmadas de AMD exponen FSR 3.1.6 en esta GPU.",
+  "As DLLs assinadas da AMD instaladas expõem apenas {0}; FSR 4.1.2 exige AMD RDNA 4.": "Las DLL firmadas de AMD instaladas exponen solo {0}; FSR 4.1.2 requiere AMD RDNA 4.",
+  "O provedor manual continua valendo.": "El proveedor manual sigue aplicándose.",
+  "FSR 4 MLFI — indisponível nesta versão": "FSR 4 MLFI — no disponible en esta versión",
+  "FSR 3 usa o provedor de frame generation compilado abaixo. FSR 4 MLFI fica visível, mas desativado nesta versão do launcher; no Windows ele também exige AMD RDNA 4.": "FSR 3 usa el proveedor de frame generation compilado abajo. FSR 4 MLFI aparece visible pero desactivado en esta versión del launcher; en Windows también requiere AMD RDNA 4.",
+  "Indisponível nesta versão do launcher; no Windows exige AMD RDNA 4": "No disponible en esta versión del launcher; en Windows requiere AMD RDNA 4"
 }
