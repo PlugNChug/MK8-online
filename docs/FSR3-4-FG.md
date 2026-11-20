@@ -104,13 +104,24 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   - `ffxCreateContext(FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION, 1920x1080)` returns `FFX_API_RETURN_OK`:
     the full optical-flow + frame-interpolation pipeline set and all internal resources are created from the
     generated blobs; `ffxDestroyContext` returns OK.
-- The source provider also carries the MLFI camera-matrix path (`ffxDispatchDescFrameGenerationPrepareCameraInfo`),
-  i.e. the FSR 4 ML frame-interpolation path is present in this provider build; the ML model banks are not part of
-  the SDK source and come from the user's own signed AMD DLL in the download/patch step.
+- The SDK source does **not** implement MLFI (FSR 4 ML frame interpolation). It only has the
+  `FFX_EFFECT_MLFRAMEGENERATION` id and warning strings about the camera matrices MLFI needs; the MLFI SPIR-V and
+  its model banks exist only in AMD's signed DLL. The source-built provider is therefore **FSR 3.1.7 frame
+  generation**; FSR 4 MLFI delivery is tracked in `docs/FSR4-MLFI.md`.
+
+## Reproducing the provider and the checks
+
+```sh
+# from the user's own FidelityFX SDK 2.4.0 download (MIT); nothing AMD ships as a binary is used
+python3 tools/build_fg_provider.py --sdk-archive FidelityFX-SDK-v2.4.0.tar.gz     --sdk-size <bytes> --sdk-sha256 <hex> --dxc /path/to/dxc --self-test
+
+# native provider tests (skip when the provider/SDK headers are absent)
+MK8_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so MK8_FG_SDK=$HOME/.cache/mk8online/fsr-build/sdk-copy     python3 -m unittest tests.test_fg_provider -v
+```
 
 ## Evidence so far
 
 - `tools/extract_fg_spv.py` on `amd_fidelityfx_framegeneration_vk.dll`: 194 modules / 12.5 MB, names above.
-- DXC compile of `ffx_frameinterpolation_pass.hlsl` → `/tmp/fi.spv` (19,400 B).
+- DXC compile of `ffx_frameinterpolation_pass.hlsl` → a 19,400-byte SPIR-V module (`tools/fg-linux` keeps the build recipe).
 - Distribution research: 2.4.0 license MIT-lists the `_vk` signed DLLs; ecosystem practice is download-at-setup
   with a license gate (dkb), never bundle.
