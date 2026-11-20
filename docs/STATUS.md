@@ -1,4 +1,10 @@
-# Estado técnico — 19/11/2026
+# Estado técnico — 20/11/2026
+
+## Recusa de acesso ao Nextendo — #74
+
+O log anexado à [issue #74](https://github.com/Vnnc1/MK8-online/issues/74) registra login e token de jogo aceitos, seguidos de `discord_unlinked` e saída 2. Nessa situação, o launcher agora orienta vincular o Discord à conta Nextendo e tentar novamente. A aba Jogar mantém a orientação após o aviso. Outros códigos de recusa identificados aparecem na interface. O código de saída e o relatório continuam disponíveis. Basta atualizar o launcher para ler esse diagnóstico das builds existentes.
+
+Build do launcher, 49 testes Rust, formatação e Clippy passaram. O teste de navegador com estados simulados verificou a orientação em inglês, uma recusa diferente e o aviso de falha genérica. Os dois testes dos catálogos passaram. A conta do relator e uma corrida online não foram testadas.
 
 ## Nextendo e menu no relançamento da 0.4.0
 

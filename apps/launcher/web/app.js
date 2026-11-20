@@ -867,8 +867,11 @@ async function refresh() {
   $("open-reports").hidden = !status.windowed;
   $("open-data").hidden = !status.windowed;
   $("data-dir").textContent = status.data_dir;
+  const refusal = status.nextendo_refusal === "discord_unlinked"
+    ? "Vincule o Discord à sua conta Nextendo e tente jogar novamente."
+    : status.nextendo_refusal ? "O Nextendo recusou o acesso online: " + status.nextendo_refusal : "";
   if (status.last_report && status.last_report !== lastReport) {
-    if (lastReport !== null) notice("O jogo fechou com erro. Um relatório foi salvo em Suporte.", true);
+    if (lastReport !== null) notice(refusal || "O jogo fechou com erro. Um relatório foi salvo em Suporte.", true);
     lastReport = status.last_report;
     $("report-path").textContent = status.last_report;
   } else if (lastReport === null) lastReport = "";
@@ -888,7 +891,7 @@ async function refresh() {
   i18n.text($("game-state"), status.game_pid
     ? "Processo do jogo em execução."
     : status.game_exit
-      ? "Processo encerrado: " + status.game_exit
+      ? refusal || "Processo encerrado: " + status.game_exit
       : status.candidate
         ? "Build experimental disponível para teste."
         : "Prepare o jogo para habilitar a execução.");
