@@ -1,4 +1,10 @@
-# Estado técnico — 19/11/2026
+# Estado técnico — 20/11/2026
+
+## Busca da DLL Steam após uma candidata incompatível
+
+O launcher mantém a prioridade da DLL configurada e das pastas locais. Se nenhuma candidata carregar com os exports exigidos, a busca continua nas bibliotecas Steam. O teste de regressão verifica a descoberta após recusa local e que uma DLL local compatível dispensa a varredura.
+
+No Windows, o launcher recompilado, com a DLL incompatível de tModLoader numa pasta de dados temporária, listou os amigos pela API normal. O módulo carregado no processo veio de `wallpaper_engine/bin/steam_api64.dll` na biblioteca Steam. Passaram 65 testes de launcher e sessão, formatação e Clippy. O teste optativo de lobby e uma corrida entre PCs ficaram fora desta verificação. Mudança local, sem publicação.
 
 ## Nextendo e menu no relançamento da 0.4.0
 

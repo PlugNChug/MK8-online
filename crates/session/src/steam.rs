@@ -357,6 +357,13 @@ fn load_interface(handle: isize, versioned: &CStr, legacy: &CStr) -> Result<Inte
 }
 
 pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
+    dll_candidates(local, cached_library_dll_paths).collect()
+}
+
+fn dll_candidates(
+    local: &Path,
+    library_paths: impl FnOnce() -> Vec<PathBuf>,
+) -> impl Iterator<Item = PathBuf> {
     let mut paths = Vec::new();
     if let Ok(env_path) = std::env::var("MK8_STEAM_DLL") {
         let p = PathBuf::from(env_path.trim());
@@ -370,10 +377,12 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
             paths.push(parent.join("steam_api64.dll"));
         }
     }
-    // An explicit/local DLL takes priority, including when Steam has no games installed.
-    if paths.iter().any(|path| path.is_file()) {
-        return paths;
-    }
+    paths
+        .into_iter()
+        .chain(std::iter::once_with(library_paths).flatten())
+}
+
+fn cached_library_dll_paths() -> Vec<PathBuf> {
     // Status polls every two seconds; do not rescan installed games on each poll.
     static CACHE: Mutex<Option<(Instant, Vec<PathBuf>)>> = Mutex::new(None);
     let mut cache = CACHE.lock().unwrap();
@@ -383,10 +392,7 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
     {
         *cache = Some((Instant::now(), library_dll_paths(&steam_roots())));
     }
-    if let Some((_, found)) = cache.as_ref() {
-        paths.extend(found.iter().cloned());
-    }
-    paths
+    cache.as_ref().unwrap().1.clone()
 }
 
 fn steam_roots() -> Vec<PathBuf> {
@@ -521,9 +527,7 @@ fn library_dll_paths(roots: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 pub fn find_dll(local: &Path) -> Option<PathBuf> {
-    candidate_dll_paths(local)
-        .into_iter()
-        .find(|path| path.is_file())
+    dll_candidates(local, cached_library_dll_paths).find(|path| path.is_file())
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -764,7 +768,9 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
         return Ok(api.clone());
     }
     // Resolve exports before initialization; a rejected library is released by Api::load.
-    let api = compatible_api(candidate_dll_paths(local), |path| Api::load(path, local))?;
+    let api = compatible_api(dll_candidates(local, cached_library_dll_paths), |path| {
+        Api::load(path, local)
+    })?;
     if !unsafe { (api.is_steam_running)() } {
         return Err("O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.".into());
     }
@@ -1438,33 +1444,48 @@ mod tests {
     fn incompatible_candidate_does_not_hide_a_compatible_library() {
         let root = std::env::temp_dir().join(format!("mk8-compatible-dll-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        let old = root.join("old.dll");
-        let good = root.join("good.dll");
+        let old = root.join("steam_api64.dll");
+        let good = root.join("steamapps/common/Game/steam_api64.dll");
+        fs::create_dir_all(good.parent().unwrap()).unwrap();
         fs::write(&old, b"selection fixture").unwrap();
         fs::write(&good, b"selection fixture").unwrap();
-        let paths = vec![root.join("missing.dll"), old.clone(), good.clone()];
+        let paths = dll_candidates(&root, || library_dll_paths(std::slice::from_ref(&root)));
         let mut visited = Vec::new();
         let chosen = compatible_api(paths, |path| {
-            visited.push(path.to_owned());
-            if path == old {
-                Err("required export absent".into())
-            } else {
+            if path == old || path == good {
+                visited.push(path.to_owned());
+            }
+            if path == good {
                 Ok(path.to_owned())
+            } else {
+                Err("required export absent".into())
             }
         })
         .unwrap();
         assert_eq!(chosen, good);
         assert_eq!(visited, [old.clone(), good.clone()]);
+        let paths = dll_candidates(&root, || {
+            panic!("compatible local DLL should skip the scan")
+        });
+        assert_eq!(
+            compatible_api(paths, |path| {
+                if path == old {
+                    Ok(path.to_owned())
+                } else {
+                    Err("unrelated DLL".into())
+                }
+            })
+            .unwrap(),
+            old
+        );
         let error = compatible_api::<()>([old.clone()], |_| Err("required export absent".into()))
             .unwrap_err();
-        assert!(error.contains("old.dll") && error.contains("required export absent"));
+        assert!(error.contains("steam_api64.dll") && error.contains("required export absent"));
         assert!(
             compatible_api::<()>([root.join("missing.dll")], |_| panic!("missing DLL loaded"))
                 .is_err()
         );
-        fs::remove_file(old).unwrap();
-        fs::remove_file(good).unwrap();
-        fs::remove_dir(root).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
