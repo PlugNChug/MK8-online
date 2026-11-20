@@ -41,7 +41,7 @@ int mk8_nextendo_probe(bool keep_session) {
                 for (int j=0;j<250;++j) {
                     mk8_social_snapshot(social);
                     if (!social->busy) break;
-                    Sleep(100);
+                    SDL_Delay(100);
                 }
                 printf("Social: friends=%d count=%d lobby=%d in_lobby=%d players=%d/%d\n",
                     social->friends_ok,social->count,social->lobby_ok,social->in_lobby,social->players,social->capacity);
