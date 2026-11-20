@@ -307,7 +307,7 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
     Ok(root)
 }
 
-#[cfg(any(mk8_portable, test))]
+#[cfg(any(windows, mk8_portable, test))]
 fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> Result<(), Error> {
     let deadline = std::time::Instant::now() + timeout;
     loop {

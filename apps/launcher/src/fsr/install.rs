@@ -811,6 +811,14 @@ fn fsr4_dispatch_supported(path: &Path) -> bool {
     }
 }
 
+/// The private FSR 4 dispatch entry point is Linux-specific. Windows reports the
+/// provider through the managed install receipt instead; the branch that calls
+/// this helper is unreachable there but still typechecked.
+#[cfg(not(target_os = "linux"))]
+fn fsr4_dispatch_supported(_path: &Path) -> bool {
+    false
+}
+
 #[cfg(target_os = "linux")]
 fn upscaler_ready(dir: &Path, version: &str) -> bool {
     if !installed_upscaler_version(dir, version)
