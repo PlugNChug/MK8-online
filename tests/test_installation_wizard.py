@@ -115,7 +115,7 @@ class InstallationWizardTests(unittest.TestCase):
         self.tools = True
         self.setup = dict(state='done', steps=[])
         self.refresh()
-        page.locator('#flow-next').click()
+        expect(page.locator('#flow-step-1')).to_have_attribute('aria-current','step')
         expect(page.locator('#base_package')).to_be_visible()
         expect(page.locator('#flow-step-2')).to_be_disabled()
         self.files()

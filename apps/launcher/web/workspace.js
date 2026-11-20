@@ -42,7 +42,7 @@
       <div class="config-desktop"><div id="config-monitor" class="config-monitor"><div class="config-windowbar"><span>MK8</span><span aria-hidden="true">− □ ×</span></div>
         <div class="config-screen"><div id="config-scene" class="config-scene">
           <svg class="config-track-art" viewBox="0 0 320 180" preserveAspectRatio="none" aria-hidden="true"><rect x="-50" width="420" height="180" fill="#18272b"/><path d="M0 180 150 30 245 15 420 180" fill="#263a39"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#929b8f" stroke-width="42"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#33413f" stroke-width="32"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#d5d6b5" stroke-width="2" stroke-dasharray="8 10"/><circle cx="210" cy="85" r="7" fill="#ff794f"/><circle cx="283" cy="117" r="5" fill="#f3e9d1"/><circle class="config-world-extra" cx="-25" cy="95" r="10" fill="#8bb8a8"/><circle class="config-world-extra" cx="345" cy="50" r="10" fill="#e3ad5e"/></svg>
-          <div id="config-menu-example" class="config-menu-example"><strong>Menu F1</strong><span class="selected">Vídeo</span><span>Áudio</span><span>Controles</span><small>Voltar ao jogo</small></div>
+          <div id="config-menu-example" class="config-menu-example"><strong>Menu F1</strong><span class="selected">Jogar</span><span>Nextendo</span><span>Social</span><small>Voltar ao jogo</small></div>
           <div class="config-hud"><span id="config-fps-example" hidden>FPS —</span><span id="config-memory-example" hidden>RAM —</span></div>
         </div></div>
       </div></div>

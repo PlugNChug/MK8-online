@@ -172,6 +172,7 @@ mod tests {
             dlc_supported: true,
             pack_supported: false,
             cups_supported: false,
+            nextendo_supported: false,
             files: BTreeMap::from([
                 (
                     "dlc-manifest".into(),

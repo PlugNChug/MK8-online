@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+GAME_MENU = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc'
 sys.path.insert(0, str(ROOT/'toolchain'))
 import ctgp_pack as P
 import import_ctgp
@@ -241,9 +242,9 @@ class CtgpPackTests(unittest.TestCase):
         with self.assertRaises(P.PackError):
             P.flan_add_pattern(base, 'P_Other_00', ['x'], 25)
 
-    @unittest.skipUnless((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').is_file(), 'MK8 4.0.1 RomFS required')
+    @unittest.skipUnless(GAME_MENU.is_file(), 'MK8 4.0.1 RomFS required')
     def test_cup_icon_textures_are_added_to_the_games_bntx(self):
-        menu = P.sarc_read((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').read_bytes())
+        menu = P.sarc_read(GAME_MENU.read_bytes())
         archive = next(b for n, _, _, b, _ in menu['files'] if n == 'mn_L_CupSlctBtn_00.szs')
         bntx = next(f[3] for f in P.sarc_read(P.yaz0_decode(archive))['files'] if f[3][:4] == b'BNTX')
         same = P.bntx_add_textures(bntx, [])  # (the same file: only the _RLT's encoding may differ)

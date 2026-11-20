@@ -158,8 +158,10 @@ pub fn launch_candidate(
     spawn_game(install, local, network, username, false)
 }
 
-/// Development-only until the MK8 production trust anchor is confirmed.
-pub fn nextendo_available() -> bool {
+pub const NEXTENDO_GAME_KEY: &str =
+    "770551f13152f3d55370de6c039d3859cff0d39882f27c6c9fc6cfdb327d74b8";
+
+pub fn nextendo_test_configured() -> bool {
     std::env::var("MK8_NEXTENDO_TEST").as_deref() == Ok("1")
         && ["RECOMP_NEXTENDO_TLS_PIN", "RECOMP_NEXTENDO_ZNC_TLS_PIN"]
             .iter()
@@ -169,16 +171,30 @@ pub fn nextendo_available() -> bool {
             })
 }
 
+pub fn nextendo_trusted(local: &Path) -> bool {
+    nextendo_test_configured()
+        || mk8_manifest::load::<String>(&local.join("nextendo-trust.json")).as_deref()
+            == Ok(NEXTENDO_GAME_KEY)
+}
+
+pub fn trust_nextendo(local: &Path, key: &str) -> Result<()> {
+    if key != NEXTENDO_GAME_KEY {
+        return Err("Chave de servidor Nextendo desconhecida.".into());
+    }
+    mk8_manifest::save(&local.join("nextendo-trust.json"), &key)
+}
+
 pub fn launch_nextendo(
     install: &Installation,
     local: &Path,
     username: &str,
     candidate: bool,
 ) -> Result<Child> {
-    if !nextendo_available() {
-        return Err(
-            "Nextendo indisponível: configure o teste e a confiança TLS por serviço.".into(),
-        );
+    if !nextendo_trusted(local) {
+        return Err("Confirme a chave do servidor Nextendo no launcher.".into());
+    }
+    if !install.nextendo_supported && !nextendo_test_configured() {
+        return Err("Atualize a build do jogo para usar o Nextendo.".into());
     }
     if candidate {
         validate_candidate(install)?;
@@ -271,9 +287,38 @@ fn spawn_game(
     rotate_game_log(local)?;
     let log = fs::File::create(local.join("game.log")).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&install.executable.path);
+    cmd.env_remove("MK8_NEXTENDO_COMMUNITY");
     cmd.env("MK8_NEXTENDO_TEST", if nextendo { "1" } else { "0" });
     if nextendo {
         cmd.arg("--nextendo-login-play").env_remove("MK8_AUTO_LAN");
+        if !nextendo_test_configured() {
+            use std::net::ToSocketAddrs;
+            for (key, host) in [
+                ("RECOMP_NEXTENDO_SERVER", "nex.nextendo.network"),
+                ("RECOMP_NEXTENDO_NAT", "nat.nextendo.network"),
+            ] {
+                let ip = (host, 443)
+                    .to_socket_addrs()
+                    .map_err(|e| format!("Nextendo DNS ({host}): {e}"))?
+                    .find(|addr| addr.is_ipv4())
+                    .ok_or_else(|| format!("Nextendo DNS ({host}): IPv4 indisponível."))?;
+                cmd.env(key, ip.ip().to_string());
+            }
+            for key in [
+                "RECOMP_NEXTENDO_API",
+                "RECOMP_NEXTENDO_ZNC_TLS_PIN",
+                "RECOMP_NET_HOSTS",
+                "RECOMP_NET_BACKEND",
+                "RECOMP_NET_NO_PROBE",
+                "RECOMP_NET_ID_TOKEN_FILE",
+                "RECOMP_NET_NEX_TOKEN_FILE",
+                "RECOMP_NET_TEST_SERVER",
+            ] {
+                cmd.env_remove(key);
+            }
+            cmd.env("MK8_NEXTENDO_COMMUNITY", "1")
+                .env("RECOMP_NEXTENDO_TLS_PIN", NEXTENDO_GAME_KEY);
+        }
     }
     // The runtime uses LARECOMP_DATA_ROOT as cwd; keep saves out of versioned builds.
     cmd.current_dir(&saves)
@@ -397,6 +442,7 @@ mod tests {
             dlc_supported: false,
             pack_supported: false,
             cups_supported: false,
+            nextendo_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

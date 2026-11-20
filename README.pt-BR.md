@@ -19,7 +19,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Entrar-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
 Projeto experimental de recompilação estática de **Mario Kart 8 Deluxe 4.0.1** para Windows,
-com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Steam.
+com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com amigos pela Steam.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Relatar um problema](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roteiro](docs/ROADMAP.md)
 
@@ -29,9 +29,11 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **A 0.4.0 é a versão pública experimental para Windows x64.** Escolha o instalador para instalar ou atualizar. O ZIP portátil mantém o launcher, as ferramentas e os dados do jogo juntos em uma pasta com permissão de escrita.
+> **Já usa a primeira 0.4.0?** Baixe manualmente o novo instalador ou ZIP portátil. O atualizador compara os números de versão. Mantenha sua pasta de dados, abra **Instalação → Ferramentas** e atualize a build do jogo.
 
 ## Novidades da 0.4.0
+
+**Multijogador online nativo com o Nextendo.** Selecione **Jogar → Jogar no Nextendo** no launcher, entre na sua conta pelo navegador e abra **Online Play → Mundial → Corrida** no Mario Kart para jogar com outras pessoas. Pressione **F1** dentro do jogo para consultar salas e amigos. As sessões Nextendo usam as pistas originais.
 
 A edição portátil pode ser movida entre unidades do Windows. Com o jogo preparado, `Launcher.exe --play` abre o modo solo diretamente. Os controles ganharam direção por movimento, vibração HD e a opção de usar cada Joy-Con na horizontal no multijogador local. Saves e replays temporários do Grand Prix ficam separados, e o troféu da Copa Casco permaneceu após reiniciar nos testes. As correções gráficas abrangem as cores das copas, a contagem da largada e a iluminação em tela dividida. Ao atualizar, mantenha sua pasta de dados e siga **Instalação → Ferramentas → Build do jogo**.
 
@@ -39,7 +41,7 @@ A edição portátil pode ser movida entre unidades do Windows. Com o jogo prepa
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
-Em **F1 → Controls → Joy-Con mode**, escolha **Combined** para usar as duas metades como um controle ou **Individual (horizontal)** para cada jogador usar um Joy-Con de lado. A escolha vale para todos os Joy-Con conectados e fica salva para a próxima sessão. O Pro Controller pode ser usado junto com os Joy-Con nos dois modos.
+Abra **F1 → Ajustes → Controle → Joy-Con mode**. Escolha **Combined** para usar as duas metades como um controle ou **Individual (horizontal)** para cada jogador usar um Joy-Con de lado. A escolha vale para todos os Joy-Con conectados e fica salva para a próxima sessão. O Pro Controller pode ser usado junto com os Joy-Con nos dois modos.
 
 O Pro Controller original do Switch, os Joy-Con individuais e um único par identificável de Joy-Con oficiais via Bluetooth têm vibração HD. No modo combinado, o jogo controla a frequência e a intensidade de cada lado separadamente. No modo horizontal, cada Joy-Con recebe os dois canais de vibração daquele jogador. Os demais controles compatíveis usam a vibração da SDL. Abrir as configurações ou trocar de janela interrompe a vibração.
 
@@ -47,6 +49,8 @@ O Pro Controller original do Switch, os Joy-Con individuais e um único par iden
 A versão 0.4.0 acrescenta **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
 
 A opção de **menu nativo de configurações** é salva automaticamente para o próximo início. Acrescenta a chave no menu principal do jogo e preserva o fallback F1/Menos + Mais e a prioridade do atalho do hub. Compartilha o arquivo de configurações do runtime, incluindo a proporção. Os layouts privados são derivados localmente de recursos verificados do jogo; nenhum é distribuído. A qualificação completa continua pendente; evidências manuais locais e limites estão em [STATUS.md](docs/STATUS.md).
+
+**CTGP Deluxe e o menu de configurações.** O relançamento corrige o crash ao abrir o menu principal com as duas opções ligadas. Atualize a build para o launcher regenerar o layout do menu a partir dos arquivos do jogo.
 
 ### Instalação e runtime
 
@@ -67,7 +71,7 @@ O runtime da 0.4.0 inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo 
 **Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. Requer Windows x64 e drivers Vulkan compatíveis; não acrescenta suporte a Linux/AppImage/Steam Deck.
 
 
-Prévia opcional para testes: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados.
+Pressione **F1** ou **Menos + Mais** para abrir o menu do jogo. Em Jogar, volte à partida ou abra o Perfil Mii. Ajustes reúne vídeo, áudio, controles e mods. O painel usa o tema de menu escolhido no launcher. Nos detalhes de um mod, Voltar retorna à lista de mods. Após o login, Nextendo mostra as salas reais do MK8 e Social consulta os amigos e a presença com a permissão `friends`. Selecionar uma sala abre os detalhes. Para disputar uma corrida, use **Online Play** no Mario Kart.
 
 ### Recursos disponíveis desde a 0.3.0
 
@@ -98,7 +102,7 @@ O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. A
 | Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.3.0 → 0.4.0 em mais PCs |
 | Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
-| Multijogador | Salas Steam com convites; duas instâncias do jogo no mesmo PC entraram sozinhas na mesma sala LAN | Convidado entrando pela Steam a partir de outro PC, corridas completas entre dois PCs |
+| Multijogador | Busca de partidas no Online Play nativo pelo Nextendo, convites Steam e testes de LAN local | Completar uma corrida Nextendo no relançamento e uma corrida Steam entre dois PCs |
 | Desempenho | Cerca de 60 FPS nos trechos medidos no PC de teste | Copas repetidas, estabilidade de VRAM e mais hardware |
 
 São marcos observados, não um percentual de conclusão. `gameplay_verified` e `multiplayer_verified` continuam `false` até a qualificação completa.
@@ -208,7 +212,7 @@ as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha
 
 ## Compilar e contribuir
 
-O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Controls. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
+O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Ajustes → Controle. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
 
 Para experimentar a direção por movimento na 0.4.0, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
 
@@ -231,11 +235,9 @@ Para gerar um instalador local de teste sem publicar uma release, execute `pytho
 Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplica a uma cópia verificada. Não edite os snapshots upstream nem o código gerado do jogo. Siga o [AGENTS.md](AGENTS.md) e rode os testes da área alterada. Caminhos só de desenvolvimento estão documentados no [estado técnico](docs/STATUS.md):
 
 - transportes LAN/relay/P2P pela API;
-- o conversor estático de cabeça Mii;
-- o protótipo Nextendo;
-- o painel experimental dentro do jogo (`MK8_MENU_PROTOTYPE=1`, F1 ou Menos + Mais). Na 0.4.0, a lista de salas e a presença dos amigos usam os dados da conta Nextendo autorizada. A entrada na corrida acontece pelo **Online Play** do jogo.
+- o conversor estático de cabeça Mii.
 
-Os testes Nextendo foram retomados na `fix-chore`: o mantenedor confirmou gameplay online com outras pessoas em uma sessão isolada. O adaptador opt-in usa a API OAuth documentada e o ID público registrado do MK8-online. `scripts/test-race.py time-trial --nextendo --interactive` permite teste manual com saves copiados e candidato local verificado. Ainda não é um recurso público do launcher; confiança TLS de produção, reconexão e qualificação completa de corrida/reinício continuam pendentes. Os tokens ficam em memória durante o processo.
+Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Os tokens ficam em memória e o CTGP é desativado nessa sessão. A reconexão continua experimental.
 
 | Local | Responsabilidade |
 | --- | --- |

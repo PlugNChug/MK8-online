@@ -16,6 +16,9 @@ class PackagePayloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             required = (
+                'runtime/mk8/net/nextendo_ca.h',
+                'runtime/mk8/ui/hub.h',
+                'runtime/mk8/ui/settings_theme.inc',
                 'runtime/mk8/support/settings_values.h',
                 'runtime/mk8/support/settings_values.c',
                 'runtime/mk8/support/settings_page.c',
@@ -23,6 +26,7 @@ class PackagePayloadTests(unittest.TestCase):
                 'runtime/mk8/ui/settings_controls.inc',
                 'toolchain/settings_layout.py',
                 'toolchain/settings_menu.py',
+                'toolchain/mii_assembly.html',
                 'toolchain/ultrawide.py',
             )
             excluded = ('runtime/private.bin', 'runtime/private.sarc',

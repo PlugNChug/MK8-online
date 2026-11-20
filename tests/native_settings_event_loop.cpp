@@ -10,6 +10,8 @@ static SDL_Window *window;
 static bool active=true, physical_blocked;
 static uint64_t held;
 static unsigned events, polls, transitions;
+static unsigned steam_polls;
+void mk8_poll_steam_gamepads(void) { ++steam_polls; }
 static uint64_t previous;
 static SDL_JoystickID id;
 static SDL_Joystick *stick;
@@ -105,5 +107,6 @@ int main() {
     SDL_UpdateJoysticks();mk8_settings_poll(false);
     noise();assert(ui_run()==1);
     assert(polls==80 && transitions==19 && resize_events==1 && drawable_updates>=82);
+    assert(steam_polls==polls);
     SDL_CloseGamepad(pad);SDL_CloseJoystick(stick);SDL_DetachVirtualJoystick(id);SDL_Quit();
 }

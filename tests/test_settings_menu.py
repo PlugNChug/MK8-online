@@ -23,12 +23,19 @@ class SettingsMenuTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / 'palette.cpp'
-            source.write_text('#include "imgui.h"\n#include <math.h>\n#include <assert.h>\n' + palette + '\n' +
+            source.write_text('#include "imgui.h"\n#include <math.h>\n#include <assert.h>\n'
+                              'static bool hub, native_settings;\n'
+                              'static bool mk8_hub_enabled() { return hub; }\n'
+                              'extern "C" bool mk8_settings_style_active() { return native_settings; }\n' + palette + '\n' +
                               (ROOT / 'runtime/mk8/ui/settings_theme.inc').read_text(encoding='utf-8') + r'''
 static float channel(float v) { return v <= .04045f ? v/12.92f : powf((v+.055f)/1.055f,2.4f); }
 static float light(ImVec4 v) { return .2126f*channel(v.x)+.7152f*channel(v.y)+.0722f*channel(v.z); }
 static float contrast(ImVec4 a, ImVec4 b) { float x=light(a),y=light(b); return (fmaxf(x,y)+.05f)/(fminf(x,y)+.05f); }
 int main() {
+    for (int flags = 0; flags < 4; flags++) {
+        hub = flags & 1; native_settings = flags & 2;
+        assert(mk8_settings_overlay_style_active() == (native_settings && !hub));
+    }
     ThemePalette base={}; const ThemePalette &p=mk8_settings_palette(base);
     assert(contrast(p.text,p.window)>4.5f && contrast(p.text,p.hover)>4.5f);
     assert(contrast(p.text_dim,p.child)>4.5f && contrast(p.accent,p.window)>4.5f);

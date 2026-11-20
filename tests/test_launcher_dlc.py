@@ -64,7 +64,7 @@ class LauncherDlcTests(unittest.TestCase):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute('content')
         state = page.request.get(self.url+'/api/status',headers={'X-MK8-Token':token}).json()['data']
-        state.update(candidate=True,candidate_stale=False)
+        state.update(tools_ready=True, candidate=True, candidate_stale=False)
         page.route('**/api/status',lambda route:route.fulfill(json={'ok':True,'data':state}))
         page.evaluate('() => refresh()')
         page.locator('#flow-step-3').click()
@@ -99,7 +99,7 @@ class LauncherDlcTests(unittest.TestCase):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute("content")
         state = page.request.get(self.url + "/api/status", headers={"X-MK8-Token": token}).json()["data"]
-        state.update(candidate=True, candidate_stale=False)
+        state.update(tools_ready=True, candidate=True, candidate_stale=False)
         state["dlc"] = {"state":"ready", "installed":True, "enabled":False, "detail":""}
         state["dlc_import"] = {"state":"idle", "detail":""}
         page.route("**/api/status", lambda route: route.fulfill(json={"ok":True,"data":state}))
@@ -133,7 +133,7 @@ class LauncherDlcTests(unittest.TestCase):
         page = self.page()
         token = page.locator('meta[name="mk8-token"]').get_attribute("content")
         state = page.request.get(self.url + "/api/status", headers={"X-MK8-Token": token}).json()["data"]
-        state.update(candidate=True, candidate_stale=False)
+        state.update(tools_ready=True, candidate=True, candidate_stale=False)
         state["dlc"] = {"state": "ready", "installed": True, "enabled": True, "detail": ""}
         state["dlc_import"] = {"state": "idle", "detail": "", "steps": [], "completed": 0, "total": 1}
         calls = []

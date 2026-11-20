@@ -67,10 +67,11 @@ class NextendoTests(unittest.TestCase):
                 folder = Path(tmp)
                 (folder/'save.dat').write_bytes(b'preserve-me')
                 env = dict(os.environ, MK8_NEXTENDO_TEST='1', RECOMP_NEXTENDO_API=f'http://127.0.0.1:{server.server_port}')
-                env.pop('MK8_MENU_PROTOTYPE', None)
+                env['MK8_MENU_PROTOTYPE'] = '0'
                 env.pop('MK8_NEXTENDO_SOCIAL_TEST', None)
                 if scenario.startswith('social_'):
-                    env.update(MK8_MENU_PROTOTYPE='1', MK8_NEXTENDO_SOCIAL_TEST='1')
+                    del env['MK8_MENU_PROTOTYPE']
+                    env['MK8_NEXTENDO_SOCIAL_TEST'] = '1'
                 if scenario == 'disabled': env['MK8_NEXTENDO_TEST'] = '0'
                 proc = subprocess.Popen([exe, '--nextendo-login-play' if login_play else '--nextendo-auth-test'], cwd=folder, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -214,6 +215,15 @@ int main(void) {
     net_config_reload();
     assert(net_tls_pin_for_host("api-lp1.znc.srv.nintendo.net", znc_pin));
     assert(memcmp(game_pin, znc_pin, 32) == 0);
+    uint32_t race_ip, nat_ip, znc_ip;
+    _putenv("MK8_NEXTENDO_COMMUNITY=1");
+    _putenv("RECOMP_NEXTENDO_SERVER=192.0.2.1");
+    _putenv("RECOMP_NEXTENDO_NAT=192.0.2.2");
+    net_config_reload();
+    assert(net_resolve("g2b309e01-lp1.s.n.srv.nintendo.net", &race_ip));
+    assert(net_resolve("nncs2-lp1.n.n.srv.nintendo.net", &nat_ip));
+    assert(net_resolve("api-lp1.znc.srv.nintendo.net", &znc_ip));
+    assert(race_ip == nat_ip && race_ip != znc_ip);
     return 0;
 }
 ''', encoding='utf-8')

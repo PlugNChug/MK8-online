@@ -275,6 +275,7 @@ mod tests {
             dlc_supported: true,
             pack_supported: supported,
             cups_supported: supported,
+            nextendo_supported: false,
             files: BTreeMap::new(),
         }
     }

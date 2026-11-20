@@ -1,4 +1,4 @@
-"""Bounded host-only Nextendo test adaptation, after upstream hash verification."""
+"""MK8 Nextendo adaptation applied to a verified runtime build copy."""
 
 from pathlib import Path
 import shutil
@@ -22,10 +22,11 @@ def prepare(runtime):
 
     source = Path(__file__).resolve().parents[1] / 'runtime/mk8/net'
     shutil.copyfile(source / 'social.h', runtime / 'net/mk8_social.h')
+    shutil.copyfile(source / 'nextendo_ca.h', runtime / 'net/nextendo_ca.h')
     # Prepared headers participate in the host cache key, unlike .inc files.
     shutil.copyfile(source / 'social.inc', runtime / 'net/mk8_social_impl.h')
     edit('net/nextendo.c', '#define SCOPE "identity%20game.matchmaking"',
-         '#define SCOPE ((getenv("MK8_MENU_PROTOTYPE") && !strcmp(getenv("MK8_MENU_PROTOTYPE"), "1")) ? "identity%20game.matchmaking%20friends" : "identity%20game.matchmaking")')
+         '#define SCOPE ((getenv("MK8_MENU_PROTOTYPE") && !strcmp(getenv("MK8_MENU_PROTOTYPE"), "0")) ? "identity%20game.matchmaking" : "identity%20game.matchmaking%20friends")')
     edit('net/nextendo.c', 'void nx_test_reset(void) {',
          '#include "mk8_social_impl.h"\n\nvoid nx_test_reset(void) {')
     edit('net/nextendo.c', '#define CLIENT_ID "nxc_R-JWtJ6JrrgY"',
@@ -121,12 +122,31 @@ def prepare(runtime):
          'bool net_tls_pin_for_host(const char *host, uint8_t out[32]) {\n    init();\n    if (trust != NET_TRUST_PINNED) return false;\n'
          '    if (have_znc_pin && host && !strcmp(host, "api-lp1.znc.srv.nintendo.net")) {\n        memcpy(out, znc_pin, 32);\n        return true;\n    }\n'
          '    memcpy(out, pin, 32);\n    return true;\n}')
+    edit('services/ssl.c', '    bool alpn_asked;', '    bool alpn_asked, require_pin;\n    uint8_t expected_pin[32];')
     edit('services/ssl.c',
-         '        if (!net_tls_pin(pin)) { LOG("[ssl] %s: no certificate pin: refused\\n", c->sni); return false; }',
-         '        if (!net_tls_pin_for_host(c->sni, pin)) { LOG("[ssl] %s: no certificate pin: refused\\n", c->sni); return false; }')
+         '        uint8_t pin[32];\n        if (!net_tls_pin(pin)) {',
+         '        c->require_pin = true;\n        if (!net_tls_pin_for_host(c->sni, c->expected_pin)) {')
     edit('services/ssl.c',
-         '    if (net_tls_trust() == NET_TRUST_PINNED && (!net_tls_pin(pin) || !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), pin))) {',
-         '    if (net_tls_trust() == NET_TRUST_PINNED && (!net_tls_pin_for_host(c->sni, pin) || !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), pin))) {')
+         '    uint8_t pin[32];\n    if (net_tls_trust() == NET_TRUST_PINNED && (!net_tls_pin(pin) || !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), pin))) {',
+         '    if (c->require_pin && !ssl_pin_check(mbedtls_ssl_get_peer_cert(&c->ssl), c->expected_pin)) {')
+    edit('services/ssl.c', '#include "mbedtls/x509_crt.h"', '''#include "mbedtls/x509_crt.h"
+#include <stdbool.h>
+#include "../net/nextendo_ca.h"
+static bool nextendo_uses_ca(const char *sni) {
+    const char *community = getenv("MK8_NEXTENDO_COMMUNITY");
+    return community && !strcmp(community, "1") && strcmp(sni, "g2b309e01-lp1.s.n.srv.nintendo.net");
+}''')
+    edit('services/ssl.c', '    } else if (trust == NET_TRUST_PINNED) {', '''    } else if (trust == NET_TRUST_PINNED && nextendo_uses_ca(c->sni)) {
+        if (!c->sni[0] || is_ip(c->sni) ||
+            mbedtls_x509_crt_parse(&c->ca, nextendo_ca_pem, sizeof nextendo_ca_pem)) return false;
+        mbedtls_ssl_conf_ca_chain(&c->conf, &c->ca, NULL);
+        mbedtls_ssl_conf_authmode(&c->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+    } else if (trust == NET_TRUST_PINNED) {''')
+    edit('services/ssl.c', '    mbedtls_ssl_set_hostname(&c->ssl, c->sni[0] && !is_ip(c->sni) ? c->sni : NULL);',
+         '    if (mbedtls_ssl_set_hostname(&c->ssl, c->sni[0] && !is_ip(c->sni) ? c->sni : NULL)) return false;')
+    edit('net/netcfg.c', '        add_rule(NEXTENDO_NAT_HOST,', '''        if (getenv("MK8_NEXTENDO_COMMUNITY") && !strcmp(getenv("MK8_NEXTENDO_COMMUNITY"), "1"))
+            add_rule("g2b309e01-lp1.s.n.srv.nintendo.net", nx_nat, "Nextendo MK8", true);
+        add_rule(NEXTENDO_NAT_HOST,''')
     region('net/netcfg.c', '#define OPTS(nextendo_available)', '    static NetBackendOption signed_out[]', '''#define OPTS(available) { \\
         {NET_BACKEND_OURS, "ours", "Offline", "MK8 Online Play is disabled. Launcher LAN rooms use a separate transport.", true}, \\
         {NET_BACKEND_LOCAL_NEX, "local-nex", "Local test server", "Developer NEX server on the local network.", false}, \\

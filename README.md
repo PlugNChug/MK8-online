@@ -19,7 +19,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
 An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows,
-with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with friends.
+with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and Steam rooms with friends.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Report an issue](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roadmap](docs/ROADMAP.md)
 
@@ -29,9 +29,11 @@ with a native launcher, a Vulkan runtime, a Mii creator and Steam rooms with fri
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **0.4.0 is the experimental public release for Windows x64.** Choose the installer for a new installation or an upgrade. Choose the portable ZIP to keep the launcher, tools and game data together in a writable folder.
+> **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
 
 ## What's new in 0.4.0
+
+**Native online multiplayer with Nextendo.** Select **Play → Play on Nextendo** in the launcher, sign in through your browser, then open **Online Play → Worldwide → Race** in Mario Kart to race other players. Open **F1** in the game to see rooms and friends. Nextendo sessions use the original courses.
 
 The portable edition can move between Windows drives. An already prepared game can start directly with `Launcher.exe --play`. Controller updates add motion steering, HD Rumble and horizontal Joy-Con pairs for local multiplayer. Grand Prix saves and temporary replays are separated, and the Shell Cup trophy survived a restart in testing. Graphics fixes cover cup colours, countdown numbers and lighting in split-screen. After upgrading, keep your data folder and run **Installation → Tools → Game build**.
 
@@ -47,18 +49,20 @@ If cup emblems and countdown numbers appear blue in 0.3.0, the 0.4.0 runtime cor
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
-In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
+Open **F1 → Ajustes → Controle → Joy-Con mode**. Choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
 The DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
 
-Opt-in developer preview: `MK8_MENU_PROTOTYPE=1` enables an in-game overlay with Play, Nextendo, Social and Settings pages (F1 or Back + Start). Account state and settings use the runtime. Social requests the additional `friends` OAuth permission and reads friends/presence; Nextendo lists live MK8 lobbies and reads the current lobby. Selecting a row shows its details; it does not join the room. Queries run in the background every 30 seconds while either page is open. Permission/network failures are displayed explicitly; illustrative players and rooms have been removed. With Nextendo signed in, enter races through the game's Online Play menu. The panel's lobby list is informational; direct joining from this panel is out of scope. Race invitations are not implemented.
+Press **F1** or **Back + Start** to open the in-game menu. Play resumes the game or opens your Mii profile. Settings includes video, audio, controls and mods. The panel uses the menu theme selected in the launcher. In a mod’s details, Back returns to the mod list. After signing in, Nextendo shows live MK8 rooms and Social shows friends and presence with the `friends` permission. Select a room to inspect it. To race, use **Online Play** in Mario Kart.
 
 Version 0.4.0 adds **Ultrawide (experimental)** under Video settings in the launcher and in-game menu. Click **Save settings** in the launcher before starting the game. It widens supported solo Time Trial, Grand Prix and no-team VS cameras between 16:9 and 32:9, preserves vertical framing, and keeps the HUD proportional at the outer edges. Supported views include forward/rear driving in these solo modes, GP/VS course flyovers and GP/VS/Time Trial opening character close-ups. Original 16:9 and Stretch remain available. Unsupported scenes/modes, split-screen and frame generation use 16:9; this does not enable ultrawide online or replay cameras. Rebuild the game, including the affected guest units, to apply it.
 
 The optional **native settings menu** switch is saved automatically for the next launch. It adds the wrench entry to the game's main menu and preserves the existing F1/Back + Start fallback and hub shortcut priority. It shares the runtime settings file, including the aspect choice. The private menu layouts are derived locally from verified game resources; none are distributed. Full qualification remains open; local manual evidence and limits are in [STATUS.md](docs/STATUS.md).
+
+**CTGP Deluxe and the settings menu.** The re-release fixes the crash when both are enabled. Update the game build so the launcher regenerates the menu layout from your game files.
 
 ### Installation and runtime
 
@@ -114,7 +118,7 @@ Multiplayer offers **Create Room (Automatic)** and **Play (Manual Room)**. Both 
 | Launcher | Native window, guided preparation, installer, updates, reports; Spanish, English and Brazilian Portuguese | Upgrade from 0.3.0 to 0.4.0 on more PCs |
 | Solo racing | Mushroom Cup completed; battles, MKTV highlight reel and time trials reached | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
-| Multiplayer | Steam rooms with invites; two game instances on one PC entered the same LAN room automatically | A guest joining over Steam from another PC, full races between two PCs |
+| Multiplayer | Native Nextendo matchmaking through Online Play, Steam rooms with invites and local LAN tests | Finish a Nextendo race on the re-release and test a full Steam race between two PCs |
 | Performance | Around 60 FPS in measured race sections on the test PC | Repeated cups, VRAM stability and more hardware |
 
 These are observed milestones, not a percentage-complete estimate. `gameplay_verified` and `multiplayer_verified` stay `false` until full qualification passes.
@@ -220,7 +224,7 @@ sessions use the game's cups (each machine would otherwise decide on its own whi
 
 ## Build and contribute
 
-Feedback snapshots now retry device-memory exhaustion after collecting GPU-completed retired images, then try host-preferred compatible memory without changing image format or masking allocation errors. The launcher's isolated Vulkan probe now initializes SDL video and actually loads Vulkan through SDL rather than checking exports alone. These mitigations need retesting on the machines affected by issues #52 and #47; they are not included in the published setup.
+Feedback snapshots now retry device-memory exhaustion after collecting GPU-completed retired images, then try host-preferred compatible memory without changing image format or masking allocation errors. The launcher's isolated Vulkan probe now initializes SDL video and actually loads Vulkan through SDL rather than checking exports alone. These mitigations need retesting on the machines affected by issues #52 and #47.
 
 In 0.4.0, Steam tries the available candidate libraries until all required exports can be resolved, without accepting unverified interface versions. MK8's stretch-to-window setting now fills wide/tall windows while retaining the original camera field of view; original 16:9 keeps its proportions. Historical cube-map fallback only reuses existing GPU-owned images, and command-record headers use 72 rather than 88 bytes. Rebuild the launcher for Steam selection and all host runtime consumers for the graphics changes. These changes are not in the published 0.3.0 setup and do not establish fixes for every lighting defect or GPU-memory crash.
 
@@ -228,7 +232,7 @@ Game-data preparation uses short temporary filenames so valid long game filename
 
 The save-data routing fix keeps existing account progress in `save/save_0` and separates device, temporary and other save types into `save/save_type_<type>`. Mii refresh/index queries now return valid local-profile data when progress is reloaded. Together these prevent cross-save cleanup and the reload crash exposed by retaining progress. Rebuild the game/runtime to apply them. Existing saves are not moved or deleted; already lost progress and corrupted thumbnails are not recovered. Native tests pass, and a new MKTV replay/thumbnail survived a process restart in copied-save testing of the combined local build. Full gameplay and trophy persistence remain unqualified.
 
-The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Controls. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
+The main menu's **Info** button opens a local **How to Play** window. Close it with **Back to game**, Escape, or the window's close button to resume. It covers default controller buttons, drifting, items, assists, and modes; PC mappings are under F1 → Ajustes → Controle. No manual asset extraction or internet connection is needed. Launcher and runtime must both be rebuilt for this feature.
 
 To try motion steering in 0.4.0, connect a controller that exposes both a gyroscope and an accelerometer to SDL. In the race pause menu, press **Y** to turn on **Tilt Controls** (the yellow curved arrow). Hold the controller like a steering wheel and tilt left or right. Rebuild the runtime once to get this feature.
 
@@ -262,9 +266,9 @@ For isolated visual development, run `python scripts/preview-launcher.py`. It co
 
 The earlier installation simulation is available only in the live debug preview at `/?storyboard=1#install`. It is labeled as a simulation, uses sample files and in-memory state, and invokes no installation/build API. Normal debug and packaged launchers use real operations. The isolated preview does not reuse installed profiles, resources or saves and does not qualify gameplay.
 
-Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter, the Nextendo prototype) are documented in the [technical status](docs/STATUS.md).
+Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter) are documented in the [technical status](docs/STATUS.md).
 
-Nextendo testing has resumed on `fix-chore`: the maintainer reports successful online play with other players in an isolated test session. The opt-in adapter uses the documented OAuth API and our registered public client ID. `scripts/test-race.py time-trial --nextendo --interactive` supports manual testing with copied saves and a verified local candidate. This is not enabled as a public launcher feature; production TLS trust, reconnection and full race/restart qualification remain pending. Tokens remain in memory for the current process.
+To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. Tokens expire with the process. CTGP is disabled for this session. Reconnection remains experimental.
 
 | Location | Responsibility |
 | --- | --- |

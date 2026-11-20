@@ -20,7 +20,8 @@ class LauncherTests(unittest.TestCase):
         page = self.page()
         try:
             page.locator('[data-tab="play"]').click()
-            expect(page.locator('#play-nextendo')).to_be_hidden()
+            expect(page.locator('#play-nextendo')).to_be_visible()
+            expect(page.locator('#play-nextendo')).to_be_disabled()
             token = page.locator('meta[name="mk8-token"]').get_attribute('content')
             headers = {'X-MK8-Token': token}
             refused = page.request.post(self.urls[0]+'/api/play', headers=headers,
@@ -28,16 +29,32 @@ class LauncherTests(unittest.TestCase):
             self.assertFalse(refused['ok'])
             self.assertIn('Nextendo', refused['error'])
             status = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
-            status.update(nextendo_available=True, candidate=True, game_pid=None)
+            key = status['nextendo_game_key']
+            self.assertFalse(status['nextendo_trusted'])
+            invalid = page.request.post(self.urls[0]+'/api/nextendo/trust', headers=headers,
+                                        data=json.dumps({'key':'0'*64})).json()
+            self.assertFalse(invalid['ok'])
+            status.update(nextendo_supported=False, candidate=True, game_pid=None)
             page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
             calls = []
             def play(route):
                 calls.append(route.request.post_data_json)
                 route.fulfill(json={'ok':True,'data':{'message':'Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.'}})
             page.route('**/api/play', play)
+            expect(page.locator('#nextendo-rebuild')).to_be_visible()
+            status['nextendo_supported'] = True
             expect(page.locator('#play-nextendo')).to_be_enabled()
             page.locator('#play-nextendo').click()
+            expect(page.locator('#nextendo-key')).to_have_text(key)
+            page.locator('#nextendo-cancel').click()
+            self.assertFalse(calls)
+            page.locator('#play-nextendo').click()
+            with page.expect_response('**/api/play'):
+                page.locator('#nextendo-accept').click()
             self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+            actual = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
+            self.assertTrue(actual['nextendo_trusted'])
+            status['nextendo_trusted'] = True
             expect(page.locator('#notice')).to_contain_text('CTGP')
             page.locator('#language').select_option('en')
             expect(page.locator('#play-nextendo')).to_have_text('Play on Nextendo')

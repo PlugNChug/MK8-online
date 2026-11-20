@@ -13,7 +13,8 @@ sys.path.insert(0, str(ROOT/'toolchain'))
 from native import DEFAULT_COMPILER, compiler_env
 import cup_relocation as C
 
-GENERATED = next(iter(sorted((ROOT/'local/builds').glob('*/generated/main/main_081.c'))), None)
+BUILDS = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'builds'
+GENERATED = next(iter(sorted(BUILDS.glob('*/generated/main/main_081.c'))), None)
 
 READER = '''void f_7000aaaa00(Cpu *c) {
     FN_ENTER(0x7000aaaa00ull);

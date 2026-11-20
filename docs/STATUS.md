@@ -1,5 +1,25 @@
 # Estado técnico — 19/11/2026
 
+## Nextendo e menu no relançamento da 0.4.0
+
+A primeira publicação da 0.4.0 continha as implementações do serviço e do painel, mas o launcher escondia a opção de jogar atrás de variáveis de diagnóstico e o painel F1 exigia uma variável adicional. A build atual expõe **Jogar → Jogar no Nextendo** e abre o painel com **F1 / Menos + Mais** por padrão. Ao relançar com o mesmo número, quem já tem o launcher 0.4.0 precisa baixar o novo pacote manualmente. Ao abrir esse launcher, uma build anterior do jogo recebe a indicação de atualização. O launcher pede confirmação da chave de corrida no primeiro uso. O runtime valida o certificado do ZNC pela CA do Nextendo e pelo nome do host, permitindo a renovação do certificado do serviço. O ingresso na corrida continua pelo Online Play nativo.
+
+Na primeira build de teste (`3ed4712`), o executável usado em `--runtime-only` tinha o mesmo SHA-256 do runtime embutido no setup (`42bed0f5758814c1ad13c08ae56271baab33aed4d8e6e97b2612c1e10c4f9b87`). As bibliotecas do jogo conservaram os hashes. Passaram os 15 testes do cliente Nextendo e os sete testes de navegador do fluxo de consentimento e idiomas. O log da sessão com conta real confirmou OAuth/NEX, o adaptador BAAS, as conexões TLS com ZNC e com o servidor do MK8 e saída 0. O log não registra uma corrida completa.
+
+Na revisão seguinte, o painel F1 passou a respeitar o tema de menu escolhido no launcher mesmo com o menu da chave de configurações ativo. No jogo em tela cheia, as capturas confirmaram Jogar, Nextendo, Social e Ajustes, além do retorno ao jogo, nos temas padrão e NES. Em um mod local de teste, o primeiro Esc voltou dos detalhes à lista e o segundo fechou o painel. Os botões Perfil Mii e Salas com amigos emitiram as duas solicitações esperadas para o launcher. O runtime testado tem o mesmo SHA-256 do runtime dentro do instalador (`52ceaf623567d013114374a9cb4c237cebb055ebaddb4ac891225efc297f32ce`).
+
+As 23 PRs aceitas até esta revisão estão no histórico da `fix-chore`. Passaram 80 testes de runtime, preparação, saves, controles e empacotamento e 32 cenários de navegador, incluindo instalação, Mii, CTGP/DLC, consentimento do Nextendo e relay UDP local. Os testes de CTGP usaram os arquivos locais do MK8 4.0.1 para verificar os ícones e as copas. Uma corrida completa no Nextendo e uma corrida Steam entre dois PCs continuam pendentes nesta revisão.
+
+## Crash ao abrir o menu principal com CTGP e configurações nativas na 0.4.0
+
+O relatório de 19/11 registra uma build concluída em 65,1 s e o pré-teste Vulkan concluído. Com CTGP Deluxe, Booster Course Pass, recursos Mii e menu nativo ativos, a criação do menu principal terminou em acesso nulo na função guest `f_7000732a30` (exceção `0xc0000005`, saída do processo `0xc0000409`). O runtime publicado reproduziu a mesma falha no mesmo ponto com uma cópia dos saves. Nos controles, tanto CTGP com o menu nativo desligado quanto o menu nativo sem CTGP passaram pela abertura.
+
+A preparação da 0.4.0 acrescentava os componentes das configurações ao layout compartilhado `cm_Page_Dummy`. A correção na `fix-chore` mantém esse recurso original e deriva uma página exclusiva para o seletor. Com os mesmos executáveis e os layouts regenerados, CTGP e o DLC ativos, o botão da chave e F1 abriram o seletor em duas sessões isoladas. Foi possível fechar, salvar e voltar ao menu; ambas terminaram com código 0. Uma tentativa separada parou no início com a notificação SDL `0x406d1388`, antes de carregar o menu; o reteste de F1 completou. Esta investigação cobre a abertura do menu.
+
+Com o jogo base e os layouts corrigidos, F1 também abriu e fechou o menu com saída 0. Passaram 24 testes de configurações e 14 de CTGP, incluindo o teste das texturas dos ícones das copas executado com o arquivo local do MK8 4.0.1.
+
+No instalador original da 0.4.0, **Configurações → desmarcar “Ativar o menu nativo de configurações”** permite manter o CTGP ligado. A correção depende de regenerar os layouts privados com a ferramenta atualizada.
+
 ## Validação dos pacotes Windows x64 da 0.4.0
 
 O instalador da 0.4.0 atualizou uma instalação isolada da 0.3.0, abriu a janela do launcher na versão correta e preservou o save de teste. O desinstalador passou pelos fluxos de cancelar, manter os dados e remover os dados gerenciados. A remoção completa preservou o arquivo de controle externo. O ZIP portátil abriu em duas unidades do Windows e reconheceu a nova pasta de dados após a cópia. O save de teste manteve o mesmo conteúdo.

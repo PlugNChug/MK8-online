@@ -184,7 +184,11 @@ def run(args):
             env.pop(key, None)
     if args.mii_resources:
         # Opt-in original Mii renderer with a MiiModel-layout folder (for example toolchain/mii_resource_nx.py output).
-        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=str(args.mii_resources))
+        resources = str(args.mii_resources.resolve())
+        if os.name == 'nt' and resources.startswith('\\\\?\\'):
+            # The native filesystem appends forward slashes; match the launcher's runtime_path.
+            resources = '\\\\' + resources[8:] if resources.startswith('\\\\?\\UNC\\') else resources[4:]
+        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=resources)
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
