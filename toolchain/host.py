@@ -419,6 +419,10 @@ def prepare_host_sources(source, output):
     # the device has already been created by then.
     from xess import prepare as prepare_xess
     prepare_xess(runtime)
+    # Mesa 27 initialises RADV's PS-epilog cache only for extended-dynamic-state-3 features;
+    # enable one (no pipeline change here) so dynamic depth-test draws do not null-deref.
+    from radv_epilog import prepare as prepare_radv_epilog
+    prepare_radv_epilog(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
