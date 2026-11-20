@@ -6,23 +6,24 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## Ultrawide e menu nativo — entrega experimental
 
-- **Implementado e revisado no candidato isolado:** opção Original/Esticar/Ultrawide no launcher e no jogo; câmeras solo validadas entre 16:9 e 32:9, HUD proporcional nas bordas, transições e banner de classe. Menu nativo opt-in, recursos derivados privados, persistência e integração CTGP. A base é `fix-chore 0085fed`; publicar PR somente após autorização do mantenedor.
+- **Implementado e revisado no candidato isolado:** opção Original/Esticar/Ultrawide no launcher e no jogo; câmeras solo validadas entre 16:9 e 32:9, HUD proporcional nas bordas, transições e banner de classe. Menu nativo opt-in, recursos derivados privados, persistência e integração CTGP. A integração está incluída na 0.4.0.
 - **Verificação automática concluída:** regressões nativas/navegador, Rust/formatação/Clippy, build host/guest com consumidores conferidos e revisão independente. O candidato novo percorreu Stadium até Water Park e persistiu uma preferência de Settings entre dois processos reais. A qualificação humana de áudio/controle/relógio e recarga de progresso novo permanece pendente; evidência manual da combinação anterior não substitui esse reteste. Manter fallback 16:9 nos caminhos sem suporte demonstrado; matriz real em STATUS.
 - **Extensão TT:** o close-up inicial foi reproduzido em 16:9 e incluído com identidade/modo/flag específicos; regressões nativas e rebuild concluídos, com close-up/corrida/Settings exercitados em 21:9 e 32:9. Manter fallback nos demais caminhos desconhecidos e qualificação completa pendente.
 - **Validação futura:** todas as pistas/efeitos, equivalência da tinta, MKTV/replays, Batalha/VS com equipes, online e tela dividida; outra GPU e monitor ultrawide físico. Geração de quadros com câmera ampla exige validação própria antes de habilitar. Não extrapolar evidência de uma corrida para todos os modos.
 - **Câmera futura:** investigar distância do personagem separada de proporção/FOV, depois primeira pessoa opt-in; preservar o padrão e testar clipping, culling, traseira, boost, água, planador, antigravidade e resgate antes de expor opções.
-- **Movimento futuro:** Nintendo Switch Pro Controller por Bluetooth; verificar sensores reais na SDL3, eixos/unidades/timestamps, calibração e reconexão antes de ligar o contrato guest. Sem simulação de movimento por teclado.
+- **Movimento:** ampliar o teste de direção por movimento para outros controles após a validação física de Switch Pro Controller e Joy-Con.
 - **Multiplayer adiado pelo mantenedor:** o laptop tem o jogo, mas falta uma conta Steam separada. Exigir versões/DLC/CTGP compatíveis, duas contas, corrida inteira/resultados e reconexão em dois PCs, com logs sanitizados. Não bloqueia a entrega solo experimental.
 - **Direção por movimento e vibração HD.** Em corrida, o piloto confirmou a direção e o planador por movimento com o Switch Pro Controller via Bluetooth. Dois Joy-Con horizontais também permitiram dirigir por movimento de forma independente na mesma corrida. Os testes físicos cobriram a separação dos lados, a mudança de frequência e a parada da vibração. Os resultados estão em [STATUS.md](STATUS.md).
 
-## Prioridades após a 0.3.0 experimental
+## Prioridades após a 0.4.0 experimental
 
-A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. Veja as [notas bilíngues](releases/0.3.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.
+A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. A 0.4.0 acrescenta portabilidade no Windows, controles, melhorias gráficas e correções de saves. Veja as [notas bilíngues](releases/0.4.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.
 
+- **[bloqueia]** Corrigir a descoberta de DLLs Steam quando uma cópia local incompatível oculta outra instalada. Validar as interfaces SteamUser e SteamFriends nas configurações das issues #69–71.
 - **[bloqueia]** Renovar corretamente a sessão autenticada na reconexão Steam à mesma sala (#32), preservando proteção antirreplay, e validar retorno/corrida entre dois PCs.
 - **[bloqueia]** Investigar falha de inicialização SDL/Vulkan apesar do preflight aprovado (#5) e crashes de memória em Intel/AMD integradas (#11/#17).
 - **[visível]** Retestar os defeitos gráficos #8/#26 e perfis de desempenho #7; pausas de shaders ainda existem. Mais pistas CTGP, GPUs e três/quatro jogadores precisam de cobertura.
-- **[validação]** Upgrade 0.2.0 → 0.3.0, reconstrução do jogo, saves/reinício, peças Mii, DLC e bibliotecas locais em máquinas dos testadores. Corrida completa, áudio/controle/relógio e multiplayer permanecem sem qualificação global.
+- **[validação]** Upgrade 0.3.0 → 0.4.0, reconstrução do jogo, saves/reinício, peças Mii, DLC e bibliotecas locais em máquinas dos testadores. Corrida completa, áudio/controle/relógio e multiplayer permanecem sem qualificação global.
 
 Os registros por versão abaixo são históricos; a revisão atual de todas as Issues está em STATUS.
 

@@ -1,5 +1,11 @@
 # Estado técnico — 19/11/2026
 
+## Validação dos pacotes Windows x64 da 0.4.0
+
+O instalador da 0.4.0 atualizou uma instalação isolada da 0.3.0, abriu a janela do launcher na versão correta e preservou o save de teste. O desinstalador passou pelos fluxos de cancelar, manter os dados e remover os dados gerenciados. A remoção completa preservou o arquivo de controle externo. O ZIP portátil abriu em duas unidades do Windows e reconheceu a nova pasta de dados após a cópia. O save de teste manteve o mesmo conteúdo.
+
+Passaram a formatação, o Clippy, 99 testes Rust, 28 testes de navegador com relay, 6 de idioma e 9 do pipeline. Um teste Rust opcional de Steam ao vivo ficou fora da execução. A conferência do pacote abrangeu os 1.006 arquivos internos, as fontes de runtime e os manifestos do host e do FFmpeg. Os hashes dos dois downloads estão nas [notas públicas da 0.4.0](https://github.com/Vnnc1/MK8-online/releases/tag/v0.4.0). A corrida Steam completa entre dois PCs continua pendente.
+
 ## Copa Casco 50 cc, encerramento do MKTV e cores da largada — issues #67 e #68
 
 O comparativo usou a RX 580 2048SP a 1920×1080 em tela cheia, MK8 4.0.1, Mario, kart padrão e cópias isoladas do mesmo save inicial (seis arquivos conferidos por SHA-256). O executável da instalação 0.3.0 corresponde ao hash do runtime do pacote publicado (`2908f20f3141…`). O candidato da `fix-chore` tem identidade `81adc6756b9e…`. Os arquivos de menu, HUD e as geometrias, colisões e configurações das quatro pistas conferidos nas duas instalações coincidem.

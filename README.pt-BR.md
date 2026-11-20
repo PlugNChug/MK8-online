@@ -13,7 +13,7 @@
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.3.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.4.0-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Teste_público-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Entrar-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
@@ -29,7 +29,13 @@ com launcher nativo, runtime Vulkan, criador de Mii e salas com amigos pela Stea
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **A 0.3.0 é uma pré-release pública experimental, com bugs conhecidos.** Corridas solo são concluídas nos testes locais. Persistem defeitos visuais, engasgos no primeiro uso de shaders e crescimento de VRAM. O multijogador entre dois PCs diferentes ainda não foi qualificado: é justamente isso que esta release pede para os testadores experimentarem.
+> **A 0.4.0 é a versão pública experimental para Windows x64.** Escolha o instalador para instalar ou atualizar. O ZIP portátil mantém o launcher, as ferramentas e os dados do jogo juntos em uma pasta com permissão de escrita.
+
+## Novidades da 0.4.0
+
+A edição portátil pode ser movida entre unidades do Windows. Com o jogo preparado, `Launcher.exe --play` abre o modo solo diretamente. Os controles ganharam direção por movimento, vibração HD e a opção de usar cada Joy-Con na horizontal no multijogador local. Saves e replays temporários do Grand Prix ficam separados, e o troféu da Copa Casco permaneceu após reiniciar nos testes. As correções gráficas abrangem as cores das copas, a contagem da largada e a iluminação em tela dividida. Ao atualizar, mantenha sua pasta de dados e siga **Instalação → Ferramentas → Build do jogo**.
+
+[Baixar o instalador](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-setup.exe) · [Baixar o ZIP portátil](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-portable.zip) · [Notas da versão e limitações](docs/releases/0.4.0.md)
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
@@ -38,32 +44,32 @@ Em **F1 → Controls → Joy-Con mode**, escolha **Combined** para usar as duas 
 O Pro Controller original do Switch, os Joy-Con individuais e um único par identificável de Joy-Con oficiais via Bluetooth têm vibração HD. No modo combinado, o jogo controla a frequência e a intensidade de cada lado separadamente. No modo horizontal, cada Joy-Con recebe os dois canais de vibração daquele jogador. Os demais controles compatíveis usam a vibração da SDL. Abrir as configurações ou trocar de janela interrompe a vibração.
 
 
-Builds de desenvolvimento acrescentam **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
+A versão 0.4.0 acrescenta **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
 
 A opção de **menu nativo de configurações** é salva automaticamente para o próximo início. Acrescenta a chave no menu principal do jogo e preserva o fallback F1/Menos + Mais e a prioridade do atalho do hub. Compartilha o arquivo de configurações do runtime, incluindo a proporção. Os layouts privados são derivados localmente de recursos verificados do jogo; nenhum é distribuído. A qualificação completa continua pendente; evidências manuais locais e limites estão em [STATUS.md](docs/STATUS.md).
 
-## Novidades da 0.3.0
+### Instalação e runtime
 
-Builds de desenvolvimento restauram a sombra ausente do banner de largada de Rock Rock Mountain, respeitando o estado de depth clamp solicitado pelo jogo. Reconstrua o runtime para aplicar o fix; ele ainda não faz parte do setup 0.3.0 publicado. Condições verificadas no [estado técnico](docs/STATUS.md).
+A versão 0.4.0 restaura a sombra ausente do banner de largada de Rock Rock Mountain, respeitando o estado de depth clamp solicitado pelo jogo. Reconstrua o runtime para aplicar o fix. Condições verificadas no [estado técnico](docs/STATUS.md).
 
-<!-- Opções novas de desenvolvimento; ainda fora do setup 0.3.0 publicado. -->
-
-O instalador de desenvolvimento pode abrir o launcher na mesma janela após a instalação. A opção vem marcada, e o launcher usa a pasta de dados escolhida durante a instalação, inclusive em outro disco.
+O instalador pode abrir o launcher na mesma janela após a instalação. A opção vem marcada, e o launcher usa a pasta de dados escolhida durante a instalação, inclusive em outro disco.
 
 Se uma atualização exigir a reinstalação das ferramentas, a tela Instalação abre em **Ferramentas**. Após a verificação, ela segue para **Build do jogo** quando os arquivos estão prontos, ou para **Arquivos do jogo** se faltar alguma entrada. A instalação bem-sucedida remove as cópias obsoletas de ferramentas reconhecidas nas versões anteriores.
 
 Abra **Uninstall.exe**, ao lado de **Launcher.exe**, para desinstalar. A opção padrão guarda saves, Miis, configurações e o jogo preparado. Para reutilizá-los, escolha a mesma pasta de dados na reinstalação. A remoção completa mostra a pasta de dados e exige confirmação.
 
-O runtime de desenvolvimento inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo PCI `10de:1b81`). Consultas elegíveis de tamanho de textura constante são movidas para fora de ramificações de shaders de fragmento. As demais GPUs seguem pelo caminho atual. Recompile o runtime para aplicar o ajuste. A validação está no [estado técnico](docs/STATUS.md).
+O runtime da 0.4.0 inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo PCI `10de:1b81`). Consultas elegíveis de tamanho de textura constante são movidas para fora de ramificações de shaders de fragmento. As demais GPUs seguem pelo caminho atual. Recompile o runtime para aplicar o ajuste. A validação está no [estado técnico](docs/STATUS.md).
 
 **Inicialização direta:** `Launcher.exe --play` abre o jogo solo já preparado sem a janela do launcher. Para selecionar seus dados: `Launcher.exe --play --data-dir "D:\\MK8\\data"`. Mantém validações, bloqueios e logs; não instala ferramentas nem recompila. Salas Steam continuam pelo launcher.
 
-**Modo portátil Windows:** extraia `MK8-online-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
+**Modo portátil Windows:** extraia `MK8-online-0.4.0-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
 
 **Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. Requer Windows x64 e drivers Vulkan compatíveis; não acrescenta suporte a Linux/AppImage/Steam Deck.
 
 
-Prévia de desenvolvimento na `fix-chore`: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados. Não faz parte do setup público 0.3.0.
+Prévia opcional para testes: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados.
+
+### Recursos disponíveis desde a 0.3.0
 
 - **CTGP Deluxe no MK8 4.0.1:** importe os recursos das pistas do CTGP Deluxe 1.1.1 (originalmente para 3.0.3), incluindo 64 pistas em 16 copas adicionais com nomes, imagens, ícones e músicas. A adaptação não executa o plugin original; a compatibilidade é incompleta e ainda há bugs.
 - **Launcher redesenhado:** instalação horizontal em etapas, configurações em módulos, idioma do jogo acessível, criação guiada de Mii, amigos/salas Steam e relatórios de suporte mais claros.
@@ -71,7 +77,7 @@ Prévia de desenvolvimento na `fix-chore`: `MK8_MENU_PROTOTYPE=1` ativa o painel
 - **Correções e melhorias:** congelamento ao carregar recursos Mii, óculos, verificação Vulkan, memória/texturas, miniaturas MKTV, manual local, fontes, shaders de partículas, áudio, seleção de controles e esperas de shaders na tela dividida em dois jogadores.
 - **Configurações e apresentação:** leitura CRLF do INI corrigida. A geração experimental de quadros pode apresentar cerca de 120 FPS nos trechos medidos, mantendo a simulação em 60 Hz; continua desligada por padrão.
 
-Leia as [notas da 0.3.0 em inglês ou português](docs/releases/0.3.0.md) e o [estado técnico](docs/STATUS.md). Reconexão Steam, inicialização Vulkan em alguns PCs, falhas de memória em GPUs integradas, defeitos gráficos e engasgos de shaders continuam pendentes. **É uma pré-release experimental, não uma build totalmente funcional ou estável.**
+O histórico do CTGP e do redesenho do launcher está nas [notas da 0.3.0](docs/releases/0.3.0.md). Para as limitações da versão atual, consulte o [estado técnico](docs/STATUS.md).
 
 ## Onde estamos
 
@@ -89,7 +95,7 @@ O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. A
 
 | Área | Progresso atual | Próxima etapa |
 | --- | --- | --- |
-| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.2.0 → 0.3.0 em mais PCs |
+| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.3.0 → 0.4.0 em mais PCs |
 | Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
 | Multijogador | Salas Steam com convites; duas instâncias do jogo no mesmo PC entraram sozinhas na mesma sala LAN | Convidado entrando pela Steam a partir de outro PC, corridas completas entre dois PCs |
@@ -119,7 +125,7 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 
 ### Instalar e jogar
 
-1. Baixe `MK8-online-0.3.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
+1. Baixe `MK8-online-0.4.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
 2. Abra **Instalar**. Conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo** (o launcher encontra as chaves junto do jogo, ou selecione as suas).
 3. Rode a etapa **Build do jogo**. Depois de atualizar de uma versão anterior, rode de novo: o jogo é recompilado com o runtime novo.
 4. Escolha **Jogar solo**.
@@ -204,7 +210,7 @@ as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha
 
 O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Controls. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
 
-Para experimentar a direção por movimento em uma build de desenvolvimento, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
+Para experimentar a direção por movimento na 0.4.0, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
 
 No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
 
@@ -227,7 +233,7 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 - transportes LAN/relay/P2P pela API;
 - o conversor estático de cabeça Mii;
 - o protótipo Nextendo;
-- o painel dentro do jogo (`MK8_MENU_PROTOTYPE=1`, F1 ou Menos + Mais), com Jogar, Nextendo, Social e Ajustes. Conta e configurações usam o runtime; lobbies, contagens e perfis sociais são exemplos identificados. Não faz parte do setup 0.3.0 publicado.
+- o painel experimental dentro do jogo (`MK8_MENU_PROTOTYPE=1`, F1 ou Menos + Mais). Na 0.4.0, a lista de salas e a presença dos amigos usam os dados da conta Nextendo autorizada. A entrada na corrida acontece pelo **Online Play** do jogo.
 
 Os testes Nextendo foram retomados na `fix-chore`: o mantenedor confirmou gameplay online com outras pessoas em uma sessão isolada. O adaptador opt-in usa a API OAuth documentada e o ID público registrado do MK8-online. `scripts/test-race.py time-trial --nextendo --interactive` permite teste manual com saves copiados e candidato local verificado. Ainda não é um recurso público do launcher; confiança TLS de produção, reconexão e qualificação completa de corrida/reinício continuam pendentes. Os tokens ficam em memória durante o processo.
 
@@ -287,4 +293,4 @@ A renderização condicional aguarda reports de oclusão pendentes nos dois oper
 
 O tradutor de shaders Maxwell passou a respeitar a interpolação declarada pelo jogo para entradas de fragmento. Isso reduziu a cintilação no trecho testado de Boo Lake em tela dividida. Recompile o runtime para aplicar a correção.
 
-Se os emblemas das copas e os números da largada aparecem azuis na 0.3.0, o runtime de desenvolvimento corrige as cores dessas texturas RGB565. Recompile o jogo com o runtime atualizado para aplicar a correção.
+Se os emblemas das copas e os números da largada aparecem azuis na 0.3.0, o runtime da 0.4.0 corrige as cores dessas texturas RGB565. Recompile o jogo com o runtime atualizado para aplicar a correção.
