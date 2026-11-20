@@ -71,10 +71,16 @@ static uint64_t mk8_oq_pending_pair(const uint64_t *a, const uint64_t *b) {
     return seq;
 }
 void renderer_flush(void);
+static int mk8_oq_stale = -1;  // MK8_OCCL_STALE=1 (experiment, default off): read the counters anyway
 static void mk8_oq_wait_pair(const uint64_t *q) {  // renderer owner, before either CPU operand load
     if (!q) return;
     uint64_t seq = mk8_oq_pending_pair(q, q + 2);
     if (!seq) return;  // no report dependency: no submission or wait
+    if (mk8_oq_stale < 0) mk8_oq_stale = getenv("MK8_OCCL_STALE") != NULL;
+    // Experiment: keep the value the last completed submission wrote and skip the GPU round trip. Safe only as a
+    // one-submission-stale visibility decision; the first occurrence reads the guest's initial zeros (objects hidden
+    // for that submission). Never skips a wait that is not about this pair: unrelated reports still resolve first.
+    if (mk8_oq_stale) return;
     uint64_t pending = vk_pending_seq();
     if (seq > pending) FATAL("[mk8] occlusion report beyond pending submission\\n");
     wait_why = "conditional samples";

@@ -8,6 +8,31 @@ O SDK 2.4.0 da AMD (MIT) traz o *kit* Vulkan de frame generation (FSR 3.1.7) mas
 
 O caminho de frame generation no jogo (`toolchain/fsr_fg.py` + ponte host), a página FSR do launcher com aceite de licença/download/patch, e a validação em corrida ainda estão em andamento; nada disso está qualificado até haver corrida completa, imagem, áudio e controle verificados. O host segue carregado (load 80+), então medições de desempenho continuam bloqueadas.
 
+## Validação de desempenho e RE dos stalls — 20/11/2026
+
+Runtime recompilado do master atual em uma raiz local nova (`local/qualification/perf-2026-11-20/`, identidade
+`fe1986c7…`, exe `8202faee…`; após o experimento, `33b71a41…`/`4b0617f3…`), com a instrumentação E2 de
+present/submit e o Yaz0 nativo confirmados na árvore construída (Yaz0 medido em 0,4–2,1 ms por arquivo de até
+1 MB). **O host nunca ficou ocioso**: load average entre 16,6 e 118,8 durante toda a rodada, por builds de outros
+agentes (`cc1`/`cc1plus`/`rustc`) e dois processos longos do usuário; nada foi encerrado. Por isso **nenhum número de
+tempo é publicado** e a corrida completa + reinício/save **não foi executada**: a execução diagnóstica terminou com
+status 0 e captura correta do menu (900 quadros a 19,1 fps sob carga). O relatório completo, com comandos, endereços
+e log cru, está em [PERF-2026-11-20.md](PERF-2026-11-20.md).
+
+A análise somente-leitura localizou a tabela de bind do NVN (`0x7000585ae4`, slots em `0x700130b000+0x3e0/0x3e8/
+0x3f8/0x400`), os 7 pontos de `SetRenderEnableConditional` (`f_70006a0d50`, `f_70006e8210`, `f_70006e846c`,
+`f_70006e8840`, `f_70006e8ab4`), o laço que repõe os contadores (`f_7000aed30c+0xc0/+0x264`, SAMPLES_PASSED tipo 1
+com slot por entrada) e, com `LARECOMP_PROF_SVC=1`, os LR de guest das esperas de kernel (`0x700408d9f8` futex com
+timeout de ~200 ms, `0x7004096678` WaitSynchronization, `0x7004096f2c` ArbitrateLock de mutex em `0x7253413130`,
+`0x70040a0154` SendSyncRequest no handle `0x10b`, 1,68 s no boot). O stall de 901 ms do boot é `other` (898,5 ms, 5
+draws), compatível com esse IPC de boot, não com GPU. Confirmado de novo que Y4 são 1.617 esperas/973 ms em
+`ship3.log` no campo `waits:` (não no `waits` do prefetch).
+
+Experimento novo, **desligado por padrão**: `MK8_OCCL_STALE=1` (`toolchain/occlusion.py`) mantém o valor do último
+submit concluído em vez de esperar o relatório pendente; `tests/test_occlusion.py` ganhou o caso nativo (passa
+compilado nativamente neste host; o controle negativo com o gate desativado falha). Não validado em execução — falta
+host ocioso. `gameplay_verified` continua falso.
+
 ## Pausas de vários segundos: importação do heap guest — 19/11/2026
 
 As pausas de 0,4–18 s que sobravam no perfil não eram orçamento de shader nem a fila de apresentação: eram a importação do heap do jogo como **uma única alocação host-pointer** (`VK_EXT_external_memory_host`), 3.100 MB fixados no primeiro uso da GPU. Com `toolchain/submit_profile.py`, toda submissão ≥1 s tinha `copies 0 layouts 0 full 0` e a divisão `lock`/`call` deu `lock 0,0` — o tempo estava dentro de `vkQueueSubmit2`. `strace -T` registrou 2.886 ioctls `AMDGPU_CS`, 15,3 s de tempo de kernel e 1.147 retornos `EAGAIN`; `LARECOMP_VK_NO_GMEM=1` eliminou **todas** as pausas, e `MK8_GMEM_MB` mostrou que o custo cresce com o tamanho importado.
