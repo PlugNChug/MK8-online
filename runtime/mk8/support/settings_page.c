@@ -645,7 +645,11 @@ static void controller_highlight(Cpu *c) {
     bool footer=controller_focus>=4;
     for(unsigned i=0;i<4;i++)
         call(c,controller_focus==(int)i ? 0x700044ed20ull : 0x700044ee50ull,rows[i+1],1,0,0,0);
-    for(unsigned i=0;i<2;i++) animation_frame(c,dialog_animations[i],0,controller_focus==(int)i+4 ? 2 : 0);
+    for(unsigned i=0;i<2;i++) {
+        animation_frame(c,dialog_animations[i],0,controller_focus==(int)i+4 ? 2 : 0);
+        // Apply the OnOff pose now, including the neutral colors after the previous Decide pulse.
+        call(c,0x70008ae0b8ull,dialog_buttons[i],0,0,0,0);
+    }
     // Keep the four native corners apart; shrinking the cursor bounds alone makes them cross.
     float scale=footer ? 1.f : .5f;
     controller_cursor_scale(c,scale);
@@ -891,21 +895,27 @@ static void controller_layout(Cpu *c,bool required) {
     uint16_t names[4][80]; int listening=-1;
     enum Mk8EditState state=mk8_edit_view(names,&listening);
     bool accepted=state==MK8_EDIT_APPLIED;
-    bool closing=controller_visible && !controller_detached && (accepted || (state==MK8_EDIT_CLOSED &&
-        (controller_cancelled || (controller_required && !required))));
+    bool pad_back=controller_required && mk8_controller_join_back_pressed();
+    bool closing=controller_visible && !controller_detached && (accepted || pad_back ||
+        (state==MK8_EDIT_CLOSED && (controller_cancelled || (controller_required && !required))));
     if(closing) {
+        bool required_cancel=controller_required && !accepted;
         if(controller_press<0) {
             controller_press=controller_required || !accepted ? 0 : 1;
-            if(!controller_required || accepted || mk8_controller_join_back_pressed())
+            if(!controller_required || accepted || pad_back)
                 controller_focus=4+controller_press;
             controller_highlight(c);
             animation_play(c,dialog_animations[controller_press],2,1);
             if(controller_focus>=4) call(c,0x7000443320ull,dialog_cursor,0,0,0,0);
-            menu_sound(c,accepted ? 0x7000ed87bfull : 0x7000ed87cfull);
-            return;
+            // Character selection plays Back when the mandatory applet returns ControllerSupportCanceled.
+            if(!required_cancel) {
+                menu_sound(c,accepted ? 0x7000ed87bfull : 0x7000ed87cfull);
+                return;
+            }
         }
-        if(!call(c,0x70008ad59cull,dialog_animations[controller_press],0,0,0,0) ||
+        if((!required_cancel && !call(c,0x70008ad59cull,dialog_animations[controller_press],0,0,0,0)) ||
            !popup_fade(c,&controller_fade_at,true)) return;
+        if(required_cancel && required) return; // The host must acknowledge Cancel before this visit can end.
         show=controller_preview=false;
     } else if(controller_visible && required && (state==MK8_EDIT_PENDING || state==MK8_EDIT_CLOSED)) {
         return;
@@ -951,6 +961,8 @@ static void controller_layout(Cpu *c,bool required) {
     if(show) {
         appear(c,1);
         reveal_pane(c,"N_SettingsPopup",1);
+        visible(c,root,"N_Settings",true);
+        visible(c,root,"N_SettingsPopup",true);
         dialog_open_sound(c);
         controller_previous=mk8_controller_p1_navigation();
         controller_draw(c,state,listening,names,true);
@@ -958,6 +970,8 @@ static void controller_layout(Cpu *c,bool required) {
         float speed=1; memcpy(&c->v[0],&speed,sizeof speed);
         call(c,0x70008ad300ull,cursor_animation,1,0,0,0);
     } else {
+        visible(c,root,"N_Settings",false);
+        visible(c,root,"N_SettingsPopup",false);
         controller_release();
         visible(c,root,"L_SettingsNo",true);
         controller_cursor_scale(c,1.f);
@@ -965,8 +979,6 @@ static void controller_layout(Cpu *c,bool required) {
         memcpy((void *)(uintptr_t)(c->sp+320),size,sizeof size);
         call(c,0x7000443404ull,dialog_cursor,c->sp+320,0,0,0);
     }
-    visible(c,root,"N_Settings",show);
-    visible(c,root,"N_SettingsPopup",show);
     controller_visible=show;
 }
 

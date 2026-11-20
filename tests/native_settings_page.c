@@ -14,6 +14,7 @@ static bool overlay, finger, decided, capturing;
 static unsigned cursor_mask=11, cursor_writes;  // P1, P2 and P4 are visible before entering Settings.
 #define cursor_shown (cursor_mask&1)
 static bool back_done=true, button_done=true, cursor_done=true;
+static float footer_frame[2], footer_drawn[2];
 static int back_pulses, button_pulses, cursor_pulses, open_sounds, select_sounds, decide_sounds, cancel_sounds;
 static float cursor_x, cursor_y, cursor_width, cursor_height;
 static uint64_t popup_buttons;
@@ -172,6 +173,12 @@ void guest_call(Cpu *c,uint64_t address) {
     else if(address==0x70008ad3c4ull) {
         assert(c->x[0]==HEAP_BASE+15200 || c->x[0]==HEAP_BASE+15400 || c->x[0]==HEAP_BASE+15500);
         float frame; memcpy(&frame,&c->v[0],sizeof frame); assert(frame==0 || frame==2);
+        if(c->x[0]!=HEAP_BASE+15200) footer_frame[c->x[0]==HEAP_BASE+15500]=frame;
+    }
+    else if(address==0x70008ae0b8ull) {
+        assert(c->x[0]==HEAP_BASE+14500 || c->x[0]==HEAP_BASE+14600);
+        int index=c->x[0]==HEAP_BASE+14600;
+        footer_drawn[index]=footer_frame[index];
     }
     else if(address==0x70008ad6acull) {
         float speed; memcpy(&speed,&c->v[0],sizeof speed);
@@ -403,6 +410,7 @@ static void check_controller_footer(uint64_t manager) {
     dialog_cursor=HEAP_BASE+16000;
     cursor_animation=HEAP_BASE+15800;
     dialog_animations[0]=HEAP_BASE+15400; dialog_animations[1]=HEAP_BASE+15500;
+    dialog_buttons[0]=HEAP_BASE+14500; dialog_buttons[1]=HEAP_BASE+14600;
     title_label=HEAP_BASE+3600;
     dialog_labels[1]=HEAP_BASE+3700; dialog_labels[2]=HEAP_BASE+3800;
     const uint64_t list=LD64(manager+0xb58), layout=HEAP_BASE+20200, drivers=HEAP_BASE+21200;
@@ -616,6 +624,21 @@ static void check_controller_footer(uint64_t manager) {
     assert(pane_float(HEAP_BASE+14500,0x30)==0);
     assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
     assert(controller_focus==1); // P1 is a pad. Hovering cannot highlight Cancel.
+    for(int visit=0;visit<2;visit++) {
+        int old_pulses=button_pulses, old_cancels=cancel_sounds;
+        join_pad_back=true; editor_state=MK8_EDIT_PENDING; button_done=false;
+        mk8_settings_page_frame(manager);
+        assert(controller_focus==4 && footer_drawn[0]==2 && button_pulses==old_pulses+1);
+        editor_state=MK8_EDIT_CLOSED; join_players=0;
+        now+=80000000; mk8_settings_page_frame(manager);
+        assert(controller_visible && reveal>0 && reveal<1);
+        now+=80000000; mk8_settings_page_frame(manager);
+        assert(!controller_visible && cancel_sounds==old_cancels);
+        join_pad_back=false; editor_state=MK8_EDIT_LISTEN; join_players=4; button_done=true;
+        mk8_settings_page_frame(manager);
+        assert(controller_visible && controller_focus==1 && reveal==1 && footer_drawn[0]==0);
+    }
+    opens+=2;
     for(unsigned i=0;i<4;i++) join_buttons[i]=HEAP_BASE+18304+128*i;
     for(unsigned i=0;i<2;i++) join_plus[i]=HEAP_BASE+18816+128*i;
     edit_row=3; join_keyboard=false;

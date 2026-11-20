@@ -2,6 +2,10 @@
 
 ## Entrada dos jogadores na seleção de personagens
 
+Em duas entradas consecutivas na tela obrigatória para quatro jogadores, o Pro virtual cancelou com **B** enquanto faltava o jogador 4. Na revisão `e7e1286`, cada cancelamento reproduziu duas vezes o som de voltar: uma vez pela sobreposição e outra pela seleção de personagens ao receber o cancelamento. A tela demorou cerca de 1,2 s para desaparecer e, na segunda entrada, o botão já estava amarelo antes de qualquer comando.
+
+Na compilação `d8d83092…`, a tela aplica a cor neutra ao abrir, inicia o pulso junto com a transição e deixa o som a cargo da seleção de personagens. No mesmo ensaio, o botão apareceu cinza nas duas entradas e ficou amarelo durante o cancelamento. Do início do pulso até o fechamento, passaram 167 e 172 ms. O rastreamento registrou uma chamada de som por cancelamento. Passaram os 29 testes conjuntos e os hashes dos 533 arquivos de usuário monitorados permaneceram iguais.
+
 Na tela de entrada obrigatória, um único botão central muda de **Cancel** para **OK** quando a última vaga é preenchida. Ao trocar a atribuição do jogador 1 no editor, as dicas e a navegação acompanham o novo dispositivo antes de aplicar. Os ícones das duas linhas de ações compartilham as mesmas colunas. A confirmação e o cancelamento pulsam antes do fechamento gradual. A compilação `d34f399a…` passou nos 29 testes conjuntos de controles e interface. A verificação visual com controles físicos está em andamento.
 
 Na seleção de personagens para dois a quatro jogadores, clicar ou tocar em **−/+** abre a mesma tela de atribuição que o botão **+** do jogador 1. As ações de cada jogador ficam centralizadas. Quando os nomes dos dois Joy-Con são longos, o par aparece como **Paired Joy-Cons**. Se outro jogador tentar registrar um controle em uso, um aviso identifica o dono por três segundos e as posições são preservadas.
