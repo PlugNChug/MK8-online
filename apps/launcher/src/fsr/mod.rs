@@ -147,6 +147,19 @@ pub fn fsr4_selection_blocked(settings: &Settings, gate: &Fsr4Gate) -> bool {
     settings.upscaling == FSR_412 && !gate.allowed()
 }
 
+fn gpu_label(gpu: &crate::vulkan::GpuInfo) -> String {
+    let vendor = gpu.vendor();
+    let name = gpu.device_name.trim();
+    if name
+        .to_ascii_lowercase()
+        .starts_with(&vendor.to_ascii_lowercase())
+    {
+        name.to_owned()
+    } else {
+        format!("{vendor} {name}").trim().to_owned()
+    }
+}
+
 pub fn windows_fsr4_gate(
     settings: &Settings,
     gpu: Option<&crate::vulkan::GpuInfo>,
@@ -155,7 +168,7 @@ pub fn windows_fsr4_gate(
 ) -> Fsr4Gate {
     let override_active = !settings.provider_lib.is_empty();
     let vendor = gpu.map(|gpu| gpu.vendor().to_owned());
-    let gpu_label = gpu.map(|gpu| format!("{} {}", gpu.vendor(), gpu.device_name));
+    let gpu_label = gpu.map(gpu_label);
     let rdna4 = gpu.is_some_and(crate::vulkan::GpuInfo::is_amd_rdna4);
     let offers_412 = upscaler_versions.iter().any(|version| version == FSR_412);
     let (blocked, reason_code, reason) = if gpu.is_none() {
@@ -781,6 +794,47 @@ mod tests {
         assert!(value_of(&env, "MK8_FSR_FG_LIB")
             .unwrap()
             .ends_with("provider/libamd_fidelityfx_framegeneration_vk.so"));
+    }
+
+    #[test]
+    fn windows_gpu_label_does_not_repeat_the_vendor() {
+        fn gpu(vendor_id: u32, name: &str) -> crate::vulkan::GpuInfo {
+            crate::vulkan::GpuInfo {
+                api_version: 0,
+                vendor_id,
+                device_id: 0,
+                device_type: 2,
+                device_name: name.into(),
+            }
+        }
+        let settings = Settings::default();
+        let full = windows_fsr4_gate(
+            &settings,
+            Some(&gpu(0x10de, "NVIDIA GeForce RTX 5080")),
+            &[],
+            &[],
+        );
+        assert_eq!(full.gpu.as_deref(), Some("NVIDIA GeForce RTX 5080"));
+        assert!(!full.reason.contains("NVIDIA NVIDIA"));
+
+        let short = windows_fsr4_gate(&settings, Some(&gpu(0x10de, "GeForce RTX 5080")), &[], &[]);
+        assert_eq!(short.gpu.as_deref(), Some("NVIDIA GeForce RTX 5080"));
+
+        let lower = windows_fsr4_gate(
+            &settings,
+            Some(&gpu(0x10de, "nvidia GeForce RTX 5080")),
+            &[],
+            &[],
+        );
+        assert_eq!(lower.gpu.as_deref(), Some("nvidia GeForce RTX 5080"));
+
+        let amd = windows_fsr4_gate(
+            &settings,
+            Some(&gpu(0x1002, "AMD Radeon RX 9070 XT")),
+            &[],
+            &[],
+        );
+        assert_eq!(amd.gpu.as_deref(), Some("AMD Radeon RX 9070 XT"));
     }
 
     #[test]
