@@ -73,6 +73,16 @@ intercalado, `nice -n 10`, gate em load 8) e os comandos exatos ficaram registra
 [PERF-2026-11-20.md](PERF-2026-11-20.md) §10. Nenhum tempo foi medido; os números da tabela de base continuam os de
 18–20/11.
 
+**Terceira tentativa (20/11, 09:00–09:35): também abortada.** Runtime recompilado de uma árvore limpa no HEAD
+`339ce6a` (`git worktree …/clean-head`, sem as edições FSR4 ainda não commitadas; candidato `b86f515e…`, exe
+`1cdb5d72…`, marcadores `[present] flush`/`[submit] pre`/`mk8_acquire_timeout_ns`/`MK8_OCCL_STALE`/`mk8_yaz0_loop`
+conferidos, FSR desligado). A primeira execução foi contaminada por um segundo `mk8drecomp` de
+`MK8-online-linux-fsr4` (20,5 fps no quadro 3.516, máx. 1.195 ms); o detector foi endurecido (gate por
+`/proc/<pid>/exe`, monitor de carga em execução, retry, mediana de corrida ≥50 fps). Outras tentativas morreram a
+7,4 fps (quadro 1.814, pico de carga 12,4) e 35,8 fps (quadro 2.430); às 09:31 a carga subiu a 26–70 (cross-`cc1`
+aarch64, `mariokartdx-linux`, Steam/wine, `tesseract`) e os blocos foram parados. **Nenhuma execução limpa; nenhum
+tempo publicado.**
+
 ## Upscaler FSR 3.1.6 nativo e MLFI (FSR 4) — 20/11/2026
 
 O upscaler **FSR 3.1.6** também é construído localmente a partir do SDK MIT: `tools/gen_upscaler_blobs.py` compila os 11 passes com DXC, reflete os descritores (incluindo `Uniform`/`StorageBuffer`), reescreve os formatos das storage images e `tools/build_upscaler_provider.py` produz `libamd_fidelityfx_upscaler_vk.so` (573.136 bytes, sha256 `4c3a75cf…fde709`). Duas builds independentes são idênticas; `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`); a saída 1920x1080→2560x1440 é **byte-idêntica** à do DLL assinado da AMD no Windows para as entradas capturadas (SHA-256 `df8c4cf2…49ae`, MAE 0). No jogo: `[fsr] provider 3.1.6`, `upscale active 1920x1080 -> 2560x1440`, `depth now game`, `motion now camera`, título e largada renderizados. 7/7 testes. O **FSR 4.1.2** também virou um clique: o port GPL-3.0 do projeto foi vendorizado em `tools/fsr4-linux/` e `tools/build_fsr4_provider.py` extrai 1.778 módulos e 4 classes/8 bancos de modelo do DLL assinado do SDK, compila `libamd_fidelityfx_upscaler_vk.so` (183.512 bytes, sha256 `ae0cd7fd…441b`) e instala com as licenças GPL/AMD e oferta de fonte. `ffxQuery` devolve **4.1.2** (`0x1001002`), contexto 1080p→1440p com ABI legada e dispatch OK, saída não nula; no jogo `[fsr] provider FSR 4.1.2`, `upscale active 1920x1080 -> 2560x1440`, menu e largada em `local/qualification/fsr4-linux/`. 11/11 testes; nada de AMD ou assets gerados foi commitado.
