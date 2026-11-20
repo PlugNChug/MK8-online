@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 
 typedef ffxReturnCode_t (*PfnCreate)(ffxContext*, ffxCreateContextDescHeader*, const ffxAllocationCallbacks*);
@@ -33,6 +34,9 @@ static const char* rc_name(ffxReturnCode_t rc)
 int main(int argc, char** argv)
 {
     const char* lib = argc > 1 ? argv[1] : "build/libamd_fidelityfx_framegeneration_vk.so";
+    uint32_t width = argc > 2 ? (uint32_t)atoi(argv[2]) : 1920;
+    uint32_t height = argc > 3 ? (uint32_t)atoi(argv[3]) : 1080;
+    uint32_t extra_flags = argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 0) : 0;
     void* h = dlopen(lib, RTLD_NOW | RTLD_LOCAL);
     if (!h) { printf("dlopen: %s\n", dlerror()); return 1; }
     PfnCreate create = (PfnCreate)dlsym(h, "ffxCreateContext");
@@ -86,14 +90,14 @@ int main(int argc, char** argv)
     ffxCreateContextDescFrameGeneration fg{};
     fg.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION;
     fg.header.pNext = &backend.header;
-    fg.flags = FFX_FRAMEGENERATION_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS;
-    fg.displaySize = {1920, 1080};
-    fg.maxRenderSize = {1920, 1080};
+    fg.flags = FFX_FRAMEGENERATION_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS | extra_flags;
+    fg.displaySize = {width, height};
+    fg.maxRenderSize = {width, height};
     fg.backBufferFormat = FFX_API_SURFACE_FORMAT_R8G8B8A8_UNORM;
 
     ffxContext ctx = nullptr;
     ffxReturnCode_t rc = create(&ctx, &fg.header, nullptr);
-    printf("ffxCreateContext(FG 1920x1080) rc=%d (%s) ctx=%p\n", (int)rc, rc_name(rc), (void*)ctx);
+    printf("ffxCreateContext(FG %ux%u flags=0x%x) rc=%d (%s) ctx=%p\n", width, height, fg.flags, (int)rc, rc_name(rc), (void*)ctx);
     if (rc == FFX_API_RETURN_OK && ctx)
     {
         ffxReturnCode_t drc = destroy(&ctx, nullptr);

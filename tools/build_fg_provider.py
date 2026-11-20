@@ -200,11 +200,12 @@ def apply_patches(sdk_root: Path):
         if not path.is_file():
             fail(f"missing SDK file: {rel}")
         text = path.read_text(encoding="utf-8")
+        # A previously patched tree is acceptable if the replacement is already present. This check must come first:
+        # several edits append after an anchor, so the original text remains and would otherwise be applied twice.
+        if new in text:
+            continue
         count = text.count(old)
         if count == 0:
-            # A previously patched tree is acceptable if the replacement is already present.
-            if new in text:
-                continue
             fail(f"cannot apply Linux portability edit to {rel}: expected text not found (not SDK {SDK_TAG}?)")
         if count > 1:
             fail(f"ambiguous Linux portability edit in {rel}: {count} matches")
