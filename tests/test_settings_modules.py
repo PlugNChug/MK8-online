@@ -64,6 +64,24 @@ class SettingsModulesTests(unittest.TestCase):
         folder.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(folder/f'config-{name}.png'), full_page=True, animations='disabled')
 
+    def test_open_launcher_follows_game_writes_and_preserves_an_unsaved_edit(self):
+        ini = self.local / 'user-no-mii/mk8d.ini'
+        page = self.page
+        mode = page.locator('#config-field-upscaler')
+        ini.write_text('resolution = 75%\nupscaler = fsr3\nshow_fps = 1\n', encoding='utf-8')
+        expect(mode).to_have_value('fsr3')
+        expect(page.locator('#config-field-show_fps')).to_be_checked()
+        page.locator('#config-field-resolution').select_option('50%')
+        ini.write_text('resolution = 25%\nupscaler = bilinear\nshow_fps = 0\n', encoding='utf-8')
+        page.evaluate('refresh()')
+        expect(page.locator('#config-field-resolution')).to_have_value('50%')
+        page.locator('#settings-save').click()
+        expect(mode).to_have_value('bilinear')
+        self.assertIn('resolution = 50%', ini.read_text())
+        page.locator('[data-tab="play"]').click()
+        ini.write_text(ini.read_text()+'\nlanguage = fr\n', encoding='utf-8')
+        expect(page.locator('#play-game-language')).to_have_value('fr')
+
     def test_native_settings_opt_in_preserves_other_options_and_game_data(self):
         path = self.local/'debug-options.json'
         previous = {'graphics_capture':True, 'audio_recording':True, 'native_settings':False}
@@ -171,6 +189,9 @@ class SettingsModulesTests(unittest.TestCase):
         path.write_text(json.dumps(candidate))
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['nextendo_session_supported'] = True
+        path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        candidate['live_settings_supported'] = True
         path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
 

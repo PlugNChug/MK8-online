@@ -41,6 +41,8 @@ Na 0.4.1, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira part
 
 No launcher 0.4.1, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao trocar uma edição de teste anterior da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
 
+No jogo, abra **F1 → Ajustes → Vídeo** para escolher a ampliação integrada ou um provedor instalado e disponível neste PC. O menu nativo opcional usa a mesma lista. Para carregar outro provedor temporal, reabra o jogo pelo launcher. Com o launcher aberto, as alterações feitas no jogo também aparecem em Configurações e no seletor de idioma da tela Jogar.
+
 FSR 1 e bilinear já vêm disponíveis. Se o provedor recusar o recurso, o jogo usa a ampliação integrada. A opção separada de geração de quadros usa a interpolação própria do runtime. Ative o contador para comparar os FPS do jogo, os FPS de saída e os milissegundos por quadro do jogo.
 
 ## Novidades da 0.4.0

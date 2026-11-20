@@ -165,6 +165,7 @@ function updateGraphics() {
   $("graphics-active").textContent = graphicsResult;
 }
 let settingsLoaded = false;
+let settingsRequest = 0;
 let debugSaving = false;
 let debugRequest = 0;
 let debugOptions;
@@ -240,7 +241,9 @@ function markSettingsDirty() {
 }
 async function loadGameSettings(force = false) {
   if ((settingsDirty || settingsSaving) && !force) return;
+  const request = ++settingsRequest;
   const data = await api("settings");
+  if (request !== settingsRequest) return;
   if ((settingsDirty || settingsSaving) && !force) return;
   if (!settingsLoaded) {
     for (const group of data.groups) {
@@ -360,6 +363,7 @@ async function loadGameSettings(force = false) {
   updateGraphics();
   updateSettingsLock();
   i18n.text($("settings-pending"), "");
+  window.dispatchEvent(new Event("gamesettingsloaded"));
 }
 $("game-settings").onsubmit = (event) => {
   event.preventDefault();
@@ -1002,7 +1006,7 @@ async function refresh() {
     }[status.build.state] || status.build.state);
   renderInstall(status);
   if (!$("dlc-files").hidden) await refreshDlcFiles();
-  if (!$("settings").hidden && !settingsDirty) await loadGameSettings();
+  if ((!$("settings").hidden || !$("play").hidden) && !settingsDirty) await loadGameSettings();
   i18n.text($("installation-state"), status.installed
     ? "Instalação local disponível; compatibilidade de gameplay em validação."
     : "Nenhuma instalação de jogo ativada.");

@@ -163,6 +163,9 @@ pub fn validate(local: &Path, mode: &str) -> Result<()> {
 
 pub fn configure(local: &Path) -> Result<()> {
     for key in [
+        "MK8_READY_FSR3",
+        "MK8_READY_FSR4",
+        "MK8_READY_DLSS",
         "MK8_FSR4",
         "MK8_FSR_VERSION",
         "MK8_FSR_LIB",
@@ -178,7 +181,25 @@ pub fn configure(local: &Path) -> Result<()> {
     }
     let schema = crate::game_settings::read(local)?;
     let mode = schema["values"]["upscaler"].as_str().unwrap_or("");
-    if !advanced(mode) || !inspect(local).is_ok_and(|caps| caps.ready(mode)) {
+    // The menus may select an installed provider for the next game process.
+    // With no optional components, the normal launch needs no GPU probe.
+    let dir = directory(local);
+    if !dir.join(AMD.name).is_file() && !dir.join(NVIDIA.name).is_file() {
+        return Ok(());
+    }
+    let Ok(caps) = inspect(local) else {
+        return Ok(());
+    };
+    for (choice, key) in [
+        ("fsr3", "MK8_READY_FSR3"),
+        ("fsr4", "MK8_READY_FSR4"),
+        ("dlss", "MK8_READY_DLSS"),
+    ] {
+        if caps.ready(choice) {
+            std::env::set_var(key, "1");
+        }
+    }
+    if !caps.ready(mode) {
         return Ok(());
     }
     let dir = crate::canonical(&directory(local)).map_err(|e| e.to_string())?;

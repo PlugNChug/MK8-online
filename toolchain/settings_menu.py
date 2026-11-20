@@ -195,7 +195,7 @@ extern "C" void mk8_settings_pads_changed(void) { mk8_pads_apply.store(true); }
 ''' + marker + '\n    if (g_open.load() && mk8_settings_shared_race()) set_open(false);'
                    '\n    if (mk8_pads_apply.exchange(false)) input_pads_reassign();\n    mk8_settings_poll(g_open.load());')
     marker = '    bool open = g_open.load();\n    bool kbd = g_kbd.load() == 1;'
-    text = replace(text, marker, '    mk8_settings_values_sync();\n' + marker + '\n    float mk8_phase = mk8_settings_phase(open);')
+    text = replace(text, marker, '    mk8_publish_settings(g_open.load() || mk8_settings_page_active(), SDL_GetTicks());\n    mk8_settings_values_sync();\n' + marker + '\n    float mk8_phase = mk8_settings_phase(open);')
     marker = 'static const ThemePalette &theme_palette(void) {'
     theme = (ROOT / 'runtime/mk8/ui/settings_theme.inc').read_text(encoding='utf-8')
     text = replace(text, marker, theme + '\n' + marker + '\n    if (mk8_settings_overlay_style_active()) return mk8_settings_palette(kThemes[0]);')

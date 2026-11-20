@@ -41,6 +41,8 @@ In 0.4.1, Solo, Steam rooms and Nextendo use the active Mii. On first play, name
 
 In the 0.4.1 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from an earlier 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
 
+In the game, open **F1 → Settings → Video** to choose a built-in scaler or an installed provider available on this PC. The optional native settings page uses the same list. Reopen the game through the launcher to load a different temporal provider. With the launcher open, settled in-game edits also update its settings and Play language picker.
+
 FSR 1 and bilinear filtering work out of the box. A rejected provider falls back to built-in scaling. The separate frame generation setting uses the runtime's own interpolation. Enable the FPS counter to compare game FPS, output FPS and milliseconds per game frame.
 
 ## What's new in 0.4.0

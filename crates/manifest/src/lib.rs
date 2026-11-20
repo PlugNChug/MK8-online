@@ -62,6 +62,8 @@ pub struct Installation {
     pub romfs_long_paths_supported: bool,
     #[serde(default)]
     pub nextendo_session_supported: bool,
+    #[serde(default)]
+    pub live_settings_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

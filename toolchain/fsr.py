@@ -101,6 +101,7 @@ def prepare_exec(runtime):
         raise ValueError('Vulkan header changed upstream')
     if 'static bool mk8_temporal_requested(void)' not in text:
         text = text.replace(include, include + '''
+#include "../../settings.h"
 static void mk8_graphics_result(const char *method, unsigned iw, unsigned ih, unsigned ow, unsigned oh) {
     if (!method) method = "fsr";\n    static const char *last;
     static unsigned w, h, x, y, frames;
@@ -111,8 +112,12 @@ static void mk8_graphics_result(const char *method, unsigned iw, unsigned ih, un
 }
 static bool mk8_temporal_requested(void) {
     static int requested = -1;
-    if (requested < 0) requested = getenv("MK8_FSR4") != NULL || getenv("MK8_DLSS") != NULL;
-    return requested != 0;
+    if (requested < 0) {
+        const char *version = getenv("MK8_FSR_VERSION");
+        requested = getenv("MK8_DLSS") ? UPSCALE_DLSS : !getenv("MK8_FSR4") ? 0 :
+                    version && !strcmp(version, "4.1.2") ? UPSCALE_FSR4 : UPSCALE_FSR3;
+    }
+    return requested && requested == g_settings.upscaler;
 }
 ''', 1)
     old = 'static NvnTexture *g_pass_depth;'
@@ -236,6 +241,24 @@ def prepare_settings(runtime):
             raise ValueError(f'Graphics setting boundary changed in {file}')
         path.write_text(source.replace(old, new), encoding='utf-8')
 
+    (runtime / 'mk8_upscaler_choices.h').write_bytes(
+        (ROOT / 'runtime/mk8/graphics/upscaler_choices.h').read_bytes())
+    menu = runtime / 'ui/menu.mm'
+    source = menu.read_text(encoding='utf-8')
+    if '#include "../mk8_upscaler_choices.h"' not in source:
+        start = source.index("    {   // each OS's own upscaler")
+        end = source.index('    static const char *aa[]', start)
+        source = 'extern "C" {\n#include "../mk8_upscaler_choices.h"\n}\n' + source[:start] + '''    {
+        const Mk8Upscalers choices = mk8_upscaler_choices(g_settings.upscaler);
+        int selected = choices.selected;
+        const char *help = "Used below display resolution. Install optional providers in the launcher: "
+                           "AMD FSR 3, FSR 4 (RDNA 4) or NVIDIA DLSS (RTX). "
+                           "Reopen the game from the launcher to load a different provider.";
+        if (opt_choice("Upscaler", &selected, choices.names, choices.count, 1, help))
+            g_settings.upscaler = choices.values[selected];
+    }
+''' + source[end:]
+        menu.write_text(source, encoding='utf-8')
     replace('settings.h', '/* Windows: AMD FSR 1 */ };',
             '/* Windows: AMD FSR 1 */, UPSCALE_FSR3, UPSCALE_FSR4, UPSCALE_DLSS };')
     replace('settings.c', '? UPSCALE_BILINEAR : UPSCALE_SHARP;',

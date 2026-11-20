@@ -279,6 +279,7 @@ mod tests {
             temporal_upscaling_supported: false,
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
+            live_settings_supported: false,
             files: BTreeMap::new(),
         }
     }

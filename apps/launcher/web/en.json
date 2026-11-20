@@ -1253,7 +1253,7 @@
   "DLSS requer uma GPU RTX compatível.": "DLSS requires a compatible RTX GPU.",
   "Instale o componente opcional para usar esta ampliação.": "Install the optional component to use this upscaler.",
   "A biblioteca AMD não oferece esta versão.": "The AMD library does not offer this version.",
-  "Para testar a ampliação, escolha uma resolução interna menor que a da tela e salve. O jogo informa as dimensões e o método que usou.": "To test upscaling, choose an internal resolution below the display resolution and save. The game reports the dimensions and method it used.",
+  "Escolha uma resolução interna menor que a da tela. Os métodos instalados também aparecem no menu do jogo. Reabra o jogo pelo launcher para carregar outro provedor.": "Choose an internal resolution below display resolution. Installed methods also appear in the game menu. Reopen the game from the launcher to load a different provider.",
   "FSR 3, FSR 4 e DLSS são experimentais.": "FSR 3, FSR 4 and DLSS are experimental.",
   "A interpolação nativa pode apresentar até 120 FPS com a simulação a 60 Hz. Ative o contador para ver os FPS do jogo, os FPS de saída e o tempo por quadro do jogo.": "Native interpolation can present up to 120 FPS with a 60 Hz simulation. Enable the counter to see game FPS, output FPS and time per game frame.",
   "Gráficos": "Graphics",

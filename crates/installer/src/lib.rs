@@ -446,6 +446,7 @@ mod tests {
             temporal_upscaling_supported: false,
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
+            live_settings_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

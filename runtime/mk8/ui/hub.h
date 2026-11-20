@@ -266,7 +266,7 @@ static void mk8_hub_draw(float scale) {
             ImGui::PopID();
         }
         ImGui::Separator();
-        ImGui::TextColored(muted,"%s",hub_text("Ajustes reais · salvos ao fechar o painel","Live settings · saved when the panel closes","Ajustes reales · se guardan al cerrar el panel"));
+        ImGui::TextColored(muted,"%s",hub_text("As alterações aparecem também no launcher.","Changes also appear in the launcher.","Los cambios también aparecen en el launcher."));
         if (settings_page == 0) {
             ImGui::Checkbox(hub_text("Mostrar FPS","Show FPS","Mostrar FPS"), &g_settings.show_fps);
             ImGui::Checkbox(hub_text("Mostrar memória utilizada","Show memory usage","Mostrar memoria utilizada"), &g_settings.show_memory);
@@ -274,7 +274,7 @@ static void mk8_hub_draw(float scale) {
             ImGui::Checkbox(hub_text("Silenciar em segundo plano","Mute in background","Silenciar en segundo plano"), &g_settings.mute_in_background);
             float volume = g_settings.volume * 100;
             ImGui::SetNextItemWidth(400*scale);
-            if (ImGui::SliderFloat(hub_text("Volume","Volume","Volumen"), &volume,0,100,"%.0f%%")) g_settings.volume=volume/100;
+            if (ImGui::SliderFloat(hub_text("Volume","Volume","Volumen"), &volume,0,200,"%.0f%%")) g_settings.volume=volume/100;
             ImGui::TextWrapped("%s",hub_text("Vídeo, áudio e controle preservam os ajustes completos do menu atual.","Video, audio and controls keep the full settings of the current menu.","Vídeo, audio y control conservan los ajustes completos del menú actual."));
         } else if (settings_page == 1) tab_display();
         else if (settings_page == 2) tab_audio();

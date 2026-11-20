@@ -136,7 +136,7 @@
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',
     resolution: 'Define a resolução usada para desenhar o jogo. Valores menores reduzem o detalhe; a opção Dinâmica adapta a resolução. A imagem aqui é apenas uma comparação conceitual.',
-    upscaler: 'Para testar a ampliação, escolha uma resolução interna menor que a da tela e salve. O jogo informa as dimensões e o método que usou.',
+    upscaler: 'Escolha uma resolução interna menor que a da tela. Os métodos instalados também aparecem no menu do jogo. Reabra o jogo pelo launcher para carregar outro provedor.',
     antialias: 'Suavização de bordas: SMAA trata o serrilhado. Esta ilustração não reproduz o resultado final do filtro.',
     frame_gen: 'A interpolação nativa pode apresentar até 120 FPS com a simulação a 60 Hz. Ative o contador para ver os FPS do jogo, os FPS de saída e o tempo por quadro do jogo.',
     skip_intro: 'Ao iniciar o jogo, pula a introdução. Não altera a imagem das corridas.',
@@ -309,6 +309,7 @@
     if (legacy) { event.preventDefault(); selectModule(legacy.hash === '#font-title' ? 'fonts' : legacy.hash === '#settings-groups' ? 'video' : 'content', legacy.hash === '#ctgp-title' ? 'ctgp' : 'dlc'); }
   }, true);
   new MutationObserver(enhanceFields).observe(byId('settings-groups'), { childList: true });
+  window.addEventListener('gamesettingsloaded', updatePreview);
   new MutationObserver(updatePreview).observe(byId('settings-pending'), { childList: true, subtree: true });
   new MutationObserver(updatePreview).observe(fields, { attributes: true, attributeFilter: ['disabled'] });
   new MutationObserver(updateFonts).observe(byId('font-status'), { childList: true, subtree: true });
@@ -697,6 +698,7 @@
     sync();
   }
   new MutationObserver(sync).observe(document.getElementById('settings-fields'), { attributes: true, attributeFilter: ['disabled'] });
+  window.addEventListener('gamesettingsloaded', sync);
   new MutationObserver(sync).observe(document.getElementById('settings-pending'), { childList: true, subtree: true });
   window.addEventListener('launchertabchange', event => {
     if (event.detail === 'play') load();

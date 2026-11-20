@@ -794,7 +794,8 @@ impl App {
             // An existing host can predate the capability fields within the same test version.
             (!game.temporal_upscaling_supported
                 || !game.romfs_long_paths_supported
-                || !game.nextendo_session_supported)
+                || !game.nextendo_session_supported
+                || !game.live_settings_supported)
                 && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
                     |host| {
                         host["files"]["mk8drecomp.exe"].as_str()
@@ -2450,6 +2451,7 @@ mod tests {
             temporal_upscaling_supported: false,
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
+            live_settings_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
