@@ -1,9 +1,10 @@
-"""DLSS-G toolchain gating and fsr_fg integration compile checks.
+"""DLSS toolchain gating and fsr_fg integration compile checks.
 
-These tests do not need an NVIDIA GPU. They apply toolchain/dlss_fg.py to a prepared runtime
-copy that already has toolchain/fsr_fg.py, check that the low-latency/swapchain changes are
-present and idempotent, and compile the patched device.c/exec.c plus the new fsr_fg.cpp branch
-with -fsyntax-only. When no prepared runtime exists in this checkout they skip.
+These tests do not need an NVIDIA GPU. They apply toolchain/dlss.py and toolchain/dlss_fg.py
+to a prepared runtime copy that already has toolchain/fsr_fg.py: the NGX instance/device
+extensions must be added only under MK8_DLSS/MK8_DLSS_FG, the low-latency/swapchain changes
+must stay gated on MK8_DLSS_FG, and the patched device.c/exec.c plus the fsr_fg.cpp branch
+must compile with -fsyntax-only. When no prepared runtime exists they skip.
 """
 import os
 import shutil
@@ -20,6 +21,7 @@ COMPILER = shutil.which('clang')
 COMPILERXX = shutil.which('clang++')
 sys.path.insert(0, str(ROOT / 'toolchain'))
 
+import dlss  # noqa: E402
 import dlss_fg  # noqa: E402
 
 
@@ -52,6 +54,7 @@ class DlssFgPatchTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         cls.runtime = Path(cls.temp.name) / 'runtime'
         shutil.copytree(source, cls.runtime)
+        dlss.prepare(cls.runtime)  # must run before dlss_fg.py
         dlss_fg.prepare(cls.runtime)
         cls.device = (cls.runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
         cls.exec_c = (cls.runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
@@ -76,9 +79,84 @@ class DlssFgPatchTests(unittest.TestCase):
         self.assertIn('MK8_DLSS_FG', self.exec_c)
         self.assertEqual(self.exec_c.count('MK8_DLSS_FG'), 4)
 
+    def test_ngx_extensions_are_only_in_the_gated_blocks(self):
+        device = self.device
+        self.assertIn('static bool mk8_dlss_requested(void)', device)
+        self.assertEqual(device.count('if (mk8_dlss_requested())'), 2)
+
+        first = device.index('if (mk8_dlss_requested())')
+        second = device.index('if (mk8_dlss_requested())', first + 1)
+        instance_end = device.index('    bool validate = getenv("LARECOMP_VK_VALIDATION")', first)
+        device_end = device.index('    free(ep);', second)
+        instance_block = device[first:instance_end]
+        device_block = device[second:device_end]
+
+        self.assertIn('VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME', instance_block)
+        for name in ('VK_NVX_BINARY_IMPORT_EXTENSION_NAME',
+                     'VK_NVX_IMAGE_VIEW_HANDLE_EXTENSION_NAME',
+                     'VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME',
+                     'VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME'):
+            self.assertIn(name, device_block)
+        self.assertIn('is not advertised; DLSS will fail closed', device_block)
+
+        outside = device[:first] + device[instance_end:second] + device[device_end:]
+        for name in ('VK_NVX_BINARY_IMPORT_EXTENSION_NAME',
+                     'VK_NVX_IMAGE_VIEW_HANDLE_EXTENSION_NAME',
+                     'VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME',
+                     'VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME',
+                     'VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME'):
+            self.assertNotIn(name, outside)
+
+    def test_ngx_request_helper_truth_table(self):
+        if not COMPILER:
+            self.skipTest('clang is not available')
+        start = self.device.index('static bool mk8_dlss_requested(void)')
+        end = self.device.index('\n}\n', start) + 3
+        helper = self.device[start:end]
+        source = ('#define _POSIX_C_SOURCE 200809L\n'
+                  '#include <stdbool.h>\n'
+                  '#include <stdlib.h>\n'
+                  '#include <string.h>\n'
+                  + helper +
+                  'int main(int argc, char **argv) {\n'
+                  '    for (int i = 1; i < argc; i++) {\n'
+                  '        char *eq = strchr(argv[i], \'=\');\n'
+                  '        if (!eq) return 2;\n'
+                  '        *eq = 0;\n'
+                  '        setenv(argv[i], eq + 1, 1);\n'
+                  '    }\n'
+                  '    return mk8_dlss_requested() ? 0 : 1;\n'
+                  '}\n')
+        with tempfile.TemporaryDirectory(prefix='mk8-dlss-gate-') as temp:
+            src = Path(temp) / 'gate.c'
+            exe = Path(temp) / 'gate'
+            src.write_text(source, encoding='utf-8')
+            build = subprocess.run([COMPILER, '-std=c11', '-O0', str(src), '-o', str(exe)],
+                                   capture_output=True, text=True, timeout=120)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin')}
+            cases = [
+                ([], 1),
+                (['MK8_DLSS=1'], 0),
+                (['MK8_DLSS_FG=1'], 0),
+                (['MK8_DLSS=0'], 1),
+                (['MK8_DLSS_FG=0'], 1),
+                (['MK8_FSR_FG=1'], 1),
+                (['MK8_DLSS=1', 'MK8_FSR_FG=1'], 1),
+            ]
+            for args, expected in cases:
+                result = subprocess.run([str(exe), *args], env=env, timeout=30)
+                self.assertEqual(result.returncode, expected, f'{args} -> {result.returncode}')
+
+    def test_host_registers_the_ngx_hook_before_dlss_fg(self):
+        host = (ROOT / 'toolchain/host.py').read_text(encoding='utf-8')
+        self.assertLess(host.index('from dlss import prepare as prepare_dlss'),
+                        host.index('from dlss_fg import prepare as prepare_dlss_fg'))
+
     def test_patch_is_idempotent(self):
         dev_before = (self.runtime / 'nvn/vulkan/device.c').read_bytes()
         exec_before = (self.runtime / 'nvn/vulkan/exec.c').read_bytes()
+        dlss.prepare(self.runtime)
         dlss_fg.prepare(self.runtime)
         self.assertEqual(dev_before, (self.runtime / 'nvn/vulkan/device.c').read_bytes())
         self.assertEqual(exec_before, (self.runtime / 'nvn/vulkan/exec.c').read_bytes())

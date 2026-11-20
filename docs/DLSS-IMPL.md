@@ -9,8 +9,10 @@ the bridge uses was executed for real on a Windows machine with an RTX 5080 (dri
 API (`mk8_dlss_upscale`, `mk8_dlss_fg_init`/`mk8_dlss_fg_evaluate`) by
 `tools/dlss_bridge_harness.cpp`, after the four Windows runtime differences were
 applied to `dlss.cpp`. Both SR and FG created features, evaluated frames and wrote
-PNGs. The game itself was not run and `gameplay_verified` stays false; `device.c`
-still needs the pre-device extension/low-latency hook (see the bridge section).
+PNGs. The game itself was not run and `gameplay_verified` stays false. The pre-device hook
+now exists in `toolchain/dlss.py` (registered before `toolchain/dlss_fg.py`): both the
+Windows and Linux runtimes build with it, but an in-engine run still needs the game
+data on an NVIDIA machine.
 
 The implementation is deliberately small and fail-closed: no vendor binary is
 committed, nothing is linked against NGX, and every failure returns `VK_NULL_HANDLE`
@@ -25,6 +27,7 @@ committed, nothing is linked against NGX, and every failure returns `VK_NULL_HAN
 | `runtime/mk8/graphics/ngx/mk8_ngx_abi.h` | hand-written minimal NGX Vulkan ABI, including the DLSS-G structs (see licences below) |
 | `runtime/mk8/graphics/fsr.cpp` | one dispatch hunk: `MK8_DLSS=1` calls the SR bridge before the FSR path |
 | `runtime/mk8/graphics/fsr_fg.cpp` | DLSS-G two-image present path when `MK8_DLSS_FG=1` and FSR FG is off |
+| `toolchain/dlss.py` | pre-device NGX instance/device extension gate (runs before `dlss_fg.py`) |
 | `toolchain/dlss_fg.py` | gated low-latency device/swapchain patches, depth/matrix gates, device accessor |
 | `tests/test_dlss.py` | native loader failure paths, real-plugin dlopen, SR and DLSS-G ABI static asserts |
 | `tests/test_dlss_fg.py` | toolchain patch idempotence/gating and `-fsyntax-only` compile of the patched runtime |
@@ -32,8 +35,8 @@ committed, nothing is linked against NGX, and every failure returns `VK_NULL_HAN
 | `tools/dlss_bridge_harness.cpp` | standalone Windows harness that compiles the real `dlss.cpp` and calls `mk8_dlss_upscale` / `mk8_dlss_fg_*` on the RTX 5080 |
 | `tools/dlss_bridge_include/` | shim `vulkan/vk.h`, its VMA subset and the camera-MV shader SPIR-V for that harness |
 
-`toolchain/host.py` registers `toolchain/dlss_fg.py` immediately after
-`toolchain/fsr_fg.py`; the host build already compiles every `runtime/mk8/**/*.cpp`. The SR
+`toolchain/host.py` registers `toolchain/dlss.py` after `toolchain/fsr_fg.py` and
+`toolchain/dlss_fg.py` after it; the host build already compiles every `runtime/mk8/**/*.cpp`. The SR
 dispatch lives in `fsr.cpp`, and `fsr_fg.cpp` now contains both the existing FSR path and the
 gated DLSS-G branch. `device.c` is patched through the toolchain, not edited upstream.
 
@@ -376,7 +379,8 @@ Required extensions reported for this driver/plugin pair:
 instance `VK_KHR_get_physical_device_properties2`; device `VK_NVX_binary_import`,
 `VK_NVX_image_view_handle`, `VK_KHR_buffer_device_address`,
 `VK_KHR_push_descriptor`. The bridge cannot enable them because the game device
-already exists; the pre-device hook remains necessary, now with the exact list.
+already exists; `toolchain/dlss.py` now adds them before `vkCreateDevice` when a DLSS
+mode is requested (see "Pre-device NGX extension hook" below).
 
 ### DLSS 4.5 / DLSS 5 features
 
@@ -487,22 +491,75 @@ and `T mk8_dlss_fg_evaluate`; the exe sha256 is
 `25b417e4e4ee47fe56538d78630c4c3a1f06e826e91b520e64704bd60e405213`. It was **not executed**
 (no in-engine run, no game images).
 
-**Linux tests**: `python3 -m unittest -v tests.test_dlss tests.test_fsr_fg` -> 27 tests,
-`OK (skipped=1)`; the skip is the FSR frame-generation provider fixture, which is not
-installed on this host.
+**Linux tests**: `python3 -m unittest -v tests.test_dlss tests.test_dlss_fg
+tests.test_fsr_fg` -> 34 tests, `OK (skipped=1)`; the skip is the FSR frame-generation
+provider fixture, which is not installed on this host. See the pre-device hook section
+for the rebuilds.
+
+### Pre-device NGX extension hook (20/11/2026)
+
+`toolchain/dlss.py` is registered in `toolchain/host.py` after `fsr_fg.prepare` and before
+`dlss_fg.prepare`. Strictly behind `mk8_dlss_requested()` (MK8_DLSS or MK8_DLSS_FG
+non-zero; FSR frame generation wins when MK8_FSR_FG is active), it adds:
+
+- instance: `VK_KHR_get_physical_device_properties2`, before the validation extension so
+  the existing `enabledExtensionCount--` fallback still removes the right entry;
+- device: `VK_NVX_binary_import`, `VK_NVX_image_view_handle`,
+  `VK_KHR_buffer_device_address`, `VK_KHR_push_descriptor`, after the FSR/MLFI
+  extension additions and before `free(ep)`.
+
+Every entry is added only when advertised. If one is missing, the hook logs exactly
+
+```text
+[dlss] NGX device extension <name> is not advertised; DLSS will fail closed
+```
+
+(or `[dlss] VK_KHR_get_physical_device_properties2 is not advertised; NGX will fail closed`
+for the instance extension), adds none of the NGX set, and the bridge fails closed at
+`Init`; the existing FSR/bilinear path runs. With both variables unset/`0`, the three
+gates are false and the instance/device extension lists are unchanged. The FSR FG/MLFI
+entries are not reordered: `dlss.py` appends after them and `dlss_fg.py` still adds its
+low-latency pair in its own earlier block.
+
+Rebuilds and tests with the hook:
+
+```text
+Runtime x86_64-windows-gnu: 234/234 unidades
+host built: .../host-dlss-ngx/mk8drecomp.exe (4525568 bytes)
+sha256 719b74f24d3f518f0d2eeea1531ca90fd6409d6fadf56d4277d0106ae85aac90
+
+Runtime x86_64-linux-gnu: 230/230 unidades
+host built: .../host-linux-ngx/mk8drecomp (4850784 bytes)
+sha256 7539336fbba0db28d7720eb0ff4a94ddb7414fe33da1e3646fcf5b7341240f31
+```
+
+`tests/test_dlss.py`, `tests/test_dlss_fg.py` and `tests/test_fsr_fg.py` ran 34 tests:
+`OK (skipped=1)` (the FSR provider fixture). `tests/test_dlss_fg.py` now applies
+`dlss.py` before `dlss_fg.py`, asserts the NGX names occur only inside the gated blocks,
+runs a compiled truth table for `mk8_dlss_requested()` (unset/0 false, MK8_DLSS true,
+MK8_DLSS_FG true, MK8_FSR_FG false, combined FSR-FG false), checks idempotence and
+compiles the patched `device.c`/`exec.c`. The no-DLSS device path is inert, not a
+different extension list.
+
+What remains for an in-engine claim: run the built runtime on an NVIDIA machine with the
+game data, confirm the hook logs the four NGX extensions enabled, then confirm
+`SuperSampling.Available`/`FrameGeneration.Available`, feature creation, evaluation and
+the final present with MK8 frames. No such run was made here.
 
 ## NOT verified
 
 The harness proves the ABI and the NGX sequence, not the game. On this host the
 following still did not run:
 
-- In-engine execution. The bridge compiles into `mk8drecomp.exe` and ran through its
-  public API in the harness, but the game was not started and no MK8 image was produced.
-- The in-game Vulkan device does not enable the four NGX device extensions
-  (`VK_NVX_binary_import`, `VK_NVX_image_view_handle`, `VK_KHR_buffer_device_address`,
-  `VK_KHR_push_descriptor`). `toolchain/dlss_fg.py` enables `VK_NV_low_latency2` and
-  `VK_KHR_present_id` for FG but not the NGX list. Without the pre-device hook the
-  bridge fails closed at Init with the required-extension log above.
+- In-engine execution. The bridge compiles into the Windows and Linux runtimes and ran
+  through its public API in the harness, and `toolchain/dlss.py` now enables the NGX
+  instance/device extensions before `vkCreateDevice`; the game was still not started on
+  an NVIDIA machine with game data, so no MK8 image exists. That run is the remaining
+  step.
+- The NGX extension list on a device that does not advertise one of the four: the hook
+  logs `[dlss] NGX device extension <name> is not advertised; DLSS will fail closed` and
+  adds none of the set. The source/compile tests cover that branch; no driver in this
+  run actually lacked the extension.
 - Quality: the harness input is a synthetic pan with camera-only motion and a neutral
   depth ramp. Depth convention (standard/inverted), jitter/projection correctness,
   object motion vectors and the actual MK8 image are untested.
@@ -571,10 +628,9 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
    advertised by the physical device and the device to have been created with it
    (`vkSetLatencySleepModeNV`, `vkLatencySleepNV`, `vkSetLatencyMarkerNV` resolved
    through `vkGetDeviceProcAddr`). It calls `vkSetLatencySleepModeNV` with
-   `lowLatencyMode = VK_TRUE` and fails closed on any error. The current `device.c`
-   does **not** enable this extension, so a real run fails with the exact message
-   "the device was created without VK_NV_low_latency2; enable the extension before
-   vkCreateDevice (device.c)" until the hand-off below is applied.
+   `lowLatencyMode = VK_TRUE` and fails closed on any error. `toolchain/dlss_fg.py`
+   enables the extension (and `VK_KHR_present_id`) behind the `MK8_DLSS_FG` gate before
+   `vkCreateDevice`; the harness exercised the resulting swapchain and sleep mode.
 3. **Init and capability.** `NVSDK_NGX_VULKAN_Init_with_ProjectID(..., 0x15)` on Linux;
    the Windows core uses the nine-argument `NVSDK_NGX_VULKAN_Init_ProjectID` instead.
    Then `FrameGeneration.Available`. A zero is reported with
@@ -660,8 +716,13 @@ bridge-API evidence is in "Verified through the bridge API" above.
 
 ### Runtime wiring (implemented)
 
-`toolchain/dlss_fg.py` is registered in `toolchain/host.py` immediately after
-`fsr_fg.prepare`. It patches the prepared runtime, strictly behind a helper that is false when
+`toolchain/dlss.py` runs after `fsr_fg.prepare` and before `dlss_fg.prepare`. Its
+`mk8_dlss_requested()` gate excludes an active `MK8_FSR_FG`, so FSR frame generation
+keeps the device exactly as before. The four NGX device extensions and
+`VK_KHR_get_physical_device_properties2` are appended only when advertised; the missing
+case names the extension in one line and adds none of the set.
+
+`toolchain/dlss_fg.py` is registered in `toolchain/host.py` after `dlss.prepare`. It patches the prepared runtime, strictly behind a helper that is false when
 `MK8_DLSS_FG` is unset/`0` or when `MK8_FSR_FG` is active:
 
 - **device creation:** append `VK_NV_LOW_LATENCY_2_EXTENSION_NAME` when it is exposed, plus
@@ -706,12 +767,14 @@ The full runtime was built from the wired tree (222 units, `mk8drecomp` linked) 
 RADV run with `MK8_DLSS_FG=1` attempted DLSS-G and failed closed with the exact no-core line
 above; the normal present path then ran. `MK8_DLSS_FG` unset and `=0` produced the same
 device/swapchain startup (the only diff was romfs timing). The Windows cross-build later
-compiled 234/234 units and linked `mk8drecomp.exe` (4,523,520 bytes); on the RTX 5080 the
+compiled 234/234 units and linked `mk8drecomp.exe` (4,525,568 bytes with the NGX
+pre-device hook); on the RTX 5080 the
 bridge harness then executed `mk8_dlss_fg_init` and three `mk8_dlss_fg_evaluate` calls
 through a real low-latency2 swapchain (see "Verified through the bridge API"). The
 in-game two-image present, pacing/latency sleep and resize remain unexecuted.
-`tests/test_dlss.py` and `tests/test_fsr_fg.py` pass on Linux (27 tests, 1 provider
-fixture skipped).
+`tests/test_dlss.py`, `tests/test_dlss_fg.py` and `tests/test_fsr_fg.py` pass on Linux
+(34 tests, 1 provider fixture skipped); the Linux runtime with the hook built 230/230
+units (`host-linux-ngx/mk8drecomp`, 4,850,784 bytes).
 
 ### NOT verified and exact remaining RTX 40/50 validation
 
