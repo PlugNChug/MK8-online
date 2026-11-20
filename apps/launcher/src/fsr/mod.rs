@@ -28,6 +28,9 @@ pub const SETTINGS_FILE: &str = "launcher-settings.json";
 /// Optional explicit data directory for the FSR results. The default is the
 /// documented `$XDG_DATA_HOME/mk8online/fsr` (or the platform equivalent).
 pub const DATA_DIR_OVERRIDE: &str = "MK8_FSR_DIR";
+/// Optional explicit cache for the pinned DXC release. The default is the
+/// documented `$XDG_DATA_HOME/mk8online/dxc`, outside the FSR output.
+pub const DXC_DIR_OVERRIDE: &str = "MK8_DXC_DIR";
 
 const FSR_OFF: &str = "off";
 const FSR_316: &str = "3.1.6";
@@ -209,21 +212,33 @@ pub fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_OVERRIDE).filter(|value| !value.is_empty()) {
         return PathBuf::from(dir);
     }
+    data_base().join("fsr")
+}
+
+/// `$XDG_DATA_HOME/mk8online/dxc`, kept separate from the FSR output because
+/// DXC is an independent open-source tool, not an AMD/FSR artifact.
+pub fn dxc_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DXC_DIR_OVERRIDE).filter(|value| !value.is_empty()) {
+        return PathBuf::from(dir);
+    }
+    data_base().join("dxc")
+}
+
+fn data_base() -> PathBuf {
     if let Some(dir) = std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
-        return PathBuf::from(dir).join("mk8online").join("fsr");
+        return PathBuf::from(dir).join("mk8online");
     }
     #[cfg(windows)]
     if let Some(dir) = std::env::var_os("LOCALAPPDATA").filter(|value| !value.is_empty()) {
-        return PathBuf::from(dir).join("mk8online").join("fsr");
+        return PathBuf::from(dir).join("mk8online");
     }
     if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
         return PathBuf::from(home)
             .join(".local")
             .join("share")
-            .join("mk8online")
-            .join("fsr");
+            .join("mk8online");
     }
-    std::env::temp_dir().join("mk8online").join("fsr")
+    std::env::temp_dir().join("mk8online")
 }
 
 pub fn provider_path(dir: &Path) -> PathBuf {

@@ -1286,5 +1286,12 @@
   "Provedor FSR {0} pronto em {1}.": "FSR provider {0} ready at {1}.",
   "DLLs assinadas da AMD prontas em {0}.": "AMD signed DLLs ready at {0}.",
   "Baixando {0} ({1} bytes) da fonte fixada…": "Downloading {0} ({1} bytes) from the pinned source…",
-  "Lendo as versões das DLLs assinadas…": "Reading the signed DLL versions…"
+  "Lendo as versões das DLLs assinadas…": "Reading the signed DLL versions…",
+  "DXC {0} em cache em {1}; verificado por tamanho e SHA-256.": "DXC {0} cached at {1}; verified by size and SHA-256.",
+  "O DXC configurado não existe em {0}. Corrija o caminho ou deixe o campo vazio para baixar a versão oficial.": "The configured DXC does not exist at {0}. Fix the path or leave the field empty to download the official release.",
+  "Sem DXC configurado: o instalador baixa o DirectXShaderCompiler {0} da release oficial da Microsoft ({1} bytes) e confere o SHA-256 {2}…": "No DXC configured: the installer downloads DirectXShaderCompiler {0} from Microsoft's official release ({1} bytes) and verifies SHA-256 {2}…",
+  "DXC: DirectXShaderCompiler (LLVM/Apache-2.0 com exceções LLVM), baixado da release oficial da Microsoft, fora da pasta do FSR. Não é um artefato AMD/FSR e o launcher não o inclui no pacote.": "DXC: DirectXShaderCompiler (LLVM/Apache-2.0 with LLVM exceptions), downloaded from Microsoft's official release, outside the FSR folder. It is not an AMD/FSR artifact and the launcher does not bundle it.",
+  "Preparando o compilador DXC (fonte oficial fixada)…": "Preparing the DXC compiler (pinned official source)…",
+  "Baixando o compilador DXC (13 MB, fonte oficial fixada)…": "Downloading the DXC compiler (13 MB, pinned official source)…",
+  "DXC {0} verificado e pronto.": "DXC {0} verified and ready."
 }

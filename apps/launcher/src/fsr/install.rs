@@ -16,10 +16,15 @@
 //! python3 -u tools/build_fg_provider.py \
 //!   --sdk-archive <verified FidelityFX-SDK-2.4.0.tar.gz> \
 //!   --sdk-size <bytes> --sdk-sha256 <hex> \
-//!   --dxc <dxc binary> \
+//!   --dxc-archive <verified linux_dxc_2026_09_28.x86_x64.tar.gz> \
+//!   --dxc-size <bytes> --dxc-sha256 <hex> \
 //!   --work-dir <$XDG_DATA_HOME/mk8online/fsr/build> \
 //!   --install-dir <$XDG_DATA_HOME/mk8online/fsr/provider.next>
 //! ```
+//!
+//! When the user configured a DXC binary (page field, `MK8_DXC`, tools folder
+//! or `PATH`), the launcher passes `--dxc <path>` instead; the DXC archive
+//! arguments are mutually exclusive with it.
 //!
 //! The script must:
 //!
@@ -54,7 +59,7 @@ use serde_json::{json, Value};
 use std::{
     ffi::{c_char, c_void, CStr},
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
@@ -68,6 +73,25 @@ pub const SDK_URL: &str =
 pub const SDK_BYTES: u64 = 253_592_010;
 pub const SDK_SHA256: &str = "111f9b19c0c9b8a1f24d2a5104095b8e626f12deb4eca53cd0c29921aa1fd43a";
 
+/// Pinned DXC release used only when no configured/system compiler exists.
+/// DXC is open source (LLVM/Apache-2.0 with LLVM exceptions), not an AMD/FSR
+/// artifact, so it is cached outside the FSR output and has no AMD gate.
+pub const DXC_VERSION: &str = "1.9.2609.5";
+pub const DXC_LICENSE_FILES: [&str; 2] = ["LICENSE-LLVM.txt", "LICENSE-MS.txt"];
+pub const DXC_PINNED: PinnedFile = PinnedFile {
+    file: "linux_dxc_2026_09_28.x86_x64.tar.gz",
+    url: "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/linux_dxc_2026_09_28.x86_x64.tar.gz",
+    bytes: 13_297_763,
+    sha256: "96faadc7f5c282d2ffda49804beb4c3ee38127bc252b723234e3c5cdf7aa39a1",
+};
+
+pub struct PinnedFile {
+    pub file: &'static str,
+    pub url: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+}
+
 /// AMD's `docs/license.md` at the same tag (`raw.githubusercontent.com`).
 pub const LICENSE_FILE: &str = "LICENSE-AMD-FSR-SDK.md";
 pub const LICENSE_URL: &str =
@@ -79,7 +103,9 @@ pub const TERMS_FILE: &str = "terms.json";
 pub const INSTALL_FILE: &str = "install.json";
 pub const PROGRESS_FILE: &str = "progress.json";
 pub const BUILD_LOG: &str = "build.log";
+#[cfg(target_os = "linux")]
 pub const WORK_DIR: &str = "build";
+#[cfg(target_os = "linux")]
 pub const PROVIDER_DIR: &str = "provider";
 pub const PROVIDER_REL: &str = "provider/libamd_fidelityfx_framegeneration_vk.so";
 pub const BUILD_SCRIPT: &str = "tools/build_fg_provider.py";
@@ -121,6 +147,7 @@ const FFX_API_RETURN_OK: u32 = 0;
 const FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK: u64 = 0x0004_0001;
 /// `FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE`
 /// (`FFX_API_EFFECT_ID_UPSCALE | 0x00`).
+#[cfg(windows)]
 const FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE: u64 = 0x0001_0000;
 const FFX_API_QUERY_DESC_TYPE_GET_VERSIONS: u64 = 4;
 
@@ -277,13 +304,21 @@ fn install(request: &Request) -> Result<()> {
         );
     }
     ensure_license(dir)?;
-    if cfg!(windows) {
-        install_signed_dlls(dir)
-    } else {
-        install_linux_provider(request, dir)
-    }
+    #[cfg(windows)]
+    return install_signed_dlls(dir);
+    #[cfg(target_os = "linux")]
+    return install_linux_provider(request, dir);
+    #[cfg(not(any(windows, target_os = "linux")))]
+    return Err("A instalação do FSR só está disponível no Linux e no Windows.".into());
 }
 
+#[cfg(target_os = "linux")]
+enum DxcInput {
+    Binary(PathBuf),
+    Archive(PathBuf),
+}
+
+#[cfg(target_os = "linux")]
 fn install_linux_provider(request: &Request, dir: &Path) -> Result<()> {
     set_progress(dir, "download", 1, "Preparando o SDK da AMD…")?;
     ensure_sdk(dir)?;
@@ -295,21 +330,27 @@ fn install_linux_provider(request: &Request, dir: &Path) -> Result<()> {
         ));
     }
     let dxc = resolve_dxc(&request.root, dir, &request.dxc);
-    if !dxc.found {
-        return Err(if request.dxc.is_empty() {
-            "DXC não encontrado. Informe o caminho do compilador DXC na página FSR ou defina MK8_DXC."
-                .into()
-        } else {
-            format!("DXC não encontrado em {}.", request.dxc)
-        });
-    }
-    build_provider(request, dir, &script, &dxc.path)?;
+    let input = if dxc.found && !dxc.archive {
+        DxcInput::Binary(dxc.path)
+    } else if !request.dxc.is_empty() && !dxc.found {
+        return Err(format!("DXC não encontrado em {}.", request.dxc));
+    } else {
+        set_progress(
+            dir,
+            "dxc",
+            12,
+            "Preparando o compilador DXC (fonte oficial fixada)…",
+        )?;
+        DxcInput::Archive(ensure_dxc(dir)?)
+    };
+    build_provider(request, dir, &script, &input)?;
     Ok(())
 }
 
 /// Windows uses AMD's signed Vulkan DLLs from the same tag. They are verified
 /// byte-for-byte against the pinned size and SHA-256 before being published;
 /// the version is read back with `ffxQuery` when the library can be loaded.
+#[cfg(windows)]
 fn install_signed_dlls(dir: &Path) -> Result<()> {
     for (index, dll) in SIGNED_DLLS.iter().enumerate() {
         let target = dir.join(dll.name);
@@ -400,7 +441,8 @@ fn install_signed_dlls(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn build_provider(request: &Request, dir: &Path, script: &Path, dxc: &Path) -> Result<()> {
+#[cfg(target_os = "linux")]
+fn build_provider(request: &Request, dir: &Path, script: &Path, dxc: &DxcInput) -> Result<()> {
     let next = dir.join("provider.next");
     if next.exists() {
         fs::remove_dir_all(&next).map_err(|error| format!("{}: {error}", next.display()))?;
@@ -422,9 +464,22 @@ fn build_provider(request: &Request, dir: &Path, script: &Path, dxc: &Path) -> R
         .arg("--sdk-size")
         .arg(SDK_BYTES.to_string())
         .arg("--sdk-sha256")
-        .arg(SDK_SHA256)
-        .arg("--dxc")
-        .arg(dxc)
+        .arg(SDK_SHA256);
+    match dxc {
+        DxcInput::Binary(path) => {
+            command.arg("--dxc").arg(path);
+        }
+        DxcInput::Archive(path) => {
+            command
+                .arg("--dxc-archive")
+                .arg(path)
+                .arg("--dxc-size")
+                .arg(DXC_PINNED.bytes.to_string())
+                .arg("--dxc-sha256")
+                .arg(DXC_PINNED.sha256);
+        }
+    }
+    command
         .arg("--work-dir")
         .arg(dir.join(WORK_DIR))
         .arg("--install-dir")
@@ -539,6 +594,7 @@ fn build_provider(request: &Request, dir: &Path, script: &Path, dxc: &Path) -> R
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn publish_provider(dir: &Path, next: &Path) -> Result<()> {
     let provider = dir.join(PROVIDER_DIR);
     let old = dir.join(format!("{PROVIDER_DIR}.old"));
@@ -560,6 +616,7 @@ fn publish_provider(dir: &Path, next: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn ensure_sdk(dir: &Path) -> Result<()> {
     let archive = dir.join(SDK_ARCHIVE_FILE);
     if archive.is_file() {
@@ -620,11 +677,159 @@ fn ensure_sdk(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn write_marker(dir: &Path, sha256: &str) -> Result<()> {
     crate::fsr::write_atomic(
         &dir.join(format!("{SDK_ARCHIVE_FILE}.sha256")),
         format!("{sha256}\n").as_bytes(),
     )
+}
+
+/// Downloads (if needed) and verifies any pinned file, atomically. The marker
+/// records the verified hash so status polling does not re-hash the archive.
+#[cfg(any(target_os = "linux", test))]
+fn ensure_pinned(
+    dir: &Path,
+    pinned: &PinnedFile,
+    download: &mut dyn FnMut(&Path) -> Result<()>,
+) -> Result<PathBuf> {
+    fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let target = dir.join(pinned.file);
+    if pinned_valid(&target, pinned) {
+        write_pinned_marker(dir, pinned)?;
+        return Ok(target);
+    }
+    if target.exists() {
+        fs::remove_file(&target).map_err(|error| format!("{}: {error}", target.display()))?;
+    }
+    let part = dir.join(format!("{}.part", pinned.file));
+    let _ = fs::remove_file(&part);
+    download(&part)?;
+    verify_and_publish(&part, &target, pinned.bytes, pinned.sha256)?;
+    write_pinned_marker(dir, pinned)?;
+    Ok(target)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn pinned_valid(path: &Path, pinned: &PinnedFile) -> bool {
+    matches!(fs::metadata(path), Ok(meta) if meta.len() == pinned.bytes)
+        && crate::fsr::sha256_file(path).is_ok_and(|hash| hash == pinned.sha256)
+}
+
+fn pinned_cached(dir: &Path, pinned: &PinnedFile) -> bool {
+    let path = dir.join(pinned.file);
+    if !matches!(fs::metadata(&path), Ok(meta) if meta.len() == pinned.bytes) {
+        return false;
+    }
+    fs::read_to_string(dir.join(format!("{}.sha256", pinned.file)))
+        .is_ok_and(|text| text.trim() == pinned.sha256)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn write_pinned_marker(dir: &Path, pinned: &PinnedFile) -> Result<()> {
+    crate::fsr::write_atomic(
+        &dir.join(format!("{}.sha256", pinned.file)),
+        format!("{}\n", pinned.sha256).as_bytes(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn download_pinned(pinned: &PinnedFile, part: &Path, label: &str) -> Result<()> {
+    let output = crate::update::curl()
+        .args(["--max-time", "600", "--retry", "2", "--retry-delay", "1"])
+        .args([
+            "--max-filesize",
+            &(pinned.bytes + 1).to_string(),
+            "--output",
+        ])
+        .arg(part)
+        .args(["--url", pinned.url])
+        .output()
+        .map_err(|_| "Não foi possível iniciar o cliente HTTPS (curl).".to_string())?;
+    if !output.status.success() {
+        let _ = fs::remove_file(part);
+        return Err(format!(
+            "Download de {label} falhou: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+/// One-click Linux installs no longer depend on a pre-installed DXC. The
+/// archive and its licence texts are cached in `$XDG_DATA_HOME/mk8online/dxc`,
+/// outside the FSR output; the build script receives the archive and its pins.
+#[cfg(target_os = "linux")]
+fn ensure_dxc(progress_dir: &Path) -> Result<PathBuf> {
+    let dir = crate::fsr::dxc_dir();
+    fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    if !pinned_cached(&dir, &DXC_PINNED) {
+        set_progress(
+            progress_dir,
+            "dxc",
+            2,
+            "Baixando o compilador DXC (13 MB, fonte oficial fixada)…",
+        )?;
+    }
+    let archive = ensure_pinned(&dir, &DXC_PINNED, &mut |part| {
+        download_pinned(&DXC_PINNED, part, "DXC")
+    })?;
+    extract_dxc_licenses(&archive, &dir)?;
+    append_log(
+        progress_dir,
+        &format!(
+            "DXC {DXC_VERSION} verificado: {} bytes, sha256={}",
+            DXC_PINNED.bytes, DXC_PINNED.sha256
+        ),
+    )?;
+    set_progress(
+        progress_dir,
+        "dxc",
+        18,
+        &format!("DXC {DXC_VERSION} verificado e pronto."),
+    )?;
+    Ok(archive)
+}
+
+#[cfg(target_os = "linux")]
+fn extract_dxc_licenses(archive: &Path, dir: &Path) -> Result<()> {
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+    let file =
+        fs::File::open(archive).map_err(|error| format!("{}: {error}", archive.display()))?;
+    let mut archive = Archive::new(GzDecoder::new(file));
+    let mut found = [false; DXC_LICENSE_FILES.len()];
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("Arquivo do DXC inválido: {error}"))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path().map_err(|error| error.to_string())?;
+        let Some(name) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let Some(index) = DXC_LICENSE_FILES.iter().position(|file| *file == name) else {
+            continue;
+        };
+        let mut content = Vec::new();
+        entry
+            .read_to_end(&mut content)
+            .map_err(|error| error.to_string())?;
+        crate::fsr::write_atomic(&dir.join(&name), &content)?;
+        found[index] = true;
+    }
+    if found.iter().all(|present| *present) {
+        Ok(())
+    } else {
+        Err(format!(
+            "O arquivo do DXC não contém as licenças esperadas ({}); o provedor não foi instalado.",
+            DXC_LICENSE_FILES.join(", ")
+        ))
+    }
 }
 
 fn ensure_license(dir: &Path) -> Result<()> {
@@ -864,6 +1069,7 @@ pub fn log_tail(dir: &Path, lines: usize) -> String {
     tail.into_iter().rev().collect::<Vec<_>>().join("\n")
 }
 
+#[cfg(target_os = "linux")]
 fn progress_marker(line: &str, current: u8) -> Option<(u8, String)> {
     let line = line.trim();
     if line.starts_with("sdk archive ok") {
@@ -894,6 +1100,7 @@ fn progress_marker(line: &str, current: u8) -> Option<(u8, String)> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn python(root: &Path) -> PathBuf {
     if let Some(path) = std::env::var_os("MK8_PYTHON312").filter(|value| !value.is_empty()) {
         return path.into();
@@ -912,10 +1119,19 @@ fn python(root: &Path) -> PathBuf {
 pub struct Dxc {
     pub path: PathBuf,
     pub found: bool,
+    pub source: &'static str,
+    /// True when `path` is the pinned release archive rather than a binary.
+    pub archive: bool,
 }
 
-/// Configured path first, then the launcher tool folders and `PATH`.
+/// Configured path first, then the launcher tool folders and `PATH`, then the
+/// pinned DXC archive cache. A configured path that does not exist is reported
+/// as missing instead of silently falling back to the automatic download.
 pub fn resolve_dxc(root: &Path, dir: &Path, configured: &str) -> Dxc {
+    resolve_dxc_in(root, dir, configured, &crate::fsr::dxc_dir())
+}
+
+fn resolve_dxc_in(root: &Path, dir: &Path, configured: &str, dxc_cache: &Path) -> Dxc {
     let names: &[&str] = if cfg!(windows) {
         &["dxc.exe", "dxc"]
     } else {
@@ -923,14 +1139,21 @@ pub fn resolve_dxc(root: &Path, dir: &Path, configured: &str) -> Dxc {
     };
     if !configured.is_empty() {
         let path = PathBuf::from(configured);
+        let found = path.is_file();
         return Dxc {
-            found: path.is_file(),
+            found,
             path,
+            source: if found {
+                "configured"
+            } else {
+                "configured-missing"
+            },
+            archive: false,
         };
     }
-    let mut candidates = Vec::new();
+    let mut candidates: Vec<(PathBuf, &'static str)> = Vec::new();
     if let Some(path) = std::env::var_os("MK8_DXC").filter(|value| !value.is_empty()) {
-        candidates.push(PathBuf::from(path));
+        candidates.push((PathBuf::from(path), "MK8_DXC"));
     }
     for base in [
         root.join("local/native-tools/dxc/bin"),
@@ -939,24 +1162,40 @@ pub fn resolve_dxc(root: &Path, dir: &Path, configured: &str) -> Dxc {
         dir.join("dxc/bin"),
     ] {
         for name in names {
-            candidates.push(base.join(name));
+            candidates.push((base.join(name), "tools"));
         }
     }
     if let Some(paths) = std::env::var_os("PATH") {
         for base in std::env::split_paths(&paths) {
             for name in names {
-                candidates.push(base.join(name));
+                candidates.push((base.join(name), "PATH"));
             }
         }
     }
-    for path in candidates {
+    for (path, source) in candidates {
         if path.is_file() {
-            return Dxc { found: true, path };
+            return Dxc {
+                found: true,
+                path,
+                source,
+                archive: false,
+            };
         }
     }
+    let archive = dxc_cache.join(DXC_PINNED.file);
+    if pinned_cached(dxc_cache, &DXC_PINNED) {
+        return Dxc {
+            found: true,
+            path: archive,
+            source: "archive",
+            archive: true,
+        };
+    }
     Dxc {
-        path: PathBuf::new(),
+        path: archive,
         found: false,
+        source: "pinned",
+        archive: true,
     }
 }
 
@@ -1060,6 +1299,11 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
         .map(|meta| meta.len())
         .unwrap_or_default();
     let dxc = resolve_dxc(root, dir, &settings.dxc);
+    let dxc_cache = crate::fsr::dxc_dir();
+    let dxc_licenses: Vec<PathBuf> = DXC_LICENSE_FILES
+        .iter()
+        .map(|name| dxc_cache.join(name))
+        .collect();
     let script = root.join(BUILD_SCRIPT);
     let terms = crate::fsr::terms_accepted(dir);
     let cached = sdk_cached(dir);
@@ -1141,6 +1385,7 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
                 "present": path.is_file(),
                 "bytes": dll.bytes,
                 "sha256": dll.sha256,
+                "url": dll.url,
             })
         })
         .collect();
@@ -1175,7 +1420,22 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
         "license": license,
         "terms_accepted": terms,
         "progress": progress,
-        "dxc": {"path": dxc.path, "found": dxc.found},
+        "dxc": {
+            "path": dxc.path,
+            "found": dxc.found,
+            "source": dxc.source,
+            "archive": dxc.archive,
+            "version": DXC_VERSION,
+            "pinned": {
+                "file": DXC_PINNED.file,
+                "url": DXC_PINNED.url,
+                "bytes": DXC_PINNED.bytes,
+                "sha256": DXC_PINNED.sha256,
+                "dir": dxc_cache,
+                "cached": pinned_cached(&dxc_cache, &DXC_PINNED),
+                "licenses": dxc_licenses,
+            },
+        },
         "build_script": {"path": script, "present": script.is_file()},
         "install_dir": dir,
         "sdk_tag": SDK_TAG,
@@ -1259,6 +1519,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn progress_markers_follow_cmake_without_exceeding_the_cap() {
         assert_eq!(progress_marker("sdk archive ok: 1 bytes", 0).unwrap().0, 20);
         assert_eq!(
@@ -1281,11 +1542,107 @@ mod tests {
     fn configured_dxc_is_reported_even_when_missing() {
         let dir = temp("dxc");
         let missing = dir.join("dxc");
-        let result = resolve_dxc(&dir, &dir, missing.to_str().unwrap());
+        let result = resolve_dxc_in(&dir, &dir, missing.to_str().unwrap(), &dir.join("cache"));
         assert!(!result.found);
         assert_eq!(result.path, missing);
+        assert_eq!(result.source, "configured-missing");
         fs::write(&missing, b"fake").unwrap();
-        assert!(resolve_dxc(&dir, &dir, missing.to_str().unwrap()).found);
+        let result = resolve_dxc_in(&dir, &dir, missing.to_str().unwrap(), &dir.join("cache"));
+        assert!(result.found);
+        assert_eq!(result.source, "configured");
+        assert!(!result.archive);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn dxc_archive_size_and_hash_mismatches_are_rejected() {
+        let dir = temp("dxc-verify");
+        let part = dir.join("dxc.part");
+        let target = dir.join(DXC_PINNED.file);
+        let fake = b"not the pinned DXC release";
+        fs::write(&part, fake).unwrap();
+        let error =
+            verify_and_publish(&part, &target, DXC_PINNED.bytes, DXC_PINNED.sha256).unwrap_err();
+        assert!(error.contains(&DXC_PINNED.bytes.to_string()));
+        assert!(error.contains(&fake.len().to_string()));
+        assert!(!target.exists());
+        assert!(!part.exists());
+
+        fs::write(&part, fake).unwrap();
+        let wrong = "0".repeat(64);
+        let error = verify_and_publish(&part, &target, fake.len() as u64, &wrong).unwrap_err();
+        assert!(error.contains("SHA-256") && error.contains(&wrong));
+        assert!(!target.exists());
+        assert!(!part.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pinned_dxc_archive_is_reused_without_download_and_revalidated_after_tamper() {
+        const BYTES: &[u8] = b"fake dxc release";
+        const SHA: &str = "4f10dfd9fb82858c159b00434c5412bddf6dfebd8967294d37c491029935e18a";
+        let pinned = PinnedFile {
+            file: "dxc-test.tar.gz",
+            url: "https://example.invalid/dxc",
+            bytes: BYTES.len() as u64,
+            sha256: SHA,
+        };
+        let dir = temp("dxc-reuse");
+        let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
+        let counter = downloads.clone();
+        let mut download = move |part: &Path| {
+            counter.set(counter.get() + 1);
+            fs::write(part, BYTES).map_err(|error| error.to_string())
+        };
+        let archive = ensure_pinned(&dir, &pinned, &mut download).unwrap();
+        assert_eq!(downloads.get(), 1);
+        assert_eq!(fs::read(&archive).unwrap(), BYTES);
+        assert!(dir.join(format!("{}.sha256", pinned.file)).is_file());
+
+        // A cached, verified archive is reused.
+        let again = ensure_pinned(&dir, &pinned, &mut download).unwrap();
+        assert_eq!(again, archive);
+        assert_eq!(downloads.get(), 1);
+
+        // A same-size tamper is detected and re-downloaded.
+        fs::write(&archive, b"tampered dxc rel").unwrap();
+        let restored = ensure_pinned(&dir, &pinned, &mut download).unwrap();
+        assert_eq!(downloads.get(), 2);
+        assert_eq!(fs::read(restored).unwrap(), BYTES);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn dxc_license_texts_are_extracted_from_the_verified_archive() {
+        use flate2::{write::GzEncoder, Compression};
+        let dir = temp("dxc-licenses");
+        let archive = dir.join("dxc.tar.gz");
+        {
+            let file = fs::File::create(&archive).unwrap();
+            let encoder = GzEncoder::new(file, Compression::default());
+            let mut builder = tar::Builder::new(encoder);
+            for (name, body) in [
+                ("LICENSE-LLVM.txt", b"LLVM license text".as_slice()),
+                ("LICENSE-MS.txt", b"Microsoft license text".as_slice()),
+            ] {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(body.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder.append_data(&mut header, name, body).unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        extract_dxc_licenses(&archive, &dir).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("LICENSE-LLVM.txt")).unwrap(),
+            "LLVM license text"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("LICENSE-MS.txt")).unwrap(),
+            "Microsoft license text"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

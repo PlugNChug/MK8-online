@@ -78,8 +78,7 @@
     get('fsr-license-accept').disabled = accepted;
     get('fsr-license-save').hidden = accepted;
     get('fsr-license-save').disabled = accepted || !get('fsr-license-accept').checked || !license.verified;
-    const needsDxc = data.platform !== 'windows' && !data.dxc?.found;
-    get('fsr-install').disabled = !accepted || state === 'building' || saving || needsDxc;
+    get('fsr-install').disabled = !accepted || state === 'building' || saving;
     get('fsr-cancel').hidden = state !== 'building';
     text('fsr-license-load', license.present ? 'Ver licença da AMD' : 'Ler licença da AMD');
     text('fsr-license-source', license.verified
@@ -87,9 +86,17 @@
       : 'Texto oficial de docs/license.md, tag v2.4.0, conferido por tamanho e SHA-256.');
 
     const dxc = data.dxc || {};
-    text('fsr-dxc-detail', windows ? '' : dxc.found
-      ? `DXC encontrado em ${dxc.path}.`
-      : 'DXC não encontrado. Escolha o compilador DXC para compilar o provedor ou defina MK8_DXC.');
+    const pinned = dxc.pinned || {};
+    text('fsr-dxc-source', 'DXC: DirectXShaderCompiler (LLVM/Apache-2.0 com exceções LLVM), baixado da release oficial da Microsoft, fora da pasta do FSR. Não é um artefato AMD/FSR e o launcher não o inclui no pacote.');
+    if (windows) text('fsr-dxc-detail', '');
+    else if (dxc.found && dxc.source === 'archive')
+      text('fsr-dxc-detail', `DXC ${dxc.version} em cache em ${dxc.path}; verificado por tamanho e SHA-256.`);
+    else if (dxc.found)
+      text('fsr-dxc-detail', `DXC encontrado em ${dxc.path}.`);
+    else if (dxc.source === 'configured-missing')
+      text('fsr-dxc-detail', `O DXC configurado não existe em ${dxc.path}. Corrija o caminho ou deixe o campo vazio para baixar a versão oficial.`);
+    else
+      text('fsr-dxc-detail', `Sem DXC configurado: o instalador baixa o DirectXShaderCompiler ${dxc.version} da release oficial da Microsoft (${pinned.bytes || 0} bytes) e confere o SHA-256 ${String(pinned.sha256 || '').slice(0, 16)}…`);
 
     const versions = [];
     if (data.upscaler?.version) versions.push(`Ampliação: FSR ${data.upscaler.version}`);
