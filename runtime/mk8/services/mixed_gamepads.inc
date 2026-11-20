@@ -118,9 +118,14 @@ static void mk8_label_device(uint16_t row[80], SDL_Gamepad *primary, SDL_Gamepad
         return;
     }
     size_t m = mk8_device_name(mk8_attached_name(partner), right);
-    size_t used = mk8_copy_name(row, left, n, m < 38 ? 76 - m : 38);
-    memcpy(row + used, u" + ", 3 * sizeof(uint16_t));
-    mk8_copy_name(row + used + 3, right, m, 76 - used);
+    if (n + 3 + m > 24) {
+        memcpy(row, u"Paired Joy-Cons", sizeof(u"Paired Joy-Cons"));
+        return;
+    }
+    memcpy(row, left, n * sizeof(*row));
+    memcpy(row + n, u" + ", 3 * sizeof(*row));
+    memcpy(row + n + 3, right, m * sizeof(*row));
+    row[n + 3 + m] = 0;
 }
 
 static void mk8_publish_names(void) {

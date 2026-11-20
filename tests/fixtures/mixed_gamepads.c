@@ -86,7 +86,7 @@ static bool SDLCALL rumble(void *data, Uint16 low, Uint16 high) {
 }
 static bool SDLCALL sensors(void *data, bool enabled) { return true; }
 static void attach_as(enum Device device,enum Device model) {
-    const char *names[] = {"Contrôle 🎮", "GrIp 左", "GrIp 右", "Solo 左", "Solo 右"};
+    const char *names[] = {"Contrôle 🎮", "GrIp 左", "GrIp 右", "Nintendo Switch Joy-Con (L)", "Nintendo Switch Joy-Con (R)"};
     const Uint16 products[] = {0x2009, 0x2006, 0x2007, 0x2006, 0x2007};
     SDL_VirtualJoystickSensorDesc motion[] = {{SDL_SENSOR_ACCEL, 200}, {SDL_SENSOR_GYRO, 200}};
     SDL_VirtualJoystickDesc d;
@@ -194,8 +194,10 @@ static void check_popup_names(void) {
     mk8_controller_names(rows);
     assert(!memcmp(rows[0], u"Contrôle 🎮", sizeof(u"Contrôle 🎮")));
     assert(!memcmp(rows[1], u"GrIp 左 + GrIp 右", sizeof(u"GrIp 左 + GrIp 右")));
-    assert(!memcmp(rows[2], u"Solo 左", sizeof(u"Solo 左")));
-    assert(!memcmp(rows[3], u"Solo 右", sizeof(u"Solo 右")));
+    assert(!memcmp(rows[2], u"Nintendo Switch Joy-Con (L)", sizeof(u"Nintendo Switch Joy-Con (L)")));
+    assert(!memcmp(rows[3], u"Nintendo Switch Joy-Con (R)", sizeof(u"Nintendo Switch Joy-Con (R)")));
+    mk8_label_device(rows[2], extra_pad[1], extra_pad[2], false);
+    assert(!memcmp(rows[2], u"Paired Joy-Cons", sizeof(u"Paired Joy-Cons")));
     uint16_t scratch[81], limited[80] = {0};
     assert(mk8_device_name(NULL, scratch) == 18);
     assert(!memcmp(scratch, u"Unnamed controller", 18 * sizeof(uint16_t)));
@@ -761,8 +763,8 @@ int main(int argc, char **argv) {
     assert(style_notifications == before_swap + 1);
     uint16_t names[4][80];
     mk8_controller_names(names);
-    assert(!memcmp(names[2], u"Solo 右", sizeof(u"Solo 右")));
-    assert(!memcmp(names[3], u"Solo 左", sizeof(u"Solo 左")));
+    assert(!memcmp(names[2], u"Nintendo Switch Joy-Con (R)", sizeof(u"Nintendo Switch Joy-Con (R)")));
+    assert(!memcmp(names[3], u"Nintendo Switch Joy-Con (L)", sizeof(u"Nintendo Switch Joy-Con (L)")));
     assert(extra_connected(0) && extra_connected(1) && extra_connected(2));
     expect_buzz(PRO);
     pulse(0, 1, 0.f);
