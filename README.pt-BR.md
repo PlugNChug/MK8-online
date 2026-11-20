@@ -48,6 +48,8 @@ A versão 0.4.0 acrescenta **Ultrawide (experimental)** às configurações de v
 
 A opção de **menu nativo de configurações** é salva automaticamente para o próximo início. Acrescenta a chave no menu principal do jogo e preserva o fallback F1/Menos + Mais e a prioridade do atalho do hub. Compartilha o arquivo de configurações do runtime, incluindo a proporção. Os layouts privados são derivados localmente de recursos verificados do jogo; nenhum é distribuído. A qualificação completa continua pendente; evidências manuais locais e limites estão em [STATUS.md](docs/STATUS.md).
 
+**CTGP Deluxe na 0.4.0:** Se o jogo fechar ao carregar o menu principal, abra **Configurações** no launcher, desmarque **Ativar o menu nativo de configurações** e abra o jogo novamente. Você pode manter o CTGP e o Booster Course Pass ligados. A mudança vale na próxima abertura.
+
 ### Instalação e runtime
 
 A versão 0.4.0 restaura a sombra ausente do banner de largada de Rock Rock Mountain, respeitando o estado de depth clamp solicitado pelo jogo. Reconstrua o runtime para aplicar o fix. Condições verificadas no [estado técnico](docs/STATUS.md).
@@ -67,7 +69,7 @@ O runtime da 0.4.0 inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo 
 **Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. Requer Windows x64 e drivers Vulkan compatíveis; não acrescenta suporte a Linux/AppImage/Steam Deck.
 
 
-Prévia opcional para testes: `MK8_MENU_PROTOTYPE=1` ativa o painel dentro do jogo com F1 ou Menos + Mais. Social solicita a permissão OAuth `friends` e consulta amigos/presença; Nextendo lista os lobbies reais do MK8 e consulta a sala atual. Selecionar uma linha mostra detalhes, sem entrar na sala. As consultas rodam em segundo plano a cada 30 segundos enquanto essas telas estão abertas. Falhas de rede/permissão são exibidas, e os exemplos fictícios foram removidos. Com o Nextendo conectado, entre nas corridas pelo Online Play do jogo. A lista do painel é informativa; ingresso direto pelo painel ficou fora do escopo. Convites de corrida não estão implementados.
+Na `fix-chore`, pressione **F1** ou **Menos + Mais** para abrir o menu do jogo. Em Jogar, volte à partida ou abra o Perfil Mii. Ajustes reúne vídeo, áudio e controles. Após o login, Nextendo mostra as salas reais do MK8 e Social consulta os amigos e a presença com a permissão `friends`. Selecionar uma sala abre os detalhes. Para disputar uma corrida, use **Online Play** no Mario Kart.
 
 ### Recursos disponíveis desde a 0.3.0
 
@@ -231,11 +233,9 @@ Para gerar um instalador local de teste sem publicar uma release, execute `pytho
 Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplica a uma cópia verificada. Não edite os snapshots upstream nem o código gerado do jogo. Siga o [AGENTS.md](AGENTS.md) e rode os testes da área alterada. Caminhos só de desenvolvimento estão documentados no [estado técnico](docs/STATUS.md):
 
 - transportes LAN/relay/P2P pela API;
-- o conversor estático de cabeça Mii;
-- o protótipo Nextendo;
-- o painel experimental dentro do jogo (`MK8_MENU_PROTOTYPE=1`, F1 ou Menos + Mais). Na 0.4.0, a lista de salas e a presença dos amigos usam os dados da conta Nextendo autorizada. A entrada na corrida acontece pelo **Online Play** do jogo.
+- o conversor estático de cabeça Mii.
 
-Os testes Nextendo foram retomados na `fix-chore`: o mantenedor confirmou gameplay online com outras pessoas em uma sessão isolada. O adaptador opt-in usa a API OAuth documentada e o ID público registrado do MK8-online. `scripts/test-race.py time-trial --nextendo --interactive` permite teste manual com saves copiados e candidato local verificado. Ainda não é um recurso público do launcher; confiança TLS de produção, reconexão e qualificação completa de corrida/reinício continuam pendentes. Os tokens ficam em memória durante o processo.
+Para testar o Nextendo na `fix-chore`, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Os tokens ficam em memória e o CTGP é desativado nessa sessão. A reconexão continua experimental.
 
 | Local | Responsabilidade |
 | --- | --- |

@@ -1,4 +1,4 @@
-// Included by the verified menu build copy. Prototype only; never fabricates service data.
+// Included by the verified in-game menu build copy.
 extern "C" {
 #include "net/nextendo.h"
 #include "net/netcfg.h"
@@ -7,7 +7,7 @@ extern "C" {
 
 static bool mk8_hub_enabled() {
     const char *value = getenv("MK8_MENU_PROTOTYPE");
-    return value && !strcmp(value, "1");
+    return !value || strcmp(value, "0");
 }
 
 static void mk8_hub_icon(ImDrawList *d, ImVec2 p, float s, int kind, ImU32 ink) {
@@ -28,26 +28,6 @@ static void mk8_hub_icon(ImDrawList *d, ImVec2 p, float s, int kind, ImU32 ink) 
             d->AddCircleFilled(ImVec2(x,y),3*s,ink);
         }
     }
-}
-
-static void mk8_hub_track(float scale) {
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const float w = ImGui::GetContentRegionAvail().x, h = 185*scale;
-    ImDrawList *d = ImGui::GetWindowDrawList();
-    d->AddRectFilled(p,ImVec2(p.x+w,p.y+h),IM_COL32(24,29,33,255),16*scale);
-    // A schematic circuit, not a preview of a commercial track.
-    ImVec2 pts[97];
-    for (int i=0;i<=96;++i) {
-        float a = i*6.2831853f/96;
-        pts[i] = ImVec2(p.x+w*.63f+cosf(a)*w*.26f,p.y+h*.5f+sinf(2*a)*h*.31f);
-    }
-    d->AddPolyline(pts,97,IM_COL32(53,61,68,255),0,22*scale);
-    d->AddPolyline(pts,97,IM_COL32(255,119,74,255),0,2*scale);
-    d->AddCircleFilled(pts[10],6*scale,IM_COL32(255,119,74,255));
-    d->AddCircle(pts[10],11*scale,IM_COL32(255,119,74,130),24,2*scale);
-    d->AddText(menu_font_big(),44*scale,ImVec2(p.x+24*scale,p.y+42*scale),IM_COL32(242,242,245,255),"De volta");
-    d->AddText(menu_font_big(),44*scale,ImVec2(p.x+24*scale,p.y+91*scale),IM_COL32(242,242,245,255),"à pista.");
-    ImGui::Dummy(ImVec2(w,h));
 }
 
 static void mk8_hub_draw(float scale) {
@@ -91,14 +71,13 @@ static void mk8_hub_draw(float scale) {
     const float h = fminf(io.DisplaySize.y * .88f, 900 * scale);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x/2,io.DisplaySize.y/2), ImGuiCond_Always, ImVec2(.5f,.5f));
     ImGui::SetNextWindowSize(ImVec2(w,h), ImGuiCond_Always);
-    ImGui::PushFont(menu_font());
+    ImGui::PushFont(nes_theme() ? menu_font() : g_font);
     ImGui::Begin("MK8 online##hub", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
     ImVec2 brand = ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(brand.x+21*scale,brand.y+22*scale),21*scale,IM_COL32(255,119,74,255));
     ImGui::GetWindowDrawList()->AddText(ImVec2(brand.x+12*scale,brand.y+1*scale),IM_COL32(18,21,24,255),"8");
     ImGui::Dummy(ImVec2(48*scale,44*scale)); ImGui::SameLine();
     ImGui::TextUnformatted("MK8 online");
-    ImGui::SameLine(w-370*scale); ImGui::TextColored(muted, "Prévia do menu");
     ImGui::Separator();
     const bool popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     if (!popup && !ui_text_busy()) {
@@ -109,7 +88,7 @@ static void mk8_hub_draw(float scale) {
     NxStatus account; nextendo_status(&account);
     const bool connected = account.state == NX_SIGNED_IN && net_backend() == NET_BACKEND_NEXTENDO;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(10*scale,8*scale));
-    ImGui::BeginChild("hub-navigation", ImVec2(280 * scale,body_h),ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::BeginChild("hub-navigation", ImVec2(fminf(280 * scale,w*.24f),body_h),ImGuiChildFlags_AlwaysUseWindowPadding);
     const char *tabs[] = {"Jogar", "Nextendo", "Social", "Ajustes"};
     for (int i=0; i<4; ++i) {
         ImGui::PushID(i);
@@ -139,27 +118,27 @@ static void mk8_hub_draw(float scale) {
     if (last_page != page) { last_page = page; reveal = .55f; }
     reveal = fminf(1, reveal + io.DeltaTime*3);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, reveal);
-    ImGui::PushFont(menu_font_big()); ImGui::TextUnformatted(tabs[page]); ImGui::PopFont();
+    ImGui::PushFont(nes_theme() ? menu_font_big() : g_font_big); ImGui::TextUnformatted(tabs[page]); ImGui::PopFont();
     if (page == 0) {
-        ImGui::TextColored(muted,"Sua partida, sem sair do jogo.");
-        mk8_hub_track(scale);
-        ImGui::TextWrapped(connected ? "Nextendo pronto nesta sessão. Acesse Online Play no menu do MK8 para encontrar uma corrida." : "Continue sua partida ou abra Nextendo para conferir a conexão.");
+        ImGui::TextWrapped(connected ? "Para disputar uma corrida no Nextendo, volte ao jogo e selecione Online Play." : "Para jogar online no Nextendo, selecione Jogar no Nextendo ao iniciar pelo launcher.");
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, orange);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.08f,.08f,.08f,1));
         if (ImGui::Button("Voltar ao jogo", ImVec2(300*scale,64*scale))) set_open(false);
         ImGui::PopStyleColor(2);
-        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x > 630*scale) ImGui::SameLine();
         if (ImGui::Button("Abrir Nextendo", ImVec2(300*scale,64*scale))) page=1;
         ImGui::Spacing(); ImGui::Separator();
         ImGui::TextColored(muted,"Nesta sessão");
         ImGui::Text("Conta: %s", account.state == NX_SIGNED_IN ? account.username : "sem login Nextendo");
         ImGui::Text("Conteúdo: %s", getenv("MK8_ROMFS_OVERLAY") && *getenv("MK8_ROMFS_OVERLAY") ? "CTGP / mod local" : "jogo original");
+        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();
+        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();
     } else if (page == 1 || page == 2) {
         static Mk8Social social_state;
         if (connected) mk8_social_refresh();
         mk8_social_snapshot(&social_state);
-        if (!connected) ImGui::TextWrapped("Entre no Nextendo pela aba Conta para consultar seus dados.");
+        if (!connected) ImGui::TextWrapped(online_rows_available() ? "Abra Conta Nextendo para consultar sua conexão." : "No launcher, selecione Jogar no Nextendo e faça login pelo navegador.");
         else if (social_state.busy) ImGui::TextColored(muted,"Atualizando dados do Nextendo...");
         else ImGui::TextColored(muted,"Dados do serviço. Atualização a cada 30 segundos nesta tela.");
         ImGui::Spacing();
@@ -235,12 +214,16 @@ static void mk8_hub_draw(float scale) {
             }
         }
         ImGui::Spacing();
-        if (ImGui::Button("Conta Nextendo")) settings_page=4, page=3;
-        ImGui::SameLine(); if (ImGui::Button("Voltar ao MK8")) set_open(false);
+        if (online_rows_available()) {
+            if (ImGui::Button("Conta Nextendo")) settings_page=4, page=3;
+            ImGui::SameLine();
+        }
+        if (ImGui::Button("Voltar ao MK8")) set_open(false);
     } else {
-        const char *groups[] = {"Rápidos", "Vídeo", "Áudio", "Controle", "Conta"};
-        for (int i=0;i<5;++i) {
-            if (i) ImGui::SameLine();
+        const char *groups[] = {"Rápidos", "Vídeo", "Áudio", "Controle", "Conta", "Mods", "Sair"};
+        for (int i=0;i<7;++i) {
+            if (i && ImGui::GetItemRectMax().x + style.ItemSpacing.x + ImGui::CalcTextSize(groups[i]).x + 2*style.FramePadding.x <
+                ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine();
             ImGui::PushID(i);
             ImGui::PushStyleColor(ImGuiCol_Button,settings_page==i ? ImVec4(.34f,.20f,.15f,1) : ImVec4(.11f,.13f,.15f,1));
             ImGui::PushStyleColor(ImGuiCol_Text,settings_page==i ? orange : muted);
@@ -262,8 +245,10 @@ static void mk8_hub_draw(float scale) {
         } else if (settings_page == 1) tab_display();
         else if (settings_page == 2) tab_audio();
         else if (settings_page == 3) tab_about();
+        else if (settings_page == 5) tab_mods();
+        else if (settings_page == 6) tab_quit(scale,true);
         else if (online_rows_available()) tab_online();
-        else ImGui::TextWrapped("Nextendo não foi habilitado nesta execução. Abra pelo launcher de teste.");
+        else ImGui::TextWrapped("No launcher, selecione Jogar no Nextendo e faça login pelo navegador.");
     }
     ImGui::PopStyleVar();
     ImGui::EndChild();

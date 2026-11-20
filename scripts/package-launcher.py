@@ -22,6 +22,7 @@ SOURCE_EXTENSIONS = {".c", ".h", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", 
 def payload_files():
     yield ROOT / "LICENSE"
     yield MANIFEST
+    yield ROOT / "toolchain/mii_assembly.html"
     importer = ROOT / "tools/mk8-import"
     for name in ("mk8-import.dll", "mk8-import.runtimeconfig.json", "LibHac.dll", "build-sha256.txt"):
         yield importer / name

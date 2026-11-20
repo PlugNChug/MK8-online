@@ -326,8 +326,16 @@
               <div class="cta">
                 <button id="play-solo" class="primary big" disabled>Jogar solo</button>
                 <button id="play-online" class="ghost big" disabled>Jogar na sala</button>
-                <button id="play-nextendo" class="ghost big" hidden disabled>Jogar no Nextendo</button>
+                <button id="play-nextendo" class="ghost big" disabled>Jogar no Nextendo</button>
               </div>
+              <p class="fine" id="nextendo-rebuild" hidden>Atualize a build do jogo para usar o Nextendo.</p>
+              <dialog id="nextendo-consent" aria-labelledby="nextendo-heading">
+                <h2 id="nextendo-heading">Conectar ao Nextendo</h2>
+                <p>O servidor de corrida usa um certificado próprio. Esta é a chave observada nos testes do projeto. A confirmação pelo Nextendo está pendente.</p>
+                <code id="nextendo-key" dir="ltr"></code>
+                <p>Ao confiar nesta chave neste PC, o launcher abre o login no navegador. Depois, selecione Online Play no jogo.</p>
+                <div class="cta"><button class="ghost" id="nextendo-cancel" autofocus>Cancelar</button><button class="primary" id="nextendo-accept">Confiar e entrar</button></div>
+              </dialog>
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>

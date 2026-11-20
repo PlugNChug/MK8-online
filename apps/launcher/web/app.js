@@ -809,7 +809,18 @@ setInterval(() => loadSteam(), 5000);
 /* ---------- Jogar e suporte ---------- */
 $("play-solo").onclick = () => action(() => api("play", { online: false }));
 $("play-online").onclick = () => action(() => api("play", { online: true }));
-$("play-nextendo").onclick = () => action(() => api("play", { online: false, nextendo: true }));
+const playNextendo = () => api("play", { online: false, nextendo: true });
+$("play-nextendo").onclick = () => {
+  if ($("play-nextendo").dataset.trusted === "true") return action(playNextendo);
+  $("nextendo-consent").showModal();
+};
+$("nextendo-cancel").onclick = () => $("nextendo-consent").close();
+$("nextendo-accept").onclick = () => action(async () => {
+  const key = $("nextendo-key").textContent;
+  $("nextendo-consent").close();
+  await api("nextendo/trust", { key });
+  return playNextendo();
+});
 let lastReport = null;
 let update = null;
 function renderUpdate(result) {
@@ -895,8 +906,10 @@ async function refresh() {
   $("play-solo").disabled =
     !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
-  $("play-nextendo").hidden = !status.nextendo_available;
-  $("play-nextendo").disabled = $("play-solo").disabled;
+  $("play-nextendo").dataset.trusted = String(status.nextendo_trusted);
+  $("nextendo-key").textContent = status.nextendo_game_key;
+  $("nextendo-rebuild").hidden = !(status.candidate || status.installed) || status.nextendo_supported;
+  $("play-nextendo").disabled = $("play-solo").disabled || !status.nextendo_supported;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
   for (const id of ["steam-host", "steam-host-manual"]) {

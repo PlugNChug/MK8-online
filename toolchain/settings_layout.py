@@ -9,6 +9,7 @@ COMMON_SHA256 = '8d371bdfe7235d5652857b4450437aef4b1661d79eb1d1210db7806f2b58490
 LAYOUT_HASH = 0x6ec7bb3c
 RELATIVE = Path('settings-menu/romfs/UI/cmn/menu.sarc')
 COMMON_RELATIVE = RELATIVE.with_name('common.sarc')
+SETTINGS_PAGE = 'cm_Page_SetUI'
 LIMIT = 32 * 1024 * 1024
 
 
@@ -403,7 +404,7 @@ def add_page(data, container=False):
             pane(b'prt1','L_SettingsNo',x=200,y=-195,reference='cm_L_SetBtn_00'),
             pane(b'prt1','L_SettingsCursor',reference='cm_L_BtnCursor_00'),b'pae1\x08\0\0\0']
     if container:
-        own = [pane(b'prt1', 'L_SettingsRoot', reference='cm_Page_Dummy')]
+        own = [pane(b'prt1', 'L_SettingsRoot', reference=SETTINGS_PAGE)]
     sections[root_end:root_end] = own
     header = bytearray(data[:20])
     struct.pack_into('<IH', header, 12, 20+sum(map(len, sections)), len(sections))
@@ -439,18 +440,20 @@ def prepare(romfs, output):
     temp = target.with_suffix('.tmp')
     temp.write_bytes(result)
     temp.replace(target)
-    for name, key, container in [('cm_Page_Dummy.szs', 0xdd954d60, False), ('cm_Page_Cursor.szs', 0xaa119e16, True)]:
-        nested, = [v for k, _, v in entries(common) if k == name]
-        nested = yaz0(nested)
-        layout, = [v for k, _, v in entries(nested) if k == key]
-        nested = replace_entry(nested, key, add_page(layout, container))
+    common_parts = {k: v for k, _, v in entries(common)}
+    # The game also instantiates the dummy on unrelated pages. Give only the Settings owner the extra panes.
+    for source, destination, container in [('cm_Page_Dummy', SETTINGS_PAGE, False),
+                                            ('cm_Page_Cursor', 'cm_Page_Cursor', True)]:
+        parts = {k: v for k, _, v in entries(yaz0(common_parts[source + '.szs']))}
+        layout = parts.pop(name_hash('blyt/' + source + '.bflyt'))
+        parts[name_hash('blyt/' + destination + '.bflyt')] = add_page(layout, container)
+        nested = pack_entries(list(parts.items()))
         packed = b'Yaz0' + struct.pack('>I', len(nested)) + bytes(8)
         packed += b''.join(b'\xff'+nested[i:i+8] for i in range(0, len(nested), 8))
-        common = replace_entry(common, name, packed)
-    label,=[v for k,_,v in entries(common) if k=='cm_L_Scroll_ListTitle_00.szs']
-    button,=[v for k,_,v in entries(common) if k=='cm_L_WinBtn_00.szs']
-    common=pack_entries([(k,v) for k,_,v in entries(common)]+[('cm_L_SetLabel_00.szs',dialog_label(label)),
-                                                         ('cm_L_SetBtn_00.szs',dialog_button(button))])
+        common_parts[destination + '.szs'] = packed
+    common_parts['cm_L_SetLabel_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'])
+    common_parts['cm_L_SetBtn_00.szs'] = dialog_button(common_parts['cm_L_WinBtn_00.szs'])
+    common = pack_entries(list(common_parts.items()))
     common_target = Path(output)/COMMON_RELATIVE
     temp = common_target.with_suffix('.tmp')
     temp.write_bytes(common)

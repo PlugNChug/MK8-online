@@ -100,10 +100,13 @@ class SettingsLayoutTests(unittest.TestCase):
             self.assertEqual(derived['other'], b'common-keep')
             self.assertEqual(derived['cm_L_WinBtn_00.szs'],b'base-button')
             self.assertEqual(derived['cm_L_SetBtn_00.szs'],b'private-dialog-button')
-            dummy=dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_Dummy.szs'])))
+            originals = {k:v for k,_,v in layout.entries(common)}
+            self.assertEqual(derived['cm_Page_Dummy.szs'], originals['cm_Page_Dummy.szs'])
+            private = dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_SetUI.szs'])))
             cursor=dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_Cursor.szs'])))
-            self.assertIn(b'N_Settings', dummy[0xdd954d60])
+            self.assertIn(b'N_Settings', private[layout.name_hash('blyt/cm_Page_SetUI.bflyt')])
             self.assertIn(b'L_SettingsRoot', cursor[0xaa119e16])
+            self.assertIn(b'cm_Page_SetUI\0', cursor[0xaa119e16])
             self.assertEqual(target.read_bytes(), again)
             entries = {key: data for key, _, data in layout.entries(again)}
             self.assertEqual(entries['other'], b'keep')
