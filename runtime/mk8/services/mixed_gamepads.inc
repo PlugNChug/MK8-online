@@ -64,6 +64,7 @@ static uint32_t mk8_filter_shortcut(unsigned player, SDL_Gamepad *primary, uint3
 static bool mk8_paired_slot[1 + EXTRA_PADS];
 static bool mk8_explicit_slots;
 static bool mk8_title_extra_seats;
+static unsigned mk8_reserved_seats;  // Disconnected owners retain their seat until they return or it is reassigned.
 static _Atomic int mk8_startup_preset;  // 0 pending, 1 applied, -1 invalid
 static void mk8_rumble_attach(int player, SDL_Gamepad *device);
 

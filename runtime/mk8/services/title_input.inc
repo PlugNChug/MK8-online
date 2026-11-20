@@ -48,7 +48,7 @@ static void mk8_title_choose(SDL_JoystickID left, SDL_JoystickID right) {
         keyboard = 0;
     } else if (keyboard == 0) keyboard = -1;
     if (vacancy < 0) for (int i = 1; i < 4; ++i)
-        if (!slots[i][0] && i != keyboard) { vacancy = i; break; }
+        if (!slots[i][0] && i != keyboard && !(mk8_reserved_seats & (1u << i))) { vacancy = i; break; }
     if (move_keyboard) keyboard = vacancy;
     if (vacancy >= 0 && slots[0][0]) memcpy(slots[vacancy], slots[0], sizeof slots[0]);
     slots[0][0] = left;
@@ -58,7 +58,7 @@ static void mk8_title_choose(SDL_JoystickID left, SDL_JoystickID right) {
     if (mk8_title_state == MK8_TITLE_WAIT && mk8_title_visit == mk8_observed_visit &&
         mk8_assign_layout(slots, keyboard, false)) {
         mk8_title_extra_seats = automatic_extras;
-        mk8_remember_title_pad();
+        if (!left) mk8_forget_seat(0);
         mk8_title_state = MK8_TITLE_ACCEPTED;
     }
     pthread_mutex_unlock(&mk8_title_lock);

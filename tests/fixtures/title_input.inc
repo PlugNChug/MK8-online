@@ -271,13 +271,13 @@ static void check_title_input(void) {
     assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R]);
     title_accepted();
     check_motion(0,PAIR_R,true); check_pulse(0,0,PAIR_L); check_pulse(0,1,PAIR_R);
-    SDL_CloseJoystick(usb); assert(SDL_DetachVirtualJoystick(usb_id)); pump(); // Free a seat for the other grip.
+    int usb_seat=title_pad_seat(usb_id); assert(usb_seat>0);
+    SDL_CloseJoystick(usb); assert(SDL_DetachVirtualJoystick(usb_id)); pump();
     title_ready(true);
     button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true); button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
     assert(SDL_GetGamepadID(pad)==ids[PAIR_R] && !mk8_partner[0]); title_accepted();
-    unsigned left_slot=1;
-    while(left_slot<4 && (!extra_pad[left_slot-1] || SDL_GetGamepadID(extra_pad[left_slot-1])!=ids[PAIR_L])) left_slot++;
-    assert(left_slot<4 && !mk8_partner[left_slot]); check_motion(left_slot,PAIR_L,false);
+    // The offline USB player keeps its seat; splitting P1's pair cannot evict it.
+    assert(title_pad_seat(ids[PAIR_L])==-1 && !*mk8_primary_slot(usb_seat));
     title_ready(true);
     button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_WEST,true); button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_WEST,false);
     assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R]); title_accepted();
@@ -305,4 +305,68 @@ static void check_title_input(void) {
     title_accepted(); check_motion(0,PAIR_R,true); check_pulse(0,0,SOLO_L); check_pulse(0,1,PAIR_R);
     for(int i=0;i<DEVICE_COUNT;i++) { SDL_CloseJoystick(sticks[i]); assert(SDL_DetachVirtualJoystick(ids[i])); }
     pump();
+}
+
+static void check_extra_button(enum Device device,int player) {
+    button(sticks[device],SDL_GAMEPAD_BUTTON_WEST,true);
+    for(int i=0;i<4;i++) {
+        uint64_t buttons=guest_buttons(i);
+        if ((buttons!=0)!=(i==player))
+            fprintf(stderr,"device %d (SDL %u) expected seat %d, seat %d received %llu\n",device,ids[device],player,i,(unsigned long long)buttons);
+        assert((buttons!=0)==(i==player));
+    }
+    button(sticks[device],SDL_GAMEPAD_BUTTON_WEST,false);
+}
+
+static void check_all_reconnect(const char *scenario) {
+    bool edited=!strcmp(scenario,"all-reconnect-edited");
+    bool identical=!strcmp(scenario,"all-reconnect-identical");
+    bool stock=!strcmp(scenario,"all-reconnect-stock");
+    bool one_serial=!strcmp(scenario,"all-reconnect-one-serial");
+    fixture_serials=!identical && !stock;
+    returning_serial_ready=true; spare_serial_ready=!one_serial;
+    enum Device p3=stock ? PAIR_L : PAIR_R;
+    if (stock) g_settings.pads_from_p2=true;
+    else { title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted(); }
+    attach(PRO); attach(p3); attach_as(SOLO_R,PAIR_R); pump();
+    int pro=1,right=2;
+    if(edited) {
+        assert(edit(MK8_EDIT_BEGIN,4,0)==MK8_EDIT_READY);
+        assert(edit(MK8_EDIT_SWAP,1,2)==MK8_EDIT_READY);
+        assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+        pro=2;right=1;
+    }
+    check_extra_button(PRO,pro); check_extra_button(p3,right); check_extra_button(SOLO_R,3);
+    SDL_JoystickID old=ids[SOLO_R];
+    detach_title_pad(p3); detach_title_pad(PRO); detach_title_pad(SOLO_R);
+    // A different controller cannot fill someone else's reserved seat.
+    attach(SOLO_L); pump(); check_extra_button(SOLO_L,-1); detach_title_pad(SOLO_L);
+    spare_serial_ready=true;
+    attach_as(SOLO_R,PAIR_R); pump();
+    assert(ids[SOLO_R]!=old);
+    check_extra_button(SOLO_R,identical || one_serial ? -1 : 3);
+    attach(p3); attach(PRO); pump();
+    check_extra_button(PRO,pro);
+    check_extra_button(p3,identical ? -1 : right);
+    check_extra_button(SOLO_R,identical || one_serial ? -1 : 3);
+    if (edited) {
+        // A device returns during a two-row edit. Its new explicit row supersedes its offline row.
+        assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+        detach_title_pad(PRO); attach(PRO); pump();
+        assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN); shoulders(sticks[PRO]);
+        assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+        check_extra_button(PRO,1);
+        detach_title_pad(PRO); attach(PRO); pump(); check_extra_button(PRO,1);
+    }
+    if (identical) {
+        // Both ambiguous grips require an explicit registration; fresh gestures can swap their owners.
+        assert(edit(MK8_EDIT_BEGIN,4,0)==MK8_EDIT_READY);
+        assert(edit(MK8_EDIT_ASSIGN,right,0)==MK8_EDIT_LISTEN);
+        shoulders(sticks[SOLO_R]);
+        assert(edit(MK8_EDIT_ASSIGN,3,0)==MK8_EDIT_LISTEN);
+        shoulders(sticks[p3]);
+        assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+        check_extra_button(SOLO_R,right); check_extra_button(p3,3);
+    }
+    detach_title_pad(p3); detach_title_pad(PRO); detach_title_pad(SOLO_R);
 }

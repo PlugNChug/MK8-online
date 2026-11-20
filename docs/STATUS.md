@@ -1,5 +1,15 @@
 # Estado técnico — 19/11/2026
 
+## Reconexão de vários controles durante uma corrida
+
+Em uma corrida física de quatro jogadores no candidato de 60 FPS com os controles da 0.4.0, o SDL registrou a remoção e o retorno de três dispositivos. O Pro Controller passou do jogador 4 para o 3 e o Joy-Con direito fez o caminho inverso. Na reprodução com teclado no jogador 1 e três controles virtuais na build de atribuição `403c63b`, o botão do jogador 4 chegou ao jogador 2 depois de uma reconexão em ordem inversa. Após uma troca de posições na janela de atribuição, o mesmo botão deixou de chegar ao jogo.
+
+O runtime agora reserva as posições desconectadas durante a sessão e recupera cada controle identificável. A regressão lê os botões entregues ao jogo para os quatro jogadores. Ela cobre a descoberta automática, um Pro Controller e dois Joy-Con individuais, uma troca na janela de atribuição e um par que retoma movimento e vibração depois de recuperar a metade que faltava. Quando duas metades são do mesmo modelo, o controle com número de série conhecido recupera sua posição. Se as duas forem indistinguíveis, ambas aguardam novo registro. Uma nova atribuição explícita tem prioridade sobre a reserva anterior. A causa da desconexão simultânea observada na corrida física permanece desconhecida.
+
+Na versão corrigida, os 70 testes selecionados passaram, incluindo os nove da integração contínua. O ensaio de controles mistos passou pelos 22 cenários de dispositivos SDL. A compilação incremental com `--runtime-only` gerou o executável `d924980a…` e preservou os hashes das 118 entradas do pacote, inclusive os módulos do guest e os arquivos de interface.
+
+No candidato de produção `23fe9efc0e08`, apenas `hle/input.c` mudou entre os fontes preparados do host. A verificação de importações confirmou 29 em `main`, oito em `sdk` e quatro em `subsdk0`. No teste automatizado, o quadro 340 mostrou o título, o 600 mostrou a entrada em **Single Player** e o 860 mostrou as opções Grand Prix, Time Trials, VS e Battle. O jogo encerrou com código 0. As três imagens ficaram em `local/race-time-trial-fplkidck` nesta árvore de trabalho. Na sessão com controles físicos, o jogo entrou na demonstração do título e encerrou normalmente. A reconexão física de vários controles ainda precisa ser repetida neste candidato.
+
 ## Atribuição de controles na base da 0.4.0
 
 O candidato parte de `fix-chore 6268be2`. Na tela de título, o controle usado para avançar assume o jogador 1. A opção de atribuir até quatro jogadores abre na seleção de personagens com a tela experimental de configurações habilitada. O runtime mantém o caminho GameInput da 0.4.0 para controles expostos pela Steam. A entrada LAN automática conserva a navegação dessa versão e libera a escolha manual no título ao terminar ou esgotar o tempo.

@@ -13,7 +13,7 @@ typedef struct Mk8JoinDevice {
 
 static struct {
     int rows, keyboard, listening;
-    bool ascending, focused, ambiguous, retry;
+    bool ascending, focused, ambiguous, retry, chose_keyboard;
     SDL_JoystickID slots[4][2], first, second;
     Mk8JoinDevice *devices;
 } mk8_editor;
@@ -157,15 +157,11 @@ static void mk8_edit_end(void) {
 
 static void mk8_edit_finish(void) {
     mk8_edit_end();
-    if (!mk8_explicit_slots) { scanned = false; scan_gamepads(); }
-    else if (mk8_title_lost || mk8_title_extra_seats) {
-        // Added events while a draft was open belonged to that draft.
-        int count = 0;
-        SDL_JoystickID *ids = SDL_GetGamepads(&count);
-        for (int i=0; i<count; ++i)
-            if (!mk8_recover_title_pad(ids[i]) && mk8_title_extra_seats) open_extra(ids[i]);
-        SDL_free(ids);
-    }
+    // Replay hotplug events received while the draft owned device discovery.
+    int count = 0;
+    SDL_JoystickID *ids = SDL_GetGamepads(&count);
+    for (int i=0; i<count; ++i) mk8_route_gamepad(ids[i]);
+    SDL_free(ids);
 }
 
 static void mk8_edit_listen(int row, bool ascending) {
@@ -327,11 +323,14 @@ static bool mk8_edit_commit(void) {
         mk8_editor.slots[i][0] = primary ? SDL_GetGamepadID(primary) : 0;
         mk8_editor.slots[i][1] = mk8_partner[i] ? SDL_GetGamepadID(mk8_partner[i]) : 0;
     }
-    return mk8_assign_layout(mk8_editor.slots, mk8_editor.keyboard, true);
+    if (!mk8_assign_layout(mk8_editor.slots, mk8_editor.keyboard, true)) return false;
+    if (mk8_editor.chose_keyboard && mk8_editor.keyboard >= 0)
+        mk8_forget_seat((unsigned)mk8_editor.keyboard);
+    return true;
 }
 
 void mk8_edit_pump(void) {
-    if (mk8_pending_grips && !mk8_title_lost && !mk8_editor.rows) mk8_retry_pending_grips(0, false);
+    if (mk8_pending_grips && !mk8_reserved_seats && !mk8_editor.rows) mk8_retry_pending_grips(0, false);
     SDL_LockSpinlock(&mk8_edit_lock);
     if (!mk8_mail.pending) { SDL_UnlockSpinlock(&mk8_edit_lock); return; }
     enum Mk8EditCommand action = mk8_mail.command;
@@ -381,6 +380,7 @@ void mk8_edit_pump(void) {
         mk8_editor.slots[row][0] = mk8_editor.slots[row][1] = 0;
         if (action == MK8_EDIT_KEYBOARD) {
             mk8_editor.keyboard = row;
+            mk8_editor.chose_keyboard = true;
             mk8_edit_next();
             state = mk8_listen_state();
         } else {

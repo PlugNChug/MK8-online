@@ -38,6 +38,7 @@ static SDL_Gamepad devices[]={{0},{1},{2},{3}};
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
 static bool scanned,p2;
 static bool mk8_explicit_slots;
+static void mk8_forget_seat(unsigned player) { assert(player<=EXTRA_PADS); }
 static int mk8_startup_preset;
 static struct { int joycon_mode; } g_settings;
 static bool mk8_set_joycon_mode(int mode) { abort(); }

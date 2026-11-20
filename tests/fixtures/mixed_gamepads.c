@@ -582,6 +582,10 @@ int main(int argc, char **argv) {
     SDL_JoystickID *physical = SDL_GetJoysticks(&count);
     assert(physical && !count);
     SDL_free(physical);
+    if(!strncmp(argv[2],"all-reconnect",13)) {
+        check_all_reconnect(argv[2]);
+        SDL_Quit(); return 0;
+    }
     if(!strcmp(argv[2],"steam-title")) return steam_gamepads_title_test();
     if(!strcmp(argv[2],"title")) {
         check_title_input(); SDL_Quit(); return 0;
@@ -726,9 +730,9 @@ int main(int argc, char **argv) {
     SDL_CloseJoystick(sticks[PAIR_L]);
     attach(PAIR_L);
     pump();
-    assert(!extra_pad[0]);
-    pulse(1, 1, 1.f);
-    expect_buzz(DEVICE_COUNT);
+    assert(SDL_GetGamepadID(extra_pad[0])==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[1])==ids[PAIR_R]);
+    check_motion(1, PAIR_R, true);
+    check_pulse(1, 0, PAIR_L); check_pulse(1, 1, PAIR_R);
     check_pulse(3, 0, SOLO_L);
     assert(mk8_assign_gamepads(NULL));
     assert(SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, false));
@@ -739,6 +743,8 @@ int main(int argc, char **argv) {
     pump();
     mk8_controller_names(names);
     assert(!memcmp(names, empty, sizeof names));
+    // Explicitly resetting the control layout releases the disconnected players' reservations.
+    input_pads_reassign();
     // In automatic mode SDL can expose the two Joy-Cons as one named device.
     SDL_VirtualJoystickDesc pair;
     SDL_INIT_INTERFACE(&pair);

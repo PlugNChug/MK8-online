@@ -1,7 +1,8 @@
 static void scan_gamepads(void);
 static void mk8_sync_sensors(void);
 bool input_user_blocked(const SDL_Event *event);
-static void mk8_forget_title_pad(void);
+static void mk8_forget_seat(unsigned player);
+static void mk8_forget_moved_grip(SDL_Gamepad *device);
 static void mk8_remove_assigned(SDL_JoystickID id);
 
 static SDL_Gamepad **mk8_primary_slot(unsigned player) {
@@ -90,9 +91,12 @@ static bool mk8_assign_layout(const SDL_JoystickID slots[1 + EXTRA_PADS][2], int
         if (staged[i][0]) mk8_rumble_attach(i, staged[i][0]);
         if (staged[i][1]) mk8_rumble_attach(i + 1 + EXTRA_PADS, staged[i][1]);
     }
-    bool same_owner = keep_unchanged_discovery && !changed[0] && (keyboard == 0) == (mk8_assigned_keyboard() == 0);
+    for (unsigned i = 0; i <= EXTRA_PADS; ++i)
+        if (!slots || changed[i] || (keyboard == (int)i && mk8_assigned_keyboard() != keyboard))
+            mk8_forget_seat(i);
+    for (unsigned i=0; i<=EXTRA_PADS; ++i) if (changed[i])
+        for (int side=0; side<2; ++side) if (staged[i][side]) mk8_forget_moved_grip(staged[i][side]);
     mk8_set_assigned_keyboard(keyboard);
-    if (!same_owner) mk8_forget_title_pad();
     mk8_title_extra_seats = unchanged && mk8_title_extra_seats;
     mk8_explicit_slots = slots != NULL && (!unchanged || mk8_explicit_slots);
     scanned = mk8_explicit_slots;
@@ -119,24 +123,26 @@ bool mk8_assign_gamepads(const SDL_JoystickID slots[1 + EXTRA_PADS][2]) {
     return mk8_assign_layout(slots, slots ? mk8_assigned_keyboard() : 0, false);
 }
 
-// SDL attachment IDs change on reconnect. Keep only the current title owner's identity in memory.
-static struct Mk8TitleGrip {
+// Identity belongs to a player for this session; SDL attachment IDs alone do not survive reconnects.
+static struct Mk8Grip {
     SDL_GUID guid;
     SDL_JoystickID attached;
     char *value;
     enum { MK8_SERIAL, MK8_PATH, MK8_NAME } kind;
     bool unique;
-} mk8_title_grips[2];
-static bool mk8_title_lost, mk8_title_had_pair, mk8_title_keyboard_fallback;
+} mk8_seat_grips[1 + EXTRA_PADS][2];
+static bool mk8_title_keyboard_fallback;
 static struct Mk8PendingGrip {
     SDL_Gamepad *pad;
     struct Mk8PendingGrip *next;
 } *mk8_pending_grips;
 
-static void mk8_forget_title_pad(void) {
-    for (unsigned i=0; i<2; ++i) SDL_free(mk8_title_grips[i].value);
-    memset(mk8_title_grips, 0, sizeof mk8_title_grips);
-    mk8_title_lost = mk8_title_had_pair = mk8_title_keyboard_fallback = false;
+static void mk8_forget_seat(unsigned player) {
+    struct Mk8Grip *grips = mk8_seat_grips[player];
+    for (unsigned i=0; i<2; ++i) SDL_free(grips[i].value);
+    memset(grips, 0, sizeof mk8_seat_grips[player]);
+    mk8_reserved_seats &= ~(1u << player);
+    if (!player) mk8_title_keyboard_fallback = false;
 }
 
 static const char *mk8_grip_value(SDL_Gamepad *g, int kind) {
@@ -147,7 +153,7 @@ static const char *mk8_grip_value(SDL_Gamepad *g, int kind) {
 
 enum Mk8GripMatch { MK8_OTHER_GRIP, MK8_SAME_GRIP, MK8_ID_NOT_READY };
 
-static enum Mk8GripMatch mk8_grip_match(const struct Mk8TitleGrip *grip, SDL_Gamepad *g) {
+static enum Mk8GripMatch mk8_grip_match(const struct Mk8Grip *grip, SDL_Gamepad *g) {
     if (!grip->value || !g) return MK8_OTHER_GRIP;
     SDL_GUID guid = SDL_GetJoystickGUIDForID(SDL_GetGamepadID(g));
     if (memcmp(&guid, &grip->guid, sizeof guid)) return MK8_OTHER_GRIP;
@@ -156,7 +162,7 @@ static enum Mk8GripMatch mk8_grip_match(const struct Mk8TitleGrip *grip, SDL_Gam
     return !strcmp(value, grip->value) ? MK8_SAME_GRIP : MK8_OTHER_GRIP;
 }
 
-static SDL_JoystickID mk8_unique_grip(const struct Mk8TitleGrip *grip) {
+static SDL_JoystickID mk8_unique_grip(const struct Mk8Grip *grip) {
     SDL_JoystickID match = 0;
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
@@ -174,87 +180,145 @@ static SDL_JoystickID mk8_unique_grip(const struct Mk8TitleGrip *grip) {
     return match;
 }
 
-static void mk8_remember_title_pad(void) {
-    if (!pad) return;
-    mk8_title_had_pair = mk8_partner[0] != NULL;
-    for (int i=0; i<=mk8_title_had_pair; ++i) {
-        SDL_Gamepad *g = i ? mk8_partner[0] : pad;
-        struct Mk8TitleGrip *grip = &mk8_title_grips[i];
-        grip->attached = SDL_GetGamepadID(g);
-        grip->guid = SDL_GetJoystickGUIDForID(grip->attached);
-        for (int kind=MK8_SERIAL; kind<=MK8_NAME; ++kind) {
-            const char *value = mk8_grip_value(g, kind);
-            if (!value || !*value) continue;
-            SDL_free(grip->value);
-            grip->kind = kind;
-            grip->value = SDL_strdup(value);
-            grip->unique = mk8_unique_grip(grip) == grip->attached;
-            if (grip->unique) break;
+static void mk8_remember_connected(void) {
+    for (unsigned player=0; player<=EXTRA_PADS; ++player) {
+        for (int side=0; side<2; ++side) {
+            SDL_Gamepad *g = side ? mk8_partner[player] : *mk8_primary_slot(player);
+            struct Mk8Grip *grip = &mk8_seat_grips[player][side];
+            if (!g || !SDL_GamepadConnected(g) || grip->attached == SDL_GetGamepadID(g)) continue;
+            grip->attached = SDL_GetGamepadID(g);
+            grip->guid = SDL_GetJoystickGUIDForID(grip->attached);
+            for (int kind=MK8_SERIAL; kind<=MK8_NAME; ++kind) {
+                const char *value = mk8_grip_value(g, kind);
+                if (!value || !*value) continue;
+                SDL_free(grip->value);
+                grip->kind = kind;
+                grip->value = SDL_strdup(value);
+                grip->unique = mk8_unique_grip(grip) == grip->attached;
+                if (grip->unique) break;
+            }
         }
     }
 }
 
-static bool mk8_recover_title_pad(SDL_JoystickID added) {
-    if (!mk8_title_grips[0].attached) return false;
-    // Physical detach and replacement can both precede delivery of the old REMOVED event.
-    if (pad && !SDL_GamepadConnected(pad)) mk8_remove_assigned(mk8_title_grips[0].attached);
-    else if (mk8_partner[0] && !SDL_GamepadConnected(mk8_partner[0]))
-        mk8_remove_assigned(mk8_title_grips[1].attached);
+static bool mk8_pending_identity(SDL_Gamepad *g) {
+    for (unsigned p=0; p<=EXTRA_PADS; ++p) if (mk8_reserved_seats & (1u << p))
+        for (int i=0; i<2; ++i) {
+            struct Mk8Grip *grip = &mk8_seat_grips[p][i];
+            if (grip->unique && mk8_grip_match(grip,g)==MK8_ID_NOT_READY) return true;
+        }
+    return false;
+}
+
+static void mk8_restore_seat(unsigned p) {
+    SDL_LockJoysticks();
+    SDL_Gamepad *handles[2] = {0};
+    struct Mk8Grip *grips = mk8_seat_grips[p];
+    for (int side=0; side<2 && grips[side].attached; ++side) {
+        struct Mk8Grip *grip = &grips[side];
+        SDL_Gamepad *g = SDL_OpenGamepad(grip->attached);
+        if (!g || !SDL_GamepadConnected(g)) {
+            if (g) SDL_CloseGamepad(g);
+            SDL_JoystickID id = grip->unique ? mk8_unique_grip(grip) : 0;
+            g = id ? SDL_OpenGamepad(id) : NULL;
+        }
+        handles[side] = g;
+        if (!g || !SDL_GamepadConnected(g)) goto unavailable;
+        for (unsigned j=0; j<=EXTRA_PADS; ++j)
+            if (*mk8_primary_slot(j) == g || mk8_partner[j] == g) goto unavailable;
+    }
+    if (!handles[0]) goto unavailable;
+    *mk8_primary_slot(p) = handles[0];
+    mk8_partner[p] = handles[1];
+    mk8_paired_slot[p] = handles[1] != NULL;
+    for (int side=0; side<2 && handles[side]; ++side) {
+        grips[side].attached = SDL_GetGamepadID(handles[side]);
+        mk8_rumble_attach(p + (1+EXTRA_PADS)*side, handles[side]);
+    }
+    mk8_reserved_seats &= ~(1u << p);
+    if (!p && mk8_title_keyboard_fallback) {
+        mk8_set_assigned_keyboard(-1);
+        mk8_title_keyboard_fallback = false;
+    }
+    if (p) recompute_extra(p-1); else recompute_pad();
+    note_family();
+    style_changed();
+    SDL_UnlockJoysticks();
+    return;
+
+unavailable:
+    for (int side=0; side<2; ++side) if (handles[side]) SDL_CloseGamepad(handles[side]);
+    SDL_UnlockJoysticks();
+}
+
+static unsigned mk8_reconnect_candidates(SDL_Gamepad *g,int *strength_out) {
+    SDL_JoystickID added=SDL_GetGamepadID(g);
+    unsigned candidates = 0;
+    int strongest = -1;
+    for (unsigned p=0; p<=EXTRA_PADS; ++p) {
+        for (int side=0; side<2; ++side) {
+            struct Mk8Grip *grip = &mk8_seat_grips[p][side];
+            enum Mk8GripMatch match = mk8_grip_match(grip,g);
+            if (match!=MK8_SAME_GRIP && grip->attached!=added) continue;
+            if (match==MK8_SAME_GRIP && grip->unique && grip->attached!=added && mk8_unique_grip(grip)!=added)
+                grip->unique=false;
+            if (!(mk8_reserved_seats & (1u << p))) continue;
+            // An unchanged attachment or unique serial is stronger than a lookalike's model name.
+            int strength = grip->attached==added ? 4 : grip->unique ? 3-(int)grip->kind : 0;
+            if (strength>strongest) { strongest=strength; candidates=0; }
+            if (strength==strongest) candidates |= 1u << p;
+        }
+    }
+    *strength_out=strongest;
+    return candidates;
+}
+
+static void mk8_forget_moved_grip(SDL_Gamepad *g) {
+    int strength;
+    unsigned candidates=mk8_reconnect_candidates(g,&strength);
+    for (unsigned p=0; strength>0 && p<=EXTRA_PADS; ++p)
+        if (candidates==(1u<<p)) mk8_forget_seat(p);
+}
+
+static bool mk8_recover_gamepad(SDL_JoystickID added) {
+    // SDL may deliver the replacement ADD before the old REMOVE.
+    for (unsigned p=0; p<=EXTRA_PADS; ++p) {
+        SDL_Gamepad *g = *mk8_primary_slot(p);
+        if (g && !SDL_GamepadConnected(g)) mk8_remove_assigned(SDL_GetGamepadID(g));
+        else if (mk8_partner[p] && !SDL_GamepadConnected(mk8_partner[p]))
+            mk8_remove_assigned(SDL_GetGamepadID(mk8_partner[p]));
+    }
     SDL_Gamepad *g = SDL_OpenGamepad(added);
     if (!g) return false;
-    bool relevant = false, unknown = false;
-    for (int i=0; i<=mk8_title_had_pair; ++i) {
-        struct Mk8TitleGrip *grip = &mk8_title_grips[i];
-        enum Mk8GripMatch match = mk8_grip_match(grip, g);
-        if (match == MK8_ID_NOT_READY && grip->unique) unknown = true;
-        if (match != MK8_SAME_GRIP && grip->attached != added) continue;
-        relevant = true;
-        if (match == MK8_SAME_GRIP && grip->unique && mk8_unique_grip(grip) != added) grip->unique = false;
-    }
-    if (mk8_title_lost && !relevant && unknown) {
-        // Hold one open reference while the HID driver obtains its serial. Never guess by model.
-        struct Mk8PendingGrip *p = mk8_pending_grips;
-        while (p && p->pad != g) p = p->next;
-        if (!p) {
-            p = SDL_malloc(sizeof *p);
-            if (!p) {
-                LOG("[input] unable to track an unidentified reconnecting gamepad\n");
-                SDL_CloseGamepad(g);
+    int strongest;
+    unsigned candidates=mk8_reconnect_candidates(g,&strongest);
+    if (strongest<3 && mk8_pending_identity(g)) {
+        // Retain the device while HID obtains the serial; a later input event retries that identity.
+        struct Mk8PendingGrip *entry = mk8_pending_grips;
+        while (entry && entry->pad != g) entry = entry->next;
+        if (!entry) {
+            entry = SDL_malloc(sizeof *entry);
+            if (entry) {
+                entry->pad = g;
+                entry->next = mk8_pending_grips;
+                mk8_pending_grips = entry;
                 return true;
             }
-            p->pad = g;
-            p->next = mk8_pending_grips;
-            mk8_pending_grips = p;
-        } else SDL_CloseGamepad(g);
+        }
+        SDL_CloseGamepad(g);
         return true;
     }
     SDL_CloseGamepad(g);
-    if (!relevant || !mk8_title_lost) return false;
-    SDL_JoystickID slots[4][2] = {0};
-    for (int i=1; i<4; ++i) {
-        SDL_Gamepad *owner = *mk8_primary_slot(i);
-        slots[i][0] = owner ? SDL_GetGamepadID(owner) : 0;
-        slots[i][1] = mk8_partner[i] ? SDL_GetGamepadID(mk8_partner[i]) : 0;
-    }
-    for (int i=0; i<=mk8_title_had_pair; ++i) {
-        struct Mk8TitleGrip *grip = &mk8_title_grips[i];
-        SDL_JoystickID id = grip->attached;
-        // An unchanged SDL attachment uniquely identifies the surviving half, even with lookalikes.
-        SDL_Gamepad *original = SDL_OpenGamepad(id);
-        bool present = original && SDL_GamepadConnected(original);
-        if (original) SDL_CloseGamepad(original);
-        if (!present) id = grip->unique ? mk8_unique_grip(grip) : 0;
-        if (!id) return true;
-        for (int p=1; p<4; ++p) if (slots[p][0] == id || slots[p][1] == id) return true;
-        slots[0][i] = id;
-    }
-    int keyboard = mk8_title_keyboard_fallback ? -1 : mk8_assigned_keyboard();
-    bool automatic_extras = mk8_title_extra_seats;
-    if (mk8_assign_layout(slots, keyboard, false)) {
-        mk8_title_extra_seats = automatic_extras;
-        mk8_remember_title_pad();
-    }
+    if (!candidates) return false;
+    for (unsigned p=0; p<=EXTRA_PADS; ++p)
+        if (candidates == (1u << p)) mk8_restore_seat(p);
     return true;
+}
+
+static void mk8_route_gamepad(SDL_JoystickID id) {
+    if (mk8_recover_gamepad(id)) return;
+    if (mk8_title_extra_seats || (!mk8_explicit_slots && (mk8_reserved_seats & 1))) open_extra(id);
+    else if (!mk8_explicit_slots) mk8_open_gamepad(id);
 }
 
 static void mk8_retry_pending_grips(SDL_JoystickID id, bool removed) {
@@ -263,16 +327,9 @@ static void mk8_retry_pending_grips(SDL_JoystickID id, bool removed) {
         struct Mk8PendingGrip *p = *link;
         SDL_JoystickID candidate = SDL_GetGamepadID(p->pad);
         if (id && candidate != id) { link = &p->next; continue; }
-        if (!removed && mk8_title_lost) {
-            bool unknown = false;
-            for (int i=0; i<=mk8_title_had_pair; ++i)
-                if (mk8_grip_match(&mk8_title_grips[i], p->pad) == MK8_ID_NOT_READY) unknown = true;
-            if (unknown) { link = &p->next; continue; }
-        }
+        if (!removed && mk8_pending_identity(p->pad)) { link = &p->next; continue; }
         *link = p->next;
-        if (!removed && SDL_GamepadConnected(p->pad) &&
-            !(mk8_title_lost && mk8_recover_title_pad(candidate)) && mk8_title_extra_seats)
-            open_extra(candidate);
+        if (!removed && SDL_GamepadConnected(p->pad)) mk8_route_gamepad(candidate);
         SDL_CloseGamepad(p->pad);
         SDL_free(p);
     }
@@ -283,8 +340,8 @@ static void mk8_remove_assigned(SDL_JoystickID id) {
     for (unsigned i = 0; i <= EXTRA_PADS; i++) {
         SDL_Gamepad *primary = *mk8_primary_slot(i), *right = mk8_partner[i];
         if ((primary && SDL_GetGamepadID(primary) == id) || (right && SDL_GetGamepadID(right) == id)) {
-            if (i == 0 && mk8_title_grips[0].attached) {
-                mk8_title_lost = true;
+            if (mk8_seat_grips[i][0].attached) mk8_reserved_seats |= 1u << i;
+            if (i == 0 && mk8_seat_grips[0][0].attached) {
                 if (mk8_assigned_keyboard() < 0) {
                     mk8_set_assigned_keyboard(0);
                     mk8_title_keyboard_fallback = true;

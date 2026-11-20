@@ -61,7 +61,7 @@ static bool extra_connected(int i) {
     return (atomic_load(&mk8_connected_mask) & (1u << i)) || (i == 0 && script2_on());
 }''')
     text = replace(text, 'static void style_changed(void) {\n    mk8_sync_sensors();',
-                   'static void style_changed(void) {\n    mk8_publish_connections();\n    mk8_publish_names();\n    mk8_sync_sensors();')
+                   'static void style_changed(void) {\n    mk8_remember_connected();\n    mk8_publish_connections();\n    mk8_publish_names();\n    mk8_sync_sensors();')
     text = replace(text, 'pad = NULL; note_family(); }', 'pad = NULL; note_family(); mk8_publish_names(); }')
     text = replace(text, '    case SDL_EVENT_GAMEPAD_REMOVED:\n',
                    '    case SDL_EVENT_GAMEPAD_REMAPPED: mk8_publish_names(); break;\n    case SDL_EVENT_GAMEPAD_REMOVED:\n')
@@ -108,19 +108,18 @@ static bool extra_connected(int i) {
         }
         for (int i = 0; i < n; i++) mk8_open_gamepad(ids[i]);''')
     text = replace(text, 'void input_pads_reassign(void) {', '''void input_pads_reassign(void) {
-    if (mk8_explicit_slots) { mk8_assign_gamepads(NULL); return; }''')
+    if (mk8_explicit_slots) { mk8_assign_gamepads(NULL); return; }
+    for (unsigned p=0; p<=EXTRA_PADS; ++p) mk8_forget_seat(p);''')
     text = replace(text, '        mk8_open_gamepad(e->gdevice.which);',
-                   '        if (!mk8_editor.rows && mk8_recover_title_pad(e->gdevice.which)) break;\n'
-                   '        if (mk8_title_extra_seats && !mk8_editor.rows) open_extra(e->gdevice.which);\n'
-                   '        else if (!mk8_explicit_slots && !mk8_editor.rows) mk8_open_gamepad(e->gdevice.which);')
+                   '        if (!mk8_editor.rows) mk8_route_gamepad(e->gdevice.which);')
     marker = 'static void open_extra(SDL_JoystickID id) {'
     text = replace(text, marker, marker + '\n    for (int i=0; i<=EXTRA_PADS; ++i)\n'
                    '        if (mk8_partner[i] && SDL_GetGamepadID(mk8_partner[i]) == id) return;')
     text = replace(text, '        if (!extra_pad[i]) {\n            extra_pad[i] = mk8_rumble_open',
-                   '        if (!extra_pad[i] && i+1 != mk8_assigned_keyboard()) {\n            extra_pad[i] = mk8_rumble_open')
-    text = replace(text, '    case SDL_EVENT_GAMEPAD_REMOVED:\n        if (pad', '''    case SDL_EVENT_GAMEPAD_REMOVED:
-        if (mk8_explicit_slots) { mk8_remove_assigned(e->gdevice.which); break; }
-        if (pad''')
+                   '        if (!extra_pad[i] && !(mk8_reserved_seats & (1u << (i+1))) && i+1 != mk8_assigned_keyboard()) {\n            extra_pad[i] = mk8_rumble_open')
+    removed = text.index('    case SDL_EVENT_GAMEPAD_REMOVED:\n        if (pad')
+    end = text.index('        break;\n', removed) + len('        break;\n')
+    text = replace(text, text[removed:end], '    case SDL_EVENT_GAMEPAD_REMOVED:\n        mk8_remove_assigned(e->gdevice.which);\n        break;\n')
     text = replace(text, 'SDL_Gamepad *device = i ? extra_pad[i - 1] : pad;',
                    'SDL_Gamepad *device = mk8_partner[i] ? mk8_partner[i] : *mk8_primary_slot(i);')
     mark = '        memcpy(slot->pending[k], e->data, sizeof slot->pending[k]);'
