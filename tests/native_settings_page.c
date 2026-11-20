@@ -137,6 +137,7 @@ void guest_call(Cpu *c,uint64_t address) {
         ST8(c->x[0]+0x58,(LD8(c->x[0]+0x58)&~1)|c->x[1]);
     } else if(address==0x70008ade34ull) {
         assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+14680 ||
+               (c->x[0]>=HEAP_BASE+1256 && c->x[0]<=HEAP_BASE+2280 && (c->x[0]-HEAP_BASE-1000)%256==0) ||
                (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+19100) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
                (c->x[0]>=HEAP_BASE+12400 && c->x[0]<=HEAP_BASE+12400+SETTINGS_VISIBLE*128));
         memcpy((void *)(uintptr_t)(c->x[0]+0x30),(void *)(uintptr_t)c->x[1],12);
@@ -559,8 +560,10 @@ static void check_controller_footer(uint64_t manager) {
     // Mouse-only assignment, including when the player controlling the menu has disconnected.
     assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
     mk8_settings_page_frame(manager); assert(controller_panel==ROW_ACTIONS && action_player==1);
+    for(unsigned i=1;i<=4;i++) assert(pane_float(labels[i],0x30)==0);
     assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
     mk8_settings_page_frame(manager); assert(last_edit==MK8_EDIT_KEYBOARD && edit_row==1);
+    for(unsigned i=1;i<=4;i++) assert(pane_float(labels[i],0x30)==-245);
     wait_apply=true;
     popup_key(manager,1ull<<14); popup_key(manager,1);
     assert(last_edit==MK8_EDIT_APPLY && controller_visible && !cursor_mask);

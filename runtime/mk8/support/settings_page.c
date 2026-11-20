@@ -504,8 +504,7 @@ bool mk8_controller_pointer(int x,int y,int action) {
     return true;
 }
 
-static void controller_place(Cpu *c, const char *name, float x,float y) {
-    uint64_t pane=find(c,root,name);
+static void controller_place(Cpu *c, uint64_t pane, float x,float y) {
     float translation[3]={x,y,0};
     memcpy((void *)(uintptr_t)(c->sp+320),translation,sizeof translation);
     call(c,0x70008ade34ull,pane,c->sp+320,0,0,0);
@@ -718,6 +717,7 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
             visible(c,root,pane,used);
             if(!used) continue;
             snprintf(label,sizeof label,"Player %u",i+1);
+            controller_place(c,labels[i+1],controller_panel==ROW_ACTIONS ? 0 : -245,0);
             text(c,labels[i+1],controller_panel==ROW_ACTIONS ? actions[i] : label);
             if(controller_panel==ROW_ACTIONS) text(c,values[i+1],"");
         }
@@ -769,14 +769,15 @@ static void controller_layout(Cpu *c,bool required) {
         char name[24];
         snprintf(name,sizeof name,"L_SettingsRow%u",i);
         visible(c,root,name,!show || i<=controller_rows);
-        controller_place(c,name,0,show ? 145-(int)(i-1)*70 : 60-(int)(i-1)*60);
+        controller_place(c,find(c,root,name),0,show ? 145-(int)(i-1)*70 : 60-(int)(i-1)*60);
+        if(!show) controller_place(c,labels[i],-245,0);
         if(!show || i>4) continue;
         visible(c,rows[i]+0x30,"L_Btn_LR",false);
         call(c,i==1 ? 0x700044ed20ull : 0x700044ee50ull,rows[i],1,0,0,0);
     }
-    controller_place(c,"L_SettingsHint",0,show ? -115 : -235);
-    controller_place(c,"L_SettingsYes",-200,show ? -246 : -195);
-    controller_place(c,"L_SettingsNo",200,show ? -246 : -195);
+    controller_place(c,find(c,root,"L_SettingsHint"),0,show ? -115 : -235);
+    controller_place(c,find(c,root,"L_SettingsYes"),-200,show ? -246 : -195);
+    controller_place(c,find(c,root,"L_SettingsNo"),200,show ? -246 : -195);
     if(show) {
         appear(c,1);
         dialog_open_sound(c);
