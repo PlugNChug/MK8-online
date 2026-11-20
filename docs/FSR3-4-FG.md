@@ -101,9 +101,10 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   4 bytes on Linux (the private context embeds 259 `wchar_t[64]` bindings per pipeline).
 - **Verification (real hardware, RADV GFX1201, AMD RX 9070 XT):**
   - `ffxQuery` version enumeration for `FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK` returns `3.1.7`.
-  - `ffxCreateContext(FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION, 1920x1080)` returns `FFX_API_RETURN_OK`:
-    the full optical-flow + frame-interpolation pipeline set and all internal resources are created from the
-    generated blobs; `ffxDestroyContext` returns OK.
+  - `ffxCreateContext(FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION)` returns `FFX_API_RETURN_OK` for
+    1920x1080 and 1280x720, with normal depth (`flags=0x2`) and inverted depth (`flags=0xa`, the separately compiled
+    d1 blob set): the full optical-flow + frame-interpolation pipeline set and all internal resources are created
+    from the generated blobs; `ffxDestroyContext` returns OK in every case.
 - The SDK source does **not** implement MLFI (FSR 4 ML frame interpolation). It only has the
   `FFX_EFFECT_MLFRAMEGENERATION` id and warning strings about the camera matrices MLFI needs; the MLFI SPIR-V and
   its model banks exist only in AMD's signed DLL. The source-built provider is therefore **FSR 3.1.7 frame
