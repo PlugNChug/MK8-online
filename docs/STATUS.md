@@ -56,16 +56,23 @@ host ocioso. `gameplay_verified` continua falso.
 O launcher Windows e o runtime host foram compilados da árvore `f5949f1` com o
 alvo `x86_64-pc-windows-gnu` (Zig 0.17.0; launcher Rust 1.96.0). O launcher
 abriu o servidor local e respondeu `HTTP 200` no Wine 11.22 e no Proton-GE
-11-12. O runtime carregou os três módulos, montou o RomFS, criou dispositivo e
-swapchain Vulkan (RADV, 1280x720), a janela NVN e o dispositivo de áudio, mas
-**parou antes do primeiro quadro** em `nn::crypto::detail::bigint_mod_mult`
-(`no function at 7004004c30`). O mesmo RomFS boota no runtime Linux existente;
-a diferença é do lado Windows. `scripts/runtime-dlls.py` também precisou
-resolver DLLs empacotadas como hardlink (`zlib1.dll`) e System32 com maiúsculas
-em host sensível a caixa — sem isso a etapa Ferramentas falha em uma máquina
-Windows nova. Detalhes, comandos, hashes e o que falta em
-[WINDOWS-2026-11-20.md](WINDOWS-2026-11-20.md). `gameplay_verified` e
-`multiplayer_verified` continuam falsos.
+11-12. O runtime carregou os três módulos, montou o RomFS e criou dispositivo e
+swapchain Vulkan (RADV, 1280x720), a janela NVN e o dispositivo de áudio. A
+primeira execução **parou antes do primeiro quadro** em
+`nn::crypto::detail::bigint_mod_mult` (`no function at 7004004c30`): o gerador
+só aceitava símbolos `STT_FUNC`, e seis helpers `nndetailCryptoBignum*` do sdk
+são `STT_NOTYPE`; no Linux o suplemento de `toolchain/sdk_exports.py` mascarava
+a lacuna, mas o layout do build Windows não o aplicava. A correção em
+`runtime/prepare.py` trata símbolo definido em `.text` com tamanho como entrada.
+O runtime Windows passou a desenhar o primeiro quadro e a chegar à seleção de
+Mii no Wine 11.22 e no Proton-GE 11-12, sem o FATAL, e o Linux foi revalidado
+com a nova tabela. Endereços, desmontagem, comandos e limites em
+[WINDOWS-BOOT-2026-11-20.md](WINDOWS-BOOT-2026-11-20.md).
+`scripts/runtime-dlls.py` também precisou resolver DLLs empacotadas como
+hardlink (`zlib1.dll`) e System32 com maiúsculas em host sensível a caixa — sem
+isso a etapa Ferramentas falha em uma máquina Windows nova. Detalhes do build e
+da verificação inicial em [WINDOWS-2026-11-20.md](WINDOWS-2026-11-20.md).
+`gameplay_verified` e `multiplayer_verified` continuam falsos.
 
 ## Pausas de vários segundos: importação do heap guest — 19/11/2026
 
