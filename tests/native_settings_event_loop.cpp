@@ -58,8 +58,6 @@ extern "C" bool input_user_blocked(const SDL_Event *event) {
 }
 static bool menu_handle_event(const SDL_Event *event) { return mk8_settings_event(event,false); }
 static void input_handle_event(const SDL_Event *) {}
-static unsigned steam_polls;
-void mk8_poll_steam_gamepads() { ++steam_polls; }
 void mk8_edit_pump() { editor_polls++; }
 void mk8_title_pump() { ++title_polls; }
 bool menu_input_captured() { return false; }

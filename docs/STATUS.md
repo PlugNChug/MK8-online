@@ -1,5 +1,11 @@
 # Estado técnico — 19/11/2026
 
+## Controles na base do relançamento da 0.4.0
+
+A integração local em `7e26bcf`, sobre `fix-chore` em `6e100ee`, preserva o painel do Nextendo, o tema escolhido no launcher e a página privada de configurações. A reconexão de um Pro Controller virtual abria três vezes o driver da SDL para identificar o dispositivo e recuperar sua posição. Com a referência mantida durante as duas operações, o teste registrou uma abertura. A apresentação de quadros também passou a dispensar a trava de joysticks enquanto a vibração está ociosa. Ainda é preciso medir o efeito nas pausas e no atraso do Pro Controller por Bluetooth em uma corrida física.
+
+A compilação com `--runtime-only` concluiu as 228 unidades do host e gerou o executável `51dc6f64…`. As entradas da geração e os 484 objetos do guest conferiram com os registros anteriores. O executável exporta as 29 funções importadas por `main`, as oito de `sdk` e as quatro de `subsdk0`. Das 118 entradas de arquivos do pacote, apenas o `common.sarc` derivado das configurações mudou. Passaram os 19 testes selecionados de controles e configurações, incluindo 23 cenários de controles mistos, e os 15 testes do Nextendo em servidor local com contas simuladas. `gameplay_verified` permanece falso neste pacote.
+
 ## Reconexão de vários controles durante uma corrida
 
 Em uma corrida física de quatro jogadores no candidato de 60 FPS com os controles da 0.4.0, o SDL registrou a remoção e o retorno de três dispositivos. O Pro Controller passou do jogador 4 para o 3 e o Joy-Con direito fez o caminho inverso. Na reprodução com teclado no jogador 1 e três controles virtuais na build de atribuição `403c63b`, o botão do jogador 4 chegou ao jogador 2 depois de uma reconexão em ordem inversa. Após uma troca de posições na janela de atribuição, o mesmo botão deixou de chegar ao jogo.
