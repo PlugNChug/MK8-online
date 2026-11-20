@@ -31,7 +31,8 @@ frame was produced on this host.
 | item | value |
 | --- | --- |
 | Verified code commit | `72c5e5babad7f75245042becab83a6e7752a8e2e` (`feature/fsr`, the HEAD named for this task) |
-| Repository state after the session | a concurrent upstream merge moved the worktree to `fc9efb2`; `git diff 72c5e5b..fc9efb2` over `runtime/mk8/graphics/fsr*`, `runtime/mk8/graphics/ffx`, `toolchain/fsr*.py` and `apps/launcher/src/fsr` is empty |
+| Repository state after the session | a concurrent upstream merge moved the worktree from `72c5e5b` to `fc9efb2`; `git diff 72c5e5b..fc9efb2` over `runtime/mk8/graphics/fsr*`, `runtime/mk8/graphics/ffx`, `toolchain/fsr*.py` and `apps/launcher/src/fsr` is empty |
+| Report/script commit | `2441ffcfb15c837c1140727aa9283ee0d1c18e68` (adds this file and `scripts/verify-windows-fsr.sh` on top of `fc9efb2`) |
 | Host | Linux x86-64, kernel `7.4.0-rc1-2-cachyos-rc` |
 | GPU / driver | AMD Radeon RX 9070 XT (RADV GFX1201), Vulkan 1.4.363, Mesa `27.0.0-devel` (git `f7dd61f78f`) |
 | Wine | `wine-11.22` |
@@ -161,7 +162,8 @@ Same command with `MK8_FSR_VERSION=3.1.6`:
 [fsr] cpu dispatch 0.07 ms
 ```
 
-Screenshot: `win-fsr316-wine.png`, same title frame. Exit 0. The script run at frame 240
+Screenshot: `win-fsr316-wine.png` (manual run), same title frame; the log above is the
+`script-run316c` copy. Exit 0. The script run at frame 240
 (`script-run316c/runtime.log`) shows the title with its light-ray transition; one earlier 3.1.6
 capture at frame 240 caught an almost white title transition, and the frame-480 capture
 (`script-run316b`) is the clean Mii menu. No run logged a fault.
@@ -364,7 +366,8 @@ Verified on this host:
   Proton-GE 11-12.
 - The launcher's signed DLLs have the pinned sizes/hashes.
 - The runtime selects and dispatches FSR 4.1.2 and FSR 3.1.6 for a 1920x1080 → 2560x1440 upscale,
-  with the launcher's exact environment, in the title and in the Mii menu, under Wine and Proton.
+  with the launcher's exact environment, in the title and in the Mii menu, under Wine (both
+  versions) and Proton-GE (4.1.2).
 - The runtime logs the provider version, the upscale dimensions and the frame screenshot; the
   screenshot dimensions (2560x1440) match the swapchain, not the game image (1920x1080).
 - The frame-generation DLL is loadable under Wine, reports 3.1.7 / 4.0.2, and the runtime selects
