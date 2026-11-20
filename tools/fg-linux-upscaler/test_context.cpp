@@ -292,6 +292,7 @@ int main(int argc, char** argv)
 
     VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.queueFamilyIndex = family;
+    pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     VkCommandPool pool = VK_NULL_HANDLE;
     vkCreateCommandPool(device, &pci, nullptr, &pool);
     VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -350,17 +351,17 @@ int main(int argc, char** argv)
     desc.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
     desc.commandList = cb;
     desc.color = ffxApiGetResourceVK(color.image,
-        ffxApiGetImageResourceDescriptionVK(color.image, color.create, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(color.image, color.create, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_COMPUTE_READ);
     desc.depth = ffxApiGetResourceVK(depth.image,
-        ffxApiGetImageResourceDescriptionVK(depth.image, depth.create, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(depth.image, depth.create, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_COMPUTE_READ);
     desc.motionVectors = ffxApiGetResourceVK(motion.image,
-        ffxApiGetImageResourceDescriptionVK(motion.image, motion.create, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(motion.image, motion.create, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_COMPUTE_READ);
     desc.output = ffxApiGetResourceVK(output.image,
-        ffxApiGetImageResourceDescriptionVK(output.image, output.create, VK_IMAGE_USAGE_STORAGE_BIT),
-        VK_IMAGE_LAYOUT_GENERAL);
+        ffxApiGetImageResourceDescriptionVK(output.image, output.create, FFX_API_RESOURCE_USAGE_UAV),
+        FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
     desc.renderSize = {rw, rh};
     desc.upscaleSize = {ow, oh};
     desc.motionVectorScale = {(float)rw, (float)rh};
@@ -430,6 +431,18 @@ int main(int argc, char** argv)
     printf("ffxDestroyContext rc=%d (%s)\n", (int)drc, rc_name(drc));
 
     vkDeviceWaitIdle(device);
+    for (Image* img : {&color, &depth, &motion, &output})
+    {
+        if (img->view) vkDestroyImageView(device, img->view, nullptr);
+        if (img->image) vkDestroyImage(device, img->image, nullptr);
+        if (img->memory) vkFreeMemory(device, img->memory, nullptr);
+    }
+    vkDestroyBuffer(device, staging, nullptr);
+    vkFreeMemory(device, staging_mem, nullptr);
+    vkDestroyBuffer(device, upload, nullptr);
+    vkFreeMemory(device, upload_mem, nullptr);
+    vkDestroyFence(device, fence, nullptr);
+    vkDestroyCommandPool(device, pool, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
     dlclose(h);

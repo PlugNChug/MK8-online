@@ -109,6 +109,17 @@ the readback has 14,711,840 of 14,745,600 bytes non-zero and varied, and `ffxDes
 The same run also succeeds with a device created exactly like the game's (no formatless-image or
 derivatives features).
 
+With `VK_LOADER_LAYERS_ENABLE=VK_LAYER_KHRONOS_validation` the same
+1920x1080 -> 2560x1440 run reports **zero validation errors** and identical output bytes. That requires
+the caller to use the FFX enums: `ffxApiGetResourceVK`'s last argument is an `FfxApiResourceState`
+(`FFX_API_RESOURCE_STATE_COMPUTE_READ` / `UNORDERED_ACCESS`), not a `VkImageLayout`, and
+`ffxApiGetImageResourceDescriptionVK`'s third argument is `FfxApiResourceUsage`, not
+`VkImageUsageFlagBits`. The two enums overlap numerically (`VK_IMAGE_USAGE_SAMPLED_BIT` aliases
+`FFX_API_RESOURCE_USAGE_DEPTHTARGET`), which makes the backend create depth-aspect views of colour
+images. `runtime/mk8/graphics/fsr.cpp` currently passes the Vulkan constants; RADV tolerates it and the
+in-game image is correct (the parity result above used the same call shape), but the call site should be
+corrected by the runtime owner. `tools/fg-linux-upscaler/test_context.cpp` passes the FFX values.
+
 ### Byte-for-byte parity with AMD's 3.1.6
 
 Using the private captured inputs in `local/qualification/fsr316-native/` (960x540 -> 1920x1080,
