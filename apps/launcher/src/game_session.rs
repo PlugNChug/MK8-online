@@ -37,6 +37,11 @@ pub fn run() -> Result<i32> {
         std::env::current_exe().map_err(|e| e.to_string())?,
     );
 
+    // The in-game panel (F1) follows the language the launcher shows.
+    std::env::set_var(
+        "MK8_UI_LANGUAGE",
+        crate::language::effective(&request.local),
+    );
     crate::fonts::configure(&request.local)?;
     crate::debug_options::configure(&request.local)?;
     std::env::remove_var("MK8_SETTINGS_ROMFS");
@@ -106,4 +111,84 @@ pub fn run() -> Result<i32> {
     let _ = supervisor::ready();
     let exit = game.wait().map_err(|e| e.to_string())?;
     Ok(exit.code().unwrap_or(1))
+}
+
+/// What to do when Nextendo refused online play for the account; the reason is the one the
+/// runtime logs (`[nextendo] online status: refused: <reason>`, runtime net/nextendo.c).
+pub fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
+    let line = log
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("[nextendo] online status: refused"))?;
+    let reason = line
+        .split_once("refused: ")
+        .map_or("", |(_, reason)| reason.trim());
+    let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
+    Some(match reason {
+        "discord_unlinked" => pick(
+            "O Nextendo recusou o jogo online desta conta: vincule uma conta do Discord em nextendo.network (página da conta) e tente de novo.",
+            "Nextendo refused online play for this account: link a Discord account at nextendo.network (account page) and try again.",
+            "Nextendo rechazó el juego en línea de esta cuenta: vincula una cuenta de Discord en nextendo.network (página de la cuenta) e inténtalo de nuevo.",
+        ),
+        "unverified" => pick(
+            "O Nextendo recusou o jogo online desta conta: confirme o e-mail pela mensagem do Nextendo ou em nextendo.network.",
+            "Nextendo refused online play for this account: verify its e-mail address (Nextendo's message or nextendo.network).",
+            "Nextendo rechazó el juego en línea de esta cuenta: verifica el correo electrónico (mensaje de Nextendo o nextendo.network).",
+        ),
+        "elsewhere" => pick(
+            "O Nextendo recusou o jogo online desta conta: ela está jogando em outro dispositivo agora.",
+            "Nextendo refused online play for this account: it is playing on another device right now.",
+            "Nextendo rechazó el juego en línea de esta cuenta: está jugando en otro dispositivo ahora.",
+        ),
+        "disabled" => pick(
+            "O Nextendo recusou o jogo online: a conta está desativada.",
+            "Nextendo refused online play: the account is disabled.",
+            "Nextendo rechazó el juego en línea: la cuenta está desactivada.",
+        ),
+        "unknown" => pick(
+            "O Nextendo não reconhece esta conta: entre novamente pelo navegador.",
+            "Nextendo does not know this account: sign in again through the browser.",
+            "Nextendo no reconoce esta cuenta: vuelve a iniciar sesión en el navegador.",
+        ),
+        _ => pick(
+            "O Nextendo recusou o jogo online desta conta.",
+            "Nextendo refused online play for this account.",
+            "Nextendo rechazó el juego en línea de esta cuenta.",
+        ),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nextendo_refusal;
+
+    #[test]
+    fn explains_nextendo_refusal_from_the_game_log() {
+        let log = "[nextendo] game token ok (87 chars, 86400s)\n\
+                   [nextendo] online status: refused: discord_unlinked\n\
+                   BAAS adapter unavailable or online access refused.\n";
+        assert!(nextendo_refusal(log, "en")
+            .unwrap()
+            .contains("link a Discord account"));
+        assert!(nextendo_refusal(log, "pt-BR")
+            .unwrap()
+            .contains("vincule uma conta do Discord"));
+        assert!(nextendo_refusal(log, "es")
+            .unwrap()
+            .contains("vincula una cuenta de Discord"));
+        let unverified = "[nextendo] online status: refused: unverified\n";
+        assert!(nextendo_refusal(unverified, "en")
+            .unwrap()
+            .contains("e-mail"));
+        let bare = "[nextendo] online status: refused\n";
+        assert_eq!(
+            nextendo_refusal(bare, "en"),
+            Some("Nextendo refused online play for this account.")
+        );
+        assert_eq!(
+            nextendo_refusal("[nextendo] online status: allowed\n", "en"),
+            None
+        );
+        assert_eq!(nextendo_refusal("", "en"), None);
+    }
 }

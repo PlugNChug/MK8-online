@@ -337,22 +337,42 @@ fn load_symbol<T>(_handle: isize, name: &CStr) -> Result<T> {
 
 // Flat C accessors are versioned exports; SteamUser() and friends are normally
 // C++ header helpers, not DLL exports. Keep legacy exports for existing adapters.
-// Do not guess newer ABI versions or substitute an unrelated interface.
+// Each list holds only versions whose flat functions used here, their callback IDs
+// and structures are identical in the Steamworks SDK 1.52-1.65 steam_api.json
+// (issues #69-#71, #73). Do not guess newer ABI versions or substitute an unrelated interface.
+const STEAM_USER: &[&CStr] = &[
+    c"SteamAPI_SteamUser_v023",
+    c"SteamAPI_SteamUser_v022",
+    c"SteamAPI_SteamUser_v021",
+];
+const STEAM_FRIENDS: &[&CStr] = &[c"SteamAPI_SteamFriends_v017", c"SteamAPI_SteamFriends_v018"];
+const STEAM_MATCHMAKING: &[&CStr] = &[c"SteamAPI_SteamMatchmaking_v009"];
+const STEAM_NETWORKING: &[&CStr] = &[c"SteamAPI_SteamNetworking_v006"];
+const STEAM_UTILS: &[&CStr] = &[c"SteamAPI_SteamUtils_v010", c"SteamAPI_SteamUtils_v011"];
+
 fn resolve_interface(
-    versioned: &CStr,
+    versioned: &[&CStr],
     legacy: &CStr,
     mut lookup: impl FnMut(&CStr) -> Result<InterfaceAccessor>,
 ) -> Result<InterfaceAccessor> {
-    lookup(versioned).or_else(|_| lookup(legacy)).map_err(|_| {
-        format!(
-            "DLL Steam incompatível: interface exigida {} (ou {}) ausente.",
-            versioned.to_string_lossy(),
-            legacy.to_string_lossy()
-        )
-    })
+    versioned
+        .iter()
+        .chain([&legacy])
+        .find_map(|name| lookup(name).ok())
+        .ok_or_else(|| {
+            let accepted: Vec<_> = versioned
+                .iter()
+                .map(|name| name.to_string_lossy())
+                .collect();
+            format!(
+                "DLL Steam incompatível: interface exigida {} (ou {}) ausente.",
+                accepted.join(", "),
+                legacy.to_string_lossy()
+            )
+        })
 }
 
-fn load_interface(handle: isize, versioned: &CStr, legacy: &CStr) -> Result<InterfaceAccessor> {
+fn load_interface(handle: isize, versioned: &[&CStr], legacy: &CStr) -> Result<InterfaceAccessor> {
     resolve_interface(versioned, legacy, |name| load_symbol(handle, name))
 }
 
@@ -370,10 +390,8 @@ pub fn candidate_dll_paths(local: &Path) -> Vec<PathBuf> {
             paths.push(parent.join("steam_api64.dll"));
         }
     }
-    // An explicit/local DLL takes priority, including when Steam has no games installed.
-    if paths.iter().any(|path| path.is_file()) {
-        return paths;
-    }
+    // An explicit/local DLL comes first; the installed games follow, so an incompatible
+    // local copy cannot hide a compatible one (issue #71).
     // Status polls every two seconds; do not rescan installed games on each poll.
     static CACHE: Mutex<Option<(Instant, Vec<PathBuf>)>> = Mutex::new(None);
     let mut cache = CACHE.lock().unwrap();
@@ -621,23 +639,11 @@ impl Api {
                 init,
                 shutdown: load_symbol(handle, c"SteamAPI_Shutdown")?,
                 run_callbacks: load_symbol(handle, c"SteamAPI_RunCallbacks")?,
-                steam_user: load_interface(handle, c"SteamAPI_SteamUser_v023", c"SteamUser")?,
-                steam_friends: load_interface(
-                    handle,
-                    c"SteamAPI_SteamFriends_v017",
-                    c"SteamFriends",
-                )?,
-                steam_matchmaking: load_interface(
-                    handle,
-                    c"SteamAPI_SteamMatchmaking_v009",
-                    c"SteamMatchmaking",
-                )?,
-                steam_networking: load_interface(
-                    handle,
-                    c"SteamAPI_SteamNetworking_v006",
-                    c"SteamNetworking",
-                )?,
-                steam_utils: load_interface(handle, c"SteamAPI_SteamUtils_v010", c"SteamUtils")?,
+                steam_user: load_interface(handle, STEAM_USER, c"SteamUser")?,
+                steam_friends: load_interface(handle, STEAM_FRIENDS, c"SteamFriends")?,
+                steam_matchmaking: load_interface(handle, STEAM_MATCHMAKING, c"SteamMatchmaking")?,
+                steam_networking: load_interface(handle, STEAM_NETWORKING, c"SteamNetworking")?,
+                steam_utils: load_interface(handle, STEAM_UTILS, c"SteamUtils")?,
                 get_steam_id: load_symbol(handle, c"SteamAPI_ISteamUser_GetSteamID")?,
                 get_persona_name: load_symbol(handle, c"SteamAPI_ISteamFriends_GetPersonaName")?,
                 activate_invite_dialog: load_symbol(
@@ -1558,7 +1564,7 @@ mod tests {
             std::ptr::null_mut()
         }
         let mut looked_up = Vec::new();
-        let accessor = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |name| {
+        let accessor = resolve_interface(STEAM_USER, c"SteamUser", |name| {
             looked_up.push(name.to_owned());
             Ok(if name == c"SteamAPI_SteamUser_v023" {
                 current
@@ -1569,7 +1575,33 @@ mod tests {
         .unwrap();
         assert!(!unsafe { accessor() }.is_null());
         assert_eq!(looked_up, [c"SteamAPI_SteamUser_v023".to_owned()]);
-        let accessor = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |name| {
+        // An older verified version (SDK 1.52-1.56) is used before the legacy export.
+        let mut looked_up = Vec::new();
+        let accessor = resolve_interface(STEAM_USER, c"SteamUser", |name| {
+            looked_up.push(name.to_owned());
+            if name == c"SteamAPI_SteamUser_v021" {
+                Ok(current)
+            } else {
+                Err("absent".into())
+            }
+        })
+        .unwrap();
+        assert!(!unsafe { accessor() }.is_null());
+        assert_eq!(
+            looked_up.last().unwrap().as_c_str(),
+            c"SteamAPI_SteamUser_v021"
+        );
+        // SDK 1.62+ DLLs (Counter-Strike 2) export SteamFriends v018 only.
+        let accessor = resolve_interface(STEAM_FRIENDS, c"SteamFriends", |name| {
+            if name == c"SteamAPI_SteamFriends_v018" {
+                Ok(current)
+            } else {
+                Err("absent".into())
+            }
+        })
+        .unwrap();
+        assert!(!unsafe { accessor() }.is_null());
+        let accessor = resolve_interface(STEAM_USER, c"SteamUser", |name| {
             if name == c"SteamUser" {
                 Ok(legacy)
             } else {
@@ -1578,10 +1610,18 @@ mod tests {
         })
         .unwrap();
         assert!(unsafe { accessor() }.is_null());
-        let error = resolve_interface(c"SteamAPI_SteamUser_v023", c"SteamUser", |_| {
-            Err("absent".into())
+        // Unverified versions stay rejected instead of being guessed.
+        let error = resolve_interface(STEAM_FRIENDS, c"SteamFriends", |name| {
+            if name == c"SteamAPI_SteamFriends_v019" {
+                Ok(current)
+            } else {
+                Err("absent".into())
+            }
         })
         .unwrap_err();
+        assert!(error.contains("SteamAPI_SteamFriends_v018") && error.contains("SteamFriends"));
+        let error =
+            resolve_interface(STEAM_USER, c"SteamUser", |_| Err("absent".into())).unwrap_err();
         assert!(error.contains("SteamAPI_SteamUser_v023") && error.contains("SteamUser"));
     }
 

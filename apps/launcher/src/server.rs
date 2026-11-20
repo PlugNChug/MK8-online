@@ -674,7 +674,17 @@ impl App {
     }
     fn poll_game(&mut self) {
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
-            self.game_exit = Some(exit.to_string());
+            let mut shown = exit.to_string();
+            if !exit.success() {
+                let log = std::fs::read(self.local.join("game.log")).unwrap_or_default();
+                let language = crate::language::effective(&self.local);
+                if let Some(reason) =
+                    crate::game_session::nextendo_refusal(&String::from_utf8_lossy(&log), &language)
+                {
+                    shown = format!("{shown}. {reason}");
+                }
+            }
+            self.game_exit = Some(shown);
             self.game = None;
             if self.steam_room.is_some() {
                 self.clear_steam_session();

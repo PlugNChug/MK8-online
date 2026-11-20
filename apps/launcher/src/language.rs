@@ -23,6 +23,28 @@ pub fn read(local: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// The language the launcher pages show: the saved choice, otherwise the system
+/// language with the same fallback as `web/i18n.js` (Portuguese, English, else Spanish).
+pub fn effective(local: &Path) -> String {
+    let saved = read(local);
+    if !saved.is_empty() {
+        return saved;
+    }
+    #[cfg(windows)]
+    let primary = unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() } & 0x3ff;
+    #[cfg(not(windows))]
+    let primary = 0x09;
+    from_primary_language(primary).into()
+}
+
+fn from_primary_language(primary: u16) -> &'static str {
+    match primary {
+        0x16 => "pt-BR",
+        0x09 => "en",
+        _ => "es",
+    }
+}
+
 pub fn write(local: &Path, body: &Value) -> Result<String> {
     let value = body["language"]
         .as_str()
@@ -59,6 +81,22 @@ mod tests {
         std::fs::remove_file(root.join("language.json")).unwrap();
         assert_eq!(read(&root), "");
         std::fs::remove_file(config).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn effective_language_prefers_the_saved_choice() {
+        assert_eq!(from_primary_language(0x16), "pt-BR");
+        assert_eq!(from_primary_language(0x09), "en");
+        assert_eq!(from_primary_language(0x0a), "es");
+        assert_eq!(from_primary_language(0x07), "es");
+        let root =
+            std::env::temp_dir().join(format!("mk8-language-effective-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(valid(&effective(&root)));
+        write(&root, &json!({"language": "es"})).unwrap();
+        assert_eq!(effective(&root), "es");
+        std::fs::remove_file(root.join("language.json")).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
 

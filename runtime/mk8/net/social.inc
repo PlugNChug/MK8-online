@@ -8,11 +8,21 @@ static bool social_running;
 static time_t social_attempt;
 
 static void social_error(char *out, size_t cap, int status) {
-    const char *message = status == 401 ? "Sessão expirada. Entre novamente na conta." :
-        status == 403 ? "Permissão social indisponível. Autorize friends no aplicativo Nextendo." :
-        status == 429 ? "Limite do serviço. Aguarde antes de atualizar." :
-        status == 200 ? "Resposta do serviço em formato inesperado." :
-        "Não foi possível consultar o serviço. Tente atualizar.";
+    const char *message = status == 401 ? mk8_ui_text("Sessão expirada. Entre novamente na conta.",
+                                                      "Session expired. Sign in to your account again.",
+                                                      "Sesión caducada. Vuelve a iniciar sesión en tu cuenta.") :
+        status == 403 ? mk8_ui_text("Permissão social indisponível. Autorize friends no aplicativo Nextendo.",
+                                    "Social permission unavailable. Authorize friends in the Nextendo app.",
+                                    "Permiso social no disponible. Autoriza friends en la aplicación Nextendo.") :
+        status == 429 ? mk8_ui_text("Limite do serviço. Aguarde antes de atualizar.",
+                                    "Service limit reached. Wait before refreshing.",
+                                    "Límite del servicio. Espera antes de actualizar.") :
+        status == 200 ? mk8_ui_text("Resposta do serviço em formato inesperado.",
+                                    "The service answered in an unexpected format.",
+                                    "Respuesta del servicio en un formato inesperado.") :
+        mk8_ui_text("Não foi possível consultar o serviço. Tente atualizar.",
+                    "Could not reach the service. Try refreshing.",
+                    "No se pudo consultar el servicio. Intenta actualizar.");
     snprintf(out,cap,"%s",message);
 }
 

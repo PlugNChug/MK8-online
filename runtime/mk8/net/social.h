@@ -1,6 +1,16 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Text of the in-game panels in the launcher language (MK8_UI_LANGUAGE: "pt-BR" or "es"; anything else is English).
+static inline const char *mk8_ui_text(const char *pt, const char *en, const char *es) {
+    const char *language = getenv("MK8_UI_LANGUAGE");
+    if (language && !strcmp(language, "pt-BR")) return pt;
+    if (language && !strcmp(language, "es")) return es;
+    return en;
+}
 
 typedef struct {
     uint64_t pid;
