@@ -21,7 +21,7 @@ header, ABI or vendor statement was inspected; it does not mean an in-game run.
 | DLSS Multi Frame Generation 3x/4x | unverified — API exposes `multiFrameCount`; RTX 50 only | unverified | feasible | works on RTX 50 |
 | DLSS Dynamic MFG (6x) | **no** — D3D12 only, per NVIDIA | no | feasible | works on RTX 50 |
 | DLSS 5 Neural Rendering | **no** — no public `sl.dlss_nr` plugin | no | vendor SDK only | community only |
-| XeSS Super Resolution | **no** — SDK ships no Linux library | feasible (`libxess.dll`, Vulkan) | feasible | works (DP4a; XMX needs a community patch) |
+| XeSS Super Resolution | **no** — SDK ships no Linux library (stub) | **implemented** — `libxess.dll` bridge; Wine init OK, execute unverified | feasible | works (DP4a; XMX needs a community patch) |
 | XeSS Frame Generation | **no** — D3D12 only | **no** — D3D12 only | feasible | community only |
 | XeSS Low Latency (XeLL) | **no** — D3D12 only | **no** — D3D12 only | feasible | no |
 
@@ -381,6 +381,19 @@ runtime because they require a D3D12 swapchain. XeSS SR remains a possible
 Windows-Vulkan option for non-NVIDIA GPUs (`libxess.dll` + `xess_vk.h`), and that is
 the only XeSS feature worth planning.
 
+### Implementation status (20/11/2026)
+
+The Windows bridge is implemented in `runtime/mk8/graphics/xess.cpp`/`.h` with a
+hand-written ABI header [XESS-IMPL.md](XESS-IMPL.md). The full Windows runtime links
+with it (225 Zig units, `mk8drecomp.exe`, 4,423,680 B). Under Wine 11.22 on this
+RADV RX 9070 XT, the official 3.0.2 `libxess.dll` (77,795,704 B, SHA-256
+`251659dd…e5d5b7`) loads, `xessGetVersion` reports 2.0.2, and
+`xessVKCreateContext`/`xessVKInit` return 0 for 2560x1440 on the DP4a path; the
+probe requires `VK_EXT_mutable_descriptor_type`. `xessVKExecute` was **not** run and
+the runtime still needs the one-line `MK8_XESS` dispatch in `fsr.cpp`, which is owned
+by another agent. XeSS remains Windows-only: the Linux build compiles to a stub that
+logs `XeSS is Windows-only (libxess.dll)` once and keeps the FSR/bilinear path.
+
 ## Integration surface for this runtime
 
 The FSR prototype already provides the expensive part: a post-`vk_frame_suspend`
@@ -437,8 +450,10 @@ MFG stays out because it is D3D12-only. Do not enable FG by default. See
 [DLSS-IMPL.md](DLSS-IMPL.md) for the exact sequence and hand-off.
 
 **Phase 4 — Windows build.** The same NGX Vulkan path works on Windows; Streamline
-is only needed if a D3D12 backend is ever added. If XeSS SR is wanted for non-NVIDIA
-users, add `libxess.dll` + `xess_vk.h` behind the same optional-component pattern.
+is only needed if a D3D12 backend is ever added. The XeSS SR bridge for non-NVIDIA
+users is implemented (`runtime/mk8/graphics/xess.cpp`); the remaining wiring is the
+`MK8_XESS` dispatch in `fsr.cpp` and the device extension/features, see
+[XESS-IMPL.md](XESS-IMPL.md).
 
 **Phase 5 — DLSS 5 NR.** Blocked on NVIDIA granting access to the `dlss_nr`
 plugin/model and on RTX 50 hardware. Revisit only when both exist; do not design
