@@ -88,12 +88,16 @@ returns a wrong blob. Extending the set means adding the option to `BASE_OPTIONS
 
 The `Unknown` storage images and two SPD pyramid shaders (`ComputeDerivativeGroupLinearKHR`) are
 normally used with `shaderStorageImageWriteWithoutFormat`, `shaderStorageImageReadWithoutFormat` and
-`VK_KHR_compute_shader_derivatives` enabled at `vkCreateDevice`. The game's device does not enable them;
-on RADV GFX1201 the provider creates its pipelines and dispatches anyway (headless A/B: identical
-output with and without the features). A validation-enabled process or a stricter driver may reject
-them. If the FSR path is made permanent, `toolchain/fsr_fg.py`'s existing gated feature block should
-also run for `MK8_FSR4` (one condition), the same way frame generation enables them for
-`MK8_FSR_FG`. That file is owned by the runtime/toolchain work; this provider does not modify it.
+`VK_KHR_compute_shader_derivatives` enabled at `vkCreateDevice`. The game's device is Vulkan 1.3, which
+satisfies the formatless-image requirements per the current VUID, but it does not enable the derivatives
+extension. On RADV GFX1201 the provider creates its pipelines and dispatches anyway, with identical
+output; a validation-enabled run on a Vulkan 1.3 device without the extension reports exactly the four
+`ComputeDerivativeGroupLinearKHR` / `SPV_KHR_compute_shader_derivatives` errors for the two pyramid
+shaders and nothing else. A stricter driver may reject them. If the FSR path is made permanent,
+`toolchain/fsr_fg.py`'s existing gated feature block should also run for `MK8_FSR4` (one condition),
+the same way frame generation enables the extension for `MK8_FSR_FG`. That file is owned by the
+runtime/toolchain work; this provider does not modify it. With the features enabled, the headless run is
+validation-clean (see the next section).
 
 ## Verification
 

@@ -134,7 +134,7 @@ int main(int argc, char** argv)
     if (!create || !destroy || !query || !dispatch) { printf("missing exports\n"); return 1; }
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.apiVersion = VK_API_VERSION_1_2;
+    app.apiVersion = VK_API_VERSION_1_3;  // the game creates a Vulkan 1.3 device
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ici.pApplicationInfo = &app;
     VkInstance instance = VK_NULL_HANDLE;
