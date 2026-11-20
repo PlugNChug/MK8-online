@@ -203,6 +203,10 @@
         </section>
 
         <section id="miis" class="panel" hidden>
+          <div id="mii-play-prompt" hidden role="status">
+            <span>Crie seu Mii, personalize e salve para continuar jogando.</span>
+            <button type="button" class="ghost" id="mii-play-cancel">Cancelar</button>
+          </div>
           <div class="mii-head-row">
             <h1>Mii</h1>
             <div id="mii-saved" class="mii-saved" role="list" aria-label="Seus Miis"></div>
@@ -329,11 +333,13 @@
                 <button id="play-nextendo" class="ghost big" disabled>Jogar no Nextendo</button>
               </div>
               <p class="fine" id="nextendo-rebuild" hidden>Atualize a build do jogo para usar o Nextendo.</p>
+              <p class="fine">Para jogar no Nextendo, crie uma conta em nextendo.network, confirme seu e-mail e vincule o Discord à conta.</p>
+              <p class="fine" id="nextendo-account-links"><a href="https://nextendo.network/register" target="_blank" rel="noopener noreferrer">Criar conta Nextendo</a> · <a href="https://nextendo.network/account" target="_blank" rel="noopener noreferrer">Gerenciar conta e Discord</a></p>
               <dialog id="nextendo-consent" aria-labelledby="nextendo-heading">
                 <h2 id="nextendo-heading">Conectar ao Nextendo</h2>
                 <p>O servidor de corrida usa um certificado próprio. Esta é a chave observada nos testes do projeto. A confirmação pelo Nextendo está pendente.</p>
                 <code id="nextendo-key" dir="ltr"></code>
-                <p>Ao confiar nesta chave neste PC, o launcher abre o login no navegador. Depois, selecione Online Play no jogo.</p>
+                <p>Autorize o acesso no navegador. Enquanto o launcher estiver aberto, você poderá reabrir o jogo com a mesma conta. No jogo, selecione Online Play.</p>
                 <div class="cta"><button class="ghost" id="nextendo-cancel" autofocus>Cancelar</button><button class="primary" id="nextendo-accept">Confiar e entrar</button></div>
               </dialog>
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>

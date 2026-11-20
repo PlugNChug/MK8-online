@@ -509,7 +509,7 @@
       if (!row.dataset.mpDecorated) {
         row.dataset.mpDecorated = '1'; row.dataset.presence = friend.online ? 'online' : 'offline';
         const avatar = document.createElement('b'); avatar.className = 'mp-friend-avatar'; avatar.setAttribute('aria-hidden', 'true'); avatar.textContent = Array.from(friend.name.trim())[0]?.toUpperCase() || '?'; row.prepend(avatar);
-        if (friend.room && friend.room !== steamData.room) row.append(steamButton('Entrar', () => api('steam/join', { lobby: friend.room }), true));
+        if (friend.room && friend.room !== steamData.room) row.append(steamButton('Entrar', () => joinSteam(friend.room), true));
       }
       row.hidden = filter === 'online' ? !friend.online : filter === 'rooms' ? !friend.room : false;
       if (!row.hidden) visible++;

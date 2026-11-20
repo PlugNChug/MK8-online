@@ -169,6 +169,9 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['romfs_long_paths_supported'] = True
         path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        candidate['nextendo_session_supported'] = True
+        path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
 
     def test_visual_settings_previews_drafts_and_real_save(self):

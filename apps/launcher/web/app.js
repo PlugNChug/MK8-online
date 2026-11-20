@@ -45,6 +45,35 @@ async function action(fn) {
     busy = false;
   }
 }
+
+let pendingPilotPlay;
+function clearPilotPlay() {
+  pendingPilotPlay = null;
+  $("mii-play-prompt").hidden = true;
+}
+async function withPilot(tab, start) {
+  if (await api("mii/active")) return start();
+  pendingPilotPlay = { tab, start };
+  showTab("miis");
+  $("mii-play-prompt").hidden = false;
+  $("mii-name").focus();
+}
+$("mii-play-cancel").onclick = () => {
+  const tab = pendingPilotPlay?.tab;
+  clearPilotPlay();
+  if (tab) showTab(tab);
+};
+window.addEventListener("launchertabchange", event => {
+  if (event.detail !== "miis") clearPilotPlay();
+});
+window.addEventListener("miireadytoplay", () => {
+  if (!pendingPilotPlay) return;
+  const { tab, start } = pendingPilotPlay;
+  clearPilotPlay();
+  showTab(tab);
+  action(start);
+});
+const joinSteam = lobby => withPilot("session", () => api("steam/join", { lobby }));
 function config() {
   return {
     ...savedConfig,
@@ -829,13 +858,13 @@ function renderSteam() {
   const hosting = !!data?.room && !!previousSession?.hosting;
   $("steam-invites").replaceChildren(...(data?.invites ?? []).map((invite) =>
     listItem(i18n.t("Convite de {0}").replace("{0}", invite.friend), [
-      steamButton("Aceitar", () => api("steam/join", { lobby: invite.lobby }), true),
+      steamButton("Aceitar", () => joinSteam(invite.lobby), true),
       steamButton("Recusar", () => api("steam/dismiss", { lobby: invite.lobby })),
     ])));
   const rooms = (data?.friends ?? []).filter((friend) => friend.room && friend.room !== data.room);
   $("steam-rooms").replaceChildren(...rooms.map((friend) =>
     listItem(i18n.t("Sala de {0}").replace("{0}", friend.name), [
-      steamButton("Entrar", () => api("steam/join", { lobby: friend.room }), true),
+      steamButton("Entrar", () => joinSteam(friend.room), true),
     ])));
   $("steam-empty").hidden = !!(data?.invites?.length || rooms.length);
   const filter = $("friend-filter").value.trim().toLowerCase();
@@ -873,8 +902,9 @@ async function loadSteam() {
   }
   renderSteam();
 }
-$("steam-host").onclick = () => action(() => api("steam/host", { automatic: true }));
-$("steam-host-manual").onclick = () => action(() => api("steam/host", { automatic: false }));
+const hostSteam = automatic => action(() => withPilot("session", () => api("steam/host", { automatic })));
+$("steam-host").onclick = () => hostSteam(true);
+$("steam-host-manual").onclick = () => hostSteam(false);
 i18n.text($("steam-navigation").options[0], "Entrar automaticamente no jogo");
 i18n.text($("steam-navigation").options[1], "Navegar manualmente no jogo");
 $("steam-navigation").onchange = () => action(() => api("steam/navigation", {
@@ -887,14 +917,21 @@ document.querySelector('[data-tab="session"]').addEventListener("click", () => l
 setInterval(() => loadSteam(), 5000);
 
 /* ---------- Jogar e suporte ---------- */
-$("play-solo").onclick = () => action(() => api("play", { online: false }));
-$("play-online").onclick = () => action(() => api("play", { online: true }));
+const playSolo = () => api("play", { online: false });
+$("play-solo").onclick = () => action(() => withPilot("play", playSolo));
+$("play-online").onclick = () => action(() => withPilot("play", () => api("play", { online: true })));
 const playNextendo = () => api("play", { online: false, nextendo: true });
-$("play-nextendo").onclick = () => {
-  if ($("play-nextendo").dataset.trusted === "true") return action(playNextendo);
+$("play-nextendo").onclick = () => action(() => withPilot("play", () => {
+  if ($("play-nextendo").dataset.trusted === "true") return playNextendo();
   $("nextendo-consent").showModal();
-};
+}));
 $("nextendo-cancel").onclick = () => $("nextendo-consent").close();
+$("nextendo-account-links").onclick = event => {
+  const link = event.target.closest("a");
+  if (!link || $("nextendo-account-links").dataset.native !== "true") return;
+  event.preventDefault();
+  action(() => api("nextendo/account", { register: link.pathname === "/register" }));
+};
 $("nextendo-accept").onclick = () => action(async () => {
   const key = $("nextendo-key").textContent;
   $("nextendo-consent").close();
@@ -936,6 +973,10 @@ $("open-data").onclick = () => action(() => api("open", { what: "data" }));
 
 async function refresh() {
   const status = await api("status");
+  if (status.steam_join_after_mii && !busy) {
+    const lobby = await api("steam/claim-join", {});
+    if (lobby) await action(() => joinSteam(lobby));
+  }
   const dlcBusy = status.dlc_import?.state === "running" || status.ctgp_import?.state === "running";
   if (status.room_menu !== roomMenu) {
     roomMenu = status.room_menu;
@@ -987,6 +1028,7 @@ async function refresh() {
     !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
   $("play-nextendo").dataset.trusted = String(status.nextendo_trusted);
+  $("nextendo-account-links").dataset.native = String(status.windowed);
   $("nextendo-key").textContent = status.nextendo_game_key;
   $("nextendo-rebuild").hidden = !(status.candidate || status.installed) || status.nextendo_supported;
   $("play-nextendo").disabled = $("play-solo").disabled || !status.nextendo_supported;
@@ -1058,8 +1100,12 @@ async function refresh() {
     }
     const status = await refresh();
     const linkedTab = location.hash.slice(1);
-    if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
-    else if (status.tools_ready && (status.candidate || status.installed) && !status.candidate_stale) showTab("play");
+    if (linkedTab === "create-mii-to-play") {
+      history.replaceState(null, "", "#play");
+      await withPilot("play", playSolo);
+    }
+    else if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
+    else if (!pendingPilotPlay && status.tools_ready && (status.candidate || status.installed) && !status.candidate_stale) showTab("play");
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");

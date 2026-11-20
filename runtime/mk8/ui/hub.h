@@ -12,6 +12,20 @@ static bool mk8_hub_enabled() {
 
 static const char *hub_text(const char *pt, const char *en, const char *es) { return mk8_ui_text(pt, en, es); }
 
+static void mk8_nextendo_start_notice() {
+    static bool checked;
+    if (checked) return;
+    checked = true;
+    const char *mii = getenv("MK8_MII_NAME");
+    char account[64], message[256];
+    if (!mii || !*mii || !nextendo_pid() || net_backend() != NET_BACKEND_NEXTENDO) return;
+    bool named = nextendo_username(account, sizeof account);
+    snprintf(message, sizeof message, "%s%s%s  ·  Mii: %s",
+             hub_text("Jogando via Nextendo", "Playing on Nextendo", "Jugando en Nextendo"),
+             named ? "  ·  " : "", named ? account : "", mii);
+    menu_notice(message, 7);
+}
+
 static void mk8_hub_icon(ImDrawList *d, ImVec2 p, float s, int kind, ImU32 ink) {
     const float t = 2 * s;
     if (kind == 0) {

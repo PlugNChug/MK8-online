@@ -27,7 +27,7 @@ class LauncherTests(unittest.TestCase):
             refused = page.request.post(self.urls[0]+'/api/play', headers=headers,
                                         data=json.dumps({'online':False, 'nextendo':True})).json()
             self.assertFalse(refused['ok'])
-            self.assertIn('Nextendo', refused['error'])
+            self.assertRegex(refused['error'], 'Mii|Nextendo')
             status = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
             key = status['nextendo_game_key']
             self.assertFalse(status['nextendo_trusted'])
@@ -37,6 +37,7 @@ class LauncherTests(unittest.TestCase):
             status.update(nextendo_supported=False, candidate=True, game_pid=None)
             page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
             calls = []
+            page.route('**/api/mii/active', lambda route: route.fulfill(json={'ok':True,'data':'Piloto'}))
             def play(route):
                 calls.append(route.request.post_data_json)
                 route.fulfill(json={'ok':True,'data':{'message':'Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.'}})
@@ -579,8 +580,8 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
         refused = api("steam/host", {})
         self.assertFalse(refused["ok"])
-        self.assertIn("Crie seu Mii", refused["error"])
-        self.assertIn("Crie seu Mii", api("steam/join", {"lobby": "123"})["error"])
+        self.assertIn("Mii", refused["error"])
+        self.assertIn("Mii", api("steam/join", {"lobby": "123"})["error"])
         self.assertFalse(api("steam/join", {"lobby": "12a"})["ok"])
         page.get_by_role("button", name="Criar Mii agora", exact=True).click()
         expect(page.locator("#miis")).to_be_visible()

@@ -377,6 +377,10 @@ def prepare_host_sources(source, output):
     if text.count(boundary) != 1:
         raise ValueError('MK8 hub declaration boundary changed')
     text = text.replace(boundary, '#include "mk8_hub.h"\n' + boundary)
+    boundary = '    const uint8_t *ov_img = game_overlay_image(&ov_w, &ov_h, &ov_full, &ov_seq);'
+    if text.count(boundary) != 1:
+        raise ValueError('Nextendo startup notice boundary changed')
+    text = text.replace(boundary, '    mk8_nextendo_start_notice();\n' + boundary)
     boundary = '    if (open) {\n        // dim the game behind the menu'
     if text.count(boundary) != 1:
         raise ValueError('MK8 hub render boundary changed')

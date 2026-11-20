@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Primeiro Mii e sessão Nextendo na 0.4.1 local
+
+O launcher exige um Mii ativo para jogar solo, no Nextendo ou em uma sala Steam. Ao criar o primeiro piloto, a etapa de nome abre a personalização. **Salvar e continuar** retoma a ação escolhida, inclusive um convite Steam. O atalho portátil `--play` abre o editor se houver uma build preparada e faltar o perfil. A tela Jogar orienta a confirmar o e-mail e vincular o Discord, com links para cadastro e conta.
+
+No Windows, cada instância do launcher mantém o token de renovação em memória e o jogo pede ao serviço novos tokens e a situação de acesso. No teste com o executável do MK8 e um serviço OAuth local, três aberturas até a tela de título registraram autorização pelo navegador, renovação sem navegador e nova autorização após reiniciar o launcher. A captura mostra a conta retornada pelo serviço e o Mii local na notificação do jogo. O teste de revogação repetiu o login na mesma tentativa. Um erro temporário no servidor conservou a autorização para a próxima abertura. Estes testes usaram uma conta simulada. A corrida em um servidor público permanece como reteste separado.
+
+O setup de teste tem SHA-256 `78e295e98fcf6da9335dc92f59ed869dc9cfe10c03aa3537bd5692bf2c49a48e`. No launcher extraído desse pacote, um convite de teste recebido antes da criação do Mii abriu o editor e retomou o mesmo identificador de sala após salvar. Passaram 108 testes Rust, 16 testes do cliente Nextendo com serviço local e 22 testes de interface, inicialização e processos.
+
 ## Caminhos longos do RomFS no Windows — 0.4.1 local
 
 A preparação interrompia a build quando o caminho de um arquivo do jogo atingia 260 caracteres. Na pasta de teste com acentos e emoji, o leitor anterior indexou apenas 6.405 dos 6.597 arquivos de MK8 4.0.1. Na mesma pasta, o leitor corrigido indexou todos. A leitura pelo serviço de armazenamento conferiu byte a byte os 192 arquivos afetados e comparou o início e o fim dos demais com as fontes, totalizando 564.153.926 bytes verificados.

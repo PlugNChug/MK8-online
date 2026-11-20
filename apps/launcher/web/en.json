@@ -1,4 +1,6 @@
 {
+  "Criar conta Nextendo": "Create a Nextendo account",
+  "Gerenciar conta e Discord": "Manage account and Discord",
   "Fontes do jogo": "Game fonts",
   "Fonte": "Font",
   "Padrão do sistema": "System Default",
@@ -1256,5 +1258,11 @@
   "A interpolação nativa pode apresentar até 120 FPS com a simulação a 60 Hz. Ative o contador para ver os FPS do jogo, os FPS de saída e o tempo por quadro do jogo.": "Native interpolation can present up to 120 FPS with a 60 Hz simulation. Enable the counter to see game FPS, output FPS and time per game frame.",
   "Gráficos": "Graphics",
   "Resolução, FSR e DLSS": "Resolution, FSR and DLSS",
-  "Atualize a build do jogo para usar os recursos desta edição do launcher.": "Update the game build to use the features in this edition of the launcher."
+  "Atualize a build do jogo para usar os recursos desta edição do launcher.": "Update the game build to use the features in this edition of the launcher.",
+  "Crie seu Mii, personalize e salve para continuar jogando.": "Create your Mii, customize it and save to continue playing.",
+  "Crie um Mii em Perfil Mii para continuar.": "Create a Mii in Mii profile to continue.",
+  "Para jogar no Nextendo, crie uma conta em nextendo.network, confirme seu e-mail e vincule o Discord à conta.": "To play on Nextendo, create an account at nextendo.network, verify your email and link Discord to your account.",
+  "Autorize o acesso no navegador. Enquanto o launcher estiver aberto, você poderá reabrir o jogo com a mesma conta. No jogo, selecione Online Play.": "Authorize access in your browser. While the launcher is open, you can reopen the game with the same account. In the game, select Online Play.",
+  "Abrindo o Nextendo. No jogo, selecione Online Play.": "Starting Nextendo. In the game, select Online Play.",
+  "Salvar e continuar": "Save and continue"
 }

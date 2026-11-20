@@ -14,6 +14,7 @@ mod language;
 mod managed;
 mod manual;
 mod mii_download;
+mod nextendo_session;
 mod portable;
 mod python_setup;
 mod relay;
@@ -352,9 +353,13 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     if let Some(home) = portable_home {
         portable::relocate(&home, &root, &local)?;
     }
-    let parent = (!headless).then(|| Arc::new(OnceLock::new()));
+    let direct = args.iter().any(|arg| arg == "--play");
+    let needs_editor = direct
+        && (local.join("active.json").is_file() || local.join("candidate.json").is_file())
+        && mk8_installer::mii::read(&local)?.is_none();
+    let parent = (!headless || needs_editor).then(|| Arc::new(OnceLock::new()));
     let mut app = launcher_app(root, &local, parent.clone())?;
-    if args.iter().any(|arg| arg == "--play") {
+    if direct && !needs_editor {
         return app.play_direct().map_err(Into::into);
     }
     let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
@@ -363,7 +368,10 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         server::serve(app, server, authority, page, token);
         return Ok(());
     };
-    let target: tauri::Url = page.parse()?;
+    let mut target: tauri::Url = page.parse()?;
+    if needs_editor {
+        target.set_fragment(Some("create-mii-to-play"));
+    }
     std::thread::spawn(move || server::serve(app, server, authority, page, token));
     let origin = target.origin();
     tauri::Builder::default()

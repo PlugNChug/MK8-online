@@ -17,6 +17,8 @@ pub struct Request {
     pub auto_lan: Option<String>,
     #[serde(default)]
     pub nextendo: bool,
+    #[serde(default)]
+    pub nextendo_session: Option<String>,
 }
 
 pub fn spawn(request: &Request) -> Result<Child> {
@@ -94,6 +96,11 @@ pub fn run() -> Result<i32> {
         return Err("Nextendo não pode usar uma sala LAN/Steam.".into());
     }
     let mut game = if request.nextendo {
+        if let Some(name) = request.nextendo_session.as_ref() {
+            std::env::set_var("MK8_NEXTENDO_SESSION", name);
+        } else {
+            std::env::remove_var("MK8_NEXTENDO_SESSION");
+        }
         mk8_installer::launch_nextendo(
             &request.install,
             &request.local,
@@ -101,6 +108,7 @@ pub fn run() -> Result<i32> {
             request.candidate,
         )?
     } else {
+        std::env::remove_var("MK8_NEXTENDO_SESSION");
         launch(
             &request.install,
             &request.local,

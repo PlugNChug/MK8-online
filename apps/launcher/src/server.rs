@@ -53,6 +53,7 @@ pub struct App {
     steam_room: Option<SteamRoom>,
     gateway: Option<Gateway>,
     game: Option<Child>,
+    nextendo_session: crate::nextendo_session::Session,
     game_exit: Option<String>,
     username: String,
     prepare_after_setup: bool,
@@ -77,6 +78,8 @@ pub struct App {
     /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
     pending_play: Option<PendingPlay>,
     steam_auto_join: bool,
+    /// Invite opened in Steam before a first Mii exists; claimed once by the editor.
+    steam_join_after_mii: Option<String>,
     /// The last Steam failure that happened outside a request (an accepted invite that could not be joined).
     steam_error: Option<String>,
     /// Steam was used before on this PC: connect again at start, so invites reach the launcher.
@@ -185,6 +188,7 @@ impl App {
             steam_room: None,
             gateway: None,
             game: None,
+            nextendo_session: Default::default(),
             game_exit: None,
             username,
             prepare_after_setup: false,
@@ -206,6 +210,7 @@ impl App {
             steam_invites: Vec::new(),
             pending_play: None,
             steam_auto_join,
+            steam_join_after_mii: None,
             steam_error: None,
             steam_retry: None,
         }
@@ -214,7 +219,7 @@ impl App {
     /// Rooms are entered as the player's Mii: its name is the name other players see.
     fn mii_name(&mut self) -> Result<String> {
         let profile = mk8_installer::mii::read(&self.local)?
-            .ok_or("Crie seu Mii em Perfil Mii antes de abrir ou entrar em uma sala.")?;
+            .ok_or("Crie um Mii em Perfil Mii para continuar.")?;
         let name = profile.appearance.name;
         if valid_username(&name) && name != self.username {
             save(&self.local.join("username.json"), &name)?;
@@ -290,8 +295,8 @@ impl App {
 
     fn steam_join(&mut self, lobby: &str) -> Result<()> {
         self.check_room_preparation()?;
-        self.prepare_steam_join()?;
         self.mii_name()?;
+        self.prepare_steam_join()?;
         let identity = self.identity();
         let (room, gateway) = SteamRoom::join_live(
             &self.local,
@@ -366,10 +371,7 @@ impl App {
         for event in steam::take_events() {
             match event {
                 SteamEvent::Join { lobby } => {
-                    match self.steam_join(&lobby.to_string()) {
-                        Ok(()) => self.room_menu += 1,
-                        Err(error) => self.steam_error = Some(error),
-                    }
+                    self.auto_join_steam_lobby(&lobby.to_string());
                     if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
                         let _ = window.show();
                         let _ = window.unminimize();
@@ -411,6 +413,7 @@ impl App {
     }
 
     fn start_game(&mut self, online: bool, auto_lan: Option<&str>, nextendo: bool) -> Result<u32> {
+        let pilot = self.mii_name()?;
         if nextendo
             && (!mk8_installer::nextendo_trusted(&self.local) || online || auto_lan.is_some())
         {
@@ -454,10 +457,15 @@ impl App {
             local: self.local.clone(),
             install,
             network: net,
-            username: self.username.clone(),
+            username: pilot,
             candidate,
             auto_lan: auto_lan.map(str::to_owned),
             nextendo,
+            nextendo_session: if nextendo {
+                self.nextendo_session.name()?
+            } else {
+                None
+            },
         })?;
         let pid = child.id();
         self.game_exit = None;
@@ -466,6 +474,10 @@ impl App {
     }
 
     pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
+        if matches!(mk8_installer::mii::read(&self.local), Ok(None)) {
+            self.steam_join_after_mii = Some(lobby_id.to_owned());
+            return;
+        }
         match self.steam_join(lobby_id) {
             Ok(()) => self.room_menu += 1,
             Err(error) => self.steam_error = Some(error),
@@ -780,7 +792,9 @@ impl App {
             .is_some_and(|game| game.nextendo_supported);
         let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
             // An existing host can predate the capability fields within the same test version.
-            (!game.temporal_upscaling_supported || !game.romfs_long_paths_supported)
+            (!game.temporal_upscaling_supported
+                || !game.romfs_long_paths_supported
+                || !game.nextendo_session_supported)
                 && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
                     |host| {
                         host["files"]["mk8drecomp.exe"].as_str()
@@ -826,6 +840,7 @@ impl App {
             .or(p2p_code);
         let mut status = json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()});
         status["nextendo_trusted"] = json!(mk8_installer::nextendo_trusted(&self.local));
+        status["steam_join_after_mii"] = json!(self.steam_join_after_mii.is_some());
         status["nextendo_supported"] =
             json!(nextendo_supported || mk8_installer::nextendo_test_configured());
         status["nextendo_game_key"] = json!(mk8_installer::NEXTENDO_GAME_KEY);
@@ -1016,6 +1031,9 @@ impl App {
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
+            ("GET", "/api/mii/active") => Ok(json!(
+                mk8_installer::mii::read(&self.local)?.map(|profile| profile.appearance.name)
+            )),
             ("GET", "/api/mii") => Ok(json!({"active":mk8_installer::mii::read(&self.local)?,
                 "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
             ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
@@ -1449,6 +1467,7 @@ impl App {
                 steam::invite(&self.local, room.lobby_id, friend)?;
                 Ok(json!({"message":"Convite enviado pela Steam."}))
             }
+            ("POST", "/api/steam/claim-join") => Ok(json!(self.steam_join_after_mii.take())),
             ("POST", "/api/steam/join") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 let lobby = value["lobby"].as_str().ok_or("Sala inválida.")?.to_owned();
@@ -1563,7 +1582,7 @@ impl App {
                     self.start_game(value["online"].as_bool().unwrap_or(false), None, nextendo)?;
                 if nextendo {
                     return Ok(
-                        json!({"message":"Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão."}),
+                        json!({"message":"Abrindo o Nextendo. No jogo, selecione Online Play."}),
                     );
                 }
                 Ok(
@@ -1598,12 +1617,20 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Pasta aberta."}))
             }
-            ("POST", "/api/support/github") => {
+            ("POST", "/api/support/github" | "/api/nextendo/account") => {
                 if self.window.is_none() {
-                    return Err("Na prévia web, use o link do GitHub diretamente.".into());
+                    return Err("Na prévia web, use o link diretamente.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
-                let url = if value["list"] == true {
+                let nextendo = path == "/api/nextendo/account";
+                let url = if nextendo {
+                    tauri::Url::parse(if value["register"] == true {
+                        "https://nextendo.network/register"
+                    } else {
+                        "https://nextendo.network/account"
+                    })
+                    .map_err(|e| e.to_string())?
+                } else if value["list"] == true {
                     tauri::Url::parse("https://github.com/Vnnc1/MK8-online/issues")
                         .map_err(|e| e.to_string())?
                 } else {
@@ -1624,6 +1651,9 @@ impl App {
                     command.creation_flags(0x08000000);
                 }
                 command.spawn().map_err(|e| e.to_string())?;
+                if nextendo {
+                    return Ok(json!({}));
+                }
                 Ok(json!({"message":"Abrindo o GitHub no navegador. Revise antes de publicar."}))
             }
             ("POST", "/api/update/check") => update::check(),
@@ -2419,6 +2449,7 @@ mod tests {
             nextendo_supported: false,
             temporal_upscaling_supported: false,
             romfs_long_paths_supported: false,
+            nextendo_session_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

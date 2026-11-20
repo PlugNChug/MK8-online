@@ -33,6 +33,10 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 
 O instalador de teste 0.4.1 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
 
+## Jogar com seu Mii na 0.4.1
+
+Na 0.4.1, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira partida, dê um nome ao Mii, personalize e escolha **Salvar e continuar** para seguir no modo escolhido. Para o Nextendo, confirme o e-mail e vincule o Discord à conta. Autorize uma vez no navegador enquanto o launcher estiver aberto. Ao abrir, o jogo mostra a conta Nextendo e o Mii local. Fechar o launcher ou revogar o acesso exige um novo login. [Gerenciar conta Nextendo](https://nextendo.network/account)
+
 ## Opções gráficas na 0.4.1 de teste
 
 No launcher 0.4.1, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao trocar uma edição de teste anterior da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
@@ -261,7 +265,7 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 - transportes LAN/relay/P2P pela API;
 - o conversor estático de cabeça Mii.
 
-Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Os tokens ficam em memória e o CTGP é desativado nessa sessão. A reconexão continua experimental.
+Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Na versão de teste, a autorização fica na memória enquanto o launcher estiver aberto. O CTGP é desativado nessa sessão. A reconexão continua experimental.
 
 | Local | Responsabilidade |
 | --- | --- |

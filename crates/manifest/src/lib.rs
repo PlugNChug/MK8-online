@@ -60,6 +60,8 @@ pub struct Installation {
     pub temporal_upscaling_supported: bool,
     #[serde(default)]
     pub romfs_long_paths_supported: bool,
+    #[serde(default)]
+    pub nextendo_session_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

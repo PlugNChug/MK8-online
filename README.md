@@ -33,6 +33,10 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 
 The 0.4.1 test installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
 
+## Playing with your Mii in 0.4.1
+
+In 0.4.1, Solo, Steam rooms and Nextendo use the active Mii. On first play, name your Mii, customize it and choose **Save and continue** to resume the mode you selected. For Nextendo, verify your account email and link Discord. Authorize once in the browser while the launcher is open. The game shows your Nextendo account and local Mii when it starts. Closing the launcher or revoking access requires a new sign-in. [Manage your Nextendo account](https://nextendo.network/account)
+
 ## Testing graphics options in 0.4.1
 
 In the 0.4.1 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from an earlier 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
@@ -292,7 +296,7 @@ The earlier installation simulation is available only in the live debug preview 
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter) are documented in the [technical status](docs/STATUS.md).
 
-To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. Tokens expire with the process. CTGP is disabled for this session. Reconnection remains experimental.
+To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. The test launcher keeps the refresh token in memory while its window is open. CTGP is disabled for this session. Reconnection remains experimental.
 
 | Location | Responsibility |
 | --- | --- |
