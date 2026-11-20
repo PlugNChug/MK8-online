@@ -25,5 +25,9 @@ jobs:
         run: >-
           python -m pip --isolated install --only-binary=:all: --require-hashes
           -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
-      - name: Pipeline tests
-        run: python -m unittest discover -s tests -p "test_pipeline.py"
+      - name: Pipeline, DLC and Windows runtime regressions
+        env:
+          PYTHONPATH: tests
+        run: >-
+          python -m unittest -v test_pipeline test_import_mk8 test_dlc test_package_payload
+          test_runtime_windows_paths test_vulkan_loader_shim

@@ -63,7 +63,7 @@ Open **F1 → Ajustes → Controle → Joy-Con mode**. Choose **Combined** to us
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
-The DLC importer accepts NSP and NSZ, including combined packages, for the Booster Course Pass (title `0100152000023001`, v65536). It verifies the full hashes of the restored contents and uses only the matching ticket. A failed reinstall preserves the previous installation and its build record.
+On `fix-chore`, the DLC importer accepts NSP and NSZ, including combined packages, for the Booster Course Pass (title `0100152000023001`, v65536). It verifies the full hashes of the restored contents and uses only the matching ticket. A failed reinstall preserves the previous installation and its build record.
 
 
 Press **F1** or **Back + Start** to open the in-game menu. Play resumes the game or opens your Mii profile. Settings includes video, audio, controls and mods. The panel uses the menu theme selected in the launcher. In a mod’s details, Back returns to the mod list. After signing in, Nextendo shows live MK8 rooms and Social shows friends and presence with the `friends` permission. Select a room to inspect it. To race, use **Online Play** in Mario Kart.
@@ -104,6 +104,8 @@ The portable package avoids setup/registry installation. Open this version once 
 The [0.3.0 release notes](docs/releases/0.3.0.md) cover the original CTGP integration and launcher redesign. See the [technical status](docs/STATUS.md) for limitations in the current release.
 
 ## Where it stands
+
+**Local changes on `fix-chore` after 0.4.0.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
 
 The runtime compensates slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 
