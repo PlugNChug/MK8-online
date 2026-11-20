@@ -17,6 +17,7 @@ PREFIX = r'''
 #include <SDL3/SDL.h>
 #include <windows.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,10 +45,28 @@ static SDL_GUID fixture_guid(SDL_JoystickID id) {
 static unsigned rumble_requests;
 static Uint32 last_duration;
 static SDL_Semaphore *basic_stop_entered,*release_basic_stop;
+static SDL_Semaphore *active_entered,*release_active;
+static _Atomic bool block_next_active;
+static SDL_Semaphore *waiting_for_space,*producer_awake,*resume_producer;
+static int wait_for_space(pthread_cond_t *cond, pthread_mutex_t *mutex, const struct timespec *until) {
+    if (waiting_for_space) SDL_SignalSemaphore(waiting_for_space);
+    int rc=pthread_cond_timedwait(cond,mutex,until);
+    if (resume_producer) {
+        pthread_mutex_unlock(mutex);
+        SDL_SignalSemaphore(producer_awake);
+        SDL_WaitSemaphore(resume_producer);
+        pthread_mutex_lock(mutex);
+    }
+    return rc;
+}
 static Uint64 test_ticks(void) { return clock_controlled ? clock_ms : SDL_GetTicks(); }
 static bool test_rumble(SDL_Gamepad *p,Uint16 low,Uint16 high,Uint32 duration) {
     rumble_requests++;
     last_duration=duration;
+    if ((low || high) && atomic_exchange(&block_next_active,false)) {
+        SDL_SignalSemaphore(active_entered);
+        SDL_WaitSemaphore(release_active);
+    }
     if(basic_stop_entered && !low && !high) {
         SDL_SignalSemaphore(basic_stop_entered);
         SDL_WaitSemaphore(release_basic_stop);
@@ -56,6 +75,7 @@ static bool test_rumble(SDL_Gamepad *p,Uint16 low,Uint16 high,Uint32 duration) {
 }
 #define EXTRA_PADS 3
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
+static bool mk8_paired_slot[1 + EXTRA_PADS];
 KEvent *kernel_create_event_pair(uint32_t *w,uint32_t *r) { (void)w;(void)r;CHECK(false);return NULL; }
 KSharedMem *kernel_create_shared_memory(uint64_t size,void (*fn)(KSharedMem *),uint32_t *handle) {
     (void)size;(void)fn;(void)handle;CHECK(false);return NULL;
@@ -132,7 +152,7 @@ static int test_hid_write(SDL_hid_device *dev,const unsigned char *data,size_t s
 
 CHECKS = r'''
 typedef struct { unsigned calls; Uint16 low,high; } Pulse;
-static Pulse pulse[3];
+static Pulse pulse[4];
 static Uint8 last_packet[10];
 static _Atomic unsigned packet_changes;
 static _Atomic unsigned packet_writes;
@@ -141,6 +161,7 @@ static Uint64 last_write_ms;
 static bool check_radio_interval;
 static _Atomic bool reject_packet;
 static uint8_t *guest;
+static bool defer_output;
 static bool SDLCALL rumble(void *userdata,Uint16 low,Uint16 high) {
     Pulse *p=userdata;
     p->calls++;
@@ -199,7 +220,8 @@ static void send_tone(uint32_t handle,float low,float low_hz,float high,float hi
     IpcReq req={.cmd=201,.data=payload,.data_size=sizeof payload};
     IpcResp resp={0};
     hid(NULL,&req,&resp);
-    CHECK(resp.result==0);
+    CHECK(!resp.result);
+    if (!defer_output) mk8_rumble_pump();
 }
 static void send_one(uint32_t handle,float low,float high) {
     send_tone(handle,low,160.f,high,320.f);
@@ -215,10 +237,29 @@ static void send_batch(const uint32_t handles[2],const float values[2][4]) {
     IpcResp resp={0};
     hid(NULL,&req,&resp);
     CHECK(resp.result==0);
+    if (!defer_output) mk8_rumble_pump();
 }
 static void send_pair(const uint32_t handles[2],float low,float high) {
     const float values[2][4]={{low,160.f,high,320.f},{low,160.f,high,320.f}};
     send_batch(handles,values);
+}
+static void present_and_pump(void) { mk8_rumble_frame(); mk8_rumble_pump(); }
+static int SDLCALL present_idle_frame(void *done) {
+    mk8_rumble_frame();
+    SDL_SignalSemaphore(done);
+    return 0;
+}
+static void check_idle_frame(void) {
+    SDL_Semaphore *done=SDL_CreateSemaphore(0);
+    CHECK(done);
+    SDL_LockJoysticks();  /* Discovery may hold this lock while a sensor is enabled. */
+    SDL_Thread *frame=SDL_CreateThread(present_idle_frame,"idle-rumble-frame",done);
+    CHECK(frame);
+    bool finished=SDL_WaitSemaphoreTimeout(done,1000);
+    SDL_UnlockJoysticks();
+    SDL_WaitThread(frame,NULL);
+    SDL_DestroySemaphore(done);
+    CHECK(finished && "an idle presentation frame waited for the joystick lock");
 }
 static void readback(uint32_t handle,float low,float high) {
     IpcReq req={.cmd=202,.data=(const uint8_t *)&handle,.data_size=4};
@@ -228,6 +269,56 @@ static void readback(uint32_t handle,float low,float high) {
     float value[4];
     memcpy(value,resp.data,sizeof value);
     CHECK(value[0]==low && value[1]==160.f && value[2]==high && value[3]==320.f);
+}
+static int SDLCALL four_player_output(void *done) {
+    uint32_t handles4[8];
+    for (unsigned i=0;i<4;++i) handles(i,handles4+2*i);
+    memcpy(guest,handles4,sizeof handles4);
+    float values[8][4];
+    uint64_t aruid=0;
+    IpcReq req={.cmd=206,.data=(const uint8_t *)&aruid,.data_size=8,.nx=2};
+    req.x[0]=(IpcBuf){(uintptr_t)guest,sizeof handles4};
+    req.x[1]=(IpcBuf){(uintptr_t)(guest+128),sizeof values};
+    for (int active=1;active>=0;--active) {
+        for (unsigned i=0;i<8;++i) {
+            float value[]={active*(i+1)/8.f,160.f,0,320.f};
+            memcpy(values[i],value,sizeof value);
+        }
+        memcpy(guest+128,values,sizeof values);
+        IpcResp resp={0};
+        hid(NULL,&req,&resp);
+        CHECK(!resp.result);
+        for (unsigned i=0;i<8;++i) readback(handles4[i],values[i][0],0);
+    }
+    mk8_rumble_frame();
+    SDL_SignalSemaphore(done);
+    return 0;
+}
+static void check_four_player_contention(void) {
+    SDL_JoystickID extra[]={attach(2,true),attach(3,true)};
+    for (unsigned i=0;i<2;++i) {
+        extra_pad[i+1]=mk8_rumble_open(i+2,extra[i]);
+        CHECK(extra_pad[i+1]);
+    }
+    unsigned before[4];
+    for (unsigned i=0;i<4;++i) before[i]=pulse[i].calls;
+    SDL_Semaphore *done=SDL_CreateSemaphore(0);
+    SDL_LockJoysticks();
+    SDL_Thread *guest_thread=SDL_CreateThread(four_player_output,"guest-rumble-ipc",done);
+    CHECK(done && guest_thread);
+    bool completed=SDL_WaitSemaphoreTimeout(done,1000);
+    SDL_UnlockJoysticks();
+    SDL_WaitThread(guest_thread,NULL);
+    CHECK(completed && "guest readback, eight-effect writes or presentation waited for SDL discovery");
+    for (unsigned i=0;i<4;++i) CHECK(pulse[i].calls==before[i]);
+    mk8_rumble_pump();
+    for (unsigned i=0;i<4;++i) CHECK(pulse[i].calls==before[i]+2 && !pulse[i].low && !pulse[i].high);
+    SDL_DestroySemaphore(done);
+    for (unsigned i=0;i<2;++i) {
+        mk8_rumble_close(i+2,extra_pad[i+1]);
+        extra_pad[i+1]=NULL;
+        SDL_DetachVirtualJoystick(extra[i]);
+    }
 }
 static void malformed(const uint32_t handles[2]) {
     float values[2][4]={{1,160,1,320},{1,160,1,320}};
@@ -288,6 +379,92 @@ static void permission(bool enabled) {
     resp=(IpcResp){0};
     hid(NULL,&req,&resp);
     CHECK(!resp.result && resp.data_size==1 && resp.data[0]==enabled);
+    if (!defer_output) mk8_rumble_pump();
+}
+static SDL_Semaphore *submitted;
+static int SDLCALL submit_to_full_queue(void *arg) {
+    send_one(*(uint32_t *)arg,.8f,.4f);
+    SDL_SignalSemaphore(submitted);
+    return 0;
+}
+static int SDLCALL pump_output(void *arg) {
+    (void)arg;
+    mk8_rumble_pump();
+    return 0;
+}
+static void check_output_lifetime(uint32_t h) {
+    defer_output=true;
+    unsigned before=pulse[0].calls;
+    send_one(h,.5f,.25f);
+    readback(h,.5f,.25f);
+    SDL_JoystickID id=SDL_GetGamepadID(pad);
+    mk8_rumble_close(0,pad);
+    pad=mk8_rumble_open(0,id);
+    readback(h,0,0);
+    mk8_rumble_pump();
+    CHECK(pulse[0].calls==before);  /* The old request cannot reach the reopened device. */
+    waiting_for_space=SDL_CreateSemaphore(0); submitted=SDL_CreateSemaphore(0);
+    producer_awake=SDL_CreateSemaphore(0); resume_producer=SDL_CreateSemaphore(0);
+    CHECK(waiting_for_space && submitted && producer_awake && resume_producer);
+    for (int revoke=0;revoke<=1;++revoke) {
+        for (unsigned i=0;i<MK8_OUTPUT_QUEUE;++i) send_one(h,.2f,.1f);
+        SDL_Thread *producer=SDL_CreateThread(submit_to_full_queue,"full-rumble-queue",&h);
+        CHECK(producer && SDL_WaitSemaphoreTimeout(waiting_for_space,1000));
+        if (revoke) {
+            permission(false);
+        } else {
+            mk8_rumble_close(0,pad);
+            pad=mk8_rumble_open(0,id);
+            mk8_rumble_pump();
+        }
+        CHECK(SDL_WaitSemaphoreTimeout(producer_awake,1000));
+        if (revoke) permission(true);
+        SDL_SignalSemaphore(resume_producer);
+        CHECK(SDL_WaitSemaphoreTimeout(submitted,1000));
+        SDL_WaitThread(producer,NULL);
+        readback(h,0,0);
+        mk8_rumble_pump();
+        CHECK(pulse[0].calls==before);
+    }
+    SDL_DestroySemaphore(waiting_for_space); SDL_DestroySemaphore(submitted);
+    SDL_DestroySemaphore(producer_awake); SDL_DestroySemaphore(resume_producer);
+    waiting_for_space=resume_producer=NULL;
+    uint32_t p2[2]; handles(1,p2);
+    const uint32_t targets[]={h,p2[0]};
+    const float motors[2][4]={{.6f,160,.1f,320},{.7f,160,.3f,320}};
+    unsigned second_before=pulse[1].calls;
+    active_entered=SDL_CreateSemaphore(0); release_active=SDL_CreateSemaphore(0);
+    CHECK(active_entered && release_active);
+    send_batch(targets,motors);
+    block_next_active=true;
+    SDL_Thread *owner=SDL_CreateThread(pump_output,"blocked-output-owner",NULL);
+    CHECK(owner && SDL_WaitSemaphoreTimeout(active_entered,1000));
+    permission(false); permission(true);
+    SDL_SignalSemaphore(release_active);
+    SDL_WaitThread(owner,NULL);
+    mk8_rumble_pump();
+    readback(h,0,0); readback(p2[0],0,0);
+    CHECK(pulse[1].calls==second_before && !pulse[0].low && !pulse[0].high);
+    SDL_DestroySemaphore(active_entered); SDL_DestroySemaphore(release_active);
+    defer_output=false;
+    send_one(h,.7f,.2f);
+    before=pulse[0].calls;
+    clock_ms=10000+SDL_GetTicks();
+    clock_controlled=true;
+    defer_output=true;
+    /* During a two-second reconnect, 120 active writes must finish before the UI resumes.
+       Once the last maneuver expires, the owner must deliver its stop without replaying it. */
+    for (unsigned i=0;i<120;++i) {
+        clock_ms+=16;
+        send_one(h,.3f,.5f);
+    }
+    send_one(h,0,0);
+    clock_ms+=251;
+    mk8_rumble_pump();
+    CHECK(pulse[0].calls==before+1 && !pulse[0].low && !pulse[0].high);
+    readback(h,0,0);
+    defer_output=false;
+    clock_controlled=false;
 }
 static void expect_effect(const Uint8 left[4],const Uint8 right[4]) {
     Uint64 deadline=SDL_GetTicks()+1000;
@@ -363,6 +540,16 @@ static void hd_output(void) {
     send_batch(p3,stereo);
     expect_effect(original,quiet);
     CHECK(packet_changes==before_batch+1);
+    /* Revocation stops an HD actuator without waiting for the UI queue or its 250 ms watchdog. */
+    defer_output=true;
+    Uint64 revoke_at=SDL_GetTicks();
+    permission(false); permission(true);
+    expect_effect(neutral,neutral);
+    CHECK(SDL_GetTicks()-revoke_at<200);
+    mk8_rumble_pump();
+    defer_output=false;
+    send_batch(p3,stereo);
+    expect_effect(original,quiet);
     send_one(p3[0],0,0);
     expect_effect(neutral,quiet);
     mk8_rumble_focus(false);
@@ -379,7 +566,7 @@ static void hd_output(void) {
     unsigned held_writes=packet_writes;
     Uint64 hold_until=SDL_GetTicks()+350;
     while(SDL_GetTicks()<hold_until) {
-        mk8_rumble_frame();
+        present_and_pump();
         SDL_Delay(16);
     }
     expect_effect(neutral,quiet);
@@ -478,8 +665,15 @@ static void joycon_output(void) {
     CHECK(pulse[2].low && pulse[2].high);
     quick_exit_handler();
     CHECK(fake_exit_called && !pulse[2].low && !pulse[2].high);
+    /* Guest threads can still flush valid haptics while the host drains its GPU/cache. */
+    unsigned after_stop=pulse[2].calls;
+    send_pair(h,.8f,.4f);
+    send_one(h[0],1,1);
+    readback(h[0],0,0); readback(h[1],0,0);
+    malformed(h);
+    CHECK(pulse[2].calls==after_stop && !pulse[2].low && !pulse[2].high);
     /* The rendering process would terminate here. Reset the exit latch for the next fixture. */
-    SDL_SetAtomicInt(&mk8_pair_exiting,0);fake_exit_called=false;
+    SDL_SetAtomicInt(&mk8_pair_exiting,0);mk8_output_exiting=false;fake_exit_called=false;
     send_pair(h,.2f,.3f);
     basic_stop_entered=SDL_CreateSemaphore(0);release_basic_stop=SDL_CreateSemaphore(0);
     Uint64 basic_exit=SDL_GetTicks();
@@ -491,12 +685,21 @@ static void joycon_output(void) {
     CHECK(SDL_GetAtomicInt(&mk8_pair_stop_done) && !pulse[2].low && !pulse[2].high);
     SDL_DestroySemaphore(basic_stop_entered);SDL_DestroySemaphore(release_basic_stop);
     basic_stop_entered=NULL;release_basic_stop=NULL;
-    SDL_SetAtomicInt(&mk8_pair_exiting,0);fake_exit_called=false;
+    SDL_SetAtomicInt(&mk8_pair_exiting,0);mk8_output_exiting=false;fake_exit_called=false;
     mk8_rumble_close(0,pad);
     endpoints[1].next=NULL;
     pad=mk8_rumble_open(0,id);
     CHECK(pad && mk8_rumble_pads[0].hd && live_halves==2);
     const float bands[2][4]={{.501433f,160,0,320},{0,160,.122671f,160}};
+    send_batch(h,bands);
+    for(int i=0;i<2;i++) expect_raw(i,lo,hi);
+    defer_output=true;
+    Uint64 revoke_at=SDL_GetTicks();
+    permission(false); permission(true);
+    for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    CHECK(SDL_GetTicks()-revoke_at<200);
+    mk8_rumble_pump();
+    defer_output=false;
     send_batch(h,bands);
     for(int i=0;i<2;i++) expect_raw(i,lo,hi);
     mk8_rumble_focus(false);
@@ -506,7 +709,7 @@ static void joycon_output(void) {
     rejected_side=1;
     send_batch(h,bands);
     Uint64 until=SDL_GetTicks()+1000;
-    while(mk8_rumble_pads[0].hd && SDL_GetTicks()<until) {mk8_rumble_frame();SDL_Delay(3);}
+    while(mk8_rumble_pads[0].hd && SDL_GetTicks()<until) {present_and_pump();SDL_Delay(3);}
     expect_generic_pulse();
     CHECK(!mk8_rumble_pads[0].hd && !live_halves);
     expect_raw(0,neutral,neutral);
@@ -543,6 +746,8 @@ static void joycon_output(void) {
         CHECK(pad && mk8_rumble_pads[0].waiting_for_pair && live_halves==2);
         send_tone(h[0],.25f,160,0,320);
         mk8_rumble_close(0,pad);
+        pad=mk8_rumble_open(0,id);
+        CHECK(pad && mk8_rumble_pads[0].waiting_for_pair);
     }
     SDL_SignalSemaphore(release_write);
     SDL_WaitThread(poller,NULL);SDL_WaitThread(sender,NULL);
@@ -550,8 +755,10 @@ static void joycon_output(void) {
     wait_pair_closed();
     CHECK(raw_active[1]==previous_right);
     for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    /* A newly attached pair must finish discovery even without a new vibration request. */
+    present_and_pump();
+    CHECK(mk8_rumble_pads[0].pair && !mk8_rumble_pads[0].waiting_for_pair && live_halves==2);
     /* Without another presented frame, the queued tone expires while the first half is blocked. */
-    pad=mk8_rumble_open(0,id);
     int before_expiry=raw_writes[0];
     block_next_left=true;
     send_tone(h[0],.3f,160,0,320);
@@ -591,6 +798,7 @@ int main(void) {
     CHECK(SDL_Init(SDL_INIT_GAMEPAD));
     hd_output();
     joycon_output();
+    mk8_output_exiting=false;  /* The exit-handler test returns to this fixture. */
     SDL_JoystickID ids[2]={attach(0,true),attach(1,true)};
     pad=mk8_rumble_open(0,ids[0]);
     extra_pad[0]=mk8_rumble_open(1,ids[1]);
@@ -622,6 +830,9 @@ int main(void) {
     CHECK(!pulse[0].low && !pulse[0].high && pulse[1].calls==second);
     send_pair(p2,0,0);
     CHECK(!pulse[1].low && !pulse[1].high);
+    check_idle_frame();
+    check_four_player_contention();
+    check_output_lifetime(p1[0]);
     readback(p1[0],0,0);
     readback(p2[0],0,0);
     readback(p2[1],0,0);
@@ -644,24 +855,24 @@ int main(void) {
     send_one(p1[0],.5f,.4f);
     send_pair(p2,.3f,.2f);
     menu_open=true;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(!pulse[0].low && !pulse[0].high && !pulse[1].low && !pulse[1].high);
     send_pair(p1,.8f,.8f);
     CHECK(!pulse[0].low && !pulse[0].high);
     readback(p1[0],0,0);
     readback(p1[1],0,0);
     menu_open=false;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(!pulse[0].low && !pulse[0].high);
     send_pair(p1,.3f,.4f);
     native_settings_open=true;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(!pulse[0].low && !pulse[0].high);
     send_pair(p1,.8f,.8f);
     readback(p1[0],0,0);
     readback(p1[1],0,0);
     native_settings_open=false;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(!pulse[0].low && !pulse[0].high);
     send_pair(p1,.3f,.4f);
     send_pair(p2,.5f,.6f);
@@ -682,7 +893,7 @@ int main(void) {
         readback(p2[1],0,0);
         if(focus) mk8_rumble_focus(true);
         else permission(true);
-        mk8_rumble_frame();
+        present_and_pump();
         CHECK(!pulse[0].low && !pulse[0].high && !pulse[1].low && !pulse[1].high);
         send_pair(p1,.3f,.4f);
         CHECK(pulse[0].low>0 && pulse[0].high>0);
@@ -695,16 +906,16 @@ int main(void) {
     unsigned renewals=rumble_requests;
     CHECK(last_duration==250);
     clock_ms=1124;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(rumble_requests==renewals);
     clock_ms=1125;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(rumble_requests==renewals+1 && last_duration==250);
     clock_ms=1250;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(rumble_requests==renewals+2 && last_duration==250);
     clock_ms=1500;
-    mk8_rumble_frame();
+    present_and_pump();
     CHECK(!pulse[0].low && !pulse[0].high && last_duration==0);
     readback(p1[0],0,0);
     clock_controlled=false;
@@ -764,10 +975,12 @@ class ControllerRumbleTests(unittest.TestCase):
             start=service.index('static uint32_t new_event_handle(void)')
             end=service.index('SERVICE("hid:sys"',start)
             source=PREFIX+PAIR_FIXTURE+'''\n#define SDL_GetTicks test_ticks
+#define pthread_cond_timedwait wait_for_space
 #define SDL_RumbleGamepad test_rumble
 #define SDL_GetJoystickGUIDForID fixture_guid
 '''+vibration
             source+='''\n#undef SDL_GetTicks
+#undef pthread_cond_timedwait
 #undef SDL_RumbleGamepad
 #undef SDL_GetJoystickGUIDForID
 '''+service[start:end]

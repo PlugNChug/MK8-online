@@ -24,7 +24,7 @@ static bool p2;
 static unsigned opens, refreshes, styles;
 static unsigned deferred;
 static bool mk8_steam_pad_deferred(unsigned id) { return id && id == deferred; }
-static bool real_gamepad(unsigned id) { return id != 0; }
+static bool real_gamepad(unsigned id) { return id && !mk8_steam_pad_deferred(id); }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++; return id==1 ? NULL : &devices[id]; }
 static SDL_Gamepad *mk8_rumble_open(int player, unsigned id) { assert(player>=0 && player<=EXTRA_PADS); return SDL_OpenGamepad(id); }

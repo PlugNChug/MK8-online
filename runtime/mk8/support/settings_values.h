@@ -5,6 +5,7 @@
 enum { SETTINGS_CATEGORIES=3, SETTINGS_VISIBLE=5 };
 enum { SETTING_CHOICE, SETTING_NUMBER, SETTING_BINDING, SETTING_RESET, SETTING_INFO };
 enum { SETTINGS_STEP, SETTINGS_SET, SETTINGS_ACTIVATE, SETTINGS_BEGIN, SETTINGS_FINISH, SETTINGS_RESTART };
+enum { SETTINGS_DETACHED=2 };  // Finish after the game takes the settings page away.
 typedef struct {
     int id, kind, current, maximum;
     bool enabled;

@@ -1,5 +1,7 @@
 #include "ipc.h"
 #include "ui/menu.h"
+#include <pthread.h>
+#include <time.h>
 
 typedef struct {
     float low, low_hz, high, high_hz;
@@ -27,10 +29,11 @@ struct Mk8JoyConPair {
     SDL_Condition *wake;
     Mk8SwitchRumble wanted;
     Uint64 expires;
+    uint64_t epoch;
     bool neutral_first, closing, broken, drained;
 };
 
-// SDL's joystick lock also protects the player assignments and guest readback.
+// SDL's joystick lock protects the open handles and applied actuator state.
 static struct Mk8RumblePad {
     SDL_JoystickID id;
     Mk8Vibration side[2];
@@ -43,7 +46,73 @@ static struct Mk8RumblePad {
     Mk8SwitchRumble wanted, last;
     Uint64 expires_at;
     SDL_TimerID timer;
-} mk8_rumble_pads[1 + EXTRA_PADS];
+    uint64_t applied, epoch;
+} mk8_rumble_pads[2 * (1 + EXTRA_PADS)];
+
+static SDL_AtomicInt mk8_rumble_frame_pending;
+static _Atomic uint64_t mk8_presented_at;
+
+// The guest owns these requested values. The UI thread owns the SDL devices and consumes their snapshots.
+enum { MK8_OUTPUT_PADS = SDL_arraysize(mk8_rumble_pads), MK8_OUTPUT_QUEUE = 64 };
+static struct Mk8GuestPad {
+    SDL_JoystickID id;
+    uint64_t generation, issued;
+    Mk8Vibration side[2];
+} mk8_guest_pads[MK8_OUTPUT_PADS];
+static bool mk8_guest_paired[1 + EXTRA_PADS];
+static pthread_mutex_t mk8_guest_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t mk8_output_space = PTHREAD_COND_INITIALIZER;
+static struct Mk8OutputBatch {
+    unsigned mask;
+    uint64_t at;
+    struct Mk8GuestPad pad[MK8_OUTPUT_PADS];
+} mk8_output_queue[MK8_OUTPUT_QUEUE], mk8_expired_stops;
+static unsigned mk8_output_head, mk8_output_count;
+static bool mk8_output_exiting;
+static _Atomic uint64_t mk8_output_cancellation;
+
+// An expired maneuver must never replay after discovery. Keep one ordered stop per affected binding.
+static void mk8_retire_expired_output(Uint64 now) {
+    while (mk8_output_count) {
+        struct Mk8OutputBatch *batch = &mk8_output_queue[mk8_output_head];
+        if (now < batch->at + 250) break;
+        for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (batch->mask & (1u << i)) {
+            mk8_expired_stops.mask |= 1u << i;
+            mk8_expired_stops.pad[i] = batch->pad[i];
+        }
+        mk8_output_head = (mk8_output_head + 1) % MK8_OUTPUT_QUEUE;
+        --mk8_output_count;
+    }
+}
+
+static void mk8_sync_guest_rumble(void) {
+    pthread_mutex_lock(&mk8_guest_mutex);
+    memcpy(mk8_guest_paired, mk8_paired_slot, sizeof mk8_guest_paired);
+    for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) {
+        struct Mk8GuestPad *g = &mk8_guest_pads[i];
+        struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->id != g->id) {
+            ++g->generation;
+            g->id = p->id;
+            p->applied = g->issued = 0;
+        }
+        if (p->applied == g->issued) memcpy(g->side, p->side, sizeof g->side);
+    }
+    pthread_mutex_unlock(&mk8_guest_mutex);
+}
+
+// Publish under the joystick lock so an idle present need not wait for device discovery.
+static void mk8_publish_rumble_work(void) {
+    mk8_sync_guest_rumble();
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); ++i) {
+        struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->waiting_for_pair || (p->hd && p->expires_at) || p->low || p->high) {
+            SDL_SetAtomicInt(&mk8_rumble_frame_pending, 1);
+            return;
+        }
+    }
+    SDL_SetAtomicInt(&mk8_rumble_frame_pending, 0);
+}
 
 static bool mk8_joycon_endpoint(const SDL_hid_device_info *d, Uint16 product) {
     return d && d->vendor_id == 0x057e && d->product_id == product && d->path &&
@@ -94,7 +163,8 @@ static bool mk8_joycon_endpoints(SDL_Gamepad *device, SDL_hid_device *halves[2])
 }
 
 static bool mk8_pair_needs_neutral(const struct Mk8JoyConPair *p, Uint64 now) {
-    return p->closing || SDL_GetAtomicInt(&mk8_pair_exiting) || p->neutral_first || p->broken || now >= p->expires;
+    return p->closing || SDL_GetAtomicInt(&mk8_pair_exiting) || p->neutral_first || p->broken ||
+           now >= p->expires || p->epoch != atomic_load(&mk8_output_cancellation);
 }
 
 static void mk8_pair_release_radios(struct Mk8JoyConPair *p) {
@@ -193,11 +263,12 @@ static struct Mk8JoyConPair *mk8_pair_open(SDL_Gamepad *device) {
     return NULL;
 }
 
-static bool mk8_pair_request(struct Mk8JoyConPair *p, const Mk8SwitchRumble *next, Uint64 expires) {
+static bool mk8_pair_request(struct Mk8JoyConPair *p, const Mk8SwitchRumble *next, Uint64 expires, uint64_t epoch) {
     SDL_LockMutex(p->lock);
     if (!expires) p->neutral_first = true;
     p->wanted = *next;
     p->expires = expires;
+    p->epoch = epoch;
     bool available = !p->drained;
     SDL_SignalCondition(p->wake);
     SDL_UnlockMutex(p->lock);
@@ -212,14 +283,14 @@ static void mk8_pair_close(struct Mk8JoyConPair *p) {
     SDL_UnlockMutex(p->lock);
 }
 
-static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
-    SDL_LockJoysticks();
-    SDL_Gamepad *device = SDL_OpenGamepad(id);
+// Caller holds the joystick lock and owns the open handle.
+static void mk8_rumble_attach(int player, SDL_Gamepad *device) {
     if (device && SDL_GetBooleanProperty(SDL_GetGamepadProperties(device), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) {
+        SDL_JoystickID id = SDL_GetGamepadID(device);
         Uint16 product = SDL_GetGamepadProduct(device);
         struct Mk8RumblePad *p = &mk8_rumble_pads[player];
         *p = (struct Mk8RumblePad){.id = id, .product = product, .side = {mk8_silent, mk8_silent},
-                                  .wanted = mk8_switch_neutral};
+                                  .wanted = mk8_switch_neutral, .epoch = atomic_load(&mk8_output_cancellation)};
         // SDL 3.4 marks HIDAPI GUIDs with 'h'. Its combined driver only forwards basic rumble.
         if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && SDL_GetGamepadVendor(device) == 0x057e) {
             p->waiting_for_pair = product >= 0x2006 && product <= 0x2008 &&
@@ -230,7 +301,14 @@ static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
         // A settings rescan can move a just-stopped device into another slot.
         Uint64 now = SDL_GetTicks();
         if (p->hd && now < mk8_switch_reopen_after) SDL_Delay((Uint32)(mk8_switch_reopen_after - now));
+        mk8_publish_rumble_work();
     }
+}
+
+static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
+    SDL_LockJoysticks();
+    SDL_Gamepad *device = SDL_OpenGamepad(id);
+    mk8_rumble_attach(player, device);
     SDL_UnlockJoysticks();
     return device;
 }
@@ -298,6 +376,11 @@ static Uint32 SDLCALL mk8_switch_timer(void *userdata, SDL_TimerID timer, Uint32
     Uint32 next = 0;
     if (p->timer == timer) {
         Uint64 now = SDL_GetTicks();
+        if (p->epoch != atomic_load(&mk8_output_cancellation)) {
+            p->side[0] = p->side[1] = mk8_silent;
+            p->wanted = mk8_switch_neutral;
+            p->expires_at = 0;
+        }
         if (p->hd || p->stop_first) mk8_switch_write(p, now);
         if ((p->hd && p->expires_at) || p->stop_first || mk8_switch_playing(p)) {
             next = interval;
@@ -305,6 +388,7 @@ static Uint32 SDLCALL mk8_switch_timer(void *userdata, SDL_TimerID timer, Uint32
             p->timer = 0;
             if (!p->hd) mk8_rumble_basic(p, now);
         }
+        mk8_publish_rumble_work();
     }
     SDL_UnlockJoysticks();
     return next;
@@ -314,7 +398,7 @@ static void mk8_rumble_stop(struct Mk8RumblePad *p) {
     p->side[0] = p->side[1] = mk8_silent;
     p->wanted = mk8_switch_neutral;
     p->expires_at = 0;
-    if (p->pair) mk8_pair_request(p->pair, &p->wanted, 0);
+    if (p->pair) mk8_pair_request(p->pair, &p->wanted, 0, p->epoch);
     p->stop_first = mk8_switch_playing(p);
     if (p->stop_first) mk8_switch_write(p, SDL_GetTicks());
     if (p->low || p->high) {
@@ -343,6 +427,7 @@ static void mk8_rumble_close(int player, SDL_Gamepad *device) {
         if (p->last.report && p->sent_at + 30 > mk8_switch_reopen_after) mk8_switch_reopen_after = p->sent_at + 30;
         p->timer = 0;
         p->id = 0;
+        mk8_publish_rumble_work();
     }
     SDL_CloseGamepad(device);
     SDL_UnlockJoysticks();
@@ -361,6 +446,7 @@ static int SDLCALL mk8_pair_stop_output(void *unused) {
         }
         if (p->product == 0x2008 && (p->low || p->high)) mk8_rumble_stop(p);
     }
+    mk8_publish_rumble_work();
     SDL_UnlockJoysticks();
     SDL_SetAtomicInt(&mk8_pair_stop_done, 1);
     return 0;
@@ -368,6 +454,13 @@ static int SDLCALL mk8_pair_stop_output(void *unused) {
 
 void mk8_joycon_shutdown(void) {
     if (SDL_SetAtomicInt(&mk8_pair_exiting, 1)) return;
+    pthread_mutex_lock(&mk8_guest_mutex);
+    mk8_output_exiting = true;
+    mk8_output_count = 0;
+    mk8_expired_stops.mask = 0;
+    atomic_fetch_add(&mk8_output_cancellation,1);
+    pthread_cond_broadcast(&mk8_output_space);
+    pthread_mutex_unlock(&mk8_guest_mutex);
     if (SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_FREE && !SDL_GetAtomicInt(&mk8_pair_basic_mask)) return;
     // Keep even SDL's basic fallback and its joystick lock off the bounded window-exit path.
     Uint64 until = SDL_GetTicks() + 150;
@@ -379,10 +472,14 @@ void mk8_joycon_shutdown(void) {
            SDL_GetAtomicInt(&mk8_pair_lease) != MK8_PAIR_FREE)) SDL_Delay(1);
 }
 
-static struct Mk8RumblePad *mk8_rumble_pad(uint32_t handle) {
+static struct Mk8GuestPad *mk8_guest_rumble_pad(uint32_t handle) {
+    // Actuators are gone during the host's GPU/cache drain. The guest HID session is still open.
+    if (mk8_output_exiting) return NULL;
     unsigned player = (handle >> 8) & 255;
     if ((handle & 0xfffe00ffu) != 3 || player >= 1 + EXTRA_PADS) return NULL;
-    struct Mk8RumblePad *p = &mk8_rumble_pads[player];
+    // In a software pair the right grip has its own SDL device and output timer.
+    if ((handle & 0x10000u) && mk8_guest_paired[player]) player += 1 + EXTRA_PADS;
+    struct Mk8GuestPad *p = &mk8_guest_pads[player];
     return p->id ? p : NULL;
 }
 
@@ -458,7 +555,7 @@ static void mk8_rumble_apply(struct Mk8RumblePad *p, Uint64 now) {
     if (!active && mk8_switch_playing(p)) p->stop_first = true;
     p->expires_at = active ? now + 250 : 0;
     if (p->pair) {
-        if (!mk8_pair_request(p->pair, &p->wanted, p->expires_at)) {
+        if (!mk8_pair_request(p->pair, &p->wanted, p->expires_at, p->epoch)) {
             p->hd = false;
             p->expires_at = 0;
             mk8_rumble_basic(p, now);
@@ -479,10 +576,65 @@ static bool mk8_rumble_menu_open(void) {
 }
 
 static void mk8_rumble_frame(void) {
+    atomic_store(&mk8_presented_at, SDL_GetTicks());
+}
+
+void mk8_rumble_pump(void) {
+    pthread_mutex_lock(&mk8_guest_mutex);
+    mk8_retire_expired_output(SDL_GetTicks());
+    unsigned queued = mk8_output_count + (mk8_expired_stops.mask != 0);
+    pthread_mutex_unlock(&mk8_guest_mutex);
+    if (!queued && !SDL_GetAtomicInt(&mk8_rumble_frame_pending)) return;
     SDL_LockJoysticks();
     Uint64 now = SDL_GetTicks();
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) {
+    while (queued--) {
+        pthread_mutex_lock(&mk8_guest_mutex);
+        bool expired = mk8_expired_stops.mask != 0;
+        if (!expired && !mk8_output_count) {
+            pthread_mutex_unlock(&mk8_guest_mutex);
+            break;
+        }
+        struct Mk8OutputBatch batch;
+        if (expired) {
+            batch = mk8_expired_stops;
+            mk8_expired_stops.mask = 0;
+        } else {
+            batch = mk8_output_queue[mk8_output_head];
+            mk8_output_head = (mk8_output_head + 1) % MK8_OUTPUT_QUEUE;
+            --mk8_output_count;
+        }
+        uint64_t cancellation = atomic_load(&mk8_output_cancellation);
+        pthread_cond_broadcast(&mk8_output_space);
+        for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i)
+            if (batch.pad[i].generation != mk8_guest_pads[i].generation) batch.mask &= ~(1u << i);
+        pthread_mutex_unlock(&mk8_guest_mutex);
+        for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (batch.mask & (1u << i)) {
+            if (atomic_load(&mk8_output_cancellation) != cancellation) break;
+            struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+            p->epoch = cancellation;
+            p->applied = batch.pad[i].issued;
+            now = SDL_GetTicks();
+            if (expired || now >= batch.at + 250 || mk8_rumble_menu_open()) {
+                mk8_rumble_stop(p);
+            } else {
+                memcpy(p->side, batch.pad[i].side, sizeof p->side);
+                mk8_rumble_apply(p, now);
+            }
+        }
+    }
+    now = SDL_GetTicks();
+    Uint64 present = atomic_load(&mk8_presented_at);
+    static Uint64 last_present;
+    bool refresh = present != last_present && now < present + 250;
+    last_present = present;
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
         struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        uint64_t epoch = atomic_load(&mk8_output_cancellation);
+        if (p->epoch != epoch) {
+            p->epoch = epoch;
+            if (p->id) mk8_rumble_stop(p);
+            continue;
+        }
         if (p->waiting_for_pair) {
             if (now >= p->expires_at || mk8_rumble_menu_open()) mk8_rumble_stop(p);
             if (SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING) continue;
@@ -490,25 +642,39 @@ static void mk8_rumble_frame(void) {
         }
         if (p->hd && p->expires_at) {
             if (now >= p->expires_at || mk8_rumble_menu_open()) mk8_rumble_stop(p);
-            else if (p->pair) mk8_rumble_apply(p, now);
-            else p->expires_at = now + 250;
+            else if (refresh && p->pair) mk8_rumble_apply(p, present);
+            else if (refresh) p->expires_at = present + 250;
             continue;
         }
         if (!p->low && !p->high) continue;
         // Renew held effects while presenting. A presentation stall leaves a bounded pulse.
         if (now - p->sent_at >= 250 || mk8_rumble_menu_open()) mk8_rumble_stop(p);
-        else mk8_rumble_apply(p, now);
+        else if (refresh) mk8_rumble_apply(p, now);
     }
+    mk8_publish_rumble_work();
     SDL_UnlockJoysticks();
 }
 
 static void mk8_rumble_clear(void) {
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) mk8_rumble_stop(&mk8_rumble_pads[i]);
+    pthread_mutex_lock(&mk8_guest_mutex);
+    mk8_output_count = 0;
+    mk8_expired_stops.mask = 0;
+    atomic_fetch_add(&mk8_output_cancellation, 1);
+    pthread_cond_broadcast(&mk8_output_space);
+    for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) {
+        mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
+        mk8_rumble_pads[i].applied = ++mk8_guest_pads[i].issued;
+    }
+    pthread_mutex_unlock(&mk8_guest_mutex);
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) mk8_rumble_stop(&mk8_rumble_pads[i]);
+    mk8_publish_rumble_work();
 }
 
 static void mk8_rumble_focus(bool focused) {
     SDL_LockJoysticks();
+    pthread_mutex_lock(&mk8_guest_mutex);
     mk8_rumble_focused = focused;
+    pthread_mutex_unlock(&mk8_guest_mutex);
     if (!focused) mk8_rumble_clear();
     SDL_UnlockJoysticks();
 }
@@ -524,20 +690,52 @@ static bool mk8_valid_rumble_buffer(const IpcBuf *b) {
            (b->addr >= GUEST_LO && b->addr < GUEST_HI && b->size <= GUEST_HI - b->addr));
 }
 
+// Caller holds the guest mutex. A queued entry never retains pointers into guest memory.
+static bool mk8_queue_output(unsigned mask, Uint64 requested_at) {
+    if (!mask) return false;
+    bool wake = !mk8_output_count;
+    struct Mk8OutputBatch *batch = &mk8_output_queue[(mk8_output_head + mk8_output_count++) % MK8_OUTPUT_QUEUE];
+    batch->mask = mask;
+    batch->at = requested_at;
+    for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mask & (1u << i)) {
+        ++mk8_guest_pads[i].issued;
+        batch->pad[i] = mk8_guest_pads[i];
+    }
+    return wake;
+}
+
+static void mk8_wake_output(void) {
+    SDL_Event e = {.type = SDL_EVENT_USER};
+    SDL_PushEvent(&e);  // The UI also checks the queue after its next 16 ms event wait.
+}
+
 void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     const uint8_t *handles = req->data, *values = NULL;
     size_t count = 1;
+    bool wake = false;
     if (req->cmd == 204 || req->cmd == 205) {
         if (req->cmd == 204 && (!req->data || !req->data_size)) goto invalid;
-        SDL_LockJoysticks();
+        pthread_mutex_lock(&mk8_guest_mutex);
         if (req->cmd == 204) {
             mk8_rumble_permitted = (req->data[0] & 1) != 0;
-            if (!mk8_rumble_permitted) mk8_rumble_clear();
+            if (!mk8_rumble_permitted) {
+                unsigned stop = 0;
+                mk8_output_count = 0;
+                mk8_expired_stops.mask = 0;
+                atomic_fetch_add(&mk8_output_cancellation, 1);
+                for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mk8_guest_pads[i].id) {
+                    mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
+                    stop |= 1u << i;
+                }
+                if (!mk8_output_exiting) wake = mk8_queue_output(stop, SDL_GetTicks());
+                pthread_cond_broadcast(&mk8_output_space);
+            }
         } else {
             resp->data[0] = mk8_rumble_permitted;
             resp_size(resp, 1);
         }
-        SDL_UnlockJoysticks();
+        pthread_mutex_unlock(&mk8_guest_mutex);
+        if (wake) mk8_wake_output();
         return;
     }
     if (req->cmd == 206) {
@@ -553,14 +751,17 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         if (!handles || req->data_size < (req->cmd == 201 ? 4 + sizeof(Mk8Vibration) : 4)) goto invalid;
         if (req->cmd == 201) values = handles + 4;
     }
-    SDL_LockJoysticks();
-    unsigned changed = 0;
+    Uint64 requested_at = SDL_GetTicks();
+    pthread_mutex_lock(&mk8_guest_mutex);
+    uint64_t cancellation = atomic_load(&mk8_output_cancellation);
+    struct Mk8OutputBatch pending = {0};
+    unsigned sides = 0;
     bool enabled = mk8_rumble_focused && mk8_rumble_permitted && !mk8_rumble_menu_open();
     for (size_t i = 0; i < count; i++) {
         uint32_t handle;
         memcpy(&handle, handles + i * sizeof(handle), sizeof(handle));
         unsigned side = (handle >> 16) & 1;
-        struct Mk8RumblePad *p = mk8_rumble_pad(handle);
+        struct Mk8GuestPad *p = mk8_guest_rumble_pad(handle);
         if (req->cmd == 202) {
             memcpy(resp->data, p ? &p->side[side] : &mk8_silent, sizeof(Mk8Vibration));
             resp_size(resp, sizeof(Mk8Vibration));
@@ -569,15 +770,38 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
             memcpy(&value, values + i * sizeof(value), sizeof(value));
             value.low = mk8_amplitude(value.low);
             value.high = mk8_amplitude(value.high);
-            p->side[side] = enabled ? value : mk8_silent;
-            changed |= 1u << (p - mk8_rumble_pads);
+            unsigned slot = (unsigned)(p - mk8_guest_pads);
+            pending.pad[slot].generation = p->generation;
+            pending.pad[slot].side[side] = enabled ? value : mk8_silent;
+            pending.mask |= 1u << slot;
+            sides |= 1u << (2 * slot + side);
         }
     }
-    // A batch can contain both sides of several controllers. Publish once per player.
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) {
-        if (changed & (1u << i)) mk8_rumble_apply(&mk8_rumble_pads[i], SDL_GetTicks());
+    while (pending.mask && !mk8_output_exiting && cancellation == atomic_load(&mk8_output_cancellation)) {
+        Uint64 now = SDL_GetTicks();
+        mk8_retire_expired_output(now);
+        if (mk8_output_count < MK8_OUTPUT_QUEUE) break;
+        // Make room when the oldest entry expires even if device discovery still owns the UI.
+        struct timespec until;
+        timespec_get(&until,TIME_UTC);
+        until.tv_nsec += (long)(mk8_output_queue[mk8_output_head].at + 250 - now) * 1000000L;
+        until.tv_sec += until.tv_nsec / 1000000000L;
+        until.tv_nsec %= 1000000000L;
+        pthread_cond_timedwait(&mk8_output_space, &mk8_guest_mutex, &until);
     }
-    SDL_UnlockJoysticks();
+    if (cancellation != atomic_load(&mk8_output_cancellation)) pending.mask = 0;
+    for (unsigned slot = 0; slot < MK8_OUTPUT_PADS; ++slot) if (pending.mask & (1u << slot)) {
+        struct Mk8GuestPad *p = &mk8_guest_pads[slot];
+        if (p->generation != pending.pad[slot].generation) {
+            pending.mask &= ~(1u << slot);
+            continue;
+        }
+        for (unsigned side = 0; side < 2; ++side)
+            if (sides & (1u << (2 * slot + side))) p->side[side] = pending.pad[slot].side[side];
+    }
+    wake = mk8_queue_output(pending.mask, requested_at);
+    pthread_mutex_unlock(&mk8_guest_mutex);
+    if (wake) mk8_wake_output();
     return;
 invalid:
     resp->result = (420u << 9) | 11u;  // HIPC InvalidCmifRequest

@@ -29,6 +29,7 @@ class ControllerReassignmentTests(unittest.TestCase):
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 #define LOG(...) ((void)0)
 #define EXTRA_PADS 3
 typedef unsigned SDL_JoystickID;
@@ -36,7 +37,15 @@ typedef struct { unsigned id; } SDL_Gamepad;
 static SDL_Gamepad devices[]={{0},{1},{2},{3}};
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
 static bool scanned,p2;
+static bool mk8_explicit_slots;
+static void mk8_forget_seat(unsigned player) { assert(player<=EXTRA_PADS); }
+static int mk8_startup_preset;
+static struct { int joycon_mode; } g_settings;
+static bool mk8_set_joycon_mode(int mode) { abort(); }
+static bool mk8_assign_gamepads(const SDL_JoystickID slots[4][2]) { abort(); }
+static bool mk8_startup_layout(const char *layout,const SDL_JoystickID *ids,int n) { abort(); }
 static unsigned opens,closes,enumerations;
+static void mk8_reset_pause(unsigned player) { assert(player<=EXTRA_PADS); }
 static bool real_gamepad(unsigned id) { return id!=0; }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++;return id==1 ? NULL : &devices[id]; }
@@ -82,7 +91,8 @@ int main(void) {
                                      '-O1', '-UNDEBUG', str(root/'rescan.c'), '-o', str(exe)],
                                     env=compiler_env(), capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr[-3000:])
-            result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=10)
+            result = subprocess.run([str(exe)], env=dict(os.environ, MK8_GAMEPAD_LAYOUT=''),
+                                    capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_reassigned_virtual_controller_keeps_button_and_axis_releases(self):
@@ -96,8 +106,9 @@ int main(void) {
             start = full.index('static void mk8_open_gamepad(SDL_JoystickID id) {')
             discovery = full[start:full.index('\n}', start)+2]
             start = full.index('typedef struct {', full.index('// Vibration devices:'))
-            lifecycle = full[start:full.index('static struct Mk8RumblePad *mk8_rumble_pad(', start)]
+            lifecycle = full[start:full.index('static struct Mk8GuestPad *mk8_guest_rumble_pad(', start)]
             (root/'test.c').write_text(r'''
+#include <pthread.h>
 #include <SDL3/SDL.h>
 #include <assert.h>
 #include <math.h>
@@ -110,7 +121,10 @@ int main(void) {
 Settings g_settings;
 int16_t g_bind_pad[BIND_PAD_COUNT], g_bind_key[BIND_KEY_COUNT];
 bool padscript_active(void) { return false; }
+bool mk8_settings_shared_race(void) { return false; }
+void mk8_settings_pads_changed(void) { abort(); }
 ''' + source + lifecycle + r'''
+static void mk8_sync_sensors(void) {}
 static void style_changed(void) {}
 static void note_family(void) {}
 static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id) && SDL_IsJoystickVirtual(id); }
@@ -165,6 +179,7 @@ int main(void) {
             exe = root/'test.exe'
             result = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG',
                 '-I'+str(runtime), '-I'+str(deps/'include'), str(root/'test.c'),
+                str(ROOT/'runtime/mk8/support/joycon_modes.c'),
                 str(deps/'lib/libSDL3.dll.a'), '-o', str(exe)], env=compiler_env(), capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr[-3000:])
             env = dict(os.environ, PATH=str(deps/'bin')+os.pathsep+os.environ.get('PATH',''))

@@ -16,10 +16,11 @@ static SDL_JoystickID *virtual_ids(int *count) {
 
 // Use the actual prepared player-slot discovery and backend handoff with SDL
 // devices. Only game notifications and guest rumble bookkeeping are stubbed.
+#ifndef MK8_TEST_TITLE_INPUT
 #define EXTRA_PADS 3
 #define LOG(...) ((void)0)
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
-static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id); }
+static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id) && !mk8_steam_pad_deferred(id); }
 static bool pads_from_p2(void) { return false; }
 static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) { return SDL_OpenGamepad(id); }
 static void mk8_rumble_close(int player, SDL_Gamepad *p) { SDL_CloseGamepad(p); }
@@ -32,6 +33,7 @@ static void open_extra(SDL_JoystickID id) {
         if (!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id); return; }
 }
 #include "slots.inc"
+#endif
 
 // On Windows SDK builds also check our x64 ABI declarations against the OS header.
 #if __has_include(<GameInput.h>)
@@ -81,7 +83,12 @@ static HRESULT WINAPI read_state(GI *api, unsigned kind, GIDevice *d, GIReading 
     return S_OK;
 }
 
+#ifdef MK8_TEST_TITLE_INPUT
+extern void check_gameinput_title(SDL_JoystickID, SDL_JoystickID, uint32_t *);
+int steam_gamepads_title_test(void) {
+#else
 int main(void) {
+#endif
     assert(mk8_init_window_input() && !input);
     static const GIMethods api_methods = {.read=read_state};
     GI api = {&api_methods};
@@ -98,6 +105,25 @@ int main(void) {
     assert(pads[0].id && pads[1].id && first.refs==2 && second.refs==2);
     SDL_Gamepad *p1=SDL_OpenGamepad(pads[0].id), *p2=SDL_OpenGamepad(pads[1].id);
     assert(p1 && p2);
+#ifdef MK8_TEST_TITLE_INPUT
+    SDL_VirtualJoystickDesc silent;
+    SDL_INIT_INTERFACE(&silent);
+    silent.type=SDL_JOYSTICK_TYPE_GAMEPAD; silent.naxes=6; silent.nbuttons=15;
+    silent.vendor_id=0x045e; silent.product_id=0x028e;
+    SDL_JoystickID ghost=SDL_AttachVirtualJoystick(&silent);
+    assert(ghost);
+    InterlockedExchange(&dirty,1);
+    mk8_poll_steam_gamepads();
+    assert(mk8_steam_pad_deferred(ghost));
+    check_gameinput_title(pads[0].id, pads[1].id, &second.state.buttons);
+    assert(SDL_DetachVirtualJoystick(ghost));
+    InterlockedExchange(&dirty,1);
+    device_changed(0,NULL,&first.device,0,0,connected);
+    device_changed(0,NULL,&second.device,0,0,connected);
+    awake=NULL;
+    mk8_poll_steam_gamepads();
+    assert(!first.refs && !second.refs);
+#else
     first.state=(GIState){.buttons=0xc00,.lx=-1,.ly=1,.rt=1};
     second.state=(GIState){.buttons=4,.lx=1};
     SDL_UpdateJoysticks();
@@ -234,6 +260,8 @@ int main(void) {
     assert(SDL_DetachVirtualJoystick(generic));
     InterlockedExchange(&dirty,1); mk8_poll_steam_gamepads();
     SDL_CloseGamepad(pad);
+#endif
     SDL_CloseGamepad(p1); SDL_CloseGamepad(p2);
     SDL_Quit();
+    return 0;
 }

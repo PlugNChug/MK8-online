@@ -1,9 +1,8 @@
 """Keep trying startup devices for player one after a failed SDL open."""
 
-HELPER = '''extern bool mk8_steam_pad_deferred(SDL_JoystickID id);
-// MK8: startup enumeration and hotplug share the same slot assignment.
+HELPER = '''// MK8: startup enumeration and hotplug share the same slot assignment.
 static void mk8_open_gamepad(SDL_JoystickID id) {
-    if (mk8_steam_pad_deferred(id) || !real_gamepad(id) || (pad && SDL_GetGamepadID(pad) == id)) return;
+    if (!real_gamepad(id) || (pad && SDL_GetGamepadID(pad) == id)) return;
     for (int i = 0; i < EXTRA_PADS; i++)
         if (extra_pad[i] && SDL_GetGamepadID(extra_pad[i]) == id) return;
     if (pad || pads_from_p2()) { open_extra(id); return; }
@@ -51,7 +50,10 @@ def prepare(runtime):
     path = runtime / 'hle/input.c'
     text = path.read_text(encoding='utf-8')
     anchor = 'void input_handle_event(const SDL_Event *e) {'
-    for old, new in [(anchor, HELPER + anchor),
+    eligible = 'static bool real_gamepad(SDL_JoystickID id) {'
+    for old, new in [(eligible, eligible + '\n    extern bool mk8_steam_pad_deferred(SDL_JoystickID);\n'
+                             '    if (mk8_steam_pad_deferred(id)) return false;'),
+                     (anchor, HELPER + anchor),
                      (SCAN, '        for (int i = 0; i < n; i++) mk8_open_gamepad(ids[i]);'),
                      (ADDED, '        mk8_open_gamepad(e->gdevice.which);')]:
         if text.count(old) != 1:

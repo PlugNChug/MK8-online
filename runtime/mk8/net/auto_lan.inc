@@ -8,6 +8,7 @@
 // game by net/vlan.c). Without the beacon a guest never presses A: on an empty list A would create a room. Any wait
 // that runs out stops the sequence; the player goes on by hand. Character and rules stay the player's.
 #include <stdatomic.h>
+#include <stdbool.h>
 
 static _Atomic int mk8_auto_menu, mk8_auto_vlan, mk8_auto_room;
 
@@ -61,18 +62,30 @@ static const AutoStep auto_guest[] = {
     {AUTO_NONE, 150, 0, AUTO_A, 6, "lobby: join"},
 };
 
+static _Atomic int mk8_auto_lan_owns_title = -1;
+
+static int mk8_auto_lan_role(void) {
+    const char *mode = getenv("MK8_AUTO_LAN"), *slot = getenv("LARECOMP_LAN_SLOT");
+    if (!mode || !getenv("LARECOMP_LAN_RELAY")) return 0;
+    if (!strcmp(mode, "host")) return 1;
+    if (!strcmp(mode, "guest")) return 2;
+    if (!strcmp(mode, "1")) return slot && atoi(slot) == 0 ? 1 : 2;
+    return 0;
+}
+
+// The stock LAN sequence supplies its own title confirm, including before its first input frame.
+bool mk8_auto_lan_requested(void) {
+    int active = mk8_auto_lan_owns_title;
+    return active < 0 ? mk8_auto_lan_role() != 0 : active != 0;
+}
+
 static void mk8_auto_lan_frame(uint64_t frame) {
     static int role = -1;  // 0 off, 1 host, 2 guest
     static size_t step;
     static uint64_t since, busy_until;
     if (role < 0) {
-        const char *mode = getenv("MK8_AUTO_LAN"), *slot = getenv("LARECOMP_LAN_SLOT");
-        role = 0;
-        if (mode && getenv("LARECOMP_LAN_RELAY")) {
-            if (!strcmp(mode, "host")) role = 1;
-            else if (!strcmp(mode, "guest")) role = 2;
-            else if (!strcmp(mode, "1")) role = slot && atoi(slot) == 0 ? 1 : 2;
-        }
+        role = mk8_auto_lan_role();
+        mk8_auto_lan_owns_title = role != 0;
         if (role) LOG("[mk8:auto-lan] entering the LAN room as %s (experimental)\n", role == 1 ? "host" : "guest");
         since = frame;
     }
@@ -93,6 +106,7 @@ static void mk8_auto_lan_frame(uint64_t frame) {
         if (frame - since > s->timeout) {
             LOG("[mk8:auto-lan] stopped at \"%s\" (frame %llu): continue by hand\n", s->what, (unsigned long long)frame);
             role = 0;
+            mk8_auto_lan_owns_title = 0;
         }
         return;
     }
@@ -110,6 +124,7 @@ static void mk8_auto_lan_frame(uint64_t frame) {
     busy_until = frame + s->hold;
     since = frame + s->hold;
     if (++step == count) {
+        mk8_auto_lan_owns_title = 0;
         LOG("[mk8:auto-lan] done: choose your character\n");
         if (role == 1) step = (size_t)-1;
     }

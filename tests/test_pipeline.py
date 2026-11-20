@@ -244,6 +244,9 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             layout.write_bytes(b'authored settings menu')
             common_layout = layout.with_name('common.sarc')
             common_layout.write_bytes(b'authored settings common layout')
+            controller_layout = output/'controller-menu/romfs/UI/cmn/common.sarc'
+            controller_layout.parent.mkdir(parents=True)
+            controller_layout.write_bytes(common_layout.read_bytes())
             (local/'candidate.json').write_text(json.dumps({'executable': pipeline.file_record(exe),
                 'files': {'gamelib': pipeline.file_record(game)}, 'data_root': str(local/'game-data/test'),
                 'gameplay_verified': False}))
@@ -260,6 +263,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(candidate['files']['settings-layout'], pipeline.file_record(layout))
             self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
+            self.assertEqual(candidate['files']['controller-layout'], pipeline.file_record(controller_layout))
             self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertEqual(native.read_bytes(), b'{"identity": "fixture", "object_files": []}')

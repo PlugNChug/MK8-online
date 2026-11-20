@@ -425,6 +425,8 @@ def prepare_host_sources(source, output):
     prepare_settings_menu(runtime)
     from joycon_modes import prepare as prepare_joycon_modes
     prepare_joycon_modes(runtime)
+    from mixed_gamepads import prepare as prepare_mixed_gamepads
+    prepare_mixed_gamepads(runtime)
     return runtime
 
 
