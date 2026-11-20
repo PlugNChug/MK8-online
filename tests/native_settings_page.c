@@ -779,6 +779,17 @@ int main(void) {
     ST64(title_manager+0xc68,title_page);
     ST64(title_page,MAIN_BASE+0x127cb38);
     native_style=false;
+    // The stock title can buffer an advance in its entrance animation. Returning
+    // from the main menu can add subphase 3 before the ordinary interactive phase.
+    ST32(title_page+0x120,3); ST32(title_page+0x124,0);
+    mk8_settings_page_frame(title_manager); assert(!title_active);
+    ST32(title_page+0x124,1);
+    auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
+    auto_lan=false; mk8_settings_page_frame(title_manager); assert(title_active);
+    ST32(title_page+0x124,2);
+    mk8_settings_page_frame(title_manager); assert(title_active);
+    ST32(title_page+0x124,3);
+    mk8_settings_page_frame(title_manager); assert(title_active);
     ST32(title_page+0x120,4); ST32(title_page+0x124,0);
     mk8_settings_page_frame(title_manager); assert(title_active);
     auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);

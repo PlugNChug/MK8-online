@@ -1397,8 +1397,13 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
 void mk8_settings_page_frame(uint64_t manager) {
     uint64_t end=HEAP_BASE+kernel_heap_size();
     uint64_t page=race_heap(manager,0xc70,end) ? LD64(manager+0xc68) : 0;
-    mk8_title_input_active(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 &&
-                           LD32(page+0x120)==4 && LD32(page+0x124)==0 && !mk8_auto_lan_requested());
+    bool title_input=false;
+    if(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 && !mk8_auto_lan_requested()) {
+        unsigned phase=LD32(page+0x120),step=LD32(page+0x124);
+        // The title buffers confirm late in its entrance and can skip the ordinary wait (4/0).
+        title_input=(phase==3 && step>=1 && step<=3) || (phase==4 && step==0);
+    }
+    mk8_title_input_active(title_input);
     unsigned players=shared_race_scene(manager);
     if (players != shared_race) {
         mk8_input_race_players(players);
