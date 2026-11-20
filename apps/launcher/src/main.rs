@@ -5,6 +5,7 @@ mod console;
 #[cfg(debug_assertions)]
 mod debug_web;
 mod fonts;
+mod fsr;
 mod game_session;
 mod game_settings;
 #[cfg(windows)]
@@ -149,6 +150,16 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    }
+    if args.get(1).is_some_and(|arg| arg == "--fsr-install") {
+        let code = match fsr::install::run_from_stdin() {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("{error}");
+                1
+            }
+        };
+        std::process::exit(code);
     }
     if let Some(mode) = args
         .get(1)

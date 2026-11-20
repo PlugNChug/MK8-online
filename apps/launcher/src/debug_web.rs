@@ -11,9 +11,9 @@ pub(crate) fn asset(
     let (file, mime) = match path {
         "/" => ("index.html", "text/html; charset=utf-8"),
         "/style.css" | "/preview.css" | "/workspace.css" | "/installation.css"
-        | "/mii-model.css" => (&path[1..], "text/css; charset=utf-8"),
+        | "/mii-model.css" | "/fsr.css" => (&path[1..], "text/css; charset=utf-8"),
         "/app.js" | "/workspace.js" | "/installation.js" | "/storyboard.js" | "/preview.js"
-        | "/i18n.js" | "/mii-composer.js" | "/mii-model.js" | "/mii-glb.js" => {
+        | "/i18n.js" | "/mii-composer.js" | "/mii-model.js" | "/mii-glb.js" | "/fsr.js" => {
             (&path[1..], "text/javascript; charset=utf-8")
         }
         "/en.json" | "/es.json" => (&path[1..], "application/json; charset=utf-8"),

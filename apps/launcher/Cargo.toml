@@ -19,6 +19,8 @@ mk8-session = { path = "../../crates/session" }
 mk8-transport = { path = "../../crates/transport" }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+libloading = "0.8"
 tiny_http = "0.12"
 tauri = { version = "2", features = [] }
 rfd = "0.17"
@@ -28,6 +30,5 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Syste
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
-libloading = "0.8"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }

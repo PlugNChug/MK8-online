@@ -10,10 +10,12 @@
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/installation.css" />
     <link rel="stylesheet" href="/workspace.css" />
+    <link rel="stylesheet" href="/fsr.css" />
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/workspace.js" defer></script>
     <script src="/installation.js" defer></script>
+    <script src="/fsr.js" defer></script>
   </head>
   <body>
     <div id="notice-popup" hidden>
@@ -37,6 +39,7 @@
         <hr class="nav-divider" />
         <button class="tab active" data-tab="install" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg><span>Instalar</span></button>
         <button class="tab" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16m8-16v16m8-16v16M1 8h6m2 8h6m2-7h6"/></svg><span>Configurações</span></button>
+        <button class="tab" data-tab="fsr" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16 9 7l4 7 3-5 4 9"/><path d="M3 20h18"/></svg><span>FSR</span></button>
         <button class="tab" data-tab="support" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 4 3c-1 .5-1 1-1 2m0 3h.01"/></svg><span>Suporte</span></button>
       </nav>
 
@@ -294,6 +297,86 @@
             <p class="fine">Baixe o CTGP Deluxe em <a href="https://www.ctgpdx.com/download" target="_blank" rel="noopener">ctgpdx.com</a>, para uso pessoal. O MK8-online não distribui o pacote: ele é lido da sua cópia e fica só neste computador.</p>
           </article>
           <p class="hint">F1 ou Esc abre o menu durante o jogo. F11 ou Alt+Enter alterna a tela cheia. Salas continuam na aba Multijogador.</p>
+        </section>
+
+        <!-- FSR -->
+        <section id="fsr" class="panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h1>FSR</h1>
+              <p class="muted">Ampliação e geração de quadros da AMD. Os componentes são baixados e compilados neste computador; nada da AMD vem dentro do launcher.</p>
+            </div>
+            <span id="fsr-state" class="pill">Não instalado</span>
+          </div>
+
+          <div class="grid2">
+            <article class="card">
+              <h2>Ampliação</h2>
+              <label class="fsr-choice"><span>Versão</span>
+                <select id="fsr-upscaling">
+                  <option value="off">Desativada (FSR 1 / bilinear)</option>
+                  <option value="3.1.6">FSR 3.1.6</option>
+                  <option value="4.1.2">FSR 4.1.2</option>
+                </select>
+              </label>
+              <div class="fsr-path-row">
+                <label>Biblioteca do provedor FFX (.so)<input id="fsr-provider" spellcheck="false" placeholder="Opcional: biblioteca do seu provedor" /></label>
+                <button type="button" class="ghost" data-browse="fsr-provider" data-kind="fsr-library" aria-label="Escolher o provedor FFX">Escolher</button>
+              </div>
+              <label class="settings-check" id="fsr-legacy-row"><input type="checkbox" id="fsr-legacy" />ABI legada (1.x)</label>
+              <p id="fsr-upscaling-hint" class="hint">O runtime carrega a biblioteca escolhida. Sem uma biblioteca própria, a opção fica indisponível no jogo.</p>
+            </article>
+
+            <article class="card">
+              <h2>Geração de quadros</h2>
+              <label class="fsr-choice"><span>Modo</span>
+                <select id="fsr-fg">
+                  <option value="off">Desativada</option>
+                  <option value="fsr3">FSR 3</option>
+                  <option value="fsr4" disabled title="Indisponível até os modelos do provedor serem instalados">FSR 4 MLFI — aguardando assets</option>
+                </select>
+              </label>
+              <p id="fsr-fg-hint" class="hint">FSR 3 usa o provedor de frame generation compilado abaixo. FSR 4 MLFI fica visível, mas desativado: os modelos não fazem parte do SDK e ainda não foram instalados.</p>
+              <p id="fsr-fg-state" class="hint" role="status"></p>
+            </article>
+          </div>
+
+          <article class="card" aria-labelledby="fsr-install-title">
+            <div class="fsr-state-row">
+              <h2 id="fsr-install-title">Componentes AMD FidelityFX</h2>
+              <span id="fsr-install-state" class="pill">Não instalado</span>
+            </div>
+            <p id="fsr-install-intro" class="hint">O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila o provedor localmente. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.</p>
+            <div id="fsr-progress" class="fsr-progress" hidden>
+              <div class="meter-row"><span id="fsr-progress-text">Preparando…</span><b id="fsr-progress-pct">0%</b></div>
+              <div class="bar"><i id="fsr-progress-bar"></i></div>
+            </div>
+            <div class="row">
+              <button type="button" id="fsr-license-load" class="ghost">Ler licença da AMD</button>
+              <button type="button" id="fsr-license-toggle" class="ghost" hidden>Ocultar licença</button>
+              <button type="button" id="fsr-install" class="primary" disabled>Baixar e preparar</button>
+              <button type="button" id="fsr-cancel" class="ghost" hidden>Cancelar</button>
+              <button type="button" class="link" data-log="fsr-log">Ver log</button>
+            </div>
+            <section id="fsr-license-box" class="fsr-license" hidden aria-labelledby="fsr-license-title">
+              <h3 id="fsr-license-title">Licença do AMD FidelityFX SDK 2.4.0</h3>
+              <p id="fsr-license-source" class="hint">Texto oficial de <code>docs/license.md</code>, tag v2.4.0, conferido por tamanho e SHA-256.</p>
+              <pre id="fsr-license-text" tabindex="0" role="region" aria-labelledby="fsr-license-title">Carregue a licença da AMD para ler os termos.</pre>
+              <div class="fsr-license-actions">
+                <label><input type="checkbox" id="fsr-license-accept" />Li e aceito os termos da licença da AMD</label>
+                <button type="button" id="fsr-license-save" class="primary" disabled>Aceitar termos</button>
+              </div>
+            </section>
+            <p id="fsr-install-detail" class="hint fsr-install-note" role="status"></p>
+            <p id="fsr-versions" class="hint"></p>
+            <div class="fsr-path-row">
+              <label>Compilador DXC<input id="fsr-dxc" spellcheck="false" placeholder="Automático: MK8_DXC, pasta de ferramentas ou PATH" /></label>
+              <button type="button" class="ghost" data-browse="fsr-dxc" data-kind="dxc" aria-label="Escolher o compilador DXC">Escolher</button>
+            </div>
+            <p id="fsr-dxc-detail" class="hint"></p>
+            <pre id="fsr-log" class="log" aria-label="Log da instalação FSR" hidden>Nenhuma instalação do FSR iniciada.</pre>
+            <p class="fine">O download usa a URL oficial fixada no código. Se o arquivo não tiver o tamanho ou o SHA-256 esperados, nada é instalado e a página mostra o valor recebido. FSR 4 MLFI permanece desativado até os modelos serem fornecidos.</p>
+          </article>
         </section>
         <!-- Jogar -->
         <section id="play" class="panel" hidden>

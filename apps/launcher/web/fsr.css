@@ -1,0 +1,106 @@
+/* FSR page: the launcher's own layout, using the shared cards and controls. */
+.fsr-choice {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.fsr-choice:last-child {
+  margin-bottom: 0;
+}
+.fsr-choice > span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.fsr-choice small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.fsr-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: end;
+}
+.fsr-path-row input {
+  min-width: 0;
+}
+#fsr-legacy-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+#fsr-legacy-row input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.fsr-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.8rem;
+}
+.fsr-state-row .pill[data-state="ready"] {
+  border-color: color-mix(in srgb, var(--ok) 50%, var(--line-2));
+  color: var(--ok);
+}
+.fsr-state-row .pill[data-state="failed"] {
+  border-color: color-mix(in srgb, var(--bad) 50%, var(--line-2));
+  color: var(--bad);
+}
+.fsr-state-row .pill[data-state="building"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2));
+  color: var(--accent);
+}
+.fsr-progress {
+  margin-top: 0.75rem;
+}
+.fsr-progress .bar {
+  margin-top: 0.45rem;
+}
+.fsr-license {
+  margin-top: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 0.9rem;
+}
+.fsr-license pre {
+  max-height: min(42vh, 420px);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.6rem 0 0.8rem;
+  padding: 0.75rem;
+  border-radius: 9px;
+  background: var(--surface);
+  font: 0.78rem/1.45 var(--mono);
+  color: var(--text);
+}
+.fsr-license pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fsr-license-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+}
+.fsr-license-actions label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+}
+.fsr-license-actions input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.fsr-install-note {
+  margin-top: 0.5rem;
+}
+.fsr-mlfi {
+  opacity: 0.9;
+}
