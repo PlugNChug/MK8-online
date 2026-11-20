@@ -232,7 +232,7 @@ def emit_blob(mod, guard):
         lines.append(f"static const uint32_t {ident}_{field}_counts[] = {{{','.join(['1'] * len(values))}}};")
         lines.append(f"static const uint32_t {ident}_{field}_spaces[] = {{{','.join(['0'] * len(values))}}};")
     lines.append(
-        "const FfxShaderBlob %s = {\n"
+        "extern const FfxShaderBlob %s = {\n"
         "    %s_data, sizeof(%s_data), \"CS\",\n"
         "    %d, %d, %d, %d, %d, %d, 0,\n"
         "    %s_cbv_names, %s_cbv_bind, %s_cbv_bind_counts, %s_cbv_bind_spaces,\n"
