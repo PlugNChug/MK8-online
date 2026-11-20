@@ -45,6 +45,20 @@ static struct Mk8RumblePad {
     SDL_TimerID timer;
 } mk8_rumble_pads[2 * (1 + EXTRA_PADS)];
 
+static SDL_AtomicInt mk8_rumble_frame_pending;
+
+// Publish under the joystick lock so an idle present need not wait for device discovery.
+static void mk8_publish_rumble_work(void) {
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); ++i) {
+        struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->waiting_for_pair || (p->hd && p->expires_at) || p->low || p->high) {
+            SDL_SetAtomicInt(&mk8_rumble_frame_pending, 1);
+            return;
+        }
+    }
+    SDL_SetAtomicInt(&mk8_rumble_frame_pending, 0);
+}
+
 static bool mk8_joycon_endpoint(const SDL_hid_device_info *d, Uint16 product) {
     return d && d->vendor_id == 0x057e && d->product_id == product && d->path &&
            d->bus_type == SDL_HID_API_BUS_BLUETOOTH && d->usage_page == 1 && d->usage == 5 &&
@@ -230,6 +244,7 @@ static void mk8_rumble_attach(int player, SDL_Gamepad *device) {
         // A settings rescan can move a just-stopped device into another slot.
         Uint64 now = SDL_GetTicks();
         if (p->hd && now < mk8_switch_reopen_after) SDL_Delay((Uint32)(mk8_switch_reopen_after - now));
+        mk8_publish_rumble_work();
     }
 }
 
@@ -311,6 +326,7 @@ static Uint32 SDLCALL mk8_switch_timer(void *userdata, SDL_TimerID timer, Uint32
             p->timer = 0;
             if (!p->hd) mk8_rumble_basic(p, now);
         }
+        mk8_publish_rumble_work();
     }
     SDL_UnlockJoysticks();
     return next;
@@ -349,6 +365,7 @@ static void mk8_rumble_close(int player, SDL_Gamepad *device) {
         if (p->last.report && p->sent_at + 30 > mk8_switch_reopen_after) mk8_switch_reopen_after = p->sent_at + 30;
         p->timer = 0;
         p->id = 0;
+        mk8_publish_rumble_work();
     }
     SDL_CloseGamepad(device);
     SDL_UnlockJoysticks();
@@ -367,6 +384,7 @@ static int SDLCALL mk8_pair_stop_output(void *unused) {
         }
         if (p->product == 0x2008 && (p->low || p->high)) mk8_rumble_stop(p);
     }
+    mk8_publish_rumble_work();
     SDL_UnlockJoysticks();
     SDL_SetAtomicInt(&mk8_pair_stop_done, 1);
     return 0;
@@ -487,6 +505,7 @@ static bool mk8_rumble_menu_open(void) {
 }
 
 static void mk8_rumble_frame(void) {
+    if (!SDL_GetAtomicInt(&mk8_rumble_frame_pending)) return;
     SDL_LockJoysticks();
     Uint64 now = SDL_GetTicks();
     for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
@@ -507,11 +526,13 @@ static void mk8_rumble_frame(void) {
         if (now - p->sent_at >= 250 || mk8_rumble_menu_open()) mk8_rumble_stop(p);
         else mk8_rumble_apply(p, now);
     }
+    mk8_publish_rumble_work();
     SDL_UnlockJoysticks();
 }
 
 static void mk8_rumble_clear(void) {
     for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) mk8_rumble_stop(&mk8_rumble_pads[i]);
+    mk8_publish_rumble_work();
 }
 
 static void mk8_rumble_focus(bool focused) {
@@ -585,6 +606,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
         if (changed & (1u << i)) mk8_rumble_apply(&mk8_rumble_pads[i], SDL_GetTicks());
     }
+    if (changed) mk8_publish_rumble_work();
     SDL_UnlockJoysticks();
     return;
 invalid:

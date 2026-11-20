@@ -221,6 +221,23 @@ static void send_pair(const uint32_t handles[2],float low,float high) {
     const float values[2][4]={{low,160.f,high,320.f},{low,160.f,high,320.f}};
     send_batch(handles,values);
 }
+static int SDLCALL present_idle_frame(void *done) {
+    mk8_rumble_frame();
+    SDL_SignalSemaphore(done);
+    return 0;
+}
+static void check_idle_frame(void) {
+    SDL_Semaphore *done=SDL_CreateSemaphore(0);
+    CHECK(done);
+    SDL_LockJoysticks();  /* Discovery may hold this lock while a sensor is enabled. */
+    SDL_Thread *frame=SDL_CreateThread(present_idle_frame,"idle-rumble-frame",done);
+    CHECK(frame);
+    bool finished=SDL_WaitSemaphoreTimeout(done,1000);
+    SDL_UnlockJoysticks();
+    SDL_WaitThread(frame,NULL);
+    SDL_DestroySemaphore(done);
+    CHECK(finished && "an idle presentation frame waited for the joystick lock");
+}
 static void readback(uint32_t handle,float low,float high) {
     IpcReq req={.cmd=202,.data=(const uint8_t *)&handle,.data_size=4};
     IpcResp resp={0};
@@ -544,6 +561,8 @@ static void joycon_output(void) {
         CHECK(pad && mk8_rumble_pads[0].waiting_for_pair && live_halves==2);
         send_tone(h[0],.25f,160,0,320);
         mk8_rumble_close(0,pad);
+        pad=mk8_rumble_open(0,id);
+        CHECK(pad && mk8_rumble_pads[0].waiting_for_pair);
     }
     SDL_SignalSemaphore(release_write);
     SDL_WaitThread(poller,NULL);SDL_WaitThread(sender,NULL);
@@ -551,8 +570,10 @@ static void joycon_output(void) {
     wait_pair_closed();
     CHECK(raw_active[1]==previous_right);
     for(int i=0;i<2;i++) expect_raw(i,neutral,neutral);
+    /* A newly attached pair must finish discovery even without a new vibration request. */
+    mk8_rumble_frame();
+    CHECK(mk8_rumble_pads[0].pair && !mk8_rumble_pads[0].waiting_for_pair && live_halves==2);
     /* Without another presented frame, the queued tone expires while the first half is blocked. */
-    pad=mk8_rumble_open(0,id);
     int before_expiry=raw_writes[0];
     block_next_left=true;
     send_tone(h[0],.3f,160,0,320);
@@ -623,6 +644,7 @@ int main(void) {
     CHECK(!pulse[0].low && !pulse[0].high && pulse[1].calls==second);
     send_pair(p2,0,0);
     CHECK(!pulse[1].low && !pulse[1].high);
+    check_idle_frame();
     readback(p1[0],0,0);
     readback(p2[0],0,0);
     readback(p2[1],0,0);
