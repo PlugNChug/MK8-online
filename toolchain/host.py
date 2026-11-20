@@ -414,6 +414,11 @@ def prepare_host_sources(source, output):
     # MK8_DLSS_FG; it does not touch the FSR paths when the variable is unset.
     from dlss_fg import prepare as prepare_dlss_fg
     prepare_dlss_fg(runtime)
+    # XeSS 2.x/3.x: VK_EXT_mutable_descriptor_type + mutableDescriptorType, gated
+    # on MK8_XESS; the bridge's own device-extension query is not enough because
+    # the device has already been created by then.
+    from xess import prepare as prepare_xess
+    prepare_xess(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
