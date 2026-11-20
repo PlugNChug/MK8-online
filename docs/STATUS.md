@@ -41,6 +41,22 @@ submit concluído em vez de esperar o relatório pendente; `tests/test_occlusion
 compilado nativamente neste host; o controle negativo com o gate desativado falha). Não validado em execução — falta
 host ocioso. `gameplay_verified` continua falso.
 
+## Verificação Windows — 20/11/2026
+
+O launcher Windows e o runtime host foram compilados da árvore `f5949f1` com o
+alvo `x86_64-pc-windows-gnu` (Zig 0.17.0; launcher Rust 1.96.0). O launcher
+abriu o servidor local e respondeu `HTTP 200` no Wine 11.22 e no Proton-GE
+11-12. O runtime carregou os três módulos, montou o RomFS, criou dispositivo e
+swapchain Vulkan (RADV, 1280x720), a janela NVN e o dispositivo de áudio, mas
+**parou antes do primeiro quadro** em `nn::crypto::detail::bigint_mod_mult`
+(`no function at 7004004c30`). O mesmo RomFS boota no runtime Linux existente;
+a diferença é do lado Windows. `scripts/runtime-dlls.py` também precisou
+resolver DLLs empacotadas como hardlink (`zlib1.dll`) e System32 com maiúsculas
+em host sensível a caixa — sem isso a etapa Ferramentas falha em uma máquina
+Windows nova. Detalhes, comandos, hashes e o que falta em
+[WINDOWS-2026-11-20.md](WINDOWS-2026-11-20.md). `gameplay_verified` e
+`multiplayer_verified` continuam falsos.
+
 ## Pausas de vários segundos: importação do heap guest — 19/11/2026
 
 As pausas de 0,4–18 s que sobravam no perfil não eram orçamento de shader nem a fila de apresentação: eram a importação do heap do jogo como **uma única alocação host-pointer** (`VK_EXT_external_memory_host`), 3.100 MB fixados no primeiro uso da GPU. Com `toolchain/submit_profile.py`, toda submissão ≥1 s tinha `copies 0 layouts 0 full 0` e a divisão `lock`/`call` deu `lock 0,0` — o tempo estava dentro de `vkQueueSubmit2`. `strace -T` registrou 2.886 ioctls `AMDGPU_CS`, 15,3 s de tempo de kernel e 1.147 retornos `EAGAIN`; `LARECOMP_VK_NO_GMEM=1` eliminou **todas** as pausas, e `MK8_GMEM_MB` mostrou que o custo cresce com o tamanho importado.
