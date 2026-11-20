@@ -110,6 +110,49 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   its model banks exist only in AMD's signed DLL. The source-built provider is therefore **FSR 3.1.7 frame
   generation**; FSR 4 MLFI delivery is tracked in `docs/FSR4-MLFI.md`.
 
+## Runtime integration: native frame generation (20/11/2026)
+
+- **Toggle:** `MK8_FSR_FG=fsr3` (default off). Any other non-empty value is ignored with one log line. The provider
+  is loaded from `MK8_FSR_FG_LIB`, else `$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so`,
+  else `$HOME/.local/share/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so`.
+- **Patch:** `toolchain/fsr_fg.py` runs last in `toolchain/host.py` (after the WSI profiling patches it wraps). It
+  finds a second present-capable queue family with two queues (RADV: the compute family), requests game/present/
+  acquire queues at device creation, replaces the window swapchain with the FFX proxy, and records the per-frame
+  `ffxDispatchDescFrameGenerationPrepareV2` in the game's command buffer before its submission. The present is
+  routed without the game's queue lock (the provider's present thread submits through that lock).
+- **Bridge:** `runtime/mk8/graphics/fsr_fg.cpp` enables only when the swapchain provider reports exactly
+  **3.1.7**, parses that into `ffxCreateContextDescFrameGenerationSwapChainVersionVK`, creates the swapchain
+  context with `ffxCreateContextDescFrameGenerationSwapChainVK` and the frame-generation effect context with
+  `ffxCreateContextDescFrameGeneration` + `ffxCreateBackendVKDesc`, and routes acquire/present through
+  `ffxQueryDescSwapchainReplacementFunctionsVK`. Any failure disables the bridge, restores the original swapchain
+  and logs one reason; it never returns a fake success.
+- **Inputs:** `runtime/mk8/graphics/fsr.cpp` shares the captured scene depth and the camera motion-vector compute
+  with the prepare dispatch. Without a captured view/projection it uses a neutral depth and zero motion vectors,
+  and logs `[fsr_fg] WARNING: motion vectors are zeros ...`; without a depth copy it logs the neutral source.
+  When both `MK8_FSR4` and `MK8_FSR_FG` are set, the upscaler stays off: combining is a TODO and FG runs on the
+  game's native window image.
+- **Provider build fix:** `tools/fg-linux/CMakeLists.txt` now defines `FFX_FRAMEGENERATION=1`. Without it the
+  Vulkan backend leaves `fpSwapChainConfigureFrameGeneration` null and `ffxConfigure` on the frame-generation
+  context dereferences null; a provider built before this fix cannot use the swapchain path.
+- **Tests:** `tests/test_fsr_fg.py` applies the real patch chain (`fsr` → `submit_profile` → `acquire_bound` →
+  `fsr_fg`) to the pinned runtime and runs `tests/fixtures/fsr_fg_swapchain.cpp`: a headless 1920x1080 device that
+  checks 3.1.7, creates both contexts, queries the replacement functions, records a prepare dispatch and presents.
+  It exits non-zero on any failure; `MK8_FSR_FG_REQUIRE_NATIVE=1` turns a missing provider into a failure instead
+  of a skip.
+- **Evidence:** the native smoke test passes on RADV GFX1201 (RX 9070 XT) with provider 3.1.7; the runtime builds
+  and the FG-disabled path is the unchanged present path (the bridge is inert without `MK8_FSR_FG`). In-game
+  activation, image quality, pacing/latency, a real 120 Hz presentation and combining with the upscaler are **not**
+  verified; `gameplay_verified` stays false.
+
+```sh
+# native smoke test (no game, no window)
+MK8_FSR_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so \
+  MK8_FSR_FG_REQUIRE_NATIVE=1 python3 -m unittest tests.test_fsr_fg -v
+
+# runtime with frame generation (provider path can also be the default)
+MK8_FSR_FG=fsr3 MK8_FSR_FG_LIB=/path/to/libamd_fidelityfx_framegeneration_vk.so ./mk8drecomp
+```
+
 ## Reproducing the provider and the checks
 
 ```sh
