@@ -1,5 +1,21 @@
 # Estado técnico — 20/11/2026
 
+## Corrida in-engine na RTX 5080 — 20/11/2026
+
+O runtime e o jogo atuais (`4fdd9f8`, guest gerado de novo com o fix `4318c07`) rodaram
+nativamente em Windows 11 na RTX 5080 (driver 32.0.16.2101, Vulkan 1.4.357), em sessão SSH
+(session 0), sem Wine. O boot simples renderizou Mario Kart Stadium a 1280x720 e saiu com
+código 0. FSR 3.1.6 da DLL assinada da AMD ativou em 1920x1080→2560x1440 (`provider 3.1.6`,
+`upscale active`, `cpu dispatch 0.02 ms`), também com código 0. DLSS SR com
+`nvngx_dlss.dll` (58 MB) passou por `SuperSampling.Available=1`, criação e avaliação
+(1920x1080→2560x1440); a profundidade/motion vectors foram neutros, então há ghosting.
+DLSS-G (`MK8_DLSS_FG=1`, `nvngx_dlssg.dll`) habilita `VK_NV_low_latency2`, mas o processo
+morre com `c0000005` dentro de `nvoglv64.dll` ao criar a swapchain (exit `-1073740791`),
+antes de `[dlss_fg] active`; desativar as camadas implícitas RTSS/OBS não mudou a falha.
+Os hooks opcionais de ultrawide/settings do guest foram pulados porque seus hashes fixados
+precedem `4318c07`. Comandos, logs e o que falta em
+[WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md). `gameplay_verified` continua falso.
+
 ## FSR nativo em Windows com RTX 5080: 3.1.6/2.3.4 executam, 4.x não é oferecido — 20/11/2026
 
 As DLLs assinadas do SDK 2.4.0 (upscaler `4a7e895a…dab7`, framegeneration `d002dabf…98b4`) foram executadas nativamente em Windows 10, sem Wine, numa NVIDIA RTX 5080 (driver 621.01, Vulkan 1.4.357), com os probes de `tools/windows-fsr/` compilados por mingw-w64 `-static` (fontes compartilhadas com `tools/fg-linux-upscaler` e `tools/mlfi-capture`).
