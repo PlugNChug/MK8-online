@@ -20,6 +20,7 @@ def prepare(runtime):
     declarations = ('static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id);\n'
                     'static void mk8_rumble_close(int player, SDL_Gamepad *device);\n'
                     'static void mk8_rumble_frame(void);\n'
+                    'static void mk8_rumble_sensor(const SDL_GamepadSensorEvent *e);\n'
                     'static void mk8_rumble_focus(bool focused);\n')
     text = replace(text, marker, declarations + marker)
     text = replace(text, 'SDL_Gamepad *opened = SDL_OpenGamepad(id);', 'SDL_Gamepad *opened = mk8_rumble_open(0, id);')

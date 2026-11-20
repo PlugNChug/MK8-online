@@ -15,7 +15,11 @@ def prepare(runtime):
         (style, style + '\n    mk8_sync_sensors();'),
         (block, '    case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:\n' + block),
         (event, event + '''
-    if (e->type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE) { mk8_sensor_event(&e->gsensor); return; }
+    if (e->type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE) {
+        mk8_rumble_sensor(&e->gsensor);
+        mk8_sensor_event(&e->gsensor);
+        return;
+    }
     if (e->type == SDL_EVENT_WINDOW_FOCUS_LOST || e->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         mk8_sensor_focused = e->type == SDL_EVENT_WINDOW_FOCUS_GAINED;
         mk8_sync_sensors();

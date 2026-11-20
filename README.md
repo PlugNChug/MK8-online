@@ -61,7 +61,7 @@ The standalone controller menu works at character selection even when experiment
 
 To split a pair in **Controller assignment**, select the player who should receive one Joy-Con, choose **Assign controller**, and hold **SL + SR** on that half. The original player keeps the other half sideways. Choose **Apply** to use the new assignments or **Cancel** to keep the pair. To pair two available halves, hold **L** on the left Joy-Con and **R** on the right, then release both.
 
-The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
+The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. When a Nintendo controller’s gyro is enabled, the runtime waits for a fresh reading from that controller before sending the next active HD effect. This prevents repeated vibration writes from interrupting input. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
 The DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 

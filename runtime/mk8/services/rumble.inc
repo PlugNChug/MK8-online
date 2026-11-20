@@ -39,6 +39,8 @@ static struct Mk8RumblePad {
     Mk8Vibration side[2];
     Uint16 low, high;
     Uint64 sent_at;
+    _Atomic Uint64 last_gyro_ns;
+    Uint64 last_write_ns;
     bool hd, stop_first;
     Uint16 product;
     struct Mk8JoyConPair *pair;
@@ -340,6 +342,16 @@ static void mk8_rumble_basic(struct Mk8RumblePad *p, Uint64 now) {
     p->sent_at = now;
 }
 
+static void mk8_rumble_sensor(const SDL_GamepadSensorEvent *e) {
+    if (e->sensor != SDL_SENSOR_GYRO) return;
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); ++i) {
+        struct Mk8RumblePad *p = &mk8_rumble_pads[i];
+        if (p->id != e->which) continue;
+        if (e->timestamp > atomic_load(&p->last_gyro_ns)) atomic_store(&p->last_gyro_ns, e->timestamp);
+        return;
+    }
+}
+
 static void mk8_switch_write(struct Mk8RumblePad *p, Uint64 now) {
     if (p->expires_at && now >= p->expires_at) {
         p->side[0] = p->side[1] = mk8_silent;
@@ -354,7 +366,12 @@ static void mk8_switch_write(struct Mk8RumblePad *p, Uint64 now) {
     if (p->last.report && elapsed < 30) return;
     if (active && !memcmp(next, &p->last, sizeof(*next)) && elapsed < 45) return;
     SDL_Gamepad *device = SDL_GetGamepadFromID(p->id);
+    // A stalled Switch input stream cannot keep up with active HID writes. Coalesce until it recovers.
+    // Use SDL's host timestamp so an older queued gyro event cannot release a newer write.
+    if (active && device && p->last_write_ns && SDL_GamepadSensorEnabled(device, SDL_SENSOR_GYRO) &&
+        atomic_load(&p->last_gyro_ns) <= p->last_write_ns) return;
     if (device && SDL_SendGamepadEffect(device, next, sizeof(*next))) {
+        p->last_write_ns = SDL_GetTicksNS();
         p->last = *next;
         p->stop_first = false;
     } else {

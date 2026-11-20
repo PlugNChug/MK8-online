@@ -28,6 +28,7 @@ bool menu_input_captured(void) { return legacy; }
 bool mk8_settings_page_active(void) { return settings; }
 bool game_overlay_captured(void) { return overlay; }
 bool padscript_active(void) { return replay; }
+static void mk8_rumble_sensor(const SDL_GamepadSensorEvent *e) { (void)e; }
 #include "adapter.inc"
 
 static bool SDLCALL sensors_enabled(void *unused, bool enabled) { return true; }
@@ -118,7 +119,8 @@ class ControllerMotionSDLTests(unittest.TestCase):
             start = source.index('// SDL\'s event thread owns')
             adapter = source[start:source.index('static void note_family(void) {', start)]
             start = source.index('    if (e->type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE)')
-            focus_end = source.index('\n    }', start) + len('\n    }')
+            focus = source.index('    if (e->type == SDL_EVENT_WINDOW_FOCUS_LOST', start)
+            focus_end = source.index('\n    }', focus) + len('\n    }')
             adapter += 'static void motion_event(const SDL_Event *e) {\n' + source[start:focus_end] + '\n}\n'
             (root / 'adapter.inc').write_text(adapter, encoding='utf-8')
             (root / 'test.c').write_text(HARNESS, encoding='utf-8')

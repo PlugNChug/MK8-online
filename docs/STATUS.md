@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Vibração HD com vários controles Nintendo
+
+Com o jogo fechado, a SDL 3.4.18 removeu cada Joy-Con 19 vezes em 90 s ao enviar comandos de vibração sem amplitude a cada 30 ms para dois Joy-Con por Bluetooth e um Pro Controller por USB. Nos três segundos anteriores a cada remoção, o Windows ainda recebeu de 194 a 201 relatórios completos da metade afetada. Uma compilação de diagnóstico da mesma versão da SDL registrou oito desconexões com 7 a 10 escritas pendentes.
+
+O runtime aguarda uma nova leitura do giroscópio do próprio controle antes de repetir ou alterar um efeito HD ativo. O comando para parar a vibração mantém prioridade. A metade de um par que não fornece dados de movimento continua com a cadência anterior. No ensaio com a mesma DLL e os mesmos três controles, o critério permitiu 4.423 envios em 55 s sem desconexão. O teste nativo com SDL confirmou que eventos atrasados, de outro controle ou anteriores ao comando de parada não liberam o próximo efeito. Quando chega uma nova leitura, o temporizador envia o valor mais recente sem esperar outro comando do jogo.
+
+Na branch da PR #75 passaram 29 testes de controles e configurações. A recompilação com `--runtime-only` gerou o executável `20df0175…` a partir de 228 unidades do host. Foram verificados os 484 objetos do guest, os 119 arquivos do pacote e as importações de `main`, `sdk` e `subsdk0`.
+
 ## Entrada dos jogadores na seleção de personagens
 
 Na volta de uma demonstração, pressionar **K** durante a entrada da tela de título podia abrir o menu principal antes de o host atribuir o teclado ao jogador 1. A correção inicia o registro durante a parte da animação em que o jogo já aceita a confirmação. O mesmo ensaio na build integrada, com a janela em foco, confirmou o teclado no jogador 1 tanto na partida a frio quanto no retorno da demonstração. O teste nativo cobre a transição e mantém a exceção para a entrada direta na LAN.
