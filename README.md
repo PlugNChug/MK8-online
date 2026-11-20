@@ -51,6 +51,8 @@ Controller discovery now tries subsequent devices for player one if the first de
 
 **Controller assignment in development builds.** At the title screen, press a button on the controller you want as player 1. A keyboard key, mouse click or tap selects the keyboard. Press **SL** or **SR** for a sideways Joy-Con. With one left and one right Joy-Con, a face button selects the pair. When several halves are connected, hold **L** on the left half and **R** on the right half you want to pair, then release both. Return to the title to choose again.
 
+To play with a keyboard, a Pro Controller and two sideways Joy-Cons, set Joy-Con mode to **Individual (horizontal)** and press **K** on the keyboard at the title. The keyboard takes P1 and the three controllers occupy separate seats.
+
 During play, a disconnected controller keeps its player slot. On reconnect, an identifiable controller returns to that slot even if Windows lists the devices in a different order. A combined pair resumes when both Joy-Cons are back. If matching controllers have no distinguishing identity, register them again at character selection.
 
 Enable the experimental in-game Settings screen in the launcher to use controller assignment. At character selection for two to four local players, player 1 presses **+** (or the mapped keyboard Start key) to open **Controller assignment**. Select a row to replace or swap a controller, or clear the rows and register players in order. **Apply** activates the assignments and **Cancel** keeps the previous ones. During shared-screen races and battles, the Settings shortcut shows a brief notice so everyone can keep driving. Settings remain available in menus and to a single local racer.
