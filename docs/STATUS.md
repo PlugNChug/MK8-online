@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Caminhos longos do RomFS no Windows — 0.4.1 local
+
+A preparação interrompia a build quando o caminho de um arquivo do jogo atingia 260 caracteres. Na pasta de teste com acentos e emoji, o leitor anterior indexou apenas 6.405 dos 6.597 arquivos de MK8 4.0.1. Na mesma pasta, o leitor corrigido indexou todos. A leitura pelo serviço de armazenamento conferiu byte a byte os 192 arquivos afetados e comparou o início e o fim dos demais com as fontes, totalizando 564.153.926 bytes verificados.
+
+Os testes de regressão cobrem substituição por um mod, arquivos vazios, ausentes ou truncados e caminhos com 259 e 260 caracteres. Em um teste adicional em NTFS, um processo sem a opção de caminhos longos do Windows leu o último byte de um arquivo esparso de 4 GiB + 17 bytes em uma pasta profunda. O índice registrou o tamanho completo.
+
+A preparação pelo fluxo normal terminou em 94,6 s com as 484 unidades de código do jogo já em cache. O jogo completou três voltas de Mario Kart Stadium e mostrou a classificação. A atualização isolada do runtime a partir do novo setup preservou os hashes da biblioteca do jogo, dos módulos e dos sete arquivos de save. Após reabrir pelo launcher do pacote, uma segunda corrida também chegou à classificação. As duas sessões indexaram os 6.597 arquivos sem registrar erros de leitura. O teste cobre o modo solo local em Windows. A qualificação geral continua pendente.
+
 ## Ampliação experimental na 0.4.1 local
 
 A tela **Configurações → Vídeo e controles → Imagem** oferece FSR 3.1.6 e, conforme a GPU detectada, FSR 4.1.2 ou DLSS Super Resolution. A instalação é opcional e verifica tamanho e SHA-256 da licença e da DLL do fabricante. A seleção persiste no INI. O launcher mostra o método e as dimensões registrados pelo runtime. FSR 1 e bilinear continuam integrados. A geração de quadros nativa continua separada da ampliação.

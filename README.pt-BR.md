@@ -31,6 +31,8 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 > [!NOTE]
 > **Já usa a primeira 0.4.0?** Baixe manualmente o novo instalador ou ZIP portátil. O atualizador compara os números de versão. Mantenha sua pasta de dados, abra **Instalação → Ferramentas** e atualize a build do jogo.
 
+O instalador de teste 0.4.1 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
+
 ## Opções gráficas na 0.4.1 de teste
 
 No launcher 0.4.1, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao trocar uma edição de teste anterior da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.

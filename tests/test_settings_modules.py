@@ -166,6 +166,9 @@ class SettingsModulesTests(unittest.TestCase):
         candidate['executable']['sha256'] = '1'*64
         candidate['temporal_upscaling_supported'] = True
         path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        candidate['romfs_long_paths_supported'] = True
+        path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
 
     def test_visual_settings_previews_drafts_and_real_save(self):

@@ -778,9 +778,9 @@ impl App {
             .as_ref()
             .or(candidate.as_ref())
             .is_some_and(|game| game.nextendo_supported);
-        let graphics_upgrade = candidate.as_ref().is_some_and(|game| {
-            // The first 0.4.1 graphics installer predates the capability field.
-            !game.temporal_upscaling_supported
+        let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
+            // An existing host can predate the capability fields within the same test version.
+            (!game.temporal_upscaling_supported || !game.romfs_long_paths_supported)
                 && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
                     |host| {
                         host["files"]["mk8drecomp.exe"].as_str()
@@ -791,7 +791,7 @@ impl App {
         let candidate_stale = candidate_exists
             && (candidate_version.as_deref() != Some(update::CURRENT)
                 || !nextendo_supported
-                || graphics_upgrade);
+                || runtime_upgrade);
         let dlc =
             mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
         let ctgp = mk8_installer::ctgp::status(
@@ -2418,6 +2418,7 @@ mod tests {
             cups_supported: false,
             nextendo_supported: false,
             temporal_upscaling_supported: false,
+            romfs_long_paths_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

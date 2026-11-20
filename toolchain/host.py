@@ -431,6 +431,8 @@ def prepare_host_sources(source, output):
     prepare_joycon_modes(runtime)
     from mixed_gamepads import prepare as prepare_mixed_gamepads
     prepare_mixed_gamepads(runtime)
+    from romfs_paths import prepare as prepare_romfs_paths
+    prepare_romfs_paths(runtime)
     return runtime
 
 

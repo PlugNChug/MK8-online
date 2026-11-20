@@ -158,6 +158,8 @@ def build(config, local):
         if p.is_file() and "__pycache__" not in p.parts:
             inputs[str(p.relative_to(ROOT))] = sha(p)
     identity = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+    if os.name == 'nt':
+        validate_romfs_paths(config.get('romfs'), local/'game-data'/identity[:16]/'extracted/romfs')
     job = local / "builds" / identity
     job.mkdir(parents=True, exist_ok=True)
     # Keep imported code inputs separate from the user's original files.
@@ -203,6 +205,34 @@ def build(config, local):
     print(f"Runtime e ligação: {finished-native_at:.1f} s. Preparação total: {finished-started:.1f} s.", flush=True)
 
 
+def filesystem_path(path):
+    """Verbatim absolute path for Windows file I/O only. Manifests keep portable paths."""
+    path = Path(os.path.abspath(path))
+    if os.name != 'nt' or str(path).startswith('\\\\?\\'):
+        return path
+    name = str(path)
+    return Path('\\\\?\\UNC\\' + name[2:] if name.startswith('\\\\') else '\\\\?\\' + name)
+
+
+def validate_romfs_paths(source, destination):
+    if not source or not (filesystem_path(source)/'Course').is_dir():
+        raise ValueError('RomFS do MK8 ausente ou incompleto')
+    source, destination = filesystem_path(source), filesystem_path(destination)
+    for folder, dirs, files in os.walk(source, onerror=walk_error, followlinks=False):
+        parent = destination/Path(folder).relative_to(source)
+        for name in dirs:
+            if is_link(Path(folder)/name):
+                raise ValueError(f'Pasta de origem contém link: {Path(folder)/name}')
+        # Windows counts UTF-16 code units and the terminating NUL. The mirror
+        # also creates a temporary sibling before publishing each hard link.
+        longest = max((len(name.encode('utf-16-le')) // 2 for name in dirs + files), default=0)
+        if files:
+            longest = max(longest, len(f'.mk8-{os.getpid()}-{time.time_ns()}.pending'))
+        if len(str(parent).encode('utf-16-le')) // 2 + 1 + longest >= 32767:
+            raise ValueError(f'Caminho do RomFS excede o limite de caminho estendido do Windows em {parent}. '
+                             'Escolha uma pasta de dados mais curta.')
+
+
 def mirror(path, target, copy_ok=False):
     """Expose `target` at `path` as real folders with hard-linked files, never a junction.
 
@@ -213,7 +243,7 @@ def mirror(path, target, copy_ok=False):
     reparse points and take no extra space, but need the same volume: a small tree (`copy_ok`) is
     copied instead; a large one fails with the reason rather than copying gigabytes.
     """
-    path, target = Path(path), Path(target).resolve(strict=True)
+    path, target = filesystem_path(path), filesystem_path(target).resolve(strict=True)
     # Enumerate successfully before replacing or pruning anything. pathlib.rglob can
     # silently skip inaccessible directories, which must not be interpreted as deletion.
     sources = []
@@ -287,7 +317,7 @@ def finish(config, local, executable=None):
             raise ValueError('Entrada alterada: '+name)
     romfs = Path(config.get('romfs') or '')
     nacp = Path(config.get('nacp') or '')
-    if not config.get('romfs') or not (romfs/'Course').is_dir():
+    if not config.get('romfs') or not (filesystem_path(romfs)/'Course').is_dir():
         raise ValueError('RomFS do MK8 ausente ou incompleto')
     if not nacp.is_file() or nacp.read_bytes()[0x3060:0x3070].split(b'\0')[0] != b'4.0.1':
         raise ValueError('Esta build experimental exige NACP do MK8 4.0.1')
@@ -303,10 +333,7 @@ def finish(config, local, executable=None):
     exe = executable if executable is not None else build_host(source, output)
     dll = link_game(native['archive'], output, source, native['modules'])
     subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
-    # Deep build hashes made Win32 stat silently omit 192 RomFS files at MAX_PATH.
     data = local/'game-data'/generated['identity'][:16]
-    if os.name == 'nt' and any(len(str(data/'extracted/romfs'/p.relative_to(romfs))) >= 260 for p in romfs.rglob('*') if p.is_file()):
-        raise ValueError('Caminho do RomFS excede MAX_PATH; use uma pasta local mais curta para os testes')
     print('Etapa: preparar os dados do jogo.', flush=True)
     for removed in [*unlink_links_on_the_way(data/'extracted/exefs', local), *unlink_links_on_the_way(data/'extracted/romfs', local)]:
         print(f'Link antigo removido (só o link): {removed}', flush=True)
@@ -327,7 +354,8 @@ def finish(config, local, executable=None):
     candidate = {'schema': 2, 'identity': identity, 'profile': 'mk8d-smm2-experimental', 'executable': executable,
                  'files': files, 'data_root': str(data), 'shader_root': str(local/'user/shaders'), 'gameplay_verified': False, 'dlc_supported': True,
                  'pack_supported': True,  # runtime/mk8/support/romfs_overlay.c: MK8_ROMFS_OVERLAY
-                 'nextendo_supported': True, 'cups_supported': True, 'temporal_upscaling_supported': True}
+                 'nextendo_supported': True, 'cups_supported': True, 'temporal_upscaling_supported': True,
+                 'romfs_long_paths_supported': True}
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
@@ -372,6 +400,7 @@ def refresh_runtime(local):
     candidate['pack_supported'] = True
     candidate['nextendo_supported'] = True
     candidate['temporal_upscaling_supported'] = True
+    candidate['romfs_long_paths_supported'] = True
     candidate['cups_supported'] = candidate.get('cups_supported', False)  # (the game library's, kept as it was)
     atomic_json(local/'candidate.json', candidate)
     print('Runtime atualizado; biblioteca do jogo preservada. Gameplay não qualificado.', flush=True)

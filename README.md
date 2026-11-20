@@ -31,6 +31,8 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 > [!NOTE]
 > **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
 
+The 0.4.1 test installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
+
 ## Testing graphics options in 0.4.1
 
 In the 0.4.1 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from an earlier 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
