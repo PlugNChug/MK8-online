@@ -1,6 +1,12 @@
-# Estado técnico — 19/11/2026
+# Estado técnico — 20/11/2026
 
 ## Entrada dos jogadores na seleção de personagens
+
+Na seleção de personagens para dois a quatro jogadores, clicar ou tocar em **−/+** abre a mesma tela de atribuição que o botão **+** do jogador 1. As ações de cada jogador ficam centralizadas. Quando os nomes dos dois Joy-Con são longos, o par aparece como **Paired Joy-Cons**. Se outro jogador tentar registrar um controle em uso, um aviso identifica o dono por três segundos e as posições são preservadas.
+
+No rodapé, os sinais de mais das duas combinações ficam na mesma coluna. Ao segurar um dos ombros, aparece o ícone do botão que falta no outro Joy-Con. A arte vem das texturas do menu comum da própria instalação. As teclas mantêm sua aparência de teclado e os botões sem imagem correspondente exibem o nome da atribuição.
+
+Na compilação local `db2accbf…`, passaram os 29 testes de controles, interface e preparação. Em 1280×720, o ensaio com controles SDL virtuais confirmou as duas instruções de pareamento, o aviso de controle em uso e a entrada do par na quarta posição. Depois da confirmação, um clique em **−/+** reabriu a tela na seleção de personagens. As capturas mostraram as ações centralizadas e os ícones alinhados. O teste nativo cobriu o toque, o cancelamento por arraste e as margens da janela. Os 533 arquivos de usuário monitorados mantiveram seus hashes. Essa verificação cobriu os menus, sem qualificar uma corrida em tela dividida a 60 FPS.
 
 Quando faltavam controles no multiplayer local, o jogo exibia um aviso de texto. A tela de atribuição agora mostra os nomes dos dispositivos já registrados e destaca a primeira vaga. Com apenas o jogador 1, começa no jogador 2. Cada entrada avança para a próxima posição livre. O jogador 1 confirma quando todos estiverem prontos. Cancelar descarta as alterações e restaura os cursores da seleção. Em builds preparadas, a tela funciona mesmo com a opção de configurações nativas desligada. Nesse caso, a preparação fornece apenas o arquivo compartilhado da interface. Mods com um `common.sarc` próprio mantêm o arquivo e o aviso de texto.
 
