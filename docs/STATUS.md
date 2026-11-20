@@ -2,6 +2,8 @@
 
 ## Entrada dos jogadores na seleção de personagens
 
+Na volta de uma demonstração, pressionar **K** durante a entrada da tela de título podia abrir o menu principal antes de o host atribuir o teclado ao jogador 1. A correção inicia o registro durante a parte da animação em que o jogo já aceita a confirmação. O mesmo ensaio na build integrada, com a janela em foco, confirmou o teclado no jogador 1 tanto na partida a frio quanto no retorno da demonstração. O teste nativo cobre a transição e mantém a exceção para a entrada direta na LAN.
+
 A tela de atribuição permite separar um par de Joy-Con. Na linha do jogador que vai receber uma metade, segure **SL + SR** nessa metade. A outra continua com o jogador que usava o par. **Apply** confirma a troca e **Cancel** preserva a atribuição anterior. A escolha do jogador 1 na tela de título e a atribuição das metades substituem as opções globais de iniciar os controles no jogador 2 e de escolher o modo dos Joy-Con. Arquivos INI antigos com `pads_from_p2` e `joycon_mode` continuam legíveis. Essas chaves não determinam a atribuição dos controles.
 
 Na seleção de personagens local com dois Joy-Con Bluetooth e um INI antigo, o mantenedor confirmou que cancelar preserva o par no jogador 1. Ao repetir a separação e aplicar, cada Joy-Con passou a controlar seu próprio jogador, na ordem escolhida pelo mantenedor. Após o encerramento normal, os hashes dos saves, das configurações e do perfil Mii de origem permaneceram iguais. O teste de interface do launcher verificou que salvar outra opção preserva as linhas antigas do INI. O teste nativo verificou que o jogo mantém os mapeamentos personalizados ao salvar e reler o arquivo sem as opções desativadas.
