@@ -219,6 +219,34 @@ def apply_patches(sdk_root: Path):
             path.write_text(fixed, encoding="utf-8")
 
 
+def resolve_dxc(args, work: Path) -> Path:
+    if args.dxc:
+        path = Path(args.dxc)
+        if not path.is_file():
+            fail(f"dxc not found: {path} (pass --dxc /path/to/dxc)")
+        return path
+    archive = args.dxc_archive
+    if not archive.is_file():
+        fail(f"DXC archive not found: {archive}")
+    if args.dxc_size and archive.stat().st_size != args.dxc_size:
+        fail(f"DXC archive size mismatch: expected {args.dxc_size}, got {archive.stat().st_size}")
+    if args.dxc_sha256:
+        actual = sha256_of(archive)
+        if actual.lower() != args.dxc_sha256.lower():
+            fail(f"DXC archive SHA-256 mismatch: expected {args.dxc_sha256}, got {actual}")
+    extract = work / "dxc-extract"
+    if extract.exists():
+        shutil.rmtree(extract)
+    extract.mkdir(parents=True)
+    with tarfile.open(archive, "r:*") as tar:
+        tar.extractall(extract)
+    for candidate in sorted(extract.rglob("dxc")):
+        if candidate.is_file() and candidate.parent.name == "bin":
+            candidate.chmod(0o755)
+            return candidate
+    fail("no bin/dxc in the DXC archive")
+
+
 def run(cmd, cwd=None, env=None):
     print("+", " ".join(str(c) for c in cmd))
     proc = subprocess.run([str(c) for c in cmd], cwd=cwd, env=env)
@@ -258,9 +286,7 @@ def build(args):
     shutil.copytree(FG_DIR / "win32compat", src / "win32compat")
     shutil.copytree(FG_DIR / "miniz", src / "miniz")
 
-    dxc = Path(args.dxc)
-    if not dxc.is_file():
-        fail(f"dxc not found: {dxc} (pass --dxc /path/to/dxc)")
+    dxc = resolve_dxc(args, work)
 
     run([sys.executable, GEN_BLOBS, "--sdk", sdk_root, "--dxc", str(dxc),
          "--out", src / "fg_blobs.cpp", "--tmp", work / "blobgen"])
@@ -308,7 +334,11 @@ def main():
     source.add_argument("--sdk-src", type=Path, help="already extracted SDK tree")
     parser.add_argument("--sdk-size", type=int, help="expected SDK archive size in bytes")
     parser.add_argument("--sdk-sha256", help="expected SDK archive SHA-256")
-    parser.add_argument("--dxc", required=True, help="path to the DXC compiler binary")
+    dxc_source = parser.add_mutually_exclusive_group(required=True)
+    dxc_source.add_argument("--dxc", help="path to the DXC compiler binary")
+    dxc_source.add_argument("--dxc-archive", type=Path, help="official DXC release archive (Linux x86-64)")
+    parser.add_argument("--dxc-size", type=int, help="expected DXC archive size in bytes")
+    parser.add_argument("--dxc-sha256", help="expected DXC archive SHA-256")
     parser.add_argument("--work-dir", type=Path, default=Path.home() / ".cache" / "mk8online" / "fsr-build")
     parser.add_argument("--install-dir", type=Path,
                         default=Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
