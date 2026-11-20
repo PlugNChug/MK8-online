@@ -21,6 +21,12 @@ void kernel_signal(KObject *event) {
     assert(event==&style_event && pthread_mutex_trylock(&g_klock)==EBUSY);
     ++style_notifications;
 }
+volatile int g_rt_unwind;
+static SDL_AtomicInt core_released;
+static char applet_notice[192];
+void kernel_host_wait_begin(void) { SDL_SetAtomicInt(&core_released,1); }
+void kernel_host_wait_end(void) { SDL_SetAtomicInt(&core_released,0); }
+void menu_notice(const char *text,double seconds) { SDL_strlcpy(applet_notice,text,sizeof applet_notice); }
 void mk8_settings_pads_changed(void) { assert(0 && "No settings changes during a controller assignment"); }
 static bool host_captures;
 bool menu_input_captured(void) { return host_captures; }
@@ -613,6 +619,18 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(argv[2],"hotplug-open-failure")) {
         check_hotplug_open_failure(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"prerace-applet")) {
+        check_prerace_applet(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"keyboard-prerace-applet")) {
+        check_keyboard_prerace(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"prerace-sparse-seats")) {
+        check_prerace_sparse_seats(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"prerace-p1-replacement")) {
+        check_prerace_p1_replacement(); SDL_Quit(); return 0;
     }
     if(!strcmp(argv[2],"steam-title")) return steam_gamepads_title_test();
     if(!strcmp(argv[2],"title")) {

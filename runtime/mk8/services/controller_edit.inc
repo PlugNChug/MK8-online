@@ -19,6 +19,7 @@ static struct {
 } mk8_editor;
 
 static bool mk8_title_observing;
+static bool mk8_title_focused = true;
 static void mk8_title_choose(SDL_JoystickID left, SDL_JoystickID right);
 
 static SDL_SpinLock mk8_edit_lock;
@@ -329,7 +330,7 @@ static bool mk8_edit_commit(void) {
     return true;
 }
 
-void mk8_edit_pump(void) {
+static void mk8_edit_process(void) {
     if (mk8_pending_grips && !mk8_reserved_seats && !mk8_editor.rows) mk8_retry_pending_grips(0, false);
     SDL_LockSpinlock(&mk8_edit_lock);
     if (!mk8_mail.pending) { SDL_UnlockSpinlock(&mk8_edit_lock); return; }
@@ -348,7 +349,7 @@ void mk8_edit_pump(void) {
         }
         mk8_editor.rows = row;
         mk8_editor.keyboard = mk8_assigned_keyboard();
-        mk8_editor.focused = true;
+        mk8_editor.focused = mk8_title_focused;
         int count = 0;
         SDL_JoystickID *ids = SDL_GetGamepads(&count);
         for (int i = 0; i < count; i++) mk8_edit_observe(ids[i]);

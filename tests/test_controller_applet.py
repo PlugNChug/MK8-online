@@ -63,7 +63,7 @@ class ControllerAppletTests(unittest.TestCase):
             support = support[:support.index('\n}\n')]
             # after the answer is written and logged, before returning; MK8_NO_APPLET_FOCUS turns it off
             self.assertLess(support.index('player(s)'), support.index('mk8_am_push_message(15);'))
-            self.assertLess(support.index('mk8_am_push_message(15);'), support.index('c->x[0] = n < min'))
+            self.assertLess(support.index('mk8_am_push_message(15);'), support.index('c->x[0] = cancelled || n < min'))
             self.assertIn('if (!getenv("MK8_NO_APPLET_FOCUS")) {', support)
             am = (runtime/'services/am.c').read_text(encoding='utf-8')
             queue = am[am.index('static uint32_t msg_event_r'):am.index('static uint32_t new_event(void) {')]
@@ -86,12 +86,16 @@ class ControllerAppletTests(unittest.TestCase):
             body = hid[start:hid.index('\n}\n', start)].split('{', 1)[1]
             harness = r'''
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #define LOG(...) ((void)0)
 typedef struct { uint64_t x[32]; } Cpu;
 static int players, focus, reported_min, reported_max, reported_players;
 int input_players(void) { return players; }
+static int prompts;
+static bool cancel;
+int mk8_controller_applet_wait(int min,int max,int live) { ++prompts; return cancel ? 0 : live; }
 void mk8_controller_applet_result(int min, int max, int current) {
     reported_min=min; reported_max=max; reported_players=current;
 }
@@ -103,7 +107,9 @@ int main(void) {
         uint8_t output[8]; memset(output, 0xa5, sizeof output);
         int8_t arg[2] = {cases[i][1], cases[i][2]};
         Cpu c = {.x = {(uintptr_t)output, (uintptr_t)arg}};
+        c.x[30] = i == 0 ? 0x7000861060ull : 0x12345678ull;
         players = cases[i][0]; support(&c);
+        if (prompts != 1) return 6;
         if (focus != i + 1) return 1;
         if (reported_min!=arg[0] || reported_max!=arg[1] || reported_players!=(players>arg[1] ? arg[1] : players)) return 5;
         if (!cases[i][3]) {
@@ -111,6 +117,13 @@ int main(void) {
             for (int k = 0; k < 8; k++) if (output[k] != 0xa5) return 3;
         } else if (c.x[0] || output[0] != cases[i][3] || *(uint32_t *)(output + 4)) return 4;
     }
+    uint8_t output[8]; memset(output,0xa5,sizeof output);
+    int8_t arg[]={4,4};
+    Cpu c={.x={(uintptr_t)output,(uintptr_t)arg}};
+    c.x[30]=0x7000861060ull;
+    cancel=true; players=4; support(&c);
+    if(c.x[0]!=((3101u<<9)|202u) || reported_players || focus!=6) return 7;
+    for(int k=0;k<8;k++) if(output[k]!=0xa5) return 8;
     return 0;
 }
 '''

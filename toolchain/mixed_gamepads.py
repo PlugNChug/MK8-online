@@ -153,6 +153,7 @@ static void mk8_signal_styles(void) {''')
     # Keep discovery independently testable; use the same owner thread as SDL hotplug and rumble.
     marker = 'void input_handle_event(const SDL_Event *e) {'
     edit = (SOURCE / 'controller_edit.inc').read_text(encoding='utf-8')
+    edit += '\n' + (SOURCE / 'controller_applet_wait.inc').read_text(encoding='utf-8')
     title = (SOURCE / 'title_input.inc').read_text(encoding='utf-8')
     tips = (SOURCE / 'controller_tips.inc').read_text(encoding='utf-8')
     marker_before_discovery = 'static void mk8_open_gamepad(SDL_JoystickID id) {'
@@ -178,7 +179,11 @@ static void mk8_signal_styles(void) {''')
         marker = '\n' + indent + '*(uint64_t *)(s + 8) = b;'
         text = replace(text, marker, '\n' + indent + 'if (!menu && !mk8_settings_page_active()) mk8_title_hid(id, &b, &lx, &ly, &rx, &ry);' + marker)
     marker = 'RT_ON_RESET(input_reboot_reset) {'
-    text = replace(text, marker, marker + ' atomic_store(&mk8_race_seats, 0); mk8_title_input_active(false);')
+    text = replace(text, marker, marker + '''
+    if (atomic_load(&mk8_applet_request)) atomic_store(&mk8_applet_request,MK8_APPLET_ABANDONED);
+    atomic_store(&mk8_applet_suppressed,0);
+    atomic_store(&mk8_race_seats,0);
+    mk8_title_input_active(false);''')
     path.write_text(text, encoding='utf-8')
     device = runtime / 'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')

@@ -4,7 +4,6 @@ static _Atomic int mk8_title_state;
 static _Atomic unsigned mk8_title_visit;
 static unsigned mk8_observed_visit;
 static pthread_mutex_t mk8_title_lock = PTHREAD_MUTEX_INITIALIZER;
-static bool mk8_title_focused = true;
 
 bool mk8_title_manual_input(void) {
     const char *layout = getenv("MK8_GAMEPAD_LAYOUT");
@@ -86,6 +85,7 @@ void mk8_title_pump(void) {
 }
 
 bool mk8_title_event(const SDL_Event *e, bool captured) {
+    if (mk8_applet_key(e)) return true;
     if (e->type == SDL_EVENT_WINDOW_FOCUS_LOST || e->type == SDL_EVENT_WINDOW_FOCUS_GAINED)
         mk8_title_focused = e->type == SDL_EVENT_WINDOW_FOCUS_GAINED;
     if (!mk8_title_observing || mk8_title_state != MK8_TITLE_WAIT || mk8_observed_visit != mk8_title_visit) return false;
@@ -139,6 +139,13 @@ bool mk8_title_event(const SDL_Event *e, bool captured) {
 
 // Supply the stock confirm only at the title. Keep held claim inputs out of the following menu.
 static void mk8_title_hid(unsigned player, uint64_t *buttons, int32_t *lx, int32_t *ly, int32_t *rx, int32_t *ry) {
+    if (atomic_load(&mk8_applet_request) > 0) {
+        *buttons = 0;
+        *lx = *ly = *rx = *ry = 0;
+        return;
+    }
+    if (!player && atomic_load(&mk8_applet_suppressed))
+        *buttons &= ~atomic_fetch_and(&mk8_applet_suppressed,*buttons);
     static _Atomic uint64_t held[4];
     static _Atomic unsigned held_axes[4];
     int state = mk8_title_state;

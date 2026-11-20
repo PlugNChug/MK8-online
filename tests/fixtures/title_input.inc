@@ -386,6 +386,140 @@ static void check_hotplug_open_failure(void) {
     }
 }
 
+static int SDLCALL request_players(void *arg) {
+    int players=(int)(intptr_t)arg;
+    return mk8_controller_applet_wait(players,players,input_players());
+}
+
+static SDL_Thread *open_prerace_applet(int players,int row) {
+    SDL_Thread *worker=SDL_CreateThread(request_players,"Guest controller applet",(void *)(intptr_t)players);
+    assert(worker);
+    Uint64 until=SDL_GetTicks()+2000;
+    while ((!SDL_GetAtomicInt(&core_released) || mk8_editor.listening!=row) && SDL_GetTicks()<until) {
+        pump(); SDL_Delay(1);
+    }
+    assert(SDL_GetAtomicInt(&core_released) && mk8_editor.listening==row);
+    char label[24]; SDL_snprintf(label,sizeof label,"Player %d of %d",row+1,players);
+    assert(strstr(applet_notice,label));
+    return worker;
+}
+
+static void check_prerace_applet(void) {
+    attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
+    title_ready(true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false); title_accepted();
+    assert(title_pad_seat(ids[PRO])==0 && input_players()==3 && mk8_assigned_keyboard()<0);
+    shared_race=true;
+    assert(mk8_controller_applet_wait(4,4,3)==3 && !mk8_applet_request);
+    shared_race=false;
+    int left=title_pad_seat(ids[SOLO_L]), right=title_pad_seat(ids[SOLO_R]);
+    int result=-1;
+    SDL_Thread *worker=open_prerace_applet(4,3);
+    assert(strstr(applet_notice,"Enter"));
+    title_key(SDL_SCANCODE_ESCAPE,false); pump();
+    SDL_WaitThread(worker,&result);
+    assert(!result && input_players()==3 && mk8_assigned_keyboard()<0);
+    worker=open_prerace_applet(4,3);
+    title_key(SDL_SCANCODE_RETURN,false); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    g_rt_unwind=1;
+    SDL_WaitThread(worker,&result);
+    assert(!result);
+    pump(); g_rt_unwind=0;
+    assert(!mk8_applet_request && !mk8_editor.rows && mk8_assigned_keyboard()<0);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    worker=open_prerace_applet(4,3);
+    title_key(SDL_SCANCODE_RETURN,false); pump();
+    assert(strstr(applet_notice,"4 players ready") && input_players()==3);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false); pump();
+    SDL_WaitThread(worker,&result);
+    assert(result==4 && input_players()==4 && mk8_assigned_keyboard()==3 && !SDL_GetAtomicInt(&core_released));
+    assert(title_pad_seat(ids[PRO])==0 && title_pad_seat(ids[SOLO_L])==left && title_pad_seat(ids[SOLO_R])==right);
+    detach_title_pad(PRO); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
+}
+
+static void check_prerace_sparse_seats(void) {
+    title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
+    attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
+    SDL_JoystickID slots[4][2]={{ids[PRO]},{ids[SOLO_L]},{0},{ids[SOLO_R]}};
+    assert(mk8_assign_layout(slots,2,false));
+    detach_title_pad(PRO);
+    assert(input_players()==4 && mk8_live_seats()==14);
+    SDL_Thread *worker=open_prerace_applet(4,0);
+    title_key(SDL_SCANCODE_ESCAPE,false); pump();
+    int result; SDL_WaitThread(worker,&result); assert(!result);
+    slots[0][0]=0; slots[1][0]=0; slots[2][0]=ids[SOLO_L]; slots[3][0]=0;
+    assert(mk8_assign_layout(slots,0,false));
+    assert(input_players()==2 && mk8_live_seats()==5);
+    worker=open_prerace_applet(2,1);
+    title_key(SDL_SCANCODE_ESCAPE,false); pump();
+    SDL_WaitThread(worker,&result); assert(!result);
+    detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
+}
+
+static void check_prerace_p1_replacement(void) {
+    attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
+    title_ready(true); button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false); title_accepted();
+    SDL_Thread *worker=open_prerace_applet(4,3);
+    detach_title_pad(PRO); pump();
+    assert(mk8_editor.listening==0);
+    attach(PAIR_L); pump(); shoulders(sticks[PAIR_L]); pump();
+    assert(mk8_editor.listening==3);
+    title_key(SDL_SCANCODE_RETURN,false); pump();
+    assert(strstr(applet_notice,"4 players ready"));
+    SDL_Event focus={.type=SDL_EVENT_WINDOW_FOCUS_LOST};
+    assert(SDL_PushEvent(&focus)); pump();
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,true);
+    title_key(SDL_SCANCODE_ESCAPE,false);
+    focus.type=SDL_EVENT_WINDOW_FOCUS_GAINED;
+    assert(SDL_PushEvent(&focus)); pump();
+    assert(mk8_applet_request==4);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,false);
+    button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_EAST,false);
+    assert(mk8_applet_request==4 && input_players()<4);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,true); pump();
+    int result; SDL_WaitThread(worker,&result);
+    assert(result==4 && title_pad_seat(ids[PAIR_L])==0 && mk8_assigned_keyboard()==3);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,false);
+    detach_title_pad(PAIR_L); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
+}
+static void applet_key_state(SDL_Scancode code,bool down) {
+    SDL_Event e={.type=down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP};
+    e.key.scancode=code;
+    assert(SDL_PushEvent(&e)); pump();
+}
+
+static void check_keyboard_prerace(void) {
+    title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
+    attach(PRO); attach(SOLO_L); pump();
+    assert(input_players()==3 && mk8_assigned_keyboard()==0);
+    g_bind_key[BIND_A]=SDL_SCANCODE_RETURN;
+    g_bind_key[BIND_B]=SDL_SCANCODE_J;
+    int result;
+    SDL_Thread *worker=open_prerace_applet(4,3);
+    assert(!strstr(applet_notice,"Enter"));
+    applet_key_state(SDL_SCANCODE_J,true); pump();
+    SDL_WaitThread(worker,&result);
+    assert(!result && !(guest_buttons(0)&(1ull<<BIND_B)));
+    applet_key_state(SDL_SCANCODE_J,false);
+    worker=open_prerace_applet(4,3);
+    attach(SOLO_R); pump(); shoulders(sticks[SOLO_R]); pump();
+    assert(strstr(applet_notice,"4 players ready") && input_players()==3);
+    applet_key_state(SDL_SCANCODE_RETURN,true); pump();
+    SDL_WaitThread(worker,&result);
+    assert(result==4 && title_pad_seat(ids[SOLO_R])==3 && mk8_assigned_keyboard()==0);
+    assert(!(guest_buttons(0)&(1ull<<BIND_A)));
+    applet_key_state(SDL_SCANCODE_RETURN,false);
+    applet_key_state(SDL_SCANCODE_RETURN,true);
+    assert(guest_buttons(0)&(1ull<<BIND_A));
+    applet_key_state(SDL_SCANCODE_RETURN,false);
+    detach_title_pad(PRO); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
+}
+
 static void check_all_reconnect(const char *scenario) {
     bool edited=!strcmp(scenario,"all-reconnect-edited");
     bool identical=!strcmp(scenario,"all-reconnect-identical");
