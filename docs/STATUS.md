@@ -1,6 +1,14 @@
 # Estado técnico — 20/11/2026
 
-**Instalador local de teste 0.4.1 (`fix-chore`).** O assistente e o launcher executado em pasta isolada exibiram 0.4.1. O pacote embute o runtime da mesma chave de compilação usada no teste de tela dividida abaixo. SHA-256 do `MK8-online-0.4.1-setup.exe`: `6393372c7fe74fe8ac582aeb507c83f1d63670f37203873898385d306c7579c8`.
+**Instalador local para reteste de votação e preparação.** O setup 0.4.1 tem SHA-256 `f617c78f7093a2444b15feb2aa06376d0bbab15f0f582d3c230819343d3e296d`. O launcher extraído desse executável informou 0.4.1 e verificou os seis arquivos de modelos Mii na pasta isolada de teste.
+
+**Votação online na 0.4.1 de teste.** Os ZIPs da 0.4.0 contêm os mesmos logs. Em três sessões, com a preparação de modelos Mii desativada, a votação tentou escrever em `0x4ac` a partir de uma lista vazia em `f_7000428838`. As duas rotinas de notificação que usam essa lista verificam agora se ela contém modelos e dispõe de armazenamento. A unidade verificada de MK8 4.0.1 foi recompilada. As duas rotinas preparadas passaram em 72 combinações de disponibilidade, tamanho, índice e estado da notificação, incluindo a seleção do primeiro modelo como alternativa quando há modelos disponíveis.
+
+**Preparação do jogo no Windows.** Na instalação manual, o Windows retornou `WinError 5` ao renomear o diretório temporário de `subsdk0`. O gerador repete a renomeação por até 11 segundos quando recebe os erros de acesso ou compartilhamento 5, 32 ou 33. Em um teste com o módulo do jogo e um bloqueio real temporário, publicou os 116 arquivos com hashes idênticos e retomou pelo cache na execução seguinte. Um teste separado confirmou que um bloqueio persistente preserva a pasta preparada e informa a falha.
+
+**Miis brancos no globo.** A captura veio da instalação do mantenedor, que desenhava os avatares. Em quatro grupos de malhas derivados da biblioteca AFL verificada (rosto, máscara, cabelo e nariz), as normais convertidas têm comprimento mediano 1 e acompanham a orientação da geometria. Na build isolada de 484 unidades, com o runtime do novo setup, o login Nextendo e a entrada como espectador funcionaram. Os quadros 7920, 8280 e 12240 registram votação com vários jogadores, rostos, cabelos e macacões coloridos. A captura anterior continua sem log correspondente. A causa da saturação exige uma captura da cena enquanto o defeito estiver visível.
+
+**Interrupção na corrida durante o reteste.** O jogo mostrou “A communication error has occurred” em Rainbow Road e o log termina com `window closed`. No trecho entre os quadros 14500 e 16560, a captura de imagens a cada 360 quadros interferiu na medição. Nos seis intervalos de telemetria com captura, o maior tempo de quadro teve mediana de 403 ms. Nos doze intervalos sem captura, a mediana dos máximos foi 21,5 ms, com pico de 97 ms e compilação de pipelines em andamento. As capturas periódicas foram usadas apenas no teste. O log não determina a origem da desconexão.
 
 ## Falhas de inicialização, Steam e DLC na fix-chore após a 0.4.0
 

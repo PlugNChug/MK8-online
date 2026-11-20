@@ -1,5 +1,6 @@
 """Sharing violations and unavailable sources must never trigger destructive recovery."""
 import errno
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import sys
@@ -11,11 +12,36 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 import build
 import import_mk8
+from recompiler import generate
 from windows_file_lock import locked_file
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows sharing violations')
 class FileAccessTests(unittest.TestCase):
+    def test_generated_directory_publishes_after_windows_releases_it(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+            stage, target = Path(temporary)/'subsdk0-pending', Path(temporary)/'subsdk0'
+            stage.mkdir()
+            (stage/'unit.c').write_bytes(b'completed')
+            with ExitStack() as handles:
+                handles.enter_context(locked_file(stage))
+                with patch.object(generate.time, 'sleep', side_effect=lambda _: handles.close()) as wait:
+                    generate.rename_generated_directory(stage, target)
+                wait.assert_called_once()
+            self.assertFalse(stage.exists())
+            self.assertEqual((target/'unit.c').read_bytes(), b'completed')
+
+    def test_persistent_windows_lock_keeps_generated_source_for_diagnosis(self):
+        with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
+            stage, target = Path(temporary)/'subsdk0-pending', Path(temporary)/'subsdk0'
+            stage.mkdir()
+            (stage/'unit.c').write_bytes(b'completed')
+            with locked_file(stage), patch.object(generate.time, 'sleep'):
+                with self.assertRaises(PermissionError):
+                    generate.rename_generated_directory(stage, target)
+            self.assertFalse(target.exists())
+            self.assertEqual((stage/'unit.c').read_bytes(), b'completed')
+
     def test_long_filename_is_hardlinked_and_reused_without_extra_storage(self):
         with tempfile.TemporaryDirectory(prefix='mk8-access-') as temporary:
             root = Path(temporary)

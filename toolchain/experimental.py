@@ -226,9 +226,17 @@ def patch_no_mii_unit(src, output):
         if text.count(entry) != 1:
             raise ValueError('Mii UI readiness boundary changed')
         text = text.replace(entry, entry+'\n    if (mk8_no_mii_renderer() && LD32(c->x[0] + 0x18) == 0 && LD32(c->x[0] + 0x28) == 0) { c->x[0] = 1; return; }')
+        # Both vote notifications write a flag in the primary model array, even
+        # when only the secondary array is populated. There is no slot-zero
+        # fallback until the primary array has storage and at least one model.
+        for address in ('7000428838', '70004289d0'):
+            entry = f'void f_{address}(Cpu *c) {{'
+            if text.count(entry) != 1:
+                raise ValueError('Mii vote notification boundary changed')
+            text = text.replace(entry, entry+'\n    if (!c->x[0] || !LD32(c->x[0] + 0x18) || !LD64(c->x[0] + 0x20)) return;')
         # LAN transitions animate or configure absent models despite both counts being zero.
         for address in ('7000428a34', '7000428880', '70004288a0', '7000428900',
-                        '70004289ac', '70004289d0', '7000428a18',
+                        '70004289ac', '7000428a18',
                         '7000428d94', '7000428f80', '7000428fb0'):
             entry = f'void f_{address}(Cpu *c) {{'
             if text.count(entry) != 1:
