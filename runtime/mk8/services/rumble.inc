@@ -43,7 +43,7 @@ static struct Mk8RumblePad {
     Mk8SwitchRumble wanted, last;
     Uint64 expires_at;
     SDL_TimerID timer;
-} mk8_rumble_pads[1 + EXTRA_PADS];
+} mk8_rumble_pads[2 * (1 + EXTRA_PADS)];
 
 static bool mk8_joycon_endpoint(const SDL_hid_device_info *d, Uint16 product) {
     return d && d->vendor_id == 0x057e && d->product_id == product && d->path &&
@@ -212,10 +212,10 @@ static void mk8_pair_close(struct Mk8JoyConPair *p) {
     SDL_UnlockMutex(p->lock);
 }
 
-static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
-    SDL_LockJoysticks();
-    SDL_Gamepad *device = SDL_OpenGamepad(id);
+// Caller holds the joystick lock and owns the open handle.
+static void mk8_rumble_attach(int player, SDL_Gamepad *device) {
     if (device && SDL_GetBooleanProperty(SDL_GetGamepadProperties(device), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) {
+        SDL_JoystickID id = SDL_GetGamepadID(device);
         Uint16 product = SDL_GetGamepadProduct(device);
         struct Mk8RumblePad *p = &mk8_rumble_pads[player];
         *p = (struct Mk8RumblePad){.id = id, .product = product, .side = {mk8_silent, mk8_silent},
@@ -231,6 +231,12 @@ static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
         Uint64 now = SDL_GetTicks();
         if (p->hd && now < mk8_switch_reopen_after) SDL_Delay((Uint32)(mk8_switch_reopen_after - now));
     }
+}
+
+static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) {
+    SDL_LockJoysticks();
+    SDL_Gamepad *device = SDL_OpenGamepad(id);
+    mk8_rumble_attach(player, device);
     SDL_UnlockJoysticks();
     return device;
 }
@@ -382,6 +388,8 @@ void mk8_joycon_shutdown(void) {
 static struct Mk8RumblePad *mk8_rumble_pad(uint32_t handle) {
     unsigned player = (handle >> 8) & 255;
     if ((handle & 0xfffe00ffu) != 3 || player >= 1 + EXTRA_PADS) return NULL;
+    // In a software pair the right grip has its own SDL device and output timer.
+    if ((handle & 0x10000u) && mk8_paired_slot[player]) player += 1 + EXTRA_PADS;
     struct Mk8RumblePad *p = &mk8_rumble_pads[player];
     return p->id ? p : NULL;
 }
@@ -481,7 +489,7 @@ static bool mk8_rumble_menu_open(void) {
 static void mk8_rumble_frame(void) {
     SDL_LockJoysticks();
     Uint64 now = SDL_GetTicks();
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) {
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
         struct Mk8RumblePad *p = &mk8_rumble_pads[i];
         if (p->waiting_for_pair) {
             if (now >= p->expires_at || mk8_rumble_menu_open()) mk8_rumble_stop(p);
@@ -503,7 +511,7 @@ static void mk8_rumble_frame(void) {
 }
 
 static void mk8_rumble_clear(void) {
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) mk8_rumble_stop(&mk8_rumble_pads[i]);
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) mk8_rumble_stop(&mk8_rumble_pads[i]);
 }
 
 static void mk8_rumble_focus(bool focused) {
@@ -573,8 +581,8 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
             changed |= 1u << (p - mk8_rumble_pads);
         }
     }
-    // A batch can contain both sides of several controllers. Publish once per player.
-    for (unsigned i = 0; i < 1 + EXTRA_PADS; i++) {
+    // A batch can contain both sides of several controllers. Publish once per physical output.
+    for (unsigned i = 0; i < SDL_arraysize(mk8_rumble_pads); i++) {
         if (changed & (1u << i)) mk8_rumble_apply(&mk8_rumble_pads[i], SDL_GetTicks());
     }
     SDL_UnlockJoysticks();

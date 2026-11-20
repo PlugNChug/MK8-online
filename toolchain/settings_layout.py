@@ -164,9 +164,10 @@ def settings_icon_button(button, source):
     return b'Yaz0'+struct.pack('>I',len(packed))+bytes(8)+b''.join(b'\xff'+packed[i:i+8] for i in range(0,len(packed),8))
 
 
-def dialog_label(source):
+def dialog_label(source, *, hints=False):
     """Use the working game-font title control as plain dark text in our native dialog."""
-    old,new='cm_L_Scroll_ListTitle_00','cm_L_SetLabel_00'
+    old='cm_L_Scroll_ListTitle_00'
+    new='cm_L_SetHints_00' if hints else 'cm_L_SetLabel_00'
     result=[]
     for key,_,data in entries(yaz0(source)):
         out=bytearray(data)
@@ -177,6 +178,40 @@ def dialog_label(source):
             for at,s in sections(data):
                 pane=bytearray(s)
                 name=s[12:36].split(b'\0')[0]
+                if hints:
+                    if s[:4]==b'txl1':
+                        old_name=b'tc_Check_64x32^r\0'
+                        if pane.count(old_name)!=1:
+                            raise ValueError('Unexpected Settings checker texture reference')
+                        pane=pane.replace(old_name,b'tc_HintGrid^r\0'.ljust(len(old_name),b'\0'))
+                    if s[:4]==b'mat1':
+                        pane=repeat_hint_checker(s)
+                    if name==b'W_Title_00' and s[:4]==b'wnd1':
+                        single=bytearray(s)
+                        single[12:36]=b'W_HintSingle'.ljust(24,b'\0')
+                        double=bytearray(s)
+                        double[8]&=~1
+                        double[12:36]=b'W_HintDouble'.ljust(24,b'\0')
+                        struct.pack_into('<f',double,80,112)
+                        # Both frame extents must cover the entire window; the stock center has no checker.
+                        struct.pack_into('<2H',double,96,112,112)
+                        frame,=struct.unpack_from('<I',double,132)
+                        struct.pack_into('<H',double,frame,4)
+                        panes.extend([single,double])
+                        pane=pane[:84]; pane[:8]=b'pan1'+struct.pack('<I',84)
+                    if name==b'T_Title_00' and s[:4]==b'txt1':
+                        # Plain tinted quads use the stock window's untextured center material.
+                        for i in range(4):
+                            panes.append(keycap_pane(i,s[8:12]))
+                            for prefix in ('Key','Verb'):
+                                label=bytearray(s)
+                                label[8]&=~1
+                                label[12:36]=f'T_{prefix}{i}'.encode().ljust(24,b'\0')
+                                if prefix=='Key':
+                                    label[104:112]=bytes((24,30,38,255))*2
+                                panes.append(label)
+                    panes.append(pane)
+                    continue
                 if s[:4]==b'wnd1':
                     # Keep the text's parent visible, with no title ribbon behind it.
                     pane=pane[:84]; pane[:8]=b'pan1'+struct.pack('<I',84); pane[10]=255
@@ -190,13 +225,53 @@ def dialog_label(source):
                     struct.pack_into('<2f',pane,112,30,38)
                 panes.append(pane)
             out=bytearray(data[:20])+b''.join(panes)
-            struct.pack_into('<I',out,12,len(out))
+            struct.pack_into('<IH',out,12,len(out),len(panes))
         elif data[:4]==b'FLAN':
             if key!=name_hash('anim/'+old+'_Ptn.bflan'): raise ValueError('Settings dialog label animation changed')
             key=name_hash('anim/'+new+'_Ptn.bflan')
+        elif hints and data[:4]==b'BNTX':
+            square_hint_checker(out)
         result.append((key,bytes(out)))
     packed=pack_entries(result)
     return b'Yaz0'+struct.pack('>I',len(packed))+bytes(8)+b''.join(b'\xff'+packed[i:i+8] for i in range(0,len(packed),8))
+
+
+def square_hint_checker(data):
+    from mii_resource_nx import swizzle
+    at,pixels,size=texture(data,'tc_Check_64x32^r')
+    if (struct.unpack_from('<I',data,at+28)[0]!=0x1d01 or struct.unpack_from('<2I',data,at+36)!=(32,64) or
+        struct.unpack_from('<H',data,at+18)[0]!=0 or struct.unpack_from('<I',data,at+52)[0]&7!=1 or size!=1024):
+        raise ValueError('Unexpected Settings checker texture layout')
+    # The stock flag motif drifts ten texels over its height; use solid BC4 blocks for the 16px squares.
+    light,dark=b'\xff'+bytes(7),bytes(8)
+    blocks=b''.join(dark if (x//4+y//4)%2 else light for y in range(16) for x in range(8))
+    data[pixels:pixels+size]=swizzle(blocks,8,16,8,1)
+    rename_texture(data,at,'tc_HintGrid^r')
+
+
+def repeat_hint_checker(section):
+    count,=struct.unpack_from('<H',section,8)
+    if count!=4:
+        raise ValueError('Unexpected Settings title material count')
+    offsets=struct.unpack_from('<4I',section,12)
+    frame=bytearray(section[offsets[-1]:])
+    if not frame.startswith(b'W_Title_00LT\0') or frame[44:52]!=bytes((0,0,4,4,1,0,5,4)):
+        raise ValueError('Unexpected Settings title checker sampler')
+    frame[:28]=b'HintDoubleFrame'.ljust(28,b'\0')
+    # Preserve the filter, set the vertical address mode to the same repeat used horizontally.
+    frame[51]=frame[50]
+    out=bytearray(section[:12])+struct.pack('<5I',*(o+4 for o in offsets),len(section)+4)+section[28:]+frame
+    struct.pack_into('<IH',out,4,len(out),5)
+    return out
+
+
+def keycap_pane(index, title_flags):
+    out=bytearray(pane(b'pic1',f'P_Key{index}',visible=False))
+    out[8:12]=title_flags
+    out[8]&=~1
+    out.extend(bytes((245,248,250,255))*2+bytes((167,184,195,255))*2+struct.pack('<HBB',2,0,0))
+    struct.pack_into('<I',out,4,len(out))
+    return out
 
 
 def yaz0(data):
@@ -392,7 +467,7 @@ def add_page(data, container=False):
     own = [pane(b'pan1', 'N_Settings', visible=False), b'pas1\x08\0\0\0',
            pane(b'prt1', 'L_SettingsBG', reference='cm_L_Scroll_List_BG'),
            pane(b'prt1', 'L_SettingsTitle', y=270, reference='cm_L_Scroll_ListTitle_00'),
-           pane(b'prt1', 'L_SettingsHint', y=-235, reference='cm_L_Scroll_ListTitle_00', scale=0.55)]
+           pane(b'prt1', 'L_SettingsHint', y=-235, reference='cm_L_SetHints_00', scale=0.55)]
     own += [pane(b'prt1', 'L_SettingsRow0', y=150, reference='cm_L_Scroll_List_00')]
     own += [pane(b'prt1', f'L_SettingsRow{i}', y=60-(i-1)*60, reference='cm_L_Scroll_List_01') for i in range(1,6)]
     own += [pane(b'prt1', 'L_SettingsScroll', x=470, y=-60, reference='cm_L_ScrollBar_00', scale=0.5)]
@@ -452,6 +527,7 @@ def prepare(romfs, output):
         packed += b''.join(b'\xff'+nested[i:i+8] for i in range(0, len(nested), 8))
         common_parts[destination + '.szs'] = packed
     common_parts['cm_L_SetLabel_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'])
+    common_parts['cm_L_SetHints_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'], hints=True)
     common_parts['cm_L_SetBtn_00.szs'] = dialog_button(common_parts['cm_L_WinBtn_00.szs'])
     common = pack_entries(list(common_parts.items()))
     common_target = Path(output)/COMMON_RELATIVE

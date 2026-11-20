@@ -24,7 +24,9 @@ void mk8_am_push_message(uint32_t message) {
 '''
 SUPPORT_LOG = ('    LOG("[hid] controller support (players %d..%d): %d player(s)%s\\n", min, max, n,\n'
                '        n < min ? " - fewer than the game asks for" : "");\n')
-SUPPORT_FOCUS = SUPPORT_LOG + '''    if (!getenv("MK8_NO_APPLET_FOCUS")) {  // MK8 (toolchain/controller_applet.py): the applet closed, the game is in focus
+SUPPORT_FOCUS = SUPPORT_LOG + '''    extern void mk8_controller_applet_result(int min, int max, int players);
+    mk8_controller_applet_result(min, max, n);
+    if (!getenv("MK8_NO_APPLET_FOCUS")) {  // MK8 (toolchain/controller_applet.py): the applet closed, the game is in focus
         extern void mk8_am_push_message(uint32_t message);
         mk8_am_push_message(15);  // FocusStateChanged
     }

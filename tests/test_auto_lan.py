@@ -24,6 +24,7 @@ int vlan_send(uint16_t a, uint32_t b, uint16_t c, const void *d, size_t n) {
 int main(void) {
     uint64_t presses[20], last=0;int count=0;
     int host=!strcmp(getenv("MK8_AUTO_LAN"),"host");
+    assert(mk8_auto_lan_requested());
     for(uint64_t frame=0;frame<2500;frame++) {
         if(frame==20)mk8_auto_lan_movie("MovieMenu.mp4");
         if(frame==1500)mk8_auto_lan_vlan_up();
@@ -39,8 +40,10 @@ int main(void) {
     assert(presses[4]==(AUTO_L|AUTO_R));
     assert(presses[5]==AUTO_DOWN && presses[6]==AUTO_DOWN && presses[7]==AUTO_DOWN);
     assert(presses[8]==AUTO_A);
+    assert(mk8_auto_lan_requested() == !host);
     if(host) { assert(count==10 && presses[9]==AUTO_A && beacons>0); }
     else { assert(count==9 && beacons==0); } // no host beacon: never create a room as guest
+    mk8_auto_lan_frame(100000); assert(!mk8_auto_lan_requested());
     puts("PASS: active Mii kept, LAN navigation preserved, guest waits for host");
 }
 '''

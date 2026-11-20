@@ -1,27 +1,50 @@
 #include "rt.h"
 #include "hle.h"
 #include "settings_values.h"
+#include "controller_edit.h"
+#include "controller_tips.h"
+bool mk8_auto_lan_requested(void);
 #include <stdatomic.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
-static uint64_t owner, labels[SETTINGS_VISIBLE+1], values[SETTINGS_VISIBLE+1], rows[SETTINGS_VISIBLE+1], root, hint;
+static uint64_t owner, labels[SETTINGS_VISIBLE+1], values[SETTINGS_VISIBLE+1], rows[SETTINGS_VISIBLE+1], root, hint, hint_second;
+static struct Mk8ControlTips tips;
+static uint64_t hint_plate, hint_single, hint_double, keycaps[4], key_labels[4], action_labels[4];
 static uint64_t top, top_root, restore_nav, scrollbar;
 static uint64_t dialog, dialog_buttons[2], dialog_animations[2];
 static uint64_t dialog_labels[3];
-static uint64_t dialog_cursor, cursor_animation, back_animation;
+static uint64_t dialog_cursor, cursor_animation, back_animation, back_icon;
 static bool restart_prompt, restart_yes, restart_wait, restart_pressed, exit_pressed;
 static _Atomic bool from_button;
 static _Atomic bool available, requested;
+static _Atomic bool shared_race;
+static bool hide_on_return;
 static unsigned category, focus, offset;
 static uint64_t previous;
 static bool touched;
 static bool entering, confirming, exiting, reset_confirm;
 static uint64_t entered_at, exited_at, last_revision, repeat_at;
 static float reveal, exit_from;
-static uint64_t reticle, button;
-static bool reticle_visible;
+static uint64_t cursor_owner, button;
+static unsigned cursor_visibility;
+static _Atomic bool controller_preview, controller_visible;
+static _Atomic unsigned controller_applet_players, controller_entry_players;
+static unsigned controller_rows;
+static _Atomic bool controller_focused=true, controller_resync;
+static _Atomic bool controller_mouse_down;
+static _Atomic int controller_hover=-2, controller_click=-1, controller_armed=-1;
+static int controller_focus;
+enum ControllerPanel { PLAYERS, ROW_ACTIONS, SWAP_TARGET };
+static enum ControllerPanel controller_panel;
+static int action_player;
+static bool controller_cancelled;
+static uint64_t controller_previous;
+static uint64_t title_label;
+uint64_t mk8_controller_p1_navigation(void);
+void mk8_controller_hold_extra_inputs(void);
+static void controller_release(void);
 static _Atomic bool active, back;
 static _Atomic uint64_t buttons, suppressed, fixed_buttons, raw_buttons;
 static _Atomic int wheel;
@@ -39,8 +62,13 @@ void mk8_settings_top_forget(void);
 void input_reset(void);
 
 RT_ON_RESET(settings_page_reset) {
-    owner = root = reticle = button = 0; active = back = editing = entering = confirming = exiting = false;
-    top=top_root=restore_nav=scrollbar=0; available=requested=from_button=false;
+    if(controller_visible) controller_release();
+    owner = root = cursor_owner = button = 0; active = back = editing = entering = confirming = exiting = false;
+    controller_preview=controller_visible=false;
+    controller_applet_players=controller_entry_players=0;
+    controller_mouse_down=false;
+    controller_armed=controller_click=-1; controller_hover=-2;
+    top=top_root=restore_nav=scrollbar=0; available=requested=from_button=shared_race=hide_on_return=false;
     dialog=dialog_cursor=cursor_animation=back_animation=0;
     restart_prompt=restart_wait=restart_pressed=exit_pressed=false;
     buttons = suppressed = fixed_buttons = raw_buttons = 0; wheel=0;
@@ -51,10 +79,65 @@ static void heap(uint64_t p, size_t n) {
         FATAL("[mk8:settings] invalid selector object: %llx size=%zu\n",p,n);
 }
 
+uint64_t kernel_heap_size(void);
+static bool race_heap(uint64_t p,size_t size,uint64_t end) {
+    return !(p&7) && p>=HEAP_BASE && p<end && size<=end-p;
+}
+
+// Evaluated on the hash-checked 4.0.1 UI tick. Other threads see only the published decision.
+static bool shared_race_scene(uint64_t manager) {
+    uint64_t app=LD64(MAIN_BASE+0x1358c70);
+    if(app!=MAIN_BASE+0x133ebd0) return false;
+    uint64_t end=HEAP_BASE+kernel_heap_size(), node=LD64(app+0x20);
+    if(!race_heap(node,0x10,end)) return false;
+    uint64_t scene=LD64(node+8);
+    if(!race_heap(scene,0x188,end) || LD32(scene+0x184)!=4) return false;
+    uint64_t context=LD64(app+0x28);
+    if(!race_heap(context,0x248,end)) return false;
+    uint64_t config=LD64(context+0x240);
+    if(!race_heap(config,0x18,end)) return false;
+    uint64_t rules=LD64(config+0x10);
+    if(!race_heap(rules,0x1a0,end)) return false;
+    // MK8's local-player accessor (MAIN+0x86f154), including its alternate count for kind 4.
+    uint32_t players=LD32(rules+(LD32(rules+8)==4 ? 0x19c : 0x188));
+    if(players<2 || players>4) return false;
+    // The race scene stays loaded under the standings and the following Next Round menu.
+    if(race_heap(manager,0xb60,end)) {
+        unsigned n=LD32(manager+0xb50);
+        uint64_t pages=LD64(manager+0xb58);
+        if(n<=32 && race_heap(pages,n*8,end)) for(unsigned i=0;i<n;i++) {
+            uint64_t p=LD64(pages+i*8);
+            if(!race_heap(p,0x128,end) || LD32(p+0x120)!=4) continue;
+            uint64_t type=LD64(p);
+            uint32_t id=LD32(p+0xe8);
+            if((id==0x70 && type==MAIN_BASE+0x1288c38) ||
+               (id==0x72 && type==MAIN_BASE+0x1288038)) return false;
+        }
+    }
+    return true;
+}
+
+bool mk8_settings_shared_race(void) { return atomic_load(&shared_race); }
+
 static uint64_t call(Cpu *c, uint64_t address, uint64_t a, uint64_t b, uint64_t d, uint64_t e, uint64_t f) {
     c->x[0]=a; c->x[1]=b; c->x[2]=d; c->x[3]=e; c->x[4]=f;
     guest_call(c, address);
     return c->x[0];
+}
+
+enum CursorAction { SAVE_CURSORS, HIDE_CURSORS, RESTORE_CURSORS };
+static void stock_cursors(Cpu *c,enum CursorAction action) {
+    if(action==SAVE_CURSORS) { cursor_owner=owner; cursor_visibility=0; }
+    else if(cursor_owner!=owner) return;
+    // The shared page creates one cursor per player even in single-player menus.
+    heap(owner,0x1f0);
+    for(unsigned i=0;i<4;i++) {
+        uint64_t cursor=LD64(owner+0x1d0+i*8); heap(cursor,0xc8);
+        if(action==SAVE_CURSORS) {
+            if(call(c,0x70008adf84ull,cursor+0x30,0,0,0,0)) cursor_visibility|=1u<<i;
+        } else call(c,0x70008ae098ull,cursor+0x30,action==RESTORE_CURSORS && (cursor_visibility&(1u<<i)),0,0,0);
+    }
+    if(action==RESTORE_CURSORS) cursor_owner=0;
 }
 
 static uint64_t string(Cpu *c, const char *text) {
@@ -76,6 +159,12 @@ static void visible(Cpu *c, uint64_t component, const char *name, bool show) {
     call(c,0x70008ade74ull,pane,show,0,0,0);
 }
 
+static void menu_sound(Cpu *c, uint64_t event) {
+    call(c,0x700008c608ull,event,0x7000ed8620ull,0,0,0);
+}
+
+static void dialog_open_sound(Cpu *c) { menu_sound(c,0x7000ee9367ull); } // SE_SYS_DIALOG_OPEN
+
 static void appear(Cpu *c, float progress) {
     reveal=progress;
     uint64_t pane=find(c,root,"N_Settings"); heap(pane,0x60);
@@ -91,6 +180,147 @@ static void text(Cpu *c, uint64_t pane, const char *value) {
     if (n > 79) FATAL("[mk8:settings] selector value too long\n");
     for (size_t i=0; i<=n; i++) ST16(c->sp+128+i*2,(unsigned char)value[i]);
     call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
+}
+
+static bool read_tips(bool settings) {
+    struct Mk8ControlTips current;
+    mk8_control_tips(settings,&current);
+    if(!memcmp(&tips,&current,sizeof tips)) return false;
+    tips=current;
+    return true;
+}
+
+// turbo_messageFontOutline_50 already supplies these symbols to both stock help text boxes.
+static uint16_t button_glyph(const char *label) {
+    static const struct { const char *name; uint16_t code; } pad[]={
+        {"A",0xe000},{"B",0xe001},{"X",0xe002},{"Y",0xe003},{"L",0xe004},{"R",0xe005},
+        {"Plus",0xe045},{"Minus",0xe046},{"ZL",0xe054},{"ZR",0xe055},
+        {"D-pad Up",0xe079},{"D-pad Down",0xe07a},{"D-pad Left",0xe07b},{"D-pad Right",0xe07c}
+    }, ps[]={{"Cross",0x00d7},{"Circle",0x25cb},{"Square",0x25a1},{"Triangle",0x25b3}};
+    if(tips.source==MK8_TIP_PLAYSTATION)
+        for(unsigned i=0;i<sizeof ps/sizeof *ps;i++) if(!strcmp(label,ps[i].name)) return ps[i].code;
+    unsigned count=tips.source==MK8_TIP_NINTENDO ? sizeof pad/sizeof *pad : tips.source==MK8_TIP_XBOX ? 4 : 0;
+    for(unsigned i=0;i<count;i++) if(!strcmp(label,pad[i].name)) return pad[i].code;
+    return 0;
+}
+
+struct TipAction { enum Mk8TipAction action; const char *verb; };
+
+static void hint_box(Cpu *c,uint64_t pane,float x,float y,float width,float height) {
+    float geometry[5]={x,y,0,width,height};
+    memcpy((void *)(uintptr_t)(c->sp+320),geometry,sizeof geometry);
+    call(c,0x70008ade34ull,pane,c->sp+320,0,0,0);
+    call(c,0x70008ade58ull,pane,c->sp+332,0,0,0);
+}
+
+static float hint_text_y(bool two_lines,bool lower) {
+    // The font baseline places the 36-unit keycap ten units inside each 56-unit row.
+    if(hint_double && two_lines) return lower ? -57 : -1;
+    return (two_lines ? 10 : 0)-(lower ? 44 : 5);
+}
+
+static void hint_background(Cpu *c,bool two_lines,float width) {
+    if(!keycaps[0]) return;
+    bool legacy_double=two_lines && !hint_double;
+    hint_box(c,hint_plate,0,legacy_double ? -8 : 2,width,legacy_double ? 96 : 56);
+    if(hint_double) {
+        call(c,0x70008ade74ull,hint_single,!two_lines,0,0,0);
+        call(c,0x70008ade74ull,hint_double,two_lines,0,0,0);
+        hint_box(c,two_lines ? hint_double : hint_single,0,2,width,two_lines ? 112 : 56);
+    }
+    hint_box(c,hint,0,hint_text_y(two_lines,false),width,50);
+    hint_box(c,hint_second,0,hint_text_y(two_lines,true),width,50);
+}
+
+static void keycap_visible(Cpu *c,unsigned i,bool show) {
+    call(c,0x70008ade74ull,keycaps[i],show,0,0,0);
+    call(c,0x70008ade74ull,key_labels[i],show,0,0,0);
+    call(c,0x70008ade74ull,action_labels[i],show,0,0,0);
+}
+
+static bool keyboard_tips(Cpu *c,const char *description,const struct TipAction *actions,unsigned count,const char *fallback) {
+    if(!keycaps[0]) return false; // Previously prepared archives retain their stock text-only hints.
+    float keys[4], verbs[4], widths[4], columns[4]={0}, total=0;
+    const struct TipAction *bound[4];
+    unsigned n=0;
+    if(tips.source==MK8_TIP_KEYBOARD) for(unsigned i=0;i<count;i++) {
+        const char *label=tips.label[actions[i].action];
+        if(*label && strcmp(label,"(none)")) bound[n++]=actions+i;
+    }
+    for(unsigned i=0;i<4;i++) keycap_visible(c,i,i<n);
+    if(!n) return false;
+    bool mouse_hint=n<count && !description && *fallback;
+    unsigned per_row=n==4 ? 2 : n;
+    bool two_lines=description || mouse_hint || n>per_row;
+    for(unsigned i=0;i<n;i++) {
+        keys[i]=22+17*strlen(tips.label[bound[i]->action]);
+        verbs[i]=12+17*strlen(bound[i]->verb);
+        widths[i]=keys[i]+8+verbs[i];
+        if(widths[i]>columns[i%per_row]) columns[i%per_row]=widths[i];
+    }
+    for(unsigned i=0;i<per_row;i++) total+=columns[i]+(i ? 40 : 0);
+    hint_background(c,two_lines,total+44>880 ? total+44 : 880);
+    text(c,hint,description ? description : "");
+    call(c,0x70008ade74ull,hint_second,mouse_hint,0,0,0);
+    if(mouse_hint) text(c,hint_second,fallback);
+    float x=0;
+    for(unsigned i=0;i<n;i++) {
+        if(i%per_row==0) x=-total/2;
+        float start=x+(columns[i%per_row]-widths[i])/2;
+        float y=hint_text_y(two_lines,description || i>=per_row);
+        float key_center=start+keys[i]/2;
+        // The stock title font's baseline is nine layout units below its pane center.
+        hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
+        hint_box(c,key_labels[i],key_center,y,keys[i],50);
+        hint_box(c,action_labels[i],start+keys[i]+8+verbs[i]/2,y,verbs[i],50);
+        text(c,key_labels[i],tips.label[bound[i]->action]);
+        text(c,action_labels[i],bound[i]->verb);
+        x+=columns[i%per_row]+40;
+    }
+    return true;
+}
+
+static void action_tips(Cpu *c,const char *description,const struct TipAction *actions,unsigned count,const char *fallback) {
+    if(!hint) return;
+    if(keyboard_tips(c,description,actions,count,fallback)) return;
+    uint16_t lines[2][41]={{0}};
+    size_t used[2]={0};
+    unsigned line=0;
+    if(description && *description) {
+        for(;description[used[0]] && used[0]<40;used[0]++) lines[0][used[0]]=(unsigned char)description[used[0]];
+        line=1;
+    }
+    bool overflow=false, missing=false;
+    for(unsigned i=0;i<count;i++) {
+        const char *label=tips.label[actions[i].action], *verb=actions[i].verb;
+        if(!*label || !strcmp(label,"(none)")) { missing=true; continue; }
+        uint16_t glyph=button_glyph(label);
+        size_t length=(glyph ? 1 : strlen(label))+1+strlen(verb);
+        if(used[line] && used[line]+2+length>40 && line==0) line++;
+        if(used[line]+(used[line] ? 2 : 0)+length>40) { overflow=true; break; }
+        uint16_t *out=lines[line]+used[line];
+        if(used[line]) { *out++=' '; *out++=' '; }
+        if(glyph) *out++=glyph;
+        else while(*label) *out++=(unsigned char)*label++;
+        *out++=' ';
+        while(*verb) *out++=(unsigned char)*verb++;
+        used[line]=out-lines[line];
+    }
+    if(!description && missing && used[0] && !used[1] && *fallback) {
+        while(*fallback && used[1]<40) lines[1][used[1]++]=(unsigned char)*fallback++;
+    } else if(overflow || (!used[0] && !used[1]) || (description && count && !used[1])) {
+        if(!description) { used[0]=used[1]=0; line=0; }
+        used[line]=0;
+        while(*fallback && used[line]<40) lines[line][used[line]++]=(unsigned char)*fallback++;
+    }
+    hint_background(c,used[1]!=0,880);
+    for(unsigned i=0;i<2;i++) {
+        uint64_t pane=i ? hint_second : hint;
+        if(i) call(c,0x70008ade74ull,pane,used[i]!=0,0,0,0);
+        lines[i][used[i]]=0;
+        memcpy((void *)(uintptr_t)(c->sp+128),lines[i],(used[i]+1)*2);
+        call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
+    }
 }
 
 static uint64_t attach(Cpu *c, uint64_t page, uint64_t parent, const char *name) {
@@ -110,6 +340,34 @@ static Mk8Setting selected(void) {
     Mk8Setting row;
     if(!focus || !mk8_settings_values_row(category,focus-1,&row)) FATAL("[mk8:settings] invalid settings selection\n");
     return row;
+}
+
+static void settings_tips(Cpu *c) {
+    bool stock_back=tips.source==MK8_TIP_NINTENDO && !strcmp(tips.label[MK8_TIP_BACK],"B");
+    call(c,0x70008ade74ull,back_icon,stock_back,0,0,0);
+    static const struct TipAction category_tips[]={{MK8_TIP_CONFIRM,"Category"},{MK8_TIP_DOWN,"Options"},{MK8_TIP_BACK,"Close"}};
+    static const struct TipAction save[]={{MK8_TIP_CONFIRM,"OK"},{MK8_TIP_BACK,"Cancel"}};
+    static const struct TipAction reset[]={{MK8_TIP_CONFIRM,"Reset"},{MK8_TIP_BACK,"Cancel"}};
+    struct TipAction row_tips[]={{MK8_TIP_CONFIRM,"Change"},{MK8_TIP_BACK,"Back"}};
+    const char *help=NULL;
+    char range[40];
+    if(exiting) help="Saving settings...";
+    else if(mk8_settings_values_saved()<0) help="Save failed. Check folder; Back retries.";
+    else if(mk8_settings_values_capturing()) help="Waiting for a new binding...";
+    if(help) { action_tips(c,help,NULL,0,""); return; }
+    if(editing) {
+        snprintf(range,sizeof range,"Enter a value from 0 to %d.",edit_max);
+        help=invalid ? range : tips.source==MK8_TIP_KEYBOARD ? "Type a value or use the arrow keys." : "Up/down: 1   Left/right: 10";
+        action_tips(c,help,save,2,""); return;
+    }
+    if(reset_confirm) { action_tips(c,"Reset these bindings?",reset,2,""); return; }
+    if(!focus) { action_tips(c,NULL,category_tips,3,"Select a category or setting."); return; }
+    Mk8Setting row=selected();
+    if(row.kind==SETTING_NUMBER) row_tips[0].verb="Edit";
+    if(row.kind==SETTING_BINDING) row_tips[0].verb="Remap";
+    if(row.kind==SETTING_RESET) row_tips[0].verb="Reset";
+    unsigned first=row.enabled && row.kind!=SETTING_INFO ? 0 : 1;
+    action_tips(c,row.help,row_tips+first,2-first,"");
 }
 
 static void draw(Cpu *c) {
@@ -147,15 +405,7 @@ static void draw(Cpu *c) {
         for(unsigned i=0;i<5;i++) memcpy(&c->v[i],&args[i],sizeof(float));
         call(c,0x7000451ff4ull,scrollbar,0,0,0,0);
     }
-    char help[80];
-    if(exiting) snprintf(help,sizeof help,"Saving settings...");
-    else if(mk8_settings_values_saved()<0) snprintf(help,sizeof help,"Save failed. Check folder; Back retries.");
-    else if(editing) snprintf(help,sizeof help,invalid ? "Use 1-3 digits, from 0 to %d" : "Type/arrows | A: OK | B/Esc: cancel",edit_max);
-    else if(reset_confirm) snprintf(help,sizeof help,"Reset bindings? A: reset | B/Esc: cancel");
-    else if(focus) {
-        Mk8Setting row=selected(); snprintf(help,sizeof help,"%s",row.help);
-    } else snprintf(help,sizeof help,"Select settings to modify");
-    if(hint) text(c,hint,help);
+    settings_tips(c);
     last_revision=mk8_settings_values_revision();
     LOG("[mk8:settings] category=%s focus=%u offset=%u\n",categories[category],focus,offset);
 }
@@ -184,6 +434,279 @@ static uint64_t button_animations(Cpu *c,uint64_t component) {
     return animation;
 }
 
+// The stock automatic applet establishes the player count before character selection.
+void mk8_controller_applet_result(int min,int max,int players) {
+    controller_applet_players=min>=2 && min<=4 && min==max && min==players ? (unsigned)min : 0;
+}
+
+bool mk8_controller_layout_active(void) { return controller_preview || controller_visible; }
+
+bool mk8_controller_pointer(int x,int y,int action) {
+    if (action==3 || action==4) {
+        controller_focused=action==4; controller_resync=true;
+        controller_armed=controller_click=-1; controller_hover=-1;
+        return false;
+    }
+    if (!mk8_controller_layout_active()) return action==2 && atomic_exchange(&controller_mouse_down,false);
+    if (action==1) controller_mouse_down=true;
+    if (action==2 && !atomic_exchange(&controller_mouse_down,false)) return false;
+    if (!controller_focused) return true;
+    int hit=-1;
+    if(x>=200 && x<=1080 && y>=185 && y<=455 && (y-185)%70<=60) hit=(y-185)/70;
+    if (y>=561 && y<=651) {
+        if (x>=282 && x<=598) hit=4;
+        if (x>=682 && x<=998) hit=5;
+    }
+    controller_hover=hit;
+    if (action==1) controller_armed=hit;
+    if (action==0 && hit!=controller_armed) controller_armed=-1;
+    if (action==2 && atomic_exchange(&controller_armed,-1)==hit && hit>=0) controller_click=hit;
+    return true;
+}
+
+static void controller_place(Cpu *c, const char *name, float x,float y) {
+    uint64_t pane=find(c,root,name);
+    float translation[3]={x,y,0};
+    memcpy((void *)(uintptr_t)(c->sp+320),translation,sizeof translation);
+    call(c,0x70008ade34ull,pane,c->sp+320,0,0,0);
+}
+
+static void controller_cursor_scale(Cpu *c,float scale) {
+    uint64_t pane=find(c,root,"L_SettingsCursor"); heap(pane,0x60);
+    memcpy((void *)(uintptr_t)(pane+0x48),&scale,sizeof scale);
+    memcpy((void *)(uintptr_t)(pane+0x4c),&scale,sizeof scale);
+    ST8(pane+0x58,LD8(pane+0x58)|0x10);
+}
+
+static void controller_highlight(Cpu *c) {
+    bool footer=controller_focus>=4;
+    for(unsigned i=0;i<4;i++)
+        call(c,controller_focus==(int)i ? 0x700044ed20ull : 0x700044ee50ull,rows[i+1],1,0,0,0);
+    for(unsigned i=0;i<2;i++) animation_frame(c,dialog_animations[i],0,controller_focus==(int)i+4 ? 2 : 0);
+    // Keep the four native corners apart; shrinking the cursor bounds alone makes them cross.
+    float scale=footer ? 1.f : .5f;
+    controller_cursor_scale(c,scale);
+    float position[3]={footer ? (controller_focus==4 ? -200 : 200) : 0,footer ? -246 : 145-controller_focus*70,0};
+    float size[2]={footer ? 370 : 1700,158};
+    memcpy((void *)(uintptr_t)(c->sp+320),size,sizeof size);
+    call(c,0x7000443404ull,dialog_cursor,c->sp+320,0,0,0);
+    memcpy((void *)(uintptr_t)(c->sp+320),position,sizeof position);
+    call(c,0x70008adff0ull,dialog_cursor+0x30,c->sp+320,0,0,0);
+}
+
+static bool controller_listening(enum Mk8EditState state) {
+    return state==MK8_EDIT_LISTEN || state==MK8_EDIT_NEED_LEFT || state==MK8_EDIT_NEED_RIGHT ||
+           state==MK8_EDIT_AMBIGUOUS || state==MK8_EDIT_PAIR_HELD;
+}
+
+static bool controller_step(Cpu *c,enum Mk8EditState state,int listening) {
+    uint64_t held=mk8_controller_p1_navigation(), edge=held&~controller_previous;
+    controller_previous=held;
+    if(state==MK8_EDIT_APPLIED || (controller_cancelled && state==MK8_EDIT_CLOSED)) {
+        bool applied=state==MK8_EDIT_APPLIED;
+        menu_sound(c,applied ? 0x7000ed87bfull : 0x7000ed87cfull);
+        LOG("[mk8:controllers] %s\n",applied ? "applied" : "cancelled");
+        return false;
+    }
+    if (atomic_exchange(&controller_resync,false) || !controller_focused) return true;
+    bool enrolling=controller_listening(state);
+    int old=controller_focus, count=controller_panel==ROW_ACTIONS ? 4 : (int)controller_rows;
+    int hover=atomic_exchange(&controller_hover,-2), click=atomic_exchange(&controller_click,-1);
+    if(hover>=0 && hover<count && !enrolling) controller_focus=hover;
+    if(hover==4 || (hover==5 && controller_panel!=SWAP_TARGET)) controller_focus=hover;
+    if (hover==-1 && controller_focus>=4) controller_focus=0;
+    if (edge&(1ull<<13)) controller_focus=controller_focus>=4 ? count-1 : controller_focus>0 ? controller_focus-1 : 0;
+    if ((edge&(1ull<<15)) && controller_focus<4)
+        controller_focus=controller_focus+1<count ? controller_focus+1 : 4;
+    if (edge&(1ull<<12)) controller_focus=4;
+    if ((edge&(1ull<<14)) && controller_panel!=SWAP_TARGET) controller_focus=5;
+    if(enrolling && controller_focus<4) controller_focus=listening>=0 && listening<count ? listening : 0;
+    if(click>=0 && click<count && !enrolling) controller_focus=click;
+    if(click==5 && controller_panel==SWAP_TARGET) click=-1;
+    if(click>=4) controller_focus=click;
+    bool confirm=(edge&1) || (click>=0 && (click<count || click>=4));
+    bool back=(edge&2) || (confirm && controller_focus==4);
+    bool staged=false;
+    if(back) {
+        if(enrolling) {
+            staged=mk8_edit_command(MK8_EDIT_STOP_LISTEN,0,0);
+            controller_focus=listening>=0 ? listening : 0;
+        } else if(controller_panel!=PLAYERS) {
+            controller_panel=PLAYERS; controller_focus=action_player;
+        } else {
+            controller_focus=4; controller_cancelled=mk8_edit_command(MK8_EDIT_CANCEL,0,0);
+        }
+    } else if(state!=MK8_EDIT_PENDING && !controller_cancelled) {
+        if(enrolling) {
+            if(confirm && controller_focus==5 && listening>=0) {
+                staged=mk8_edit_command(MK8_EDIT_KEYBOARD,listening,0); controller_focus=listening;
+            }
+        } else if(controller_panel==ROW_ACTIONS && confirm) {
+            static const enum Mk8EditCommand actions[]={MK8_EDIT_ASSIGN,MK8_EDIT_KEYBOARD,MK8_EDIT_SWAP,MK8_EDIT_CLEAR};
+            enum Mk8EditCommand cmd=controller_focus==5 ? MK8_EDIT_CLEAR_ALL : actions[controller_focus];
+            controller_panel=cmd==MK8_EDIT_SWAP ? SWAP_TARGET : PLAYERS;
+            controller_focus=action_player;
+            if(cmd!=MK8_EDIT_SWAP) staged=mk8_edit_command(cmd,action_player,0);
+        } else if(controller_panel==SWAP_TARGET && confirm && controller_focus<count) {
+            if(controller_focus!=action_player) {
+                staged=mk8_edit_command(MK8_EDIT_SWAP,action_player,controller_focus);
+                if(staged) controller_panel=PLAYERS;
+            }
+        } else if(controller_panel==PLAYERS) {
+            if(edge&(1ull<<11)) staged=mk8_edit_command(MK8_EDIT_CLEAR_ALL,0,0);
+            else if(confirm && controller_focus==5) mk8_edit_command(MK8_EDIT_APPLY,0,0);
+            else if(controller_focus<count) {
+                action_player=controller_focus;
+                if(click>=0) { controller_panel=ROW_ACTIONS; controller_focus=0; }
+                else if(confirm) staged=mk8_edit_command(MK8_EDIT_ASSIGN,action_player,0);
+                else if(edge&4) controller_panel=SWAP_TARGET;
+                else if(edge&8) staged=mk8_edit_command(MK8_EDIT_CLEAR,action_player,0);
+            }
+        }
+    }
+    if(staged) menu_sound(c,0x7000ed87bfull);
+    if(old!=controller_focus) {
+        controller_highlight(c);
+        menu_sound(c,0x7000ed87a1ull);
+    }
+    return true;
+}
+
+static void controller_release(void) {
+    enum Mk8EditState state=mk8_edit_view(NULL,NULL);
+    if(state!=MK8_EDIT_CLOSED && state!=MK8_EDIT_APPLIED) mk8_edit_command(MK8_EDIT_CANCEL,0,0);
+    uint64_t held=mk8_controller_p1_navigation();
+    suppressed|=raw_buttons|held|((held&0xf000u)<<4);
+    mk8_controller_hold_extra_inputs();
+    controller_armed=controller_click=-1;
+    controller_preview=controller_visible=false;
+}
+
+static void controller_labels(Cpu *c, const uint16_t names[4][80],bool refresh) {
+    static uint16_t shown[4][80];
+    for (unsigned i=0;i<controller_rows;i++) {
+        if (!refresh && !memcmp(shown[i],names[i],sizeof shown[i])) continue;
+        memcpy(shown[i],names[i],sizeof shown[i]);
+        memcpy((void *)(uintptr_t)(c->sp+128),names[i],sizeof names[i]);
+        call(c,0x70008adc54ull,values[i+1],c->sp+128,0,0,0);
+    }
+}
+
+static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const uint16_t names[4][80],bool refresh) {
+    static enum ControllerPanel last_panel;
+    static enum Mk8EditState last_state;
+    static int previous_player;
+    bool enrolling=controller_listening(state), combined=enrolling && mk8_edit_has_combined();
+    static bool last_combined;
+    int player=enrolling ? listening : controller_panel==PLAYERS ? -1 : action_player;
+    bool source_changed=read_tips(false);
+    bool changed=refresh || source_changed || last_panel!=controller_panel || last_state!=state || previous_player!=player || combined!=last_combined;
+    if(changed) {
+        const char *heading="Controller assignment", *help=NULL;
+        const char *left="Cancel", *right="Apply";
+        char title[40];
+        if(controller_panel==ROW_ACTIONS) {
+            snprintf(title,sizeof title,"Player %d options",action_player+1);
+            heading=title; help="Select an action for this player."; left="Back"; right="Clear all";
+        } else if(controller_panel==SWAP_TARGET) {
+            snprintf(title,sizeof title,"Swap Player %d with...",action_player+1);
+            heading=title; help="Select another player to swap inputs."; left="Back";
+        } else if(enrolling) {
+            snprintf(title,sizeof title,"Player %d: L + R or SL + SR",listening+1);
+            heading=title; left="Back"; right="Use keyboard";
+            switch(state) {
+            case MK8_EDIT_AMBIGUOUS:
+                snprintf(title,sizeof title,"Player %d: multiple Joy-Cons",listening+1);
+                help="Release all. One player holds L + R."; break;
+            case MK8_EDIT_PAIR_HELD:
+                snprintf(title,sizeof title,"Player %d: Joy-Con pair ready",listening+1);
+                help="Release both shoulder buttons to join."; break;
+            case MK8_EDIT_NEED_LEFT: help="Hold R. Press L on the left Joy-Con."; break;
+            case MK8_EDIT_NEED_RIGHT: help="Hold L. Press R on the right Joy-Con."; break;
+            default: help=combined ? "For separate halves, use F1: Individual." : "Pair: press L and R on opposite halves."; break;
+            }
+        } else if(state==MK8_EDIT_FAILED) help="Assign every player a connected input.";
+        else if(state==MK8_EDIT_PENDING) help="Updating controller assignments...";
+        text(c,title_label,heading);
+        const struct TipAction roster[]={{MK8_TIP_CONFIRM,"Assign"},{MK8_TIP_SWAP,"Swap"},
+            {MK8_TIP_CLEAR,tips.source==MK8_TIP_KEYBOARD ? "Clear row" : "Clear"},{MK8_TIP_CLEAR_ALL,"Clear all"}};
+        static const struct TipAction submenu[]={{MK8_TIP_CONFIRM,"Select"},{MK8_TIP_BACK,"Back"}};
+        if(!help) action_tips(c,NULL,roster,4,"Click a player for assignment options.");
+        else if(controller_panel!=PLAYERS) action_tips(c,help,submenu,2,"Click an action or Back.");
+        else action_tips(c,help,NULL,0,"");
+        text(c,dialog_labels[1],left); text(c,dialog_labels[2],right);
+        visible(c,root,"L_SettingsNo",controller_panel!=SWAP_TARGET);
+        static const char *actions[]={"Assign controller","Use keyboard","Swap with player","Clear player"};
+        for(unsigned i=0;i<4;i++) {
+            char pane[20],label[16];
+            snprintf(pane,sizeof pane,"L_SettingsRow%u",i+1);
+            bool used=controller_panel==ROW_ACTIONS || i<controller_rows;
+            visible(c,root,pane,used);
+            if(!used) continue;
+            snprintf(label,sizeof label,"Player %u",i+1);
+            text(c,labels[i+1],controller_panel==ROW_ACTIONS ? actions[i] : label);
+            if(controller_panel==ROW_ACTIONS) text(c,values[i+1],"");
+        }
+        last_panel=controller_panel; last_state=state; previous_player=player; last_combined=combined;
+        controller_highlight(c);
+    }
+    if(controller_panel!=ROW_ACTIONS) controller_labels(c,names,changed);
+}
+
+static void controller_layout(Cpu *c) {
+    bool show=controller_preview;
+    if(show && !controller_visible) {
+        controller_focus=action_player=0; controller_panel=PLAYERS; controller_cancelled=false;
+        if(!mk8_edit_command(MK8_EDIT_BEGIN,(int)controller_rows,0)) { controller_release(); return; }
+    }
+    uint16_t names[4][80]; int listening=-1;
+    enum Mk8EditState state=mk8_edit_view(names,&listening);
+    if(show && controller_visible && !controller_step(c,state,listening)) show=controller_preview=false;
+    if(show==controller_visible) {
+        if(show) controller_draw(c,state,listening,names,false);
+        return;
+    }
+    if(show) stock_cursors(c,SAVE_CURSORS);
+    stock_cursors(c,show ? HIDE_CURSORS : RESTORE_CURSORS);
+    if(!show) text(c,title_label,"Settings");
+    visible(c,root,"L_SettingsRow0",!show);
+    visible(c,root,"L_SettingsBack",!show);
+    visible(c,root,"L_SettingsDialog",!show);
+    visible(c,root,"L_SettingsQuestion",!show);
+    visible(c,root,"L_SettingsScroll",false);
+    for(unsigned i=1;i<=SETTINGS_VISIBLE;i++) {
+        char name[24];
+        snprintf(name,sizeof name,"L_SettingsRow%u",i);
+        visible(c,root,name,!show || i<=controller_rows);
+        controller_place(c,name,0,show ? 145-(int)(i-1)*70 : 60-(int)(i-1)*60);
+        if(!show || i>4) continue;
+        visible(c,rows[i]+0x30,"L_Btn_LR",false);
+        call(c,i==1 ? 0x700044ed20ull : 0x700044ee50ull,rows[i],1,0,0,0);
+    }
+    controller_place(c,"L_SettingsHint",0,show ? -115 : -235);
+    controller_place(c,"L_SettingsYes",-200,show ? -246 : -195);
+    controller_place(c,"L_SettingsNo",200,show ? -246 : -195);
+    if(show) {
+        appear(c,1);
+        dialog_open_sound(c);
+        controller_previous=mk8_controller_p1_navigation();
+        controller_draw(c,state,listening,names,true);
+        call(c,0x7000442f5cull,dialog_cursor,1,0,0,0);
+        float speed=1; memcpy(&c->v[0],&speed,sizeof speed);
+        call(c,0x70008ad300ull,cursor_animation,1,0,0,0);
+    } else {
+        controller_release();
+        visible(c,root,"L_SettingsNo",true);
+        controller_cursor_scale(c,1.f);
+        float size[2]={370,158};
+        memcpy((void *)(uintptr_t)(c->sp+320),size,sizeof size);
+        call(c,0x7000443404ull,dialog_cursor,c->sp+320,0,0,0);
+    }
+    visible(c,root,"N_Settings",show);
+    visible(c,root,"N_SettingsPopup",show);
+    controller_visible=show;
+}
+
 static void dialog_draw(Cpu *c,bool instant) {
     static const char *messages[]={"Some settings require a restart.\nRestart now?","Yes","No"};
     for(unsigned i=0;i<3;i++) if(dialog_labels[i]) text(c,dialog_labels[i],messages[i]);
@@ -203,7 +726,7 @@ static void finish_return(Cpu *c,uint64_t page,uint64_t b) {
     if(dialog) visible(c,root,"N_SettingsPopup",false);
     restart_prompt=restart_wait=restart_pressed=exit_pressed=false;
     if(top_root) visible(c,top_root,"N_Btn_00",true);
-    call(c,0x70008ae098ull,reticle,reticle_visible,0,0,0); reticle=0;
+    stock_cursors(c,RESTORE_CURSORS);
     if(from_button) mk8_settings_button_restore(top);
     else if(restore_nav) {
         call(c,0x70008afc54ull,restore_nav,0,0,0,0);
@@ -211,7 +734,8 @@ static void finish_return(Cpu *c,uint64_t page,uint64_t b) {
     }
     top_root=restore_nav=0; suppressed=raw_buttons|b; active=false; exiting=false;
     input_reset();
-    LOG("[mk8:settings] native selector closed and saved\n");
+    if(mk8_settings_values_saved()==2) LOG("[mk8:settings] native selector closed and saved\n");
+    else LOG("[mk8:settings] native selector closed\n");
 }
 
 static void start_exit(Cpu *c) {
@@ -219,7 +743,7 @@ static void start_exit(Cpu *c) {
         exiting=true; exited_at=plat_now_ns(); exit_from=reveal;
         exit_pressed=reveal>0;
         if(exit_pressed) animation_play(c,back_animation,2,1);
-        call(c,0x700008c608ull,0x7000ed87cfull,0x7000ed8620ull,0,0,0);
+        menu_sound(c,0x7000ed87cfull);
         entering=confirming=false; draw(c);
     }
 }
@@ -229,20 +753,39 @@ void mk8_settings_page_build(uint64_t page) { top=page; }
 void mk8_settings_shared_build(uint64_t page) {
     if(!mk8_settings_style_active()) return;
     heap(page,0x1f8);
-    if(active) (void)post(SETTINGS_FINISH,0,0);
+    if(controller_visible) controller_release();
+    if(active) (void)post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
     mk8_settings_top_forget();
     Cpu *c=kernel_current_cpu();
     if (!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid selector construction context\n");
     Cpu saved=*c; c->sp-=512;
-    owner=page; active=back=editing=entering=confirming=exiting=reset_confirm=restart_prompt=restart_wait=restart_pressed=exit_pressed=false; category=focus=offset=0;
+    owner=page; cursor_owner=0; hide_on_return=false;
+    active=back=editing=entering=confirming=exiting=reset_confirm=restart_prompt=restart_wait=restart_pressed=exit_pressed=false; category=focus=offset=0;
     root=0; available=false; requested=false; top_root=restore_nav=0;
+    controller_visible=false;
     top=0;
     root=attach(c,page,0,"L_SettingsRoot"); heap(root,0x88);
     uint64_t title=attach(c,page,root,"L_SettingsTitle");
-    text(c,find(c,title,"T_Title_00"),"Settings");
-    hint=find(c,attach(c,page,root,"L_SettingsHint"),"T_Title_00");
+    title_label=find(c,title,"T_Title_00"); text(c,title_label,"Settings");
+    uint64_t help=attach(c,page,root,"L_SettingsHint");
+    hint=find(c,help,"T_Title_00"); hint_second=find(c,help,"T_Title_01");
+    hint_plate=find(c,help,"W_Title_00");
+    hint_double=call(c,0x70008ad8e8ull,help,string(c,"W_HintDouble"),0,0,0);
+    if(hint_double) hint_single=find(c,help,"W_HintSingle");
+    keycaps[0]=call(c,0x70008ad8e8ull,help,string(c,"P_Key0"),0,0,0);
+    if(keycaps[0]) for(unsigned i=0;i<4;i++) {
+        char name[16];
+        snprintf(name,sizeof name,"P_Key%u",i); keycaps[i]=find(c,help,name);
+        snprintf(name,sizeof name,"T_Key%u",i); key_labels[i]=find(c,help,name);
+        snprintf(name,sizeof name,"T_Verb%u",i); action_labels[i]=find(c,help,name);
+    }
+    float second_line[3]={0,-44,0};
+    memcpy((void *)(uintptr_t)(c->sp+320),second_line,sizeof second_line);
+    call(c,0x70008ade34ull,hint_second,c->sp+320,0,0,0);
     attach(c,page,root,"L_SettingsBG");
-    back_animation=button_animations(c,attach(c,page,root,"L_SettingsBack"));
+    uint64_t back_button=attach(c,page,root,"L_SettingsBack");
+    back_animation=button_animations(c,back_button);
+    back_icon=find(c,back_button,"L_BtnIconB_00");
     for (unsigned i=0;i<=SETTINGS_VISIBLE;i++) {
         char name[32]; snprintf(name,sizeof name,"L_SettingsRow%u",i);
         uint64_t obj=call(c,0x70005902d0ull,0x2c8,4,0,0,0); heap(obj,0x2c8);
@@ -294,9 +837,11 @@ void mk8_settings_shared_build(uint64_t page) {
     LOG("[mk8:settings] native selector page built\n");
 }
 
-bool mk8_settings_page_active(void) { return requested || active; }
+bool mk8_settings_page_active(void) { return requested || active || mk8_controller_layout_active(); }
 bool mk8_settings_page_toggle(void) {
+    if(shared_race) return false;
     if(!mk8_settings_style_active() || !available) return false;
+    if(mk8_controller_layout_active()) return true;
     if(active) back=true;
     else { from_button=false; requested=true; }
     return true;
@@ -358,7 +903,12 @@ static bool edit_number(uint64_t edge, bool cancel) {
 void mk8_settings_page_fixed(uint64_t b) { fixed_buttons=b; }
 void mk8_settings_page_wheel(int steps) { atomic_fetch_add(&wheel,steps); }
 uint64_t mk8_settings_page_input(uint64_t b, int32_t st[4],uint64_t scripted) {
-    raw_buttons=b; buttons=scripted;
+    uint64_t edge=b&~atomic_exchange(&raw_buttons,b); buttons=scripted;
+    if ((edge&(1ull<<10)) && controller_entry_players && controller_focused &&
+        !mk8_settings_page_active() && !menu_input_captured()) {
+        controller_armed=controller_click=-1; controller_hover=-2;
+        controller_preview=true;
+    }
     if (mk8_settings_page_active()) { memset(st,0,4*sizeof *st); return 0; }
     uint64_t held=atomic_load(&suppressed)&b;
     suppressed=held;
@@ -377,6 +927,8 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
     int32_t x=0,y=0; bool touch=touch_first(&x,&y);
     // A P2 controller can stop the game's P1 polls; read menu events directly on every UI tick.
     uint64_t b=fixed_buttons|buttons;
+    bool source_changed=read_tips(true);
+    if(source_changed && active && !restart_prompt) settings_tips(c);
     if (open && !active) {
         if(!post(SETTINGS_BEGIN,0,0)) FATAL("[mk8:settings] settings request queue full before opening\n");
         entering=true; confirming=from_button; back=false; previous=b; touched=touch; active=true;
@@ -392,17 +944,15 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
         if (LD32(button+0x48)!=107) FATAL("[mk8:settings] confirmation widget changed\n");
         top_root=LD64(top+0x448); heap(top_root,0x88); restore_nav=nav;
         }
-        uint64_t cursor=LD64(owner+0x1d0); heap(cursor,0xc8);
-        reticle=cursor+0x30;
-        reticle_visible=call(c,0x70008adf84ull,reticle,0,0,0,0)!=0;
+        stock_cursors(c,SAVE_CURSORS);
         if(!confirming) {
             entered_at=plat_now_ns();
             if(restore_nav) call(c,0x70008affa4ull,restore_nav,0,0,0,0);
-            call(c,0x70008ae098ull,reticle,0,0,0,0);
+            stock_cursors(c,HIDE_CURSORS);
             if(top_root) visible(c,top_root,"N_Btn_00",false);
         }
         visible(c,root,"N_Settings",false); appear(c,0); draw(c);
-        if(!confirming) visible(c,root,"N_Settings",true);
+        if(!confirming) { visible(c,root,"N_Settings",true); dialog_open_sound(c); }
         LOG("[mk8:settings] native selector entering\n");
     }
     // Publish active before consuming the open request; do not erase a later reopen during exit.
@@ -438,8 +988,9 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
                 if (!call(c,0x7000435cc0ull,button,0,0,0,0)) { previous=b; touched=touch; *c=saved; return; }
                 confirming=false; entered_at=plat_now_ns();
                 call(c,0x70008affa4ull,restore_nav,0,0,0,0);
-                call(c,0x70008ae098ull,reticle,0,0,0,0);
+                stock_cursors(c,HIDE_CURSORS);
                 visible(c,top_root,"N_Btn_00",false); visible(c,root,"N_Settings",true);
+                dialog_open_sound(c);
             }
             uint64_t elapsed=plat_now_ns()-entered_at;
             float progress=elapsed>=160000000ull ? 1 : elapsed/160000000.0f;
@@ -473,13 +1024,13 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
                 if(close) { restart_yes=false; confirm=true; }
                 if(was_yes!=restart_yes) {
                     dialog_draw(c,false);
-                    if(!confirm) call(c,0x700008c608ull,0x7000ed87a1ull,0x7000ed8620ull,0,0,0);
+                    if(!confirm) menu_sound(c,0x7000ed87a1ull);
                 }
                 if(confirm) {
                     restart_pressed=true;
                     animation_play(c,dialog_animations[restart_yes ? 0 : 1],2,1);
                     call(c,0x7000443320ull,dialog_cursor,0,0,0,0);
-                    call(c,0x700008c608ull,close ? 0x7000ed87cfull : 0x7000ed87bfull,0x7000ed8620ull,0,0,0);
+                    menu_sound(c,close ? 0x7000ed87cfull : 0x7000ed87bfull);
                 }
             }
             previous=b; touched=touch; *c=saved; return;
@@ -537,7 +1088,7 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
         } else if (change || last_revision!=mk8_settings_values_revision()) {
             draw(c);
             if (direction || confirm || old_focus!=focus)
-                call(c,0x700008c608ull,old_focus!=focus ? 0x7000ee9492ull : 0x7000ee94acull,0x7000ed8620ull,0,0,0);
+                menu_sound(c,old_focus!=focus ? 0x7000ee9492ull : 0x7000ee94acull);
         }
         previous=b; touched=touch;
     }
@@ -546,20 +1097,84 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
 
 // The shared cursor page is owned by each UI scene, including the race scene.
 void mk8_settings_page_frame(uint64_t manager) {
-    if(!mk8_settings_style_active()) return;
+    uint64_t end=HEAP_BASE+kernel_heap_size();
+    uint64_t page=race_heap(manager,0xc70,end) ? LD64(manager+0xc68) : 0;
+    mk8_title_input_active(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 &&
+                           LD32(page+0x120)==4 && LD32(page+0x124)==0 && !mk8_auto_lan_requested());
+    shared_race=shared_race_scene(manager);
+    if(shared_race) requested=false;
+    if(!mk8_settings_style_active()) {
+        controller_entry_players=0;
+        if(mk8_controller_layout_active()) controller_release();
+        return;
+    }
     heap(manager,0xb60);
     unsigned count=LD32(manager+0xb50);
     if(count>32) FATAL("[mk8:settings] unexpected active page count\n");
     uint64_t pages=LD64(manager+0xb58);
     if(count) heap(pages,count*8);
-    bool present=false,main_menu=false;
+    bool present=false,main_menu=false,local_parts=false,drivers=false;
     for(unsigned i=0;i<count;i++) {
         uint64_t p=LD64(pages+i*8); heap(p,0x1d0);
         if(p==owner) present=true;
         if(p==top && LD32(p+0x120)==4) main_menu=true;
+        // In MK8 4.0.1 the CharaParts layout is shared by solo (0x14), WiFi (0x15) and local (0x16).
+        if(LD32(p+0x120)==4 && !LD32(p+0x124)) {
+            if(LD64(p)==0x7001279040ull && LD32(p+0xe8)==0x16) local_parts=true;
+            if(LD64(p)==0x7001278940ull && LD32(p+0xe8)==0x2e) drivers=true;
+        }
     }
     mk8_settings_values_context(main_menu);
     available=present && mk8_settings_values_count(0)>0;
-    if(!present) { if(active) post(SETTINGS_FINISH,0,0); active=requested=false; return; }
+    controller_entry_players=present && local_parts && drivers ? atomic_load(&controller_applet_players) : 0;
+    if(!present) {
+        if(!active && !hide_on_return) cursor_owner=0;
+        if(mk8_controller_layout_active()) controller_release();
+        if(active) {
+            post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
+            hide_on_return=true;
+            // This owner can reappear. Its edit state and previous scene's navigation cannot.
+            editing=entering=confirming=exiting=reset_confirm=back=false;
+            restart_prompt=restart_wait=restart_pressed=exit_pressed=from_button=false;
+            top_root=restore_nav=0;
+        }
+        active=requested=false;
+        return;
+    }
+    if(hide_on_return) {
+        // The same page is live again; a rebuilt page clears this flag in its constructor.
+        Cpu *c=kernel_current_cpu();
+        if(!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid return context\n");
+        Cpu saved=*c; c->sp-=512;
+        visible(c,root,"N_Settings",false);
+        if(dialog) visible(c,root,"N_SettingsPopup",false);
+        stock_cursors(c,RESTORE_CURSORS);
+        *c=saved;
+        hide_on_return=false;
+    }
+    if(shared_race && active) {
+        // LAN can leave the lobby while its settings are open. Save without a restart prompt.
+        post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
+        Cpu *c=kernel_current_cpu();
+        if(!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid close context\n");
+        Cpu saved=*c; c->sp-=512;
+        if(!main_menu) { top_root=restore_nav=0; from_button=false; }
+        finish_return(c,owner,raw_buttons);
+        editing=entering=confirming=reset_confirm=back=false;
+        *c=saved;
+        return;
+    }
+    if(controller_preview || controller_visible) {
+        unsigned players=controller_entry_players;
+        if(!players && !controller_visible) controller_release();
+        if(!players) controller_preview=false;
+        else if(!controller_visible) controller_rows=players;
+        Cpu *c=kernel_current_cpu();
+        if(!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:controllers] invalid popup context\n");
+        Cpu saved=*c; c->sp-=512;
+        controller_layout(c);
+        *c=saved;
+        if(controller_visible) return;
+    }
     mk8_settings_page_tick(owner,atomic_load(&requested));
 }

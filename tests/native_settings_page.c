@@ -1,29 +1,77 @@
 #include "rt.h"
 #include "settings_values.h"
+#include "controller_edit.h"
+#include "controller_tips.h"
 #include <assert.h>
 #include <string.h>
 unsigned char memory[32768] __attribute__((aligned(16)));
 static Cpu cpu;
 static int returns, text_calls, save_state, resets, restart_choice=-1;
-static bool overlay, finger, cursor_shown=true, decided, capturing;
+static bool finish_queue_full;
+static int finish_mode;
+static bool overlay, finger, decided, capturing;
+static unsigned cursor_mask=11, cursor_writes;  // P1, P2 and P4 are visible before entering Settings.
+#define cursor_shown (cursor_mask&1)
 static bool back_done=true, button_done=true, cursor_done=true;
-static int back_pulses, button_pulses, cursor_pulses, select_sounds, decide_sounds, cancel_sounds;
-static float cursor_x;
+static int back_pulses, button_pulses, cursor_pulses, open_sounds, select_sounds, decide_sounds, cancel_sounds;
+static float cursor_x, cursor_y, cursor_width, cursor_height;
+static uint64_t popup_buttons;
+uint64_t mk8_controller_p1_navigation(void) { return popup_buttons; }
+static uint16_t popup_names[4][80]={{'P','r','o'}, {'L',' ','+',' ','R'}, {'L'}, {'R'}};
+void mk8_controller_names(uint16_t out[4][80]) { memcpy(out,popup_names,sizeof popup_names); }
+static enum Mk8EditCommand last_edit;
+static enum Mk8EditState editor_state;
+static int edit_row,edit_other;
+static bool wait_apply,bad_apply;
+bool mk8_edit_command(enum Mk8EditCommand cmd,int row,int other) {
+    last_edit=cmd; edit_row=row; edit_other=other;
+    switch(cmd) {
+    case MK8_EDIT_CANCEL: editor_state=MK8_EDIT_CLOSED; break;
+    case MK8_EDIT_APPLY: editor_state=wait_apply ? MK8_EDIT_PENDING : bad_apply ? MK8_EDIT_FAILED : MK8_EDIT_APPLIED; break;
+    case MK8_EDIT_ASSIGN: case MK8_EDIT_CLEAR_ALL: editor_state=MK8_EDIT_LISTEN; break;
+    default: editor_state=MK8_EDIT_READY; break;
+    }
+    return true;
+}
+enum Mk8EditState mk8_edit_view(uint16_t names[4][80],int *row) {
+    if(names) memcpy(names,popup_names,sizeof popup_names);
+    if(row) *row=edit_row;
+    return editor_state;
+}
+bool mk8_edit_has_combined(void) { return false; }
+static uint16_t last_name[80];
+static char last_hint[41];
+static uint16_t shown_tips[2][41];
+static char key_strings[4][41],action_strings[4][41];
+#define TEST_KEYCAP(i) (HEAP_BASE+16400+(i)*400)
+static struct Mk8ControlTips fixed_tips={MK8_TIP_KEYBOARD,{"Enter","Esc","","","","Up","Down","Left","Right"}},
+    popup_tips={MK8_TIP_NINTENDO,{"A","B","X","Y","Minus"}};
+void mk8_control_tips(bool settings,struct Mk8ControlTips *out) { *out=settings ? fixed_tips : popup_tips; }
+static unsigned extra_holds;
+void mk8_controller_hold_extra_inputs(void) { ++extra_holds; }
 static int32_t tx,ty;
 static uint64_t now, revision;
 static char rendered[SETTINGS_VISIBLE+1][80];
 static Mk8Setting catalogue[3][12];
 static int counts[]={11,4,2};
 static bool in_main=true;
+static bool native_style=true, auto_lan, title_active;
+bool mk8_auto_lan_requested(void) { return auto_lan; }
+void mk8_title_input_active(bool active) { title_active=active; }
+static uint64_t game_root, root_node, root_context;
+uint64_t kernel_heap_size(void) { return HEAP_MAX; }
 static bool probe_handoff, probe_reopen;
 static void observe_request_handoff(void);
 static void request_reopen(void);
-bool mk8_settings_style_active(void) { return true; }
+bool mk8_settings_style_active(void) { return native_style; }
 bool mk8_settings_values_main_menu(void) { return in_main; }
 void mk8_settings_values_context(bool value) { in_main=value; }
 uint64_t plat_now_ns(void) { return now; }
 Cpu *kernel_current_cpu(void) { return &cpu; }
 uint64_t test_read(uint64_t p) {
+    if(p==MAIN_BASE+0x1358c70) return game_root;
+    if(p==MAIN_BASE+0x133ebd0+0x20) return root_node;
+    if(p==MAIN_BASE+0x133ebd0+0x28) return root_context;
     if(p==0x70012f9e28ull) return 0x7000001000ull;
     assert(p>=HEAP_BASE && p+8<=GUEST_HI); return *(u64u *)(uintptr_t)p;
 }
@@ -43,7 +91,10 @@ int mk8_settings_values_saved(void) { return save_state; }
 bool mk8_settings_values_capturing(void) { return capturing; }
 bool mk8_settings_values_request(int op,int id,int value) {
     if(op==SETTINGS_BEGIN) { save_state=0; return true; }
-    if(op==SETTINGS_FINISH) { save_state=1; return true; }
+    if(op==SETTINGS_FINISH) {
+        if(finish_queue_full && value!=SETTINGS_DETACHED) return false;
+        finish_mode=value; save_state=1; return true;
+    }
     if(op==SETTINGS_RESTART) { restart_choice=value; save_state=value ? 4 : 2; return true; }
     if(op==SETTINGS_ACTIVATE) { if(id==20)capturing=true; else if(id==19)resets++; else assert(0); return true; }
     for(unsigned g=0;g<3;g++) for(int i=0;i<counts[g];i++) if(catalogue[g][i].id==id) {
@@ -59,15 +110,27 @@ void guest_call(Cpu *c,uint64_t address) {
         if(!strcmp(name,"N_Settings")) c->x[0]=HEAP_BASE+12200;
         else if(!strcmp(name,"N_Btn_00")) c->x[0]=HEAP_BASE+12000;
         else if(!strcmp(name,"N_SettingsPopup")) c->x[0]=HEAP_BASE+15100;
+        else if(!strcmp(name,"L_SettingsBack")) c->x[0]=HEAP_BASE+12064;
+        else if(!strcmp(name,"L_SettingsDialog")) c->x[0]=HEAP_BASE+14100;
+        else if(!strcmp(name,"L_SettingsQuestion")) c->x[0]=HEAP_BASE+14200;
+        else if(!strcmp(name,"L_SettingsScroll")) c->x[0]=HEAP_BASE+14300;
+        else if(!strcmp(name,"L_SettingsHint")) c->x[0]=HEAP_BASE+14400;
+        else if(!strcmp(name,"L_SettingsYes")) c->x[0]=HEAP_BASE+14500;
+        else if(!strcmp(name,"L_SettingsCursor")) c->x[0]=HEAP_BASE+14800;
+        else if(!strcmp(name,"L_SettingsNo")) c->x[0]=HEAP_BASE+14600;
         else if(sscanf(name,"L_SettingsRow%u",&row)==1) c->x[0]=HEAP_BASE+12400+row*128;
         else if(!strcmp(name,"L_Btn_LR")) c->x[0]=HEAP_BASE+13200+(c->x[0]-HEAP_BASE-4000-0x30)/512*128;
         else assert(0);
     } else if(address==0x70008ade74ull) {
-        assert(c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+16000);
+        assert(c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+18300);
         ST8(c->x[0]+0x58,(LD8(c->x[0]+0x58)&~1)|c->x[1]);
     } else if(address==0x70008ade34ull) {
-        assert(c->x[0]==HEAP_BASE+12200);
+        assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+14680 ||
+               (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+18300) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
+               (c->x[0]>=HEAP_BASE+12400 && c->x[0]<=HEAP_BASE+12400+SETTINGS_VISIBLE*128));
         memcpy((void *)(uintptr_t)(c->x[0]+0x30),(void *)(uintptr_t)c->x[1],12);
+    } else if(address==0x70008ade58ull) {
+        memcpy((void *)(uintptr_t)(c->x[0]+0x50),(void *)(uintptr_t)c->x[1],8);
     } else if(address==0x70008affa4ull) {
         assert(c->x[0]==HEAP_BASE+9000 && !c->x[1]); ST32(c->x[0]+0x28,6);
     } else if(address==0x7000435d2cull) {
@@ -84,8 +147,13 @@ void guest_call(Cpu *c,uint64_t address) {
         assert(c->x[0]==HEAP_BASE+9000); ST32(c->x[0]+0x28,3); ST32(c->x[0]+0x30,11);
     } else if(address==0x7000435cc0ull) { assert(c->x[0]==HEAP_BASE+14000); c->x[0]=decided; }
     else if(address==0x70008bf228ull) c->x[0]=HEAP_BASE+10000;
-    else if(address==0x70008adf84ull) { assert(c->x[0]==HEAP_BASE+11000+0x30); c->x[0]=cursor_shown; }
-    else if(address==0x70008ae098ull) { assert(c->x[0]==HEAP_BASE+11000+0x30); cursor_shown=c->x[1]!=0; }
+    else if(address==0x70008adf84ull || address==0x70008ae098ull) {
+        uint64_t offset=c->x[0]-(HEAP_BASE+11000+0x30);
+        assert(!(offset%224) && offset/224<4);
+        unsigned bit=1u<<(offset/224);
+        if(address==0x70008adf84ull) c->x[0]=!!(cursor_mask&bit);
+        else { cursor_writes++; cursor_mask=(cursor_mask&~bit)|(c->x[1] ? bit : 0); }
+    }
     else if(address==0x70008ad3c4ull) {
         assert(c->x[0]==HEAP_BASE+15200 || c->x[0]==HEAP_BASE+15400 || c->x[0]==HEAP_BASE+15500);
         float frame; memcpy(&frame,&c->v[0],sizeof frame); assert(frame==0 || frame==2);
@@ -103,14 +171,18 @@ void guest_call(Cpu *c,uint64_t address) {
         else { assert(c->x[0]==HEAP_BASE+15400 || c->x[0]==HEAP_BASE+15500); c->x[0]=button_done; }
     } else if(address==0x70008adff0ull) {
         assert(c->x[0]==HEAP_BASE+16000+0x30);
-        const float *p=(void *)(uintptr_t)c->x[1]; cursor_x=p[0]; assert((p[0]==-200 || p[0]==200) && p[1]==-195 && p[2]==0);
+        const float *p=(void *)(uintptr_t)c->x[1]; cursor_x=p[0]; cursor_y=p[1]; assert(p[2]==0);
+    } else if(address==0x7000443404ull) {
+        assert(c->x[0]==HEAP_BASE+16000);
+        const float *p=(void *)(uintptr_t)c->x[1]; cursor_width=p[0]; cursor_height=p[1];
     } else if(address==0x7000442f5cull || address==0x7000443320ull) {
         assert(c->x[0]==HEAP_BASE+16000); if(address==0x7000443320ull)cursor_pulses++;
     } else if(address==0x70008ad300ull) {
         assert(c->x[0]==HEAP_BASE+15800 && c->x[1]==1);
     } else if(address==0x700008c608ull) {
         assert(c->x[1]==0x7000ed8620ull);
-        if(c->x[0]==0x7000ed87a1ull)select_sounds++;
+        if(c->x[0]==0x7000ee9367ull)open_sounds++;
+        else if(c->x[0]==0x7000ed87a1ull)select_sounds++;
         else if(c->x[0]==0x7000ed87bfull)decide_sounds++;
         else if(c->x[0]==0x7000ed87cfull)cancel_sounds++;
         else assert(c->x[0]==0x7000ee9492ull || c->x[0]==0x7000ee94acull);
@@ -118,19 +190,41 @@ void guest_call(Cpu *c,uint64_t address) {
     else if(address==0x700044ed20ull || address==0x700044ee50ull) {}
     else if(address==0x70008adc54ull) {
         text_calls++;
-        if(c->x[0]==HEAP_BASE+3500) {
+        for(unsigned i=0;i<4;i++) if(c->x[0]==TEST_KEYCAP(i)+128 || c->x[0]==TEST_KEYCAP(i)+256) {
+            const uint16_t *s=(void *)(uintptr_t)c->x[1];
+            char *out=c->x[0]==TEST_KEYCAP(i)+128 ? key_strings[i] : action_strings[i];
+            unsigned j=0;
+            for(;s[j];j++) { assert(j<40); out[j]=(char)s[j]; }
+            out[j]=0;
+        }
+        if(c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+14680) {
             const uint16_t *s=(void *)(uintptr_t)c->x[1]; unsigned n=0;
             while(s[n]) n++;
             assert(n<=40); // Native title text buffer: 82 bytes including the UTF-16 terminator.
+            unsigned line=c->x[0]!=HEAP_BASE+3500;
+            memcpy(shown_tips[line],s,(n+1)*sizeof *s);
+            if(!line) for(unsigned i=0;i<=n;i++) last_hint[i]=(char)s[i];
         }
         for(unsigned i=0;i<=SETTINGS_VISIBLE;i++) if(c->x[0]==HEAP_BASE+2000+i*256) {
             const uint16_t *s=(void *)(uintptr_t)c->x[1]; unsigned n=0;
+            if(i==2) memcpy(last_name,s,sizeof last_name);
             for(;s[n] && n<79;n++) rendered[i][n]=(char)s[n]; rendered[i][n]=0;
         }
     } else assert(0);
     c->pc=address; c->nzcv=0x12345678; c->v[1]=0x1234;
 }
 #include "settings_page.c"
+static float pane_float(uint64_t pane,unsigned offset) {
+    float value; memcpy(&value,(void *)(uintptr_t)(pane+offset),sizeof value); return value;
+}
+static void check_keycap(unsigned i,const char *key,const char *action) {
+    assert(!strcmp(key_strings[i],key) && !strcmp(action_strings[i],action));
+    assert((LD8(keycaps[i]+0x58)&1) && (LD8(key_labels[i]+0x58)&1) && (LD8(action_labels[i]+0x58)&1));
+    assert(pane_float(keycaps[i],0x30)==pane_float(key_labels[i],0x30));
+    assert(pane_float(keycaps[i],0x34)+9==pane_float(action_labels[i],0x34));
+    assert(pane_float(keycaps[i],0x30)+pane_float(keycaps[i],0x50)/2 <
+           pane_float(action_labels[i],0x30)-pane_float(action_labels[i],0x50)/2);
+}
 static void *handoff_reader(void *argument) {
     *(bool *)argument=mk8_settings_page_active();
     return NULL;
@@ -176,7 +270,306 @@ static void sample(uint64_t b) {
 static void press(uint64_t b) { sample(0); sample(b); sample(0); }
 static void open_page(void) { decided=true; mk8_settings_page_tick(HEAP_BASE,true); now+=160000000; sample(0); assert(active && !entering); }
 static void apply_number(const char *s) { for(;*s;s++) assert(mk8_settings_page_key(*s)); mk8_settings_page_key(13); sample(0); }
+static void popup_key(uint64_t manager,uint64_t key) {
+    popup_buttons=key; mk8_settings_page_frame(manager);
+    popup_buttons=0; mk8_settings_page_frame(manager);
+}
+static void check_shared_race(uint64_t manager) {
+    const uint64_t node=HEAP_BASE+29000, scene=HEAP_BASE+29120, context=HEAP_BASE+29760;
+    const uint64_t config=HEAP_BASE+30400, rules=HEAP_BASE+30600;
+    game_root=MAIN_BASE+0x133ebd0;
+    root_node=node; ST64(node+8,scene);
+    root_context=context; ST64(context+0x240,config); ST64(config+0x10,rules);
+    // A lobby can advance while its settings page is open and the render queue is full.
+    assert(mk8_settings_page_active());
+    ST32(scene+0x184,4); ST32(rules+8,1); ST32(rules+0x188,2);
+    int cancels=cancel_sounds;
+    finish_queue_full=true; save_state=0; mk8_settings_page_frame(manager);
+    assert(!mk8_settings_page_active() && save_state==1 && finish_mode==SETTINGS_DETACHED);
+    assert(cancel_sounds==cancels);
+    finish_queue_full=false;
+    ST32(manager+0xb50,0);
+    // The fallback overlay also needs the guest's latest scene and local-seat count.
+    native_style=false;
+    static const struct { unsigned scene_id, kind, normal_count, alternate_count; bool shared; } cases[]={
+        {3,1,4,0,false}, {4,1,1,0,false}, {4,1,2,0,true}, {4,1,4,0,true},
+        {4,2,1,0,false}, {4,3,2,0,true}, {4,4,4,1,false}, {4,4,1,2,true},
+        {3,4,1,2,false}, {4,1,0,0,false}, {4,1,5,0,false}
+    };
+    for(size_t i=0;i<sizeof cases/sizeof cases[0];i++) {
+        ST32(scene+0x184,cases[i].scene_id); ST32(rules+8,cases[i].kind);
+        ST32(rules+0x180,12); // AI and remote racers can also occupy the grid.
+        ST32(rules+0x188,cases[i].normal_count); ST32(rules+0x19c,cases[i].alternate_count);
+        mk8_settings_page_frame(manager);
+        assert(mk8_settings_shared_race()==cases[i].shared);
+    }
+    ST32(scene+0x184,3); mk8_settings_page_frame(manager);
+    native_style=true; available=true;
+    assert(mk8_settings_page_toggle() && mk8_settings_page_active());
+    ST32(scene+0x184,4); ST32(rules+0x188,2); native_style=false;
+    mk8_settings_page_frame(manager);
+    assert(mk8_settings_shared_race() && !mk8_settings_page_active());
+    native_style=true;
+    assert(!mk8_settings_page_toggle() && !mk8_settings_page_active());
+    assert(cancel_sounds==cancels);
+    native_style=false;
+    ST64(config+0x10,GUEST_HI-8);
+    mk8_settings_page_frame(manager); assert(!mk8_settings_shared_race());
+    ST64(config+0x10,rules); mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    // Split play stays active until the shared standings actually take over, even after an individual finish.
+    uint64_t pages=LD64(manager+0xb58), first_page=LD64(pages), hud=HEAP_BASE+28160, standings=HEAP_BASE+28576;
+    ST64(manager+0xb58,pages); ST64(pages,hud); ST64(pages+8,standings);
+    ST32(rules+8,3); ST32(manager+0xb50,1);
+    ST32(hud+0x120,4); ST32(hud+0xe8,0x70);
+    mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST32(manager+0xb50,2); ST64(standings,MAIN_BASE+0x1288c38);
+    ST32(standings+0x120,3); ST32(standings+0xe8,0x70);
+    mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST32(standings+0x120,4); ST32(standings+0xe8,0x6f);
+    mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST32(standings+0xe8,0x70);
+    for(unsigned substate=0;substate<=3;substate++) {
+        ST32(standings+0x124,substate); mk8_settings_page_frame(manager); assert(!mk8_settings_shared_race());
+    }
+    // Next Round / View Highlight Reel / Quit replaces the standings within the same race scene.
+    ST64(standings,MAIN_BASE+0x1288038); mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST32(standings+0xe8,0x72); ST32(standings+0x120,3);
+    mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST32(standings+0x120,4); mk8_settings_page_frame(manager); assert(!mk8_settings_shared_race());
+    ST32(manager+0xb50,1); mk8_settings_page_frame(manager); assert(mk8_settings_shared_race());
+    ST64(pages,first_page); native_style=true;
+    for(unsigned prompt=0;prompt<2;prompt++) {
+        ST32(manager+0xb50,1); ST32(scene+0x184,3); mk8_settings_page_frame(manager);
+        cursor_mask=9;
+        assert(mk8_settings_page_toggle());
+        mk8_settings_page_frame(manager); now+=160000000; sample(0);
+        assert(active && !editing && !restart_prompt);
+        if(prompt) {
+            press(2); save_state=3; now+=160000000; sample(0); assert(restart_prompt);
+        } else {
+            begin_number(catalogue[1][0]); assert(mk8_settings_page_key('8'));
+        }
+        int cancels_before=cancel_sounds, writes_before=cursor_writes;
+        ST32(manager+0xb50,0); ST32(scene+0x184,4); mk8_settings_page_frame(manager);
+        assert(!mk8_settings_page_active() && !mk8_settings_page_key('9') && !restart_prompt);
+        assert(!restore_nav && !top_root && cancel_sounds==cancels_before && cursor_writes==writes_before);
+        ST32(manager+0xb50,1); mk8_settings_page_frame(manager);
+        assert(!mk8_settings_page_active() && cursor_mask==9);
+        assert(!(LD8(HEAP_BASE+12200+0x58)&1) && !(LD8(HEAP_BASE+15100+0x58)&1));
+    }
+    settings_page_reset(); assert(!mk8_settings_shared_race());
+    game_root=0; native_style=true;
+    mk8_settings_page_frame(manager); assert(!mk8_settings_shared_race());
+}
+static void popup_open(uint64_t manager) {
+    int32_t st[4]={0};
+    mk8_settings_page_input(0,st,0);
+    popup_buttons=1u<<10;
+    assert(!mk8_settings_page_input(popup_buttons,st,0));
+    mk8_settings_page_frame(manager);
+    assert(controller_visible);
+    popup_buttons=0;
+    mk8_settings_page_input(0,st,0);
+}
+static void check_controller_footer(uint64_t manager) {
+    int opens=open_sounds, moves=select_sounds, confirms=decide_sounds, cancels=cancel_sounds;
+    top=owner=root=HEAP_BASE;
+    ST64(owner+0x1d0,HEAP_BASE+11000);
+    dialog_cursor=HEAP_BASE+16000;
+    cursor_animation=HEAP_BASE+15800;
+    dialog_animations[0]=HEAP_BASE+15400; dialog_animations[1]=HEAP_BASE+15500;
+    title_label=HEAP_BASE+3600;
+    dialog_labels[1]=HEAP_BASE+3700; dialog_labels[2]=HEAP_BASE+3800;
+    const uint64_t list=LD64(manager+0xb58), layout=HEAP_BASE+20200, drivers=HEAP_BASE+21200;
+    ST32(manager+0xb50,3); ST64(list+8,layout); ST64(list+16,drivers);
+    ST64(layout,0x7001279040ull); ST32(layout+0xe8,0x14); ST32(layout+0x120,4);
+    ST64(drivers,0x7001278940ull); ST32(drivers+0xe8,0x2e); ST32(drivers+0x120,4);
+    mk8_controller_applet_result(4,4,4);
+    int32_t st[4]={0}; const uint64_t plus=1u<<10;
+    // Held Plus crossing from solo into multiplayer cannot open until released and pressed again.
+    mk8_settings_page_frame(manager); assert(mk8_settings_page_input(plus,st,0)==plus);
+    ST32(layout+0xe8,0x16); mk8_settings_page_frame(manager);
+    assert(!controller_visible && mk8_settings_page_input(plus,st,0)==plus);
+    mk8_settings_page_input(0,st,0);
+    ST32(manager+0xb50,2); mk8_settings_page_frame(manager);
+    assert(mk8_settings_page_input(plus,st,0)==plus && !mk8_controller_layout_active());
+    ST32(manager+0xb50,3); mk8_settings_page_frame(manager);
+    active=true; mk8_settings_page_input(0,st,0);
+    assert(!mk8_settings_page_input(plus,st,0) && !mk8_controller_layout_active());
+    active=false; assert(mk8_settings_page_input(plus,st,0)==plus && !mk8_controller_layout_active());
+    mk8_settings_page_input(0,st,0);
+    // The initial controller applet and a transitioning player selection page cannot open the popup.
+    ST32(drivers+0x120,3); mk8_settings_page_frame(manager);
+    assert(mk8_settings_page_input(plus,st,0)==plus);
+    ST32(drivers+0x120,4); mk8_settings_page_frame(manager);
+    cursor_mask=13;
+    popup_open(manager);
+    assert(!memcmp(shown_tips[0],u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all",sizeof u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all"));
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J","Keyboard X","Delete","Backspace"}};
+    // A previously prepared title control has only the original two text panes.
+    const uint64_t prepared_keycap=keycaps[0];
+    keycaps[0]=0;
+    mk8_settings_page_frame(manager);
+    assert(!memcmp(shown_tips[0],u"Return Assign  Keyboard X Swap",sizeof u"Return Assign  Keyboard X Swap"));
+    assert(!memcmp(shown_tips[1],u"Delete Clear row  Backspace Clear all",sizeof u"Delete Clear row  Backspace Clear all"));
+    keycaps[0]=prepared_keycap;
+    popup_tips.label[MK8_TIP_UP][0]='W'; mk8_settings_page_frame(manager);
+    check_keycap(0,"Return","Assign"); check_keycap(1,"Keyboard X","Swap");
+    check_keycap(2,"Delete","Clear row"); check_keycap(3,"Backspace","Clear all");
+    strcpy(popup_tips.label[MK8_TIP_CONFIRM],"MediaTrackPrevious");
+    strcpy(popup_tips.label[MK8_TIP_SWAP],"Keypad Hexadecimal");
+    mk8_settings_page_frame(manager);
+    check_keycap(0,"MediaTrackPrevious","Assign"); check_keycap(1,"Keypad Hexadecimal","Swap");
+    assert(pane_float(keycaps[0],0x34)==pane_float(keycaps[1],0x34));
+    assert(pane_float(keycaps[2],0x34)==pane_float(keycaps[3],0x34));
+    assert(pane_float(keycaps[0],0x34)>pane_float(keycaps[2],0x34));
+    assert((LD8(hint_double+0x58)&1) && !(LD8(hint_single+0x58)&1) && pane_float(hint_plate,0x50)>880);
+    assert(pane_float(hint_double,0x54)==112);
+    assert(pane_float(hint_double,0x50)==pane_float(hint_plate,0x50));
+    assert(pane_float(hint_double,0x34)==pane_float(hint_plate,0x34));
+    assert(pane_float(keycaps[0],0x34)==-10 && pane_float(keycaps[2],0x34)==-66);
+    strcpy(popup_tips.label[MK8_TIP_CLEAR_ALL],"(none)");
+    mk8_settings_page_frame(manager);
+    check_keycap(0,"MediaTrackPrevious","Assign"); check_keycap(1,"Keypad Hexadecimal","Swap"); check_keycap(2,"Delete","Clear row");
+    assert(!(LD8(keycaps[3]+0x58)&1) && LD8(hint_second+0x58)&1);
+    assert(!memcmp(shown_tips[1],u"Click a player for assignment options.",sizeof u"Click a player for assignment options."));
+    assert(pane_float(hint_plate,0x50)*0.55 < 1280);
+    const uint64_t prepared_double=hint_double;
+    hint_double=0;
+    popup_tips.label[MK8_TIP_UP][0]='S'; mk8_settings_page_frame(manager);
+    assert(pane_float(hint_plate,0x54)==96);
+    hint_double=prepared_double;
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_PLAYSTATION,{"Cross","Circle","Square","Triangle","Create"}};
+    mk8_settings_page_frame(manager);
+    assert(shown_tips[0][0]==0x00d7);
+    assert(!(LD8(keycaps[0]+0x58)&1));
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y",""}};
+    mk8_settings_page_frame(manager);
+    assert(!memcmp(shown_tips[1],u"Click a player for assignment options.",sizeof u"Click a player for assignment options."));
+    assert(last_edit==MK8_EDIT_BEGIN && edit_row==4);
+    assert(!cursor_mask);
+    assert(mk8_settings_page_toggle() && !requested && !active);
+    assert(!memcmp(last_name,popup_names[1],sizeof last_name));
+    int before_names=text_calls;
+    mk8_settings_page_frame(manager); assert(text_calls==before_names);
+    popup_names[1][0]=0x5de6;
+    mk8_settings_page_frame(manager);
+    assert(text_calls==before_names+1 && !memcmp(last_name,popup_names[1],sizeof last_name));
+    assert(controller_visible && cursor_x==0 && cursor_y==145 && cursor_width==1700 && cursor_height==158 && *(const float *)(memory+14800+0x48)==.5f);
+    const float *cancel=(const float *)(memory+14500+0x30), *apply=(const float *)(memory+14600+0x30);
+    popup_key(manager,1ull<<13); // Already at the first row.
+    assert(open_sounds==opens+1 && select_sounds==moves);
+    assert(cancel[0]==-200 && cancel[1]==-246 && apply[0]==200 && apply[1]==-246);
+    for(int i=0;i<4;i++) popup_key(manager,1ull<<15);
+    assert(controller_visible && cursor_x==-200 && cursor_y==-246 && cursor_width==370 && cursor_height==158 && *(const float *)(memory+14800+0x48)==1.f);
+    popup_key(manager,1ull<<14);
+    assert(controller_visible && cursor_x==200 && cursor_y==-246);
+    popup_key(manager,1);
+    assert(!controller_visible && !controller_preview && controller_focus==5 && cursor_mask==13);
+    assert(select_sounds==moves+5 && decide_sounds==confirms+1 && cancel_sounds==cancels);
+    popup_open(manager);
+    popup_key(manager,1ull<<12);
+    assert(cursor_x==-200 && cursor_y==-246);
+    assert(mk8_controller_pointer(440,606,1));
+    popup_key(manager,1);
+    assert(!controller_visible && !controller_preview && controller_focus==4);
+    assert(open_sounds==opens+2 && cancel_sounds==cancels+1);
+    assert(mk8_controller_pointer(440,606,2));
+    assert(!mk8_controller_pointer(440,606,2));
+
+    popup_open(manager);
+    // The original game can own a press that began before the popup was opened.
+    assert(!mk8_controller_pointer(840,606,2));
+    assert(mk8_controller_pointer(440,606,0)); mk8_settings_page_frame(manager);
+    assert(controller_visible && cursor_x==-200 && cursor_y==-246);
+    assert(mk8_controller_pointer(840,606,0)); mk8_settings_page_frame(manager);
+    assert(controller_visible && cursor_x==200 && cursor_y==-246);
+    assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
+    assert(cursor_x==0 && cursor_y==145 && cursor_width==1700 && cursor_height==158 && *(const float *)(memory+14800+0x48)==.5f);
+    assert(mk8_controller_pointer(440,606,1));
+    assert(mk8_controller_pointer(640,606,2)); mk8_settings_page_frame(manager);
+    assert(controller_visible); // Releasing between buttons cancels the click.
+    assert(mk8_controller_pointer(840,606,1));
+    mk8_controller_pointer(-1,-1,3); mk8_controller_pointer(-1,-1,4);
+    mk8_controller_pointer(840,606,2); mk8_settings_page_frame(manager);
+    assert(controller_visible); // Losing focus also cancels a held click.
+    assert(mk8_controller_pointer(840,606,1));
+    assert(mk8_controller_pointer(840,606,2)); mk8_settings_page_frame(manager);
+    assert(controller_visible && last_edit==MK8_EDIT_APPLY);
+    mk8_settings_page_frame(manager); // Wait for the host's acknowledgement.
+    assert(!controller_visible && !controller_preview && controller_focus==5);
+    assert(extra_holds==3);
+    popup_open(manager);
+    assert(mk8_controller_pointer(440,606,1));
+    unsigned old_writes=cursor_writes;
+    ST32(manager+0xb50,0); mk8_settings_page_frame(manager);
+    assert(cursor_writes==old_writes);
+    cursor_mask=6; // The next scene owns a different combination of visible cursors.
+    assert(!mk8_controller_layout_active());
+    assert(mk8_controller_pointer(440,606,2));  // The popup owned this press.
+    ST32(manager+0xb50,3);
+    for (int count=2;count<=3;count++) {
+        mk8_controller_applet_result(count,count,count); mk8_settings_page_frame(manager);
+        popup_open(manager);
+        assert(controller_rows==(unsigned)count && !(LD8(HEAP_BASE+12400+(count+1)*128+0x58)&1));
+        for(int j=0;j<count;j++) popup_key(manager,1ull<<15);
+        assert(controller_focus==4);
+        popup_key(manager,1ull<<13); assert(controller_focus==count-1);
+        popup_key(manager,2); assert(!mk8_controller_layout_active() && cursor_mask==6);
+    }
+    mk8_controller_applet_result(4,4,4); mk8_settings_page_frame(manager);
+    popup_open(manager);
+    popup_key(manager,1ull<<15); popup_key(manager,8);
+    assert(last_edit==MK8_EDIT_CLEAR && edit_row==1 && controller_visible);
+    popup_key(manager,4); popup_key(manager,1ull<<15); popup_key(manager,1);
+    assert(last_edit==MK8_EDIT_SWAP && edit_row==1 && edit_other==2);
+    popup_key(manager,1);
+    assert(last_edit==MK8_EDIT_ASSIGN && edit_row==2);
+    editor_state=MK8_EDIT_AMBIGUOUS; mk8_settings_page_frame(manager);
+    assert(!strcmp(last_hint,"Release all. One player holds L + R."));
+    editor_state=MK8_EDIT_NEED_LEFT; mk8_settings_page_frame(manager);
+    assert(!strcmp(last_hint,"Hold R. Press L on the left Joy-Con."));
+    editor_state=MK8_EDIT_NEED_RIGHT; mk8_settings_page_frame(manager);
+    assert(!strcmp(last_hint,"Hold L. Press R on the right Joy-Con."));
+    editor_state=MK8_EDIT_PAIR_HELD; mk8_settings_page_frame(manager);
+    assert(!strcmp(last_hint,"Release both shoulder buttons to join."));
+    popup_key(manager,1ull<<14); popup_key(manager,1);
+    assert(last_edit==MK8_EDIT_KEYBOARD && edit_row==2);
+    popup_key(manager,1ull<<11);
+    assert(last_edit==MK8_EDIT_CLEAR_ALL);
+    popup_key(manager,2);
+    assert(last_edit==MK8_EDIT_STOP_LISTEN && controller_visible);
+    // Mouse-only assignment, including when the player controlling the menu has disconnected.
+    assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
+    mk8_settings_page_frame(manager); assert(controller_panel==ROW_ACTIONS && action_player==1);
+    assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
+    mk8_settings_page_frame(manager); assert(last_edit==MK8_EDIT_KEYBOARD && edit_row==1);
+    wait_apply=true;
+    popup_key(manager,1ull<<14); popup_key(manager,1);
+    assert(last_edit==MK8_EDIT_APPLY && controller_visible && !cursor_mask);
+    mk8_settings_page_frame(manager); assert(controller_visible);
+    editor_state=MK8_EDIT_FAILED; wait_apply=false;
+    mk8_settings_page_frame(manager); assert(controller_visible);
+    popup_key(manager,2); assert(!controller_visible && last_edit==MK8_EDIT_CANCEL && cursor_mask==6);
+    mk8_controller_applet_result(3,3,2); mk8_settings_page_frame(manager);
+    assert(!controller_entry_players && mk8_settings_page_input(plus,st,0)==plus);
+}
 int main(void) {
+    uint64_t title_manager=HEAP_BASE+20000,title_page=HEAP_BASE+25000;
+    ST64(title_manager+0xc68,title_page);
+    ST64(title_page,MAIN_BASE+0x127cb38);
+    native_style=false;
+    ST32(title_page+0x120,4); ST32(title_page+0x124,0);
+    mk8_settings_page_frame(title_manager); assert(title_active);
+    auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
+    auto_lan=false; ST32(title_page+0x124,1);
+    mk8_settings_page_frame(title_manager); assert(!title_active);
+    ST32(title_page+0x124,0); ST32(title_page+0x120,3);
+    mk8_settings_page_frame(title_manager); assert(!title_active);
+    ST32(title_page+0x120,4); ST64(title_page,MAIN_BASE+0x127c840);
+    mk8_settings_page_frame(title_manager); assert(!title_active);
+    native_style=true;
+
     for(unsigned g=0;g<3;g++) for(int i=0;i<counts[g];i++) {
         Mk8Setting *r=&catalogue[g][i]; r->id=g==0 ? i : g==1 ? 11+i : i==0 ? 20 : 19;
         r->enabled=true; r->maximum=1;
@@ -185,20 +578,28 @@ int main(void) {
     catalogue[1][0].kind=SETTING_NUMBER; catalogue[1][0].maximum=200; catalogue[1][0].current=100; strcpy(catalogue[1][0].value,"100%");
     catalogue[2][0].kind=SETTING_BINDING; catalogue[2][1].kind=SETTING_RESET;
     memset(&cpu,0x17,sizeof cpu); cpu.sp=GUEST_HI-16;
-    top=owner=root=HEAP_BASE; hint=HEAP_BASE+3500; from_button=true;
+    top=owner=root=HEAP_BASE; hint=HEAP_BASE+3500; hint_second=HEAP_BASE+14680; back_icon=HEAP_BASE+14780; from_button=true;
+    hint_plate=HEAP_BASE+16256; hint_single=HEAP_BASE+18032; hint_double=HEAP_BASE+18160;
+    for(unsigned i=0;i<4;i++) { keycaps[i]=TEST_KEYCAP(i); key_labels[i]=keycaps[i]+128; action_labels[i]=keycaps[i]+256; }
     ST32(top+0x120,4); ST8(HEAP_BASE+14000+0x3ca,1);
     back_animation=HEAP_BASE+15200;
     ST64(owner+0x1b0,HEAP_BASE+9000); ST32(HEAP_BASE+9000+0x10,12); ST32(HEAP_BASE+9000+0x28,5);
     ST64(HEAP_BASE+9000+0x18,HEAP_BASE+9200); ST64(HEAP_BASE+9200+88,HEAP_BASE+14000+0x30);
     ST32(HEAP_BASE+14000+0x48,107); ST8(HEAP_BASE+12000+0x58,1); ST64(HEAP_BASE+10000+0x1d0,HEAP_BASE+11000);
-    ST64(owner+0x1d0,HEAP_BASE+11000); ST64(top+0x448,root);
+    for(unsigned i=0;i<4;i++) ST64(owner+0x1d0+8*i,HEAP_BASE+11000+i*224);
+    ST64(top+0x448,root);
     for(unsigned i=0;i<=SETTINGS_VISIBLE;i++) { labels[i]=HEAP_BASE+1000+i*256; values[i]=HEAP_BASE+2000+i*256; rows[i]=HEAP_BASE+4000+i*512; }
     Cpu saved=cpu; mk8_settings_page_tick(HEAP_BASE,true);
+    check_keycap(0,"Enter","Category"); check_keycap(1,"Down","Options"); check_keycap(2,"Esc","Close");
+    assert(pane_float(hint_single,0x54)==56 && (LD8(hint_single+0x58)&1) && !(LD8(hint_double+0x58)&1));
+    assert(!(LD8(back_icon+0x58)&1));
     assert(active && confirming && cursor_shown && !memcmp(&saved,&cpu,sizeof cpu));
+    assert(open_sounds==0);
     now=2000000000; sample(1ull<<14); assert(confirming && !category && (LD8(HEAP_BASE+12000+0x58)&1));
-    decided=true; sample(1ull<<14); assert(!confirming && !cursor_shown && !LD8(HEAP_BASE+12200+0x59));
+    decided=true; sample(1ull<<14); assert(!confirming && !cursor_mask && !LD8(HEAP_BASE+12200+0x59));
     now+=80000000; sample(1ull<<14); assert(entering && LD8(HEAP_BASE+12200+0x59)==127);
     now+=80000000; sample(1ull<<14); assert(!entering && !category && LD8(HEAP_BASE+12200+0x59)==255); sample(0);
+    assert(open_sounds==1);
     mk8_settings_page_fixed(1ull<<15); sample(0); assert(focus==1);
     mk8_settings_page_fixed(0); now+=600000000;
     mk8_settings_page_tick(owner,false); assert(focus==1); // P2 reassignment can stop all P1 HID polling.
@@ -213,6 +614,18 @@ int main(void) {
     assert(focus==3 && catalogue[0][2].current==1);
     focus=0; press(1ull<<14); assert(category==1);
     press(1ull<<15); press(1); assert(editing);
+    assert(!strcmp(last_hint,"Type a value or use the arrow keys."));
+    struct Mk8ControlTips keyboard=fixed_tips;
+    fixed_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"B","A"}};
+    sample(0);
+    assert(!(LD8(back_icon+0x58)&1));
+    assert(!strcmp(last_hint,"Up/down: 1   Left/right: 10"));
+    assert(!memcmp(shown_tips[1],u"\ue001 OK  \ue000 Cancel",sizeof u"\ue001 OK  \ue000 Cancel"));
+    fixed_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B"}};
+    sample(0); assert(LD8(back_icon+0x58)&1);
+    fixed_tips=keyboard; sample(0);
+    assert(!(LD8(back_icon+0x58)&1));
+    check_keycap(0,"Enter","OK"); check_keycap(1,"Esc","Cancel");
     apply_number("80"); assert(!editing && catalogue[1][0].current==80);
     press(1); apply_number("201"); assert(editing && invalid && catalogue[1][0].current==80);
     press(2); assert(!editing && active);
@@ -228,7 +641,7 @@ int main(void) {
     press(2); assert(exiting && active && !cursor_shown && !returns);
     now+=80000000; sample(0); assert(active && LD8(HEAP_BASE+12200+0x59)==127);
     now+=80000000; sample(0); assert(active && exiting && !returns); // Await save acknowledgment.
-    save_state=2; sample(0); assert(!active && cursor_shown && returns==1);
+    save_state=2; sample(0); assert(!active && cursor_mask==11 && returns==1);
     open_page(); press(2); save_state=-1; now+=80000000; sample(0); assert(active && entering && !exiting);
     now+=160000000; sample(0); assert(active && !entering && !cursor_shown);
     press(2); save_state=2; now+=160000000; sample(0); assert(!active && returns==2);
@@ -263,11 +676,11 @@ int main(void) {
     press(1); sample(0); assert(restart_choice==0 && !active && returns==5); // No saves without rebooting.
     assert(decide_sounds==1 && button_pulses==1 && cursor_pulses==1);
     open_page(); press(2); save_state=3; now+=160000000; sample(0);
-    press(1ull<<12); assert(restart_yes && cursor_x==-200 && select_sounds==1);
+    press(1ull<<12); assert(restart_yes && cursor_x==-200 && cursor_y==-195 && select_sounds==1);
     press(1ull<<12); assert(select_sounds==1); // No extra sound at the same selection.
     cancels_before=cancel_sounds; press(2); sample(0);
     assert(!active && restart_choice==0 && cancel_sounds==cancels_before+1 && decide_sounds==1);
-    assert(button_pulses==2 && cursor_pulses==2 && cursor_x==200 && returns==6);
+    assert(button_pulses==2 && cursor_pulses==2 && cursor_x==200 && cursor_y==-195 && returns==6);
     open_page(); press(2); save_state=3; now+=160000000; sample(0);
     button_done=cursor_done=false; press(1);
     assert(restart_choice==0 && restart_pressed && !restart_wait && active && !restart_yes);
@@ -285,12 +698,14 @@ int main(void) {
     dialog_cursor=HEAP_BASE+16000; cursor_animation=HEAP_BASE+15800;
     ST64(top+0x1b0,HEAP_BASE+9000); ST64(top+0x448,root); ST32(top+0x120,4);
     for(unsigned icon=0;icon<2;icon++) for(unsigned prompt=0;prompt<2;prompt++) {
+        int opened=open_sounds;
         int cancels=cancel_sounds, decides=decide_sounds, restored=returns;
         sample(0); decided=back_done=button_done=cursor_done=true;
         if(icon) mk8_settings_page_tick(top,true);
         else { assert(mk8_settings_page_toggle()); check_capture_state(true); }
         mk8_settings_page_tick(owner,atomic_load(&requested));
         now+=160000000; sample(0); assert(active && !entering && from_button==(bool)icon); check_capture_state(true);
+        assert(open_sounds==opened+1);
         press(2); assert(cancel_sounds==cancels+1); check_capture_state(true); // Feedback imediato, antes do retorno.
         save_state=prompt ? 3 : 2; now+=160000000; sample(0);
         if(prompt) {
@@ -316,5 +731,8 @@ int main(void) {
     mk8_settings_page_frame(manager);
     assert(!probe_reopen && !active && requested && mk8_settings_page_active());
     mk8_settings_page_frame(manager); assert(active && !requested);
+    check_shared_race(manager);
+    settings_page_reset();
+    check_controller_footer(manager);
     settings_page_reset();
 }

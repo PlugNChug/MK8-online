@@ -62,7 +62,12 @@ static HRESULT WINAPI read_state(GI *api, unsigned kind, GIDevice *d, GIReading 
     return S_OK;
 }
 
+#ifdef MK8_TEST_TITLE_INPUT
+extern void check_gameinput_title(SDL_JoystickID, SDL_JoystickID, uint32_t *);
+int steam_gamepads_title_test(void) {
+#else
 int main(void) {
+#endif
     assert(mk8_init_window_input() && !input);
     static const GIMethods api_methods = {.read=read_state};
     GI api = {&api_methods};
@@ -79,6 +84,9 @@ int main(void) {
     assert(pads[0].id && pads[1].id && first.refs==2 && second.refs==2);
     SDL_Gamepad *p1=SDL_OpenGamepad(pads[0].id), *p2=SDL_OpenGamepad(pads[1].id);
     assert(p1 && p2);
+#ifdef MK8_TEST_TITLE_INPUT
+    check_gameinput_title(pads[0].id, pads[1].id, &second.state.buttons);
+#endif
     first.state=(GIState){.buttons=0xc00,.lx=-1,.ly=1,.rt=1};
     second.state=(GIState){.buttons=4,.lx=1};
     SDL_UpdateJoysticks();
@@ -119,4 +127,5 @@ int main(void) {
     assert(second.rumble.low==0 && second.rumble.high==0);
     SDL_CloseGamepad(p1); SDL_CloseGamepad(p2);
     SDL_Quit();
+    return 0;
 }

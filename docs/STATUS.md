@@ -1,5 +1,15 @@
 # Estado técnico — 19/11/2026
 
+## Atribuição de controles na base da 0.4.0
+
+O candidato parte de `fix-chore 6268be2`. Na tela de título, o controle usado para avançar assume o jogador 1. A opção de atribuir até quatro jogadores abre na seleção de personagens com a tela experimental de configurações habilitada. O runtime mantém o caminho GameInput da 0.4.0 para controles expostos pela Steam. A entrada LAN automática conserva a navegação dessa versão e libera a escolha manual no título ao terminar ou esgotar o tempo.
+
+Nesta base, passaram 38 testes de controles, configurações e preparação e outros 23 de integração com o runtime, a LAN, os applets e a apresentação da imagem. O ensaio integrado com a ponte GameInput criou dois controles virtuais da Steam. O segundo assumiu o jogador 1 no título e o primeiro ficou em outra posição. Ao voltar ao título, o teclado assumiu o jogador 1. Os ensaios também cobriram 17 cenários de controles virtuais, a edição de quatro posições, a reconexão da metade direita, o atalho durante a corrida e a navegação automática LAN da versão publicada.
+
+A preparação de produção recompilou 228 unidades do host, verificou 484 objetos do guest e validou 118 entradas do manifesto, incluindo o DLC. Os 533 arquivos protegidos mantiveram os hashes. As nove verificações equivalentes às da integração contínua passaram.
+
+Na build combinada anterior (`3772c86`), o teste físico confirmou que o analógico esquerdo e o botão A do Joy-Con direito voltaram a controlar o jogador 1 após reconectar apenas o direito. Dois laptops, com dois jogadores no anfitrião e um no convidado, confirmaram o aviso de F1 durante a corrida em tela dividida e a abertura das configurações no convidado. A entrada direta e a reconexão à sala Steam daquela build pertencem a outras mudanças. O teste de quatro jogadores com controles simulados passou pela seleção de personagens, peças, regras de VS e itens personalizados até a escolha da pista. A combinação de quatro Joy-Con físicos continua sem teste.
+
 ## Nextendo e menu no relançamento da 0.4.0
 
 A primeira publicação da 0.4.0 continha as implementações do serviço e do painel, mas o launcher escondia a opção de jogar atrás de variáveis de diagnóstico e o painel F1 exigia uma variável adicional. A build atual expõe **Jogar → Jogar no Nextendo** e abre o painel com **F1 / Menos + Mais** por padrão. Ao relançar com o mesmo número, quem já tem o launcher 0.4.0 precisa baixar o novo pacote manualmente. Ao abrir esse launcher, uma build anterior do jogo recebe a indicação de atualização. O launcher pede confirmação da chave de corrida no primeiro uso. O runtime valida o certificado do ZNC pela CA do Nextendo e pelo nome do host, permitindo a renovação do certificado do serviço. O ingresso na corrida continua pelo Online Play nativo.

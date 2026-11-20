@@ -45,7 +45,7 @@ static const Option options[]={
     TOGGLE("Skip intro",skip_intro,"Skip logos on the next launch."),
     {"Shader preparation","Prepares shaders in background."},
     TOGGLE("Full-speed shaders",ahead_fast,"All CPU cores; next launch."),
-    {"Master Volume","Click/A: enter custom value."},
+    {"Master Volume","Adjust the game audio level."},
     TOGGLE("Reverb",reverb,"Enable the game's room reverb."),
     TOGGLE("Movie audio",movie_audio,"Used by the next movie."),
     TOGGLE("Mute in background",mute_in_background,"Mute while another app has focus."),
@@ -64,7 +64,8 @@ static const int bind_order[]={BIND_A,BIND_B,BIND_X,BIND_Y,BIND_L,BIND_R,BIND_ZL
     BIND_RS_UP,BIND_RS_DOWN,BIND_RS_LEFT,BIND_RS_RIGHT};
 typedef struct { int operation,id,value; } Request;
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
-static Request requests[32];
+enum { REQUEST_LIMIT=32 };
+static Request requests[REQUEST_LIMIT+1];  // One terminal close must fit even when all ordinary slots are full.
 static unsigned requested;
 static Mk8Setting cached[SETTINGS_CATEGORIES][MAX_ROWS];
 static int counts[SETTINGS_CATEGORIES];
@@ -81,6 +82,7 @@ bool mk8_settings_save_checked(void);
 void mk8_settings_window_changed(void);
 void mk8_settings_pads_changed(void);
 bool mk8_settings_style_active(void);
+void menu_notice(const char *,double);
 
 RT_ON_RESET(settings_values_reset) {
     pthread_mutex_lock(&lock);
@@ -114,21 +116,27 @@ bool mk8_settings_values_request(int operation,int id,int value) {
     if(operation==SETTINGS_SET && (id!=VOLUME || value<0 || value>200)) return false;
     if(operation==SETTINGS_STEP && (id>=OPTIONS || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
     if(operation==SETTINGS_ACTIVATE && id!=RESET && id<BINDING) return false;
-    if((operation==SETTINGS_FINISH || operation==SETTINGS_RESTART) && (id || (value!=0 && value!=1))) return false;
+    bool detached=operation==SETTINGS_FINISH && value==SETTINGS_DETACHED;
+    if((operation==SETTINGS_FINISH || operation==SETTINGS_RESTART) && (id || (value!=0 && value!=1 && !detached))) return false;
     if(operation==SETTINGS_ACTIVATE && id>=BINDING && (id-BINDING)/BIND_KEY_COUNT==BIND_DEV_PAD &&
        (id-BINDING)%BIND_KEY_COUNT>=BIND_PAD_COUNT) return false;
     pthread_mutex_lock(&lock);
-    bool room=requested<32;
+    bool room=requested<REQUEST_LIMIT+(unsigned)detached;
     if(room) { requests[requested++]=(Request){operation,id,value}; if(operation==SETTINGS_FINISH) saved=1; }
-    pthread_mutex_unlock(&lock); return room;
+    pthread_mutex_unlock(&lock); return room || detached;
 }
 
 static void apply(Request r) {
-    if(r.operation==SETTINGS_BEGIN) { opened=true; dirty=false; baseline=g_settings; saved=0; return; }
+    if(r.operation==SETTINGS_BEGIN) {
+        if(!opened) { dirty=false; baseline=g_settings; }
+        opened=true; if(saved!=-1) saved=0; return;
+    }
     if(r.operation==SETTINGS_FINISH) {
         bind_capture_cancel(); capturing=false;
         saved=!dirty || mk8_settings_save_checked() ? 2 : -1;
-        if(saved==2) { dirty=false; opened=false; if(r.value && main_menu && needs_restart()) saved=3; }
+        if(saved==2) { dirty=false; opened=false; if(r.value==1 && main_menu && needs_restart()) saved=3; }
+        else if(r.value==SETTINGS_DETACHED)
+            menu_notice("Settings could not be saved. Check the settings folder, then reopen Settings and go Back to retry.",8.0);
         return;
     }
     if(r.operation==SETTINGS_RESTART) {
@@ -171,7 +179,7 @@ static void apply(Request r) {
 void mk8_settings_values_sync(void) {
     if(!mk8_settings_style_active()) return;
     if(!boot_set) { boot_settings=g_settings; boot_set=true; }
-    Request batch[32]; unsigned n;
+    Request batch[REQUEST_LIMIT+1]; unsigned n;
     pthread_mutex_lock(&lock); n=requested; memcpy(batch,requests,n*sizeof *batch); requested=0; pthread_mutex_unlock(&lock);
     int serial,kind=bind_last_result(NULL,NULL,NULL,&serial);
     if(opened && memcmp(&baseline,&g_settings,sizeof baseline)) dirty=true;
@@ -192,7 +200,7 @@ void mk8_settings_values_sync(void) {
             snprintf(v->label,sizeof v->label,"%s",bind_input_name(slot));
             if(capturing && cd==mapping_device && cs==slot) snprintf(v->value,sizeof v->value,"Press %s... %d",mapping_device==BIND_DEV_PAD ? "a button" : "a key",(ms+999)/1000);
             else snprintf(v->value,sizeof v->value,"%s",mapping_device==BIND_DEV_PAD ? bind_pad_label(g_bind_pad[slot],family) : bind_key_label(g_bind_key[slot]));
-            snprintf(v->help,sizeof v->help,"Enter/A: remap; conflicts swap.");
+            snprintf(v->help,sizeof v->help,"Conflicting bindings swap positions.");
             continue;
         }
         const Option *o=&options[v->id];

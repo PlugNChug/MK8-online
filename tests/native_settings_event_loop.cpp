@@ -9,7 +9,7 @@ static std::atomic<int> g_display_hz;
 static SDL_Window *window;
 static bool active=true, physical_blocked;
 static uint64_t held;
-static unsigned events, polls, transitions;
+static unsigned events, polls, transitions, editor_polls, tip_polls, tip_events, title_polls, title_events;
 static unsigned steam_polls;
 void mk8_poll_steam_gamepads(void) { ++steam_polls; }
 static uint64_t previous;
@@ -58,6 +58,18 @@ extern "C" bool input_user_blocked(const SDL_Event *event) {
 }
 static bool menu_handle_event(const SDL_Event *event) { return mk8_settings_event(event,false); }
 static void input_handle_event(const SDL_Event *) {}
+static unsigned steam_polls;
+void mk8_poll_steam_gamepads() { ++steam_polls; }
+void mk8_edit_pump() { editor_polls++; }
+void mk8_title_pump() { ++title_polls; }
+bool menu_input_captured() { return false; }
+bool mk8_title_event(const SDL_Event *,bool captured) { assert(captured && !physical_blocked); ++title_events; return false; }
+bool mk8_controller_layout_active() { return false; }
+void mk8_tip_sync() { tip_polls++; }
+void mk8_tip_event(const SDL_Event *, bool settings) {
+    assert(settings && !physical_blocked);
+    tip_events++;
+}
 static void ui_window_init() {}
 static int framegen_display_hz(SDL_Window *) { return 60; }
 static int rt_reboot_requested() { return polls==80 ? 1 : 0; }
@@ -70,6 +82,7 @@ static void set_input(bool down) {
     SDL_UpdateJoysticks();
 }
 static void menu_apply_window_requests(void *) {
+    assert(steam_polls==polls+1);
     before_poll=drawable_updates;
     assert(events<=128); events=0;
     // Apply the same close/reopen operation as reassignment while input is held.
@@ -108,5 +121,6 @@ int main() {
     noise();assert(ui_run()==1);
     assert(polls==80 && transitions==19 && resize_events==1 && drawable_updates>=82);
     assert(steam_polls==polls);
+    assert(editor_polls==polls && title_polls==polls && tip_polls==polls && tip_events==title_events && title_events);
     SDL_CloseGamepad(pad);SDL_CloseJoystick(stick);SDL_DetachVirtualJoystick(id);SDL_Quit();
 }

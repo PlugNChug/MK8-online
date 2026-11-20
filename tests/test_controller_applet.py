@@ -90,8 +90,11 @@ class ControllerAppletTests(unittest.TestCase):
 #include <string.h>
 #define LOG(...) ((void)0)
 typedef struct { uint64_t x[32]; } Cpu;
-static int players, focus;
+static int players, focus, reported_min, reported_max, reported_players;
 int input_players(void) { return players; }
+void mk8_controller_applet_result(int min, int max, int current) {
+    reported_min=min; reported_max=max; reported_players=current;
+}
 void mk8_am_push_message(uint32_t message) { if (message == 15) focus++; }
 void support(Cpu *c) { /*BODY*/ }
 int main(void) {
@@ -102,6 +105,7 @@ int main(void) {
         Cpu c = {.x = {(uintptr_t)output, (uintptr_t)arg}};
         players = cases[i][0]; support(&c);
         if (focus != i + 1) return 1;
+        if (reported_min!=arg[0] || reported_max!=arg[1] || reported_players!=(players>arg[1] ? arg[1] : players)) return 5;
         if (!cases[i][3]) {
             if (c.x[0] != ((3101u << 9) | 202u)) return 2;
             for (int k = 0; k < 8; k++) if (output[k] != 0xa5) return 3;

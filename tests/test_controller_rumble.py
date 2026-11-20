@@ -56,6 +56,7 @@ static bool test_rumble(SDL_Gamepad *p,Uint16 low,Uint16 high,Uint32 duration) {
 }
 #define EXTRA_PADS 3
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
+static bool mk8_paired_slot[1 + EXTRA_PADS];
 KEvent *kernel_create_event_pair(uint32_t *w,uint32_t *r) { (void)w;(void)r;CHECK(false);return NULL; }
 KSharedMem *kernel_create_shared_memory(uint64_t size,void (*fn)(KSharedMem *),uint32_t *handle) {
     (void)size;(void)fn;(void)handle;CHECK(false);return NULL;
