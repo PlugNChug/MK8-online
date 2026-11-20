@@ -2322,12 +2322,16 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mk8-fsr-route-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let provider = if cfg!(windows) {
+            r"C:\\fsr\\provider.dll"
+        } else {
+            "/opt/fsr.so"
+        };
+        let body = format!(
+            r#"{{"upscaling":"3.1.6","provider_lib":"{provider}","frame_generation":"fsr3","dxc":"/opt/dxc","legacy_abi":true}}"#
+        );
         let value = app
-            .handle(
-                &Method::Post,
-                "/api/fsr/settings",
-                r#"{"upscaling":"3.1.6","provider_lib":"/opt/fsr.so","frame_generation":"fsr3","dxc":"/opt/dxc","legacy_abi":true}"#,
-            )
+            .handle(&Method::Post, "/api/fsr/settings", &body)
             .unwrap();
         assert_eq!(value["settings"]["upscaling"], "3.1.6");
         assert_eq!(value["settings"]["frame_generation"], "fsr3");

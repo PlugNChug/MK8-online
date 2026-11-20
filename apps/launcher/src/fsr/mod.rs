@@ -654,7 +654,11 @@ mod tests {
 
         let settings = Settings {
             upscaling: FSR_316.into(),
-            provider_lib: "/tmp/provider.so".into(),
+            provider_lib: if cfg!(windows) {
+                "C:\\fsr\\provider.dll".into()
+            } else {
+                "/tmp/provider.so".into()
+            },
             frame_generation: FG_FSR3.into(),
             dxc: "/tmp/dxc".into(),
             legacy_abi: true,
@@ -907,10 +911,13 @@ mod tests {
         assert!(!missing.allowed());
 
         // Linux keeps the native 4.1.2/MLFI path and is not hardware-gated.
-        let native = fsr4_gate(&fsr4);
-        assert!(!native.blocked);
-        assert!(native.allowed());
-        assert_eq!(native.reason_code, "native");
+        #[cfg(not(windows))]
+        {
+            let native = fsr4_gate(&fsr4);
+            assert!(!native.blocked);
+            assert!(native.allowed());
+            assert_eq!(native.reason_code, "native");
+        }
     }
 
     #[test]

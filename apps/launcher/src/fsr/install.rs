@@ -2749,6 +2749,8 @@ uint32_t ffxQuery(void* context, Header* header) {{
         let provider = crate::fsr::framegeneration_lib(&dir);
         fs::create_dir_all(provider.parent().unwrap()).unwrap();
         fs::write(&provider, b"provider").unwrap();
+        // Windows status requires the upscaler DLL as well as the frame-generation DLL.
+        fs::write(crate::fsr::upscaler_lib(&dir), b"upscaler").unwrap();
         let installed = Installed {
             state: "ready".into(),
             detail: String::new(),
