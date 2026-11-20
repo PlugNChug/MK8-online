@@ -98,7 +98,7 @@ fi
 
 echo "== runtime: $RUNTIME"
 echo "== data:    $DATA"
-echo "== display: 2560x1440 virtual desktop (Wine explorer)"
+echo "== display: 2560x1440 (Wine desktop; Proton uses the prefix's Explorer desktop setting)"
 if [ -n "$PROTON" ]; then
     if [ "$PROTON" = auto ]; then
         PROTON=$(find "$HOME/.local/share/Steam/compatibilitytools.d" -maxdepth 2 -name proton -type f 2>/dev/null | head -1)
