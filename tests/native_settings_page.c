@@ -608,6 +608,31 @@ static void check_controller_footer(uint64_t manager) {
     mk8_controller_applet_result(3,3,2); mk8_settings_page_frame(manager);
     assert(!controller_entry_players && mk8_settings_page_input(plus,st,0)==plus);
 
+    // With just the standalone controller layout, P1 can reopen a completed two-player assignment.
+    native_style=false;
+    mk8_controller_applet_result(2,2,2); mk8_settings_page_frame(manager);
+    assert(controller_entry_players==2);
+    popup_open(manager);
+    assert(controller_visible && controller_rows==2);
+    popup_key(manager,2); assert(!controller_visible);
+
+    // WiFi's two-driver character layout shares neither the local page IDs nor the four-driver vtable.
+    ST32(layout+0xe8,0x15); ST64(drivers,MAIN_BASE+0x1278648); ST32(drivers+0xe8,0x2d);
+    mk8_controller_applet_result(1,1,1); // A previous applet cannot supply the count for this page.
+    ST32(drivers+0xe8,0x2c); mk8_settings_page_frame(manager); assert(!controller_entry_players);
+    ST32(drivers+0xe8,0x2d); mk8_settings_page_frame(manager);
+    popup_open(manager); assert(controller_visible && controller_rows==2);
+    popup_key(manager,2); assert(!controller_visible);
+    assert(!mk8_controller_pointer(640,643,1)); // The LAN layout hides its on-screen shortcut.
+    ST32(layout+0xe8,0x16); ST64(drivers,MAIN_BASE+0x1278940); ST32(drivers+0xe8,0x2e);
+    mk8_controller_applet_result(2,2,2); mk8_settings_page_frame(manager);
+    assert(mk8_controller_pointer(640,643,1));
+    ST32(drivers+0xe8,0x2d); mk8_settings_page_frame(manager); assert(!controller_entry_players);
+    // A press on the local shortcut must not open the editor if released on the LAN layout.
+    ST32(layout+0xe8,0x15); ST64(drivers,MAIN_BASE+0x1278648);
+    mk8_settings_page_frame(manager); assert(controller_entry_players==2);
+    assert(mk8_controller_pointer(640,643,2) && !mk8_controller_layout_active());
+
     // The mandatory join opens before character select, even with the optional F1 menu disabled.
     ST32(manager+0xb50,1);
     native_style=false;
