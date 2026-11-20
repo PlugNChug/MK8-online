@@ -16,8 +16,10 @@ capturada e motion vetores de câmera; o jitter Halton medido foi não nulo
 swapchain não reproduziu a falha em 21 variantes. O workaround em
 `toolchain/dlss_fg.py` pula essa cadeia por padrão (`MK8_DLSS_FG_LATENCY_CHAIN=1`
 reativa), mantém `VK_NV_low_latency2`/`vkSetLatencySleepModeNV` e fez o DLSS-G
-iniciar (`[dlss_fg] active`) e avaliar (`EvaluateFeature` sucesso, quadro 28,
-1920x1080) com código 0. Os hooks opcionais de ultrawide/settings do guest foram
+iniciar (`[dlss_fg] active`), capturar view/projection e profundidade sem
+`MK8_FSR4`, avaliar (`EvaluateFeature` sucesso, quadro 29) e apresentar o par
+real+interpolado (`pair present`) em 1920x1080, com código 0. Os hooks opcionais
+de ultrawide/settings do guest foram
 pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
 variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
 `gameplay_verified` continua falso.

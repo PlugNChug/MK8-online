@@ -2576,8 +2576,16 @@ VkResult mk8_dlss_fg_present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t r
                                        MK8_DLSS_FG_MARKER_PRESENT_END, real_id);
     if (result != VK_SUCCESS) return result;
     uint64_t interp_id = dlss_fg.present_id++;
-    return fg_present_image(queue, interpolated_index, interpolated_ready, MK8_DLSS_FG_MARKER_PRESENT_START,
-                            MK8_DLSS_FG_MARKER_PRESENT_END, interp_id);
+    VkResult interpolated = fg_present_image(queue, interpolated_index, interpolated_ready,
+                                             MK8_DLSS_FG_MARKER_PRESENT_START, MK8_DLSS_FG_MARKER_PRESENT_END,
+                                             interp_id);
+    if (interpolated == VK_SUCCESS) {
+        static uint64_t pairs;
+        if (pairs++ == 0)
+            fprintf(stderr, "[dlss_fg] pair present: real image %u + interpolated image %u\n",
+                    real_index, interpolated_index);
+    }
+    return interpolated;
 }
 
 #endif  // !MK8_DLSS_PROBE_ONLY

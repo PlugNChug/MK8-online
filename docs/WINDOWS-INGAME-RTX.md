@@ -7,7 +7,7 @@
 | Native Windows plain boot, RTX 5080 | **PASS** | 1280x720 race render; exit 0; `race-05000.png` |
 | FSR 3.1.6 (AMD signed DLL) | **PASS** | `present 1920x1080 -> 2560x1440`, `provider 3.1.6`, `upscale active`; exit 0; `fsr-05000.png` |
 | DLSS Super Resolution (`nvngx_dlss.dll` 58 MB set) | **PASS (captured depth/motion)** | `SuperSampling.Available = 1`, `depth source: captured scene depth`, `motion vectors: camera-derived`; exit 0; `dlssmove-05000.png` |
-| DLSS Frame Generation (`MK8_DLSS_FG=1`) | **PASS with workaround** | latency chain skipped; `[dlss_fg] active`, `EvaluateFeature` success; exit 0; `dlssfg6-05000.png` |
+| DLSS Frame Generation (`MK8_DLSS_FG=1`) | **PASS with workaround** | latency chain skipped; `[dlss_fg] active`, `EvaluateFeature` success, `pair present` real+interpolated; exit 0; `dlssfgalone-05000.png` |
 | Interactive session required | **No** | SSH session 0 created the Vulkan window and swapchain normally |
 
 This is an in-engine render, not a full qualification. `gameplay_verified` stays false; audio,
@@ -40,7 +40,7 @@ python3 local/windows-rtx2/cross_build.py \
 Runtime x86_64-windows-gnu: 234/234 unidades
 Executável do runtime ligado; gameplay ainda não verificado.
 mk8drecomp.exe 4,525,568 bytes
-SHA-256 a1bb4359d369558717952131dd06cfc7dedf6d85796c2323fc3aa4fd7a72163a
+SHA-256 11b9f002c110468308f7651d794194b95902986d2880207b014041a6bb82f07b
 ```
 
 ```sh
@@ -257,8 +257,8 @@ runtime logs the chosen combination:
 [dlss_fg] swapchain latency chain skipped (default; MK8_DLSS_FG_LATENCY_CHAIN=1 enables it)
 ```
 
-In-engine run at 1920x1080 (`LARECOMP_SCALE=1.0`, `MK8_FSR4=1`,
-`MK8_FSR4_CAPTURE=1`, `MK8_DLSS_FG=1`), exit **0**:
+In-engine run at 1920x1080 (`LARECOMP_SCALE=1.0`, `MK8_DLSS_FG=1` only,
+no `MK8_FSR4`), exit **0**:
 
 ```text
 [dlss_fg] active: NGX DLSS-G 2x 1920x1080 (render 1920x1080, format 44),
@@ -266,19 +266,34 @@ In-engine run at 1920x1080 (`LARECOMP_SCALE=1.0`, `MK8_FSR4=1`,
 [fsr_fg] depth source: captured scene depth 1920x1080 fmt 100
 [fsr_fg] motion vectors: camera-derived
 [dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration): 0x00000001 (success)
-[dlss_fg] first evaluated frame 28: 1920x1080 backbuffer, second image 1
-[vk] saved .../dlssfg6-05000.png (1920x1080)
+[dlss_fg] first evaluated frame 29: 1920x1080 backbuffer, second image 2
+[dlss_fg] pair present: real image 1 + interpolated image 2
+[vk] saved .../dlssfgalone-05000.png (1920x1080)
 ```
 
-`dlssfg6-05000.png` is a correct race frame. Setting
-`MK8_DLSS_FG_LATENCY_CHAIN=1` reproduces the original crash with the same
-`-1073740791` exit, confirming the workaround is the chain.
+A second run with `MK8_FSR4=1` and `MK8_FSR4_CAPTURE=1` (the shared
+camera/depth hooks) produced the same `depth source: captured scene depth`,
+`motion vectors: camera-derived`, pair-present and a valid screenshot
+(`dlssfg7-05000.png`). The DLSS-G-alone run proves the extended scan condition
+in `toolchain/dlss_fg.py` works without `MK8_FSR4`; no extra gating fix was
+needed.
+
+`dlssfgalone-05000.png` is a correct race frame. The early
+`no captured view/projection; presenting the real frame only` line is the
+first prepare before the main-draw scan; it is one-time. The later
+`[fsr_fg] motion vectors: camera-derived`, `first evaluated frame 29` and
+`pair present: real image 1 + interpolated image 2` prove the path switched to
+the two-image present. Both images are submitted; no separate hook captures the
+interpolated image, so visible interpolation is not independently proven by the
+still. Setting `MK8_DLSS_FG_LATENCY_CHAIN=1` reproduces the original crash with
+the same `-1073740791` exit, confirming the workaround is the chain.
 
 At 2560x1440 without `LARECOMP_SCALE=1.0`, the game renders the 3D scene at
-1152x648 while the display is 1920; the DLSS-G input path requires matching
-depth/display sizes, so it falls back to real frames only. DLSS-G at that
-resolution needs depth resampling (as the FSR upscaler already does) before it
-can evaluate; this run therefore uses 1920x1080 for the two-image path.
+1152x648 while the display is 2560x1440; the DLSS-G input path requires
+matching depth/display sizes, so it falls back to real frames only. The FSR
+upscaler resamples depth in its own pass; the DLSS-G prepare does not, and a
+safe resample was not added here. **2560x1440 DLSS-G remains unverified**;
+1920x1080 with `LARECOMP_SCALE=1.0` is the verified two-image configuration.
 
 ## What remains
 
@@ -298,7 +313,7 @@ can evaluate; this run therefore uses 1920x1080 for the two-image path.
 ## Evidence
 
 Local (ignored, not committed): `local/rtx-ingame/race-05000.png`,
-`fsr-05000.png`, `dlssmove-05000.png`, `dlssfg6-05000.png`,
+`fsr-05000.png`, `dlssmove-05000.png`, `dlssfgalone-05000.png`,
 `local/rtx-ingame/logs/{race,fsr,dlss,dlsscap,dlssfg}.err` and the matching
 `.exit` files. The harness source is `local/rtx-harness/swapchain_probe.c` with
 `probe-*.out` logs. Remote originals remain under `C:/Users/Ronny/mk8-rtx/game/`
