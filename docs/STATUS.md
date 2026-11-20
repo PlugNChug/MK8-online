@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Controles com a Steam aberta e importação do DLC na fix-chore
+
+**#80.** A presença de um controle SDL com identificação genérica podia desativar a leitura do controle físico pelo Windows GameInput mesmo quando o dispositivo da Steam permanecia inativo. O runtime aguarda um botão ou movimento significativo antes de atribuir esse dispositivo a um jogador. Quando identifica as duas entradas como o mesmo controle, transfere o jogador para a entrada SDL mantendo o mapeamento da Steam. O teste no Windows exercita a atribuição de jogadores do runtime, controles virtuais da SDL e leituras simuladas do GameInput. O reteste com GameSir físico e Entrada Steam habilitada ficou pendente a pedido do usuário.
+
+**#79.** O launcher informa qual edição do Booster Course Pass é aceita e identifica um arquivo de chaves vazio. Em uma cópia isolada da build, a importação do NSP `0100152000023001` v65536 pela API do launcher terminou com sucesso. Um NSP de outro conteúdo e um arquivo de chaves vazio produziram mensagens distintas e preservaram o DLC instalado e o manifesto da build. O ZIP de **Suporte → Gerar relatório** agora inclui a causa em `dlc.log`, com ocultação do caminho do perfil. Falta o relatório de uma máquina afetada para identificar a causa dos relatos originais.
+
+Passaram 104 testes Rust, 17 testes do pipeline e runtime e cinco testes de navegador para DLC e suporte. O teste opcional de sessão Steam ao vivo ficou pendente. A compilação `--runtime-only` conferiu 13 executáveis e DLLs. O jogo abriu com uma cópia dos saves, respondeu à navegação automatizada e encerrou com código 0.
+
 ## Setup 0.4.0 em SSD exFAT — “Can't restore time: Invalid argument”
 
 Um relato (Windows 11 25H2, instalação nova, pasta de dados em `G:\...` num SSD externo exFAT) parou em 81%, em **Preparar arquivos do launcher**, com `Can't restore time: Invalid argument` para cada arquivo do payload. O payload é gravado com `ZipInfo(nome)`, que usa a data padrão do ZIP: 1980-01-01 00:00 em horário local. Extraído sem `-m`, o `tar.exe` do Windows restaura essa data; aqui (UTC−3) o arquivo ficou com 1980-01-01 00:00 local. A leste de UTC, isso corresponde a 31/12/1979 em UTC, abaixo do mínimo do exFAT, e o `SetFileTime` falha. Em NTFS, a mesma data é aceita. O setup agora extrai com `tar -xmf` (`extract_payload`), mantendo a data da extração.

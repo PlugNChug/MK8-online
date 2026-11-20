@@ -27,6 +27,10 @@ bool mk8_set_joycon_mode(int mode);''')
            '        extern void mk8_poll_steam_gamepads(void);\n'
            '        mk8_poll_steam_gamepads();\n'
            '        menu_apply_window_requests(window);')
+    insert(runtime/'nvn/vulkan/device.c', '            extern bool input_user_blocked(const SDL_Event *e);',
+           '            extern bool mk8_steam_gamepad_event(const SDL_Event *e);\n'
+           '            if (mk8_steam_gamepad_event(&e)) continue;\n'
+           '            extern bool input_user_blocked(const SDL_Event *e);')
     insert(runtime/'ui/menu.mm', '    if (opt_toggle("Controllers start at player 2"', '''    int joycon_mode = g_settings.joycon_mode;
     if (opt_choice("Joy-Con mode", &joycon_mode, mk8_joycon_modes, 2, 0,
                    "Use both halves as one controller, or give each player a sideways Joy-Con.") &&

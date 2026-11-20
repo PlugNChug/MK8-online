@@ -118,6 +118,7 @@ class DlcImportTests(unittest.TestCase):
             (local / "candidate.json").write_text(json.dumps(candidate))
             (local / "generation.json").write_text(json.dumps({"identity": "a" * 64}))
             (local / "config.json").write_text('{"fixture":true}')
+            (root / "fixture.keys").write_bytes(b"authored keys fixture")
             profile = root / "games/mk8d/profiles"
             profile.mkdir(parents=True)
             (profile / "4.0.1.json").write_text(json.dumps({"input_sha256": inputs}))
@@ -148,8 +149,12 @@ class DlcImportTests(unittest.TestCase):
                 missing = dict(archive)
                 del missing[b"meta.cnmt.nca"]
                 package_path.write_bytes(package(missing))
-                with self.assertRaisesRegex(ValueError, "Booster Course Pass"):
+                with self.assertRaisesRegex(ValueError, "0100152000023001 v65536"):
                     import_dlc.install(package_path, root / "fixture.keys", local)
+                empty_keys = root / "empty.keys"
+                empty_keys.touch()
+                with self.assertRaisesRegex(ValueError, "prod.keys.*ausente ou vazio"):
+                    import_dlc.install(package_path, empty_keys, local)
                 ambiguous = dict(archive)
                 ambiguous[b"0100152000023001.second.tik"] = b"ambiguous"
                 package_path.write_bytes(package(ambiguous))

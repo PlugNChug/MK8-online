@@ -129,13 +129,16 @@ def install(package, keys, local, *, reinstall=False):
         except (ValueError, FileNotFoundError):
             pass
     if not valid or reinstall:
+        if not keys.is_file() or keys.stat().st_size == 0:
+            raise ValueError("DLC: selecione o prod.keys do seu console. O arquivo de chaves está ausente ou vazio.")
         stage = local / f"dlc-stage-{time.time_ns()}"
         stage.mkdir()
         with package.open("rb") as stream:
             index = entries(stream, package.stat().st_size)
             wanted = {name.encode() for name in CONTENTS}
             if not wanted.issubset(index):
-                raise ValueError("DLC: pacote não corresponde ao Booster Course Pass verificado.")
+                raise ValueError(f"DLC: selecione o NSP do Booster Course Pass {TITLE:016X} v65536. "
+                                 "O pacote escolhido não contém os arquivos dessa edição.")
             for name, (size, expected) in CONTENTS.items():
                 member = Entry(stream, *index[name.encode()])
                 if member.size != size:

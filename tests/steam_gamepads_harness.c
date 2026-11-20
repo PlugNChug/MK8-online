@@ -14,6 +14,25 @@ static SDL_JoystickID *virtual_ids(int *count) {
 #include "steam_gamepads.c"
 #undef SDL_GetGamepads
 
+// Use the actual prepared player-slot discovery and backend handoff with SDL
+// devices. Only game notifications and guest rumble bookkeeping are stubbed.
+#define EXTRA_PADS 3
+#define LOG(...) ((void)0)
+static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
+static bool real_gamepad(SDL_JoystickID id) { return SDL_IsGamepad(id); }
+static bool pads_from_p2(void) { return false; }
+static SDL_Gamepad *mk8_rumble_open(int player, SDL_JoystickID id) { return SDL_OpenGamepad(id); }
+static void mk8_rumble_close(int player, SDL_Gamepad *p) { SDL_CloseGamepad(p); }
+static void recompute_extra(int i) {}
+static void recompute_pad(void) {}
+static void style_changed(void) {}
+static void note_family(void) {}
+static void open_extra(SDL_JoystickID id) {
+    for (int i=0; i<EXTRA_PADS; ++i)
+        if (!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id); return; }
+}
+#include "slots.inc"
+
 // On Windows SDK builds also check our x64 ABI declarations against the OS header.
 #if __has_include(<GameInput.h>)
 #include <GameInput.h>
@@ -111,12 +130,110 @@ int main(void) {
     InterlockedExchange(&dirty,1);
     mk8_poll_steam_gamepads();
     assert(pads[0].id && first.refs==2);
+    // Steam can enumerate a silent Xbox endpoint while the physical receiver
+    // still delivers L+R through Windows. Neither player's slot may be stolen.
+    SDL_JoystickID fallback=pads[0].id, other=pads[1].id;
+    SDL_Gamepad *receiver=SDL_OpenGamepad(fallback);
+    desc.vendor_id=0x045e; desc.product_id=0x028e;
+    SDL_JoystickID generic=SDL_AttachVirtualJoystick(&desc);
+    assert(generic && receiver);
+    SDL_Event added={.type=SDL_EVENT_GAMEPAD_ADDED}; added.gdevice.which=generic;
+    InterlockedExchange(&dirty,1);
+    mk8_steam_gamepad_event(&added);
+    mk8_open_gamepad(generic); mk8_open_gamepad(fallback); mk8_open_gamepad(other);
+    assert(SDL_GetGamepadID(pad)==fallback && SDL_GetGamepadID(extra_pad[0])==other && !extra_pad[1]);
+    SDL_UpdateJoysticks();
+    assert(mk8_steam_pad_deferred(generic) && pads[0].id==fallback && pads[1].id==other);
+    assert(SDL_GetGamepadButton(receiver,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+    assert(SDL_GetGamepadButton(receiver,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+    assert(SDL_GetGamepadButton(p2,SDL_GAMEPAD_BUTTON_SOUTH));
+    // Small idle drift must not take a player slot.
+    SDL_Event drift={.type=SDL_EVENT_GAMEPAD_AXIS_MOTION};
+    drift.gaxis.which=generic; drift.gaxis.value=500;
+    assert(mk8_steam_gamepad_event(&drift));
+    assert(mk8_steam_pad_deferred(generic));
+    // Native input starts working. Use its mapping and hand off P1 in place.
+    SDL_Joystick *emulated=SDL_GetJoystickFromID(generic);
+    second.state.buttons |= 1u << 11;
+    assert(SDL_SetJoystickVirtualButton(emulated,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true));
+    SDL_UpdateJoysticks();
+    SDL_Event e;
+    while (SDL_PollEvent(&e))
+        if (e.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.which==generic) assert(mk8_steam_gamepad_event(&e));
+    assert(mk8_steam_pad_deferred(generic) && SDL_GetGamepadID(pad)==fallback && SDL_GetGamepadID(extra_pad[0])==other);
+    second.state.buttons &= ~(1u << 11);
+    assert(SDL_SetJoystickVirtualButton(emulated,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false));
+    assert(emulated && SDL_SetJoystickVirtualButton(emulated,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true));
+    SDL_UpdateJoysticks();
+    bool down=false;
+    while (SDL_PollEvent(&e)) {
+        if (e.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.which==generic) {
+            assert(!mk8_steam_gamepad_event(&e)); down=true;
+        }
+    }
+    assert(down && !mk8_steam_pad_deferred(generic));
+    assert(!pads[0].id && pads[1].id==other && SDL_GetGamepadID(pad)==generic);
+    mk8_open_gamepad(generic);
+    assert(SDL_GetGamepadID(extra_pad[0])==other && !extra_pad[1]);
+    assert(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+    assert(!SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+    assert(SDL_DetachVirtualJoystick(generic));
+    InterlockedExchange(&dirty,1);
+    mk8_poll_steam_gamepads();
+    assert(pads[0].id && pads[1].id==other && SDL_GetGamepadID(pad)==pads[0].id);
+    assert(SDL_GetGamepadID(extra_pad[0])==other && !extra_pad[1]);
+    // A third SDL controller pressing a different button is independent.
+    SDL_JoystickID independent=SDL_AttachVirtualJoystick(&desc);
+    assert(independent);
+    InterlockedExchange(&dirty,1);
+    mk8_poll_steam_gamepads();
+    assert(mk8_steam_pad_deferred(independent));
+    SDL_Joystick *third=SDL_GetJoystickFromID(independent);
+    assert(third && SDL_SetJoystickVirtualButton(third,SDL_GAMEPAD_BUTTON_EAST,true));
+    SDL_UpdateJoysticks();
+    while (SDL_PollEvent(&e)) {
+        mk8_steam_gamepad_event(&e);
+        if (e.type==SDL_EVENT_GAMEPAD_ADDED && e.gdevice.which==independent)
+            mk8_open_gamepad(independent);
+    }
+    // SDL can postpone events pushed during polling until the next pump.
+    while (SDL_PollEvent(&e))
+        if (e.type==SDL_EVENT_GAMEPAD_ADDED && e.gdevice.which==independent)
+            mk8_open_gamepad(independent);
+    assert(SDL_GetGamepadID(pad)==pads[0].id && SDL_GetGamepadID(extra_pad[0])==other);
+    assert(SDL_GetGamepadID(extra_pad[1])==independent && SDL_GetGamepadButton(extra_pad[1],SDL_GAMEPAD_BUTTON_EAST));
+    SDL_CloseGamepad(extra_pad[1]); extra_pad[1]=NULL;
+    assert(SDL_DetachVirtualJoystick(independent));
+    SDL_CloseGamepad(receiver);
+    SDL_CloseGamepad(pad); SDL_CloseGamepad(extra_pad[0]);
+    pad=NULL; extra_pad[0]=NULL;
     device_changed(0,NULL,&first.device,0,0,connected);
     device_changed(0,NULL,&second.device,0,0,connected);
     awake=NULL;
     mk8_poll_steam_gamepads();
     assert(!pads[0].id && !pads[1].id && !first.refs && !second.refs);
     assert(second.rumble.low==0 && second.rumble.high==0);
+    // Reverse startup order: even when the receiver and emulation expose the
+    // same Xbox VID/PID, an idle endpoint must yield P1 to the new receiver.
+    generic=SDL_AttachVirtualJoystick(&desc);
+    assert(generic);
+    InterlockedExchange(&dirty,1);
+    mk8_poll_steam_gamepads();
+    mk8_open_gamepad(generic);
+    assert(SDL_GetGamepadID(pad)==generic);
+    first.info.vendor=desc.vendor_id; first.info.product=desc.product_id;
+    device_changed(0,NULL,&first.device,0,connected,0);
+    mk8_poll_steam_gamepads();
+    assert(!pad && mk8_steam_pad_deferred(generic));
+    mk8_open_gamepad(pads[0].id);
+    SDL_UpdateJoysticks();
+    assert(SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) && !extra_pad[0]);
+    device_changed(0,NULL,&first.device,0,0,connected);
+    mk8_poll_steam_gamepads();
+    assert(!first.refs && !mk8_steam_pad_deferred(generic));
+    assert(SDL_DetachVirtualJoystick(generic));
+    InterlockedExchange(&dirty,1); mk8_poll_steam_gamepads();
+    SDL_CloseGamepad(pad);
     SDL_CloseGamepad(p1); SDL_CloseGamepad(p2);
     SDL_Quit();
 }

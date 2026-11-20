@@ -12,6 +12,7 @@ static uint64_t held;
 static unsigned events, polls, transitions;
 static unsigned steam_polls;
 void mk8_poll_steam_gamepads(void) { ++steam_polls; }
+bool mk8_steam_gamepad_event(const SDL_Event *) { return false; }
 static uint64_t previous;
 static SDL_JoystickID id;
 static SDL_Joystick *stick;

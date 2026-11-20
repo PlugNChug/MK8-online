@@ -166,7 +166,7 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 2. Type a name and choose **Create Mii**. Then go through the tabs and tap the option you like: each button shows your Mii with that option. **Body** has type, height, build and favorite color, and the preview shows the whole body (or just the face).
 3. Choose **Save Mii**. The Launcher prepares the in-game Mii models the first time; the game uses your Mii the next time it opens.
 
-**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. You can leave Steam Input enabled for Spacewar when playing solo or in a Steam room. If SDL cannot detect a controller at startup, MK8 listens for controllers through Windows GameInput. If your controller does not respond, include its model and connection type with the report from **Support → Generate report**.
+**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. You can leave Steam Input enabled for Spacewar when playing solo or in a Steam room. On `fix-chore`, an idle virtual Steam controller leaves the player slot available for a physical controller detected through Windows GameInput. If your controller does not respond, include its model and connection type with the report from **Support → Generate report**.
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 
@@ -197,7 +197,7 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 ## Help improve the next lap
 
-In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
+In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. In `fix-chore`, reports also include `dlc.log` after a DLC import attempt. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
 ## CTGP Deluxe course pack (optional, experimental)
 

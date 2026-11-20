@@ -1,8 +1,9 @@
 """Keep trying startup devices for player one after a failed SDL open."""
 
-HELPER = '''// MK8: startup enumeration and hotplug share the same slot assignment.
+HELPER = '''extern bool mk8_steam_pad_deferred(SDL_JoystickID id);
+// MK8: startup enumeration and hotplug share the same slot assignment.
 static void mk8_open_gamepad(SDL_JoystickID id) {
-    if (!real_gamepad(id) || (pad && SDL_GetGamepadID(pad) == id)) return;
+    if (mk8_steam_pad_deferred(id) || !real_gamepad(id) || (pad && SDL_GetGamepadID(pad) == id)) return;
     for (int i = 0; i < EXTRA_PADS; i++)
         if (extra_pad[i] && SDL_GetGamepadID(extra_pad[i]) == id) return;
     if (pad || pads_from_p2()) { open_extra(id); return; }
@@ -16,6 +17,26 @@ static void mk8_open_gamepad(SDL_JoystickID id) {
     note_family();
     recompute_pad();
     style_changed();
+}
+
+// Called on the SDL window thread when a controller changes input backend.
+void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id) {
+    for (int player = 0; player <= EXTRA_PADS; ++player) {
+        SDL_Gamepad **slot = player ? &extra_pad[player - 1] : &pad;
+        if (!*slot || SDL_GetGamepadID(*slot) != old_id) continue;
+        mk8_rumble_close(player, *slot);
+        *slot = NULL;
+        if (new_id) {
+            bool taken = pad && SDL_GetGamepadID(pad) == new_id;
+            for (int i = 0; i < EXTRA_PADS; ++i)
+                if (extra_pad[i] && SDL_GetGamepadID(extra_pad[i]) == new_id) taken = true;
+            if (!taken) *slot = mk8_rumble_open(player, new_id);
+        }
+        if (player) recompute_extra(player - 1);
+        else { note_family(); recompute_pad(); }
+        style_changed();
+        return;
+    }
 }
 
 '''

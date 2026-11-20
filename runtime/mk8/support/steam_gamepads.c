@@ -15,6 +15,36 @@ static LONG device_count;
 typedef struct { GIDevice *device; SDL_JoystickID id; } Pad;
 static Pad pads[max_players];
 
+// Unidentified Steam/XInput endpoints need to be opened to receive SDL events.
+// Keep idle endpoints out of the player slots while Windows sees real pads.
+typedef struct {
+    SDL_Gamepad *pad;
+    SDL_JoystickID id;
+    bool active, deferred, check_owner;
+    GIDevice *owner;
+    SDL_Event activation;
+} SteamEndpoint;
+static SteamEndpoint endpoints[max_players];
+static SDL_JoystickID player_source[max_players];
+extern void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id);
+
+static SteamEndpoint *endpoint(SDL_JoystickID id) {
+    for (int i = 0; i < max_players; ++i)
+        if (endpoints[i].id == id) return &endpoints[i];
+    return NULL;
+}
+
+bool mk8_steam_pad_deferred(SDL_JoystickID id) {
+    SteamEndpoint *p = endpoint(id);
+    return p && p->deferred;
+}
+
+static void clear_endpoint(SteamEndpoint *p) {
+    if (p->owner) p->owner->v->release(p->owner);
+    if (p->pad) SDL_CloseGamepad(p->pad);
+    *p = (SteamEndpoint){0};
+}
+
 // GameInput delivers device changes on its own thread. Only the SDL window
 // thread attaches or detaches joysticks. Each side holds its own COM reference.
 static void CALLBACK device_changed(uint64_t token, void *ctx, GIDevice *device, uint64_t time,
@@ -52,23 +82,43 @@ static Sint16 stick(float value) {
     return (Sint16)(SDL_clamp(value, -1.0f, 1.0f) * (value < 0 ? 32768.0f : 32767.0f));
 }
 
+static GIState read_pad_state(GIDevice *device) {
+    GIState state = {0};
+    GIReading *r = NULL;
+    if (SUCCEEDED(input->v->read(input, gamepad_kind, device, &r)) && r) {
+        if (!r->v->gamepad(r, &state)) state = (GIState){0};
+        r->v->release(r);
+    }
+    return state;
+}
+
+static const SDL_GamepadButton buttons[] = {
+    SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_SOUTH,
+    SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
+    SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
+    SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
+    SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK
+};
+
+static bool same_control(const SDL_Event *event, GIState s) {
+    if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        for (unsigned i = 0; i < SDL_arraysize(buttons); ++i)
+            if (buttons[i] == event->gbutton.button) return (s.buttons & (1u << i)) != 0;
+    }
+    if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+        const float axes[] = {s.lx, -s.ly, s.rx, -s.ry, s.lt, s.rt};
+        unsigned axis = event->gaxis.axis;
+        return axis < SDL_arraysize(axes) &&
+               (event->gaxis.value > 0 ? axes[axis] > 0.25f : axes[axis] < -0.25f);
+    }
+    return false;
+}
+
 static void SDLCALL update_pad(void *ctx) {
     Pad *p = ctx;
     SDL_Joystick *joy = SDL_GetJoystickFromID(p->id);
     if (!joy) return;
-    GIState state = {0};
-    GIReading *r = NULL;
-    if (SUCCEEDED(input->v->read(input, gamepad_kind, p->device, &r)) && r) {
-        if (!r->v->gamepad(r, &state)) state = (GIState){0};
-        r->v->release(r);
-    }
-    const int buttons[] = {
-        SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_SOUTH,
-        SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
-        SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
-        SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
-        SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK
-    };
+    GIState state = read_pad_state(p->device);
     for (unsigned i = 0; i < SDL_arraysize(buttons); ++i)
         SDL_SetJoystickVirtualButton(joy, buttons[i], (state.buttons & (1u << i)) != 0);
     const float axes[] = {state.lx, -state.ly, state.rx, -state.ry, 2 * state.lt - 1, 2 * state.rt - 1};
@@ -129,27 +179,87 @@ void mk8_poll_steam_gamepads(void) {
 
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
-    bool claimed[max_players] = {0};
-    int generic = 0;
+    SDL_JoystickID native[max_players] = {0};
+    for (int i = 0; i < max_players; ++i)
+        if (endpoints[i].pad && !SDL_GamepadConnected(endpoints[i].pad)) clear_endpoint(&endpoints[i]);
     for (int n = 0; ids && n < count; ++n) {
         if (ours(ids[n])) continue;
         const Uint16 vid = SDL_GetGamepadVendorForID(ids[n]), pid = SDL_GetGamepadProductForID(ids[n]);
-        bool matched = false;
-        for (int i = 0; i < max_players && !matched; ++i) {
-            if (!snapshot[i] || claimed[i]) continue;
-            const GIInfoPrefix *info = snapshot[i]->v->info(snapshot[i]);
-            if (info && vid && vid == info->vendor && pid == info->product) matched = claimed[i] = true;
+        // Emulated Xbox 360 has the same VID/PID as a physical Xbox 360.
+        bool anonymous = !vid || vid == 0x28de || (vid == 0x045e && pid == 0x028e);
+        if (anonymous) {
+            if (!endpoint(ids[n])) {
+                SteamEndpoint *ep = endpoint(0);
+                if (ep && (ep->pad = SDL_OpenGamepad(ids[n]))) ep->id = ids[n];
+            }
+            continue;
         }
-        // Steam emulation or generic XInput may conceal the physical VID/PID.
-        if (!matched && (!vid || vid == 0x28de || (vid == 0x045e && pid == 0x028e))) ++generic;
+        for (int i = 0; i < max_players; ++i) {
+            if (!snapshot[i] || native[i]) continue;
+            const GIInfoPrefix *info = snapshot[i]->v->info(snapshot[i]);
+            if (info && vid == info->vendor && pid == info->product) {
+                native[i] = ids[n];
+                break;
+            }
+        }
     }
     SDL_free(ids);
+    // Preserve established routes across unrelated hotplug. An anonymous SDL ID
+    // alone cannot identify which of several Windows controllers it represents.
+    for (int n = 0; n < max_players; ++n) {
+        SteamEndpoint *ep = &endpoints[n];
+        if (!ep->owner) continue;
+        int i = 0;
+        while (i < max_players && (snapshot[i] != ep->owner || native[i])) ++i;
+        if (i < max_players) native[i] = ep->id;
+        else { ep->owner->v->release(ep->owner); ep->owner = NULL; }
+    }
+    for (int n = 0; n < max_players; ++n) {
+        SteamEndpoint *ep = &endpoints[n];
+        if (!ep->pad || ep->owner) continue;
+        int candidates = 0, matches = 0, selected = -1, only_candidate = -1;
+        for (int i = 0; i < max_players; ++i) {
+            if (!snapshot[i] || native[i]) continue;
+            ++candidates;
+            only_candidate = i;
+            if (pads[i].device != snapshot[i]) ep->check_owner = true;
+            if (ep->activation.type && same_control(&ep->activation, read_pad_state(snapshot[i]))) {
+                ++matches;
+                selected = i;
+            }
+        }
+        bool was_deferred = ep->deferred;
+        ep->deferred = candidates > 0 && (!ep->active || (was_deferred && ep->check_owner));
+        // Steam can remap every button. A Steam-assigned handle and a single
+        // remaining Windows pad allow that mapping to win even when A becomes B.
+        if (ep->activation.type && candidates == 1 && SDL_GetGamepadSteamHandle(ep->pad)) {
+            matches = 1;
+            selected = only_candidate;
+        }
+        if (matches == 1) {
+            ep->owner = snapshot[selected];
+            ep->owner->v->retain(ep->owner);
+            native[selected] = ep->id;
+        }
+        if (ep->activation.type) {
+            // If both players press the same button, keep their existing routes
+            // and wait for a distinguishable input before adopting the SDL ID.
+            ep->check_owner = matches > 1;
+            ep->deferred = ep->check_owner && was_deferred;
+        }
+        ep->activation.type = 0;
+        if (!was_deferred && ep->deferred) mk8_move_gamepad(ep->id, 0);
+        if (was_deferred && !ep->deferred) {
+            SDL_Event added = {.type = SDL_EVENT_GAMEPAD_ADDED};
+            added.gdevice.which = ep->id;
+            SDL_PushEvent(&added);
+        }
+    }
     for (int i = 0; i < max_players; ++i) {
         Pad *p = &pads[i];
         GIDevice *d = snapshot[i];
-        if (d && !claimed[i] && generic > 0) { --generic; claimed[i] = true; }
-        if (p->device != d || claimed[i]) detach(p);
-        if (d && !p->device && !claimed[i]) {
+        if (p->device != d || native[i]) detach(p);
+        if (d && !p->device && !native[i]) {
             SDL_VirtualJoystickDesc desc;
             const GIInfoPrefix *info = d->v->info(d);
             SDL_INIT_INTERFACE(&desc);
@@ -166,12 +276,38 @@ void mk8_poll_steam_gamepads(void) {
             if (p->id) {
                 fprintf(stderr, "[input] Windows GameInput connected (%04x:%04x)\n",
                         info ? info->vendor : 0, info ? info->product : 0);
-                continue; // pad owns the snapshot reference
-            }
-            p->device = NULL;
+                d = NULL; // pad owns the snapshot reference
+            } else p->device = NULL;
         }
+        SDL_JoystickID next = native[i] ? native[i] : p->id;
+        if (player_source[i] && next && player_source[i] != next)
+            mk8_move_gamepad(player_source[i], next);
+        player_source[i] = next;
         if (d) d->v->release(d);
     }
+}
+
+bool mk8_steam_gamepad_event(const SDL_Event *e) {
+    if (!input) return false;
+    if (e->type == SDL_EVENT_GAMEPAD_ADDED || e->type == SDL_EVENT_GAMEPAD_REMOVED) {
+        mk8_poll_steam_gamepads();
+        return false;
+    }
+    SDL_JoystickID id;
+    bool activity = e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    if (activity || e->type == SDL_EVENT_GAMEPAD_BUTTON_UP) id = e->gbutton.which;
+    else if (e->type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+        id = e->gaxis.which;
+        activity = SDL_abs((int)e->gaxis.value) > 8192;
+    } else return false;
+    SteamEndpoint *ep = endpoint(id);
+    if (ep && activity && (!ep->active || ep->check_owner)) {
+        ep->active = true;
+        ep->activation = *e;
+        InterlockedExchange(&dirty, 1);
+        mk8_poll_steam_gamepads();
+    }
+    return ep && ep->deferred;
 }
 
 static void stop_input(void) {
@@ -179,6 +315,7 @@ static void stop_input(void) {
     subscription = 0;
     SDL_RemoveEventWatch(watch_devices, NULL);
     for (int i = 0; i < max_players; ++i) {
+        clear_endpoint(&endpoints[i]);
         detach(&pads[i]);
         if (devices[i]) {
             devices[i]->v->release(devices[i]);
