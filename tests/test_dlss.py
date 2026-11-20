@@ -99,6 +99,7 @@ ABI_FG_CHECK = r'''
 #include "nvsdk_ngx_params_dlssg.h"
 
 static_assert(MK8_NGX_FEATURE_FRAME_GENERATION == NVSDK_NGX_Feature_FrameGeneration, "feature id");
+static_assert(MK8_NGX_API_VERSION == NVSDK_NGX_Version_API, "API version");
 static_assert(sizeof(Mk8NgxCoordinates) == sizeof(NVSDK_NGX_Coordinates), "coordinates");
 static_assert(offsetof(Mk8NgxCoordinates, Y) == offsetof(NVSDK_NGX_Coordinates, Y), "coordinates y");
 static_assert(sizeof(Mk8NgxDimensions) == sizeof(NVSDK_NGX_Dimensions), "dimensions");

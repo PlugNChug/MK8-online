@@ -27,9 +27,9 @@
 // Why the loader cannot be used. MK8_DLSS_OK is the only usable state.
 typedef enum Mk8DlssLoadStatus {
     MK8_DLSS_OK = 0,
-    MK8_DLSS_NO_PLUGIN,              // no libnvidia-ngx-dlss.so* (nvngx_dlss.dll) in the directory
+    MK8_DLSS_NO_PLUGIN,              // no feature plugin (libnvidia-ngx-dlss*.so / nvngx_dlss*.dll)
     MK8_DLSS_PLUGIN_LOAD_FAILED,     // the file exists but dlopen/LoadLibrary failed (corrupt, wrong arch)
-    MK8_DLSS_PLUGIN_EXPORTS_MISSING, // loaded, but it is not a DLSS feature plugin
+    MK8_DLSS_PLUGIN_EXPORTS_MISSING, // loaded, but it is not the expected NGX feature plugin
     MK8_DLSS_NO_CORE,                // no driver-provided NGX core (libnvidia-ngx.so.1 / _nvngx.dll)
     MK8_DLSS_CORE_LOAD_FAILED,       // the core exists but did not load
     MK8_DLSS_CORE_EXPORTS_MISSING,   // an NGX core without the Vulkan API this bridge calls
