@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Setup 0.4.0 em SSD exFAT — “Can't restore time: Invalid argument”
+
+Um relato (Windows 11 25H2, instalação nova, pasta de dados em `G:\...` num SSD externo exFAT) parou em 81%, em **Preparar arquivos do launcher**, com `Can't restore time: Invalid argument` para cada arquivo do payload. O payload é gravado com `ZipInfo(nome)`, que usa a data padrão do ZIP: 1980-01-01 00:00 em horário local. Extraído sem `-m`, o `tar.exe` do Windows restaura essa data; aqui (UTC−3) o arquivo ficou com 1980-01-01 00:00 local. A leste de UTC, isso corresponde a 31/12/1979 em UTC, abaixo do mínimo do exFAT, e o `SetFileTime` falha. Em NTFS, a mesma data é aceita. O setup agora extrai com `tar -xmf` (`extract_payload`), mantendo a data da extração.
+
+Um disco exFAT teria falhado em seguida: a build expõe o RomFS por hard links (`mirror`), e FAT32/exFAT não os suportam. A mensagem era “precisa estar no mesmo disco”, embora fosse o mesmo disco. O setup agora consulta `FILE_SUPPORTS_HARD_LINKS` do volume (`GetVolumeInformationW`), mostra o aviso ao escolher a pasta de dados e recusa a instalação nesse disco. A build informa que o disco não aceita hard links e precisa ser NTFS. Não foi feita uma cópia completa como alternativa, porque isso duplicaria cerca de 11 GB.
+
+Validação: o teste Rust `payload_extraction_does_not_restore_the_1980_zip_date` extrai pelo helper real um ZIP com a data de 1980; sem `-m`, o `tar` restaura 1980, conforme conferido manualmente. Passaram também o teste da recusa por sistema de arquivos (NTFS real; exFAT pela regra), o teste de navegador do aviso em inglês e espanhol, o teste do `mirror` com WinError 1, 104 testes Rust do workspace, Clippy e formatação. Esta máquina não tem volume exFAT, e criá-lo exige administrador, por isso o setup ainda não foi executado num disco exFAT real.
+
 ## Issues abertas da 0.4.0 — revisão de 20/11/2026
 
 Foram lidas as 12 issues abertas e os anexos (#69, #74 e #78 com ZIP; #68 com Markdown; #76 e #77 com capturas). Nada disto foi integrado ou publicado; as mudanças estão na árvore de trabalho da `fix-chore`.

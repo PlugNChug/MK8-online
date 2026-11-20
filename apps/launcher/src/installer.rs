@@ -372,6 +372,68 @@ pub fn hard_disk(path: &Path) -> Option<bool> {
         .then_some(answer.incurs_seek_penalty != 0)
 }
 
+/// The file system of the volume that holds `path` (or its nearest existing parent) and whether it
+/// supports hard links. The build exposes the ~11 GB game RomFS a second time through hard links
+/// (toolchain/build.py `mirror`); FAT32 and exFAT have none, so the data folder needs NTFS or ReFS.
+pub fn file_system(path: &Path) -> Option<(String, bool)> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetVolumePathNameW(file: *const u16, volume: *mut u16, length: u32) -> i32;
+        fn GetVolumeInformationW(
+            root: *const u16,
+            name: *mut u16,
+            name_size: u32,
+            serial: *mut u32,
+            max_component: *mut u32,
+            flags: *mut u32,
+            file_system: *mut u16,
+            file_system_size: u32,
+        ) -> i32;
+    }
+    const FILE_SUPPORTS_HARD_LINKS: u32 = 0x0040_0000;
+    let existing = path.ancestors().find(|p| p.is_dir())?;
+    let wide: Vec<u16> = existing.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut volume = vec![0u16; 32768];
+    if unsafe { GetVolumePathNameW(wide.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) } == 0 {
+        return None;
+    }
+    let (mut flags, mut name) = (0u32, [0u16; 64]);
+    let ok = unsafe {
+        GetVolumeInformationW(
+            volume.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut flags,
+            name.as_mut_ptr(),
+            name.len() as u32,
+        )
+    };
+    let length = name.iter().position(|&c| c == 0)?;
+    (ok != 0).then(|| {
+        (
+            String::from_utf16_lossy(&name[..length]),
+            flags & FILE_SUPPORTS_HARD_LINKS != 0,
+        )
+    })
+}
+
+/// Refuses a data folder whose file system cannot hold the build's hard links.
+fn require_hard_links(data: &Path) -> Result<(), String> {
+    hard_link_refusal(file_system(data))
+}
+
+fn hard_link_refusal(found: Option<(String, bool)>) -> Result<(), String> {
+    match found {
+        Some((name, false)) => Err(format!(
+            "A pasta de dados está num disco {name}, que não aceita hard links. A preparação do jogo precisa de um disco NTFS: escolha outra pasta ou converta o disco para NTFS."
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn powershell(script: &str, env: &[(&str, &Path)]) -> Result<(), Error> {
     use std::os::windows::process::CommandExt;
     let mut command = Command::new("powershell.exe");
@@ -785,9 +847,12 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
         ("POST", "/api/space") => {
             let path = PathBuf::from(body["path"].as_str().unwrap_or(""));
             let absolute = path.is_absolute();
+            let file_system = absolute.then(|| file_system(&path)).flatten();
             Ok(json!({
                 "free_gib": absolute.then(|| free_gib(&path)).flatten(),
                 "hard_disk": absolute.then(|| hard_disk(&path)).flatten(),
+                "file_system": file_system.as_ref().map(|(name, _)| name),
+                "hard_links": file_system.map(|(_, links)| links),
             }))
         }
         ("POST", "/api/install") => {
@@ -812,6 +877,7 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
             if !crate::language::valid(language) {
                 return Err("Unsupported language / Idioma não suportado".into());
             }
+            require_hard_links(&options.data)?;
             crate::managed::create_data(&options.data).map_err(|e| e.to_string())?;
             crate::language::write(&options.data.join("data"), &json!({"language": language}))?;
             setup.language = language.into();
@@ -1029,6 +1095,24 @@ fn finish_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn data_folder_needs_a_file_system_with_hard_links() {
+        // The test drive (NTFS) supports them; a folder not created yet is judged by its parent.
+        let missing = std::env::temp_dir().join("mk8-fs-check-missing/nested");
+        let (name, links) = file_system(&missing).unwrap();
+        assert!(!name.is_empty());
+        assert_eq!(links, name != "FAT32" && name != "exFAT" && name != "FAT");
+        assert!(require_hard_links(&std::env::temp_dir()).is_ok());
+        let refused = hard_link_refusal(Some(("exFAT".into(), false))).unwrap_err();
+        assert!(
+            refused.contains("exFAT") && refused.contains("NTFS"),
+            "{refused}"
+        );
+        assert!(hard_link_refusal(Some(("NTFS".into(), true))).is_ok());
+        // Unknown volumes (network shares) are not refused here.
+        assert!(hard_link_refusal(None).is_ok());
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()

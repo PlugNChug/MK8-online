@@ -251,6 +251,10 @@ def mirror(path, target, copy_ok=False):
             if not unsupported:
                 raise
             if not copy_ok:
+                if Path(target.anchor).resolve() == Path(path.absolute().anchor).resolve():
+                    # Same drive: the file system has no hard links (FAT32/exFAT).
+                    raise ValueError(f'O disco {path.anchor} não aceita hard links (FAT32/exFAT). A pasta de dados '
+                                     f'precisa estar num disco NTFS: {error}') from error
                 raise ValueError(f'{target} precisa estar no mesmo disco da pasta de dados ({path.anchor}): {error}') from error
             shutil.copy2(src, pending)
         os.replace(pending, dst)

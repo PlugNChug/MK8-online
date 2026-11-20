@@ -36,6 +36,11 @@ async function space() {
   }
   try {
     const result = await api("space", { path });
+    if (result.hard_links === false) {
+      i18n.text(text, `A pasta de dados está num disco ${result.file_system}, que não aceita hard links. A preparação do jogo precisa de um disco NTFS: escolha outra pasta ou converta o disco para NTFS.`);
+      text.classList.add("bad");
+      return;
+    }
     if (result.free_gib === null) {
       i18n.text(text, "");
       return;

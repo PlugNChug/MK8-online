@@ -1240,5 +1240,6 @@
   "Desinstalação concluída": "Desinstalación completada",
   "Removendo arquivos…": "Eliminando archivos…",
   "Os arquivos gerenciados foram removidos.": "Se eliminaron los archivos administrados.",
-  "Seus dados foram preservados.": "Se conservaron tus datos."
+  "Seus dados foram preservados.": "Se conservaron tus datos.",
+  "A pasta de dados está num disco {0}, que não aceita hard links. A preparação do jogo precisa de um disco NTFS: escolha outra pasta ou converta o disco para NTFS.": "La carpeta de datos está en una unidad {0}, que no admite enlaces físicos (hard links). La preparación del juego necesita una unidad NTFS: elige otra carpeta o convierte la unidad a NTFS."
 }

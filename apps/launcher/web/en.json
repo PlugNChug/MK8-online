@@ -1240,5 +1240,6 @@
   "Desinstalação concluída": "Uninstall complete",
   "Removendo arquivos…": "Removing files…",
   "Os arquivos gerenciados foram removidos.": "Managed files were removed.",
-  "Seus dados foram preservados.": "Your data was kept."
+  "Seus dados foram preservados.": "Your data was kept.",
+  "A pasta de dados está num disco {0}, que não aceita hard links. A preparação do jogo precisa de um disco NTFS: escolha outra pasta ou converta o disco para NTFS.": "The drive of the data folder uses {0}, which does not support hard links. Game preparation needs an NTFS drive: choose another folder or convert the drive to NTFS."
 }
