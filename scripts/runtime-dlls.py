@@ -37,6 +37,21 @@ def digest(path):
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def system_library(name):
+    """A Windows system DLL, matched case-insensitively when the host filesystem is case-sensitive.
+
+    The documented build runs on Windows, where System32 resolves any case. A cross-check can
+    point SystemRoot at a Wine prefix on Linux, whose filenames keep the producer's case.
+    """
+    root = os.environ.get('SystemRoot')
+    if not root:
+        return False
+    folder = Path(root)/'System32'
+    if (folder/name).is_file():
+        return True
+    return os.name != 'nt' and folder.is_dir() and any(p.name.lower() == name.lower() for p in folder.iterdir())
+
+
 def cached(cache, name, filename, expected):
     """The cached DLL, if it came from this exact archive and is unchanged."""
     entry = cache.get(name.lower())
@@ -54,13 +69,23 @@ def unpack(filename, expected, name, cache):
     if digest(package) != expected:
         raise ValueError('Package hash mismatch: '+filename)
     CACHE.mkdir(parents=True, exist_ok=True)
+    wanted = 'ucrt64/bin/'+name.lower()
     with package.open('rb') as f, zstandard.ZstdDecompressor().stream_reader(f) as reader, tarfile.open(fileobj=reader, mode='r|') as archive:
+        # MSYS2 packages link a DLL name to another member (zlib1.dll -> libz-1.dll) instead of
+        # repeating its bytes; a streaming read must resolve the link to the member's contents.
+        files, links = {}, {}
         for member in archive:
-            if member.isfile() and member.name.lower() == 'ucrt64/bin/'+name.lower():
-                data = archive.extractfile(member).read()
-                (CACHE/name.lower()).write_bytes(data)
-                cache[name.lower()] = {'sha256': hashlib.sha256(data).hexdigest(), 'package': filename, 'package_sha256': expected}
-                break
+            key = member.name.lower()
+            if member.islnk() or member.issym():
+                links[key] = member.linkname.lower()
+            elif member.isfile():
+                files[key] = archive.extractfile(member).read()
+        data = files.get(wanted)
+        if data is None and wanted in links:
+            data = files.get(links[wanted])
+    if data is not None:
+        (CACHE/name.lower()).write_bytes(data)
+        cache[name.lower()] = {'sha256': hashlib.sha256(data).hexdigest(), 'package': filename, 'package_sha256': expected}
     (CACHE/'index.json').write_text(json.dumps(cache, indent=2, sort_keys=True), encoding='utf-8')
 
 
@@ -120,7 +145,7 @@ def resolve(folder, roots=None):
                         lock[entry['package']] = entry['package_sha256']  # (placed earlier from this archive)
                     queue.append(dll); continue
                 # Bundle the loader even when the build PC has a driver-provided copy.
-                system = name.lower() != 'vulkan-1.dll' and (Path(os.environ['SystemRoot'])/'System32'/name).is_file()
+                system = name.lower() != 'vulkan-1.dll' and system_library(name)
                 if name.lower() in missing or name.lower().startswith(('api-ms-', 'ext-ms-')) or system:
                     continue
                 record = owners.get(name.lower())
