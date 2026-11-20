@@ -1,8 +1,8 @@
 # Estado técnico — 19/11/2026
 
-## Nextendo e menu da build de teste da fix-chore
+## Nextendo e menu no relançamento da 0.4.0
 
-A release 0.4.0 continha as implementações do serviço e do painel, mas o launcher escondia a opção de jogar atrás de variáveis de diagnóstico e o painel F1 exigia uma variável adicional. A build atual expõe **Jogar → Jogar no Nextendo** e abre o painel com **F1 / Menos + Mais** por padrão. Uma build anterior do jogo recebe a indicação de atualização. O launcher pede confirmação da chave de corrida no primeiro uso. O runtime valida o certificado do ZNC pela CA do Nextendo e pelo nome do host, permitindo a renovação do certificado do serviço. O ingresso na corrida continua pelo Online Play nativo.
+A primeira publicação da 0.4.0 continha as implementações do serviço e do painel, mas o launcher escondia a opção de jogar atrás de variáveis de diagnóstico e o painel F1 exigia uma variável adicional. A build atual expõe **Jogar → Jogar no Nextendo** e abre o painel com **F1 / Menos + Mais** por padrão. Ao relançar com o mesmo número, quem já tem o launcher 0.4.0 precisa baixar o novo pacote manualmente. Ao abrir esse launcher, uma build anterior do jogo recebe a indicação de atualização. O launcher pede confirmação da chave de corrida no primeiro uso. O runtime valida o certificado do ZNC pela CA do Nextendo e pelo nome do host, permitindo a renovação do certificado do serviço. O ingresso na corrida continua pelo Online Play nativo.
 
 Na primeira build de teste (`3ed4712`), o executável usado em `--runtime-only` tinha o mesmo SHA-256 do runtime embutido no setup (`42bed0f5758814c1ad13c08ae56271baab33aed4d8e6e97b2612c1e10c4f9b87`). As bibliotecas do jogo conservaram os hashes. Passaram os 15 testes do cliente Nextendo e os sete testes de navegador do fluxo de consentimento e idiomas. O log da sessão com conta real confirmou OAuth/NEX, o adaptador BAAS, as conexões TLS com ZNC e com o servidor do MK8 e saída 0. O log não registra uma corrida completa.
 
@@ -18,7 +18,7 @@ A preparação da 0.4.0 acrescentava os componentes das configurações ao layou
 
 Com o jogo base e os layouts corrigidos, F1 também abriu e fechou o menu com saída 0. Passaram 24 testes de configurações e 14 de CTGP, incluindo o teste das texturas dos ícones das copas executado com o arquivo local do MK8 4.0.1.
 
-Na versão pública, **Configurações → desmarcar “Ativar o menu nativo de configurações”** permite manter o CTGP ligado. A correção depende de regenerar os layouts privados com a ferramenta atualizada.
+No instalador original da 0.4.0, **Configurações → desmarcar “Ativar o menu nativo de configurações”** permite manter o CTGP ligado. A correção depende de regenerar os layouts privados com a ferramenta atualizada.
 
 ## Validação dos pacotes Windows x64 da 0.4.0
 
