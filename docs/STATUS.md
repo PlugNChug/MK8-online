@@ -2,7 +2,7 @@
 
 ## Entrada dos jogadores na seleção de personagens
 
-Na compilação `7c437939…`, o botão **OK** da tela obrigatória inicia o pulso e a transição no mesmo quadro do som de confirmação, assim que o host aceita as atribuições. O teste nativo reproduziu a espera anterior com o relógio da animação parado e verificou o avanço do pulso durante os 160 ms da transição. A avaliação visual desta mudança com controle físico está pendente.
+Na compilação `7c437939…`, o botão **OK** da tela obrigatória inicia o pulso e a transição no mesmo quadro do som de confirmação, assim que o host aceita as atribuições. O teste nativo reproduziu a espera anterior com o relógio da animação parado e verificou o avanço do pulso durante os 160 ms da transição. O mantenedor confirmou o comportamento no jogo com o controle físico.
 
 Em duas entradas consecutivas na tela obrigatória para quatro jogadores, o Pro virtual cancelou com **B** enquanto faltava o jogador 4. Na revisão `e7e1286`, cada cancelamento reproduziu duas vezes o som de voltar: uma vez pela sobreposição e outra pela seleção de personagens ao receber o cancelamento. A tela demorou cerca de 1,2 s para desaparecer e, na segunda entrada, o botão já estava amarelo antes de qualquer comando.
 
