@@ -42,30 +42,33 @@ static void mk8_hub_draw(float scale) {
     ImGuiIO &io = ImGui::GetIO();
     ImGuiStyle saved = ImGui::GetStyle();
     ImGuiStyle &style = ImGui::GetStyle();
-    const ImVec4 orange(1.0f, .47f, .29f, 1), muted(.65f, .66f, .69f, 1);
+    const ImVec4 accent = nes_theme() ? theme_palette().accent : ImVec4(1, .47f, .29f, 1);
+    const ImVec4 muted = nes_theme() ? theme_palette().muted : ImVec4(.65f, .66f, .69f, 1);
     style.WindowPadding = ImVec2(32 * scale, 26 * scale);
     style.FramePadding = ImVec2(18 * scale, 12 * scale);
     style.ItemSpacing = ImVec2(14 * scale, 14 * scale);
-    style.WindowRounding = 20 * scale;
-    style.FrameRounding = 8 * scale;
-    style.ChildRounding = 12 * scale;
-    style.WindowBorderSize = 1;
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(.043f,.055f,.063f,.98f);
-    style.Colors[ImGuiCol_ChildBg] = ImVec4(0,0,0,0);
-    style.Colors[ImGuiCol_Text] = ImVec4(.96f,.96f,.97f,1);
-    style.Colors[ImGuiCol_TextDisabled] = muted;
-    style.Colors[ImGuiCol_Border] = ImVec4(.21f,.21f,.22f,1);
-    style.Colors[ImGuiCol_Separator] = ImVec4(.17f,.20f,.22f,1);
-    style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(.10f,.12f,.14f,1);
-    style.Colors[ImGuiCol_Button] = ImVec4(.15f,.15f,.16f,1);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(.36f,.22f,.18f,1);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(.48f,.26f,.19f,1);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(.15f,.15f,.16f,1);
-    style.Colors[ImGuiCol_Header] = ImVec4(.26f,.17f,.14f,1);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(.34f,.21f,.16f,1);
-    style.Colors[ImGuiCol_CheckMark] = orange;
-    style.Colors[ImGuiCol_SliderGrab] = orange;
-    style.Colors[ImGuiCol_NavCursor] = orange;
+    if (!nes_theme()) {
+        style.WindowRounding = 20 * scale;
+        style.FrameRounding = 8 * scale;
+        style.ChildRounding = 12 * scale;
+        style.WindowBorderSize = 1;
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(.043f,.055f,.063f,.98f);
+        style.Colors[ImGuiCol_ChildBg] = ImVec4(0,0,0,0);
+        style.Colors[ImGuiCol_Text] = ImVec4(.96f,.96f,.97f,1);
+        style.Colors[ImGuiCol_TextDisabled] = muted;
+        style.Colors[ImGuiCol_Border] = ImVec4(.21f,.21f,.22f,1);
+        style.Colors[ImGuiCol_Separator] = ImVec4(.17f,.20f,.22f,1);
+        style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(.10f,.12f,.14f,1);
+        style.Colors[ImGuiCol_Button] = ImVec4(.15f,.15f,.16f,1);
+        style.Colors[ImGuiCol_ButtonHovered] = ImVec4(.36f,.22f,.18f,1);
+        style.Colors[ImGuiCol_ButtonActive] = ImVec4(.48f,.26f,.19f,1);
+        style.Colors[ImGuiCol_FrameBg] = ImVec4(.15f,.15f,.16f,1);
+        style.Colors[ImGuiCol_Header] = ImVec4(.26f,.17f,.14f,1);
+        style.Colors[ImGuiCol_HeaderHovered] = ImVec4(.34f,.21f,.16f,1);
+        style.Colors[ImGuiCol_CheckMark] = accent;
+        style.Colors[ImGuiCol_SliderGrab] = accent;
+        style.Colors[ImGuiCol_NavCursor] = accent;
+    }
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0,0), io.DisplaySize, IM_COL32(0,0,0,125));
     const float w = fminf(io.DisplaySize.x * .92f, 1560 * scale);
     const float h = fminf(io.DisplaySize.y * .88f, 900 * scale);
@@ -74,15 +77,17 @@ static void mk8_hub_draw(float scale) {
     ImGui::PushFont(nes_theme() ? menu_font() : g_font);
     ImGui::Begin("MK8 online##hub", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
     ImVec2 brand = ImGui::GetCursorScreenPos();
+    const ImVec2 digit = ImGui::CalcTextSize("8");
     ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(brand.x+21*scale,brand.y+22*scale),21*scale,IM_COL32(255,119,74,255));
-    ImGui::GetWindowDrawList()->AddText(ImVec2(brand.x+12*scale,brand.y+1*scale),IM_COL32(18,21,24,255),"8");
+    ImGui::GetWindowDrawList()->AddText(ImVec2(brand.x+21*scale-digit.x*.5f,brand.y+22*scale-digit.y*.5f),IM_COL32(18,21,24,255),"8");
     ImGui::Dummy(ImVec2(48*scale,44*scale)); ImGui::SameLine();
     ImGui::TextUnformatted("MK8 online");
     ImGui::Separator();
     const bool popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
-    if (!popup && !ui_text_busy()) {
-        if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1) || ImGui::IsKeyPressed(ImGuiKey_E)) page = (page+1)%4;
-        if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1) || ImGui::IsKeyPressed(ImGuiKey_Q)) page = (page+3)%4;
+    const bool typing = ui_text_busy();
+    if (!popup && !typing) {
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1,false) || ImGui::IsKeyPressed(ImGuiKey_E,false)) page = (page+1)%4;
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1,false) || ImGui::IsKeyPressed(ImGuiKey_Q,false)) page = (page+3)%4;
     }
     const float body_h = ImGui::GetContentRegionAvail().y - 72 * scale;
     NxStatus account; nextendo_status(&account);
@@ -96,7 +101,8 @@ static void mk8_hub_draw(float scale) {
         if (ImGui::Button("##section", ImVec2(ImGui::GetContentRegionAvail().x,66 * scale))) page=i;
         const ImVec2 pos = ImGui::GetItemRectMin();
         ImDrawList *d = ImGui::GetWindowDrawList();
-        ImU32 ink = ImGui::GetColorU32(page == i ? orange : muted);
+        const ImVec4 active_ink = nes_theme() ? theme_palette().child : accent;
+        ImU32 ink = ImGui::GetColorU32(page == i ? active_ink : muted);
         mk8_hub_icon(d,ImVec2(pos.x+32*scale,pos.y+33*scale),scale,i,ink);
         d->AddText(ImVec2(pos.x+62*scale,pos.y+(66*scale-ImGui::GetFontSize())*.5f),ink,tabs[i]);
         if (page==i) d->AddRectFilled(ImVec2(pos.x+7*scale,pos.y+16*scale),ImVec2(pos.x+10*scale,pos.y+50*scale),ink,2*scale);
@@ -108,7 +114,9 @@ static void mk8_hub_draw(float scale) {
     ImGui::SetCursorPosY(fmaxf(ImGui::GetCursorPosY(),body_h-180*scale));
     ImGui::TextColored(connected ? ImVec4(.48f,.82f,.65f,1) : muted,connected ? "Nextendo ativo" : "Sessão local");
     ImGui::TextWrapped("%s",account.state == NX_SIGNED_IN ? account.username : "Seu piloto");
+    ImGui::PushTextWrapPos(0);
     ImGui::TextColored(muted,"MK8 Deluxe 4.0.1");
+    ImGui::PopTextWrapPos();
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::SameLine(0,28*scale);
@@ -122,7 +130,7 @@ static void mk8_hub_draw(float scale) {
     if (page == 0) {
         ImGui::TextWrapped(connected ? "Para disputar uma corrida no Nextendo, volte ao jogo e selecione Online Play." : "Para jogar online no Nextendo, selecione Jogar no Nextendo ao iniciar pelo launcher.");
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, orange);
+        ImGui::PushStyleColor(ImGuiCol_Button, accent);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.08f,.08f,.08f,1));
         if (ImGui::Button("Voltar ao jogo", ImVec2(300*scale,64*scale))) set_open(false);
         ImGui::PopStyleColor(2);
@@ -181,11 +189,11 @@ static void mk8_hub_draw(float scale) {
             if (!social_state.lobby_ok) ImGui::TextWrapped("%s",social_state.lobby_error);
             else if (!social_state.in_lobby) ImGui::TextUnformatted("Você ainda não está em uma sala.");
             else {
-                ImGui::TextColored(orange,"Sua sala atual");
+                ImGui::TextColored(accent,"Sua sala atual");
                 ImGui::Text("Sala %s",social_state.lobby_id);
                 ImGui::Text("%s",social_state.lobby_mode);
                 ImGui::Text("Jogadores: %d / %d",social_state.players,social_state.capacity);
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,orange);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,accent);
                 ImGui::ProgressBar((float)social_state.players/social_state.capacity,ImVec2(360*scale,8*scale),"");
                 ImGui::PopStyleColor();
             }
@@ -225,8 +233,9 @@ static void mk8_hub_draw(float scale) {
             if (i && ImGui::GetItemRectMax().x + style.ItemSpacing.x + ImGui::CalcTextSize(groups[i]).x + 2*style.FramePadding.x <
                 ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine();
             ImGui::PushID(i);
-            ImGui::PushStyleColor(ImGuiCol_Button,settings_page==i ? ImVec4(.34f,.20f,.15f,1) : ImVec4(.11f,.13f,.15f,1));
-            ImGui::PushStyleColor(ImGuiCol_Text,settings_page==i ? orange : muted);
+            ImGui::PushStyleColor(ImGuiCol_Button,style.Colors[settings_page==i ? ImGuiCol_Header : ImGuiCol_Button]);
+            const ImVec4 active_ink = nes_theme() ? theme_palette().child : accent;
+            ImGui::PushStyleColor(ImGuiCol_Text,settings_page==i ? active_ink : muted);
             if (ImGui::Button(groups[i])) settings_page=i;
             ImGui::PopStyleColor(2);
             ImGui::PopID();
@@ -254,7 +263,8 @@ static void mk8_hub_draw(float scale) {
     ImGui::EndChild();
     ImGui::Separator();
     ImGui::TextColored(muted,"LB / RB ou Q / E: abas     A: selecionar     B / Esc: voltar ao jogo");
-    if (!popup && !ui_text_busy() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+    const bool back_used = mods_page_used_back();
+    if (!popup && !typing && !ui_text_busy() && !back_used && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
         && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight,false) || ImGui::IsKeyPressed(ImGuiKey_Escape,false))) set_open(false);
     ImGui::End(); ImGui::PopFont();
     ImGui::GetStyle() = saved;

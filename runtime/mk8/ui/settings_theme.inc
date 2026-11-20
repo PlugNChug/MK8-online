@@ -1,6 +1,9 @@
 extern "C" bool mk8_settings_style_active(void);
+extern "C" bool mk8_settings_overlay_style_active(void) {
+    return mk8_settings_style_active() && !mk8_hub_enabled();
+}
 static void mk8_settings_style_extras(ImGuiStyle &s) {
-    if (!mk8_settings_style_active()) return;
+    if (!mk8_settings_overlay_style_active()) return;
     s.Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.72f,0.84f,0.93f,1);
     s.Colors[ImGuiCol_TableRowBgAlt] = ImVec4(1,1,1,0.30f);
     s.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.33f,0.47f,0.56f,0.8f);
@@ -20,7 +23,7 @@ static const ThemePalette &mk8_settings_palette(const ThemePalette &base) {
 }
 
 static void mk8_settings_backdrop(ImVec2 size) {
-    if (!mk8_settings_style_active()) return;
+    if (!mk8_settings_overlay_style_active()) return;
     ImDrawList *d = ImGui::GetBackgroundDrawList();
     d->AddRectFilledMultiColor(ImVec2(0,0), size, IM_COL32(26,156,216,255), IM_COL32(48,184,225,255),
                               IM_COL32(12,95,168,255), IM_COL32(11,119,190,255));

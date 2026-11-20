@@ -47,14 +47,14 @@ If cup emblems and countdown numbers appear blue in 0.3.0, the 0.4.0 runtime cor
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
-In **F1 → Controls → Joy-Con mode**, choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
+Open **F1 → Controls → Joy-Con mode** in 0.4.0, or **F1 → Ajustes → Controle** on `fix-chore`. Choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
 The DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
 
 
-On `fix-chore`, press **F1** or **Back + Start** to open the in-game menu. Play resumes the game or opens your Mii profile. Settings includes video, audio and controls. After signing in, Nextendo shows live MK8 rooms and Social shows friends and presence with the `friends` permission. Select a room to inspect it. To race, use **Online Play** in Mario Kart.
+On `fix-chore`, press **F1** or **Back + Start** to open the in-game menu. Play resumes the game or opens your Mii profile. Settings includes video, audio, controls and mods. The panel uses the menu theme selected in the launcher. In a mod’s details, Back returns to the mod list. After signing in, Nextendo shows live MK8 rooms and Social shows friends and presence with the `friends` permission. Select a room to inspect it. To race, use **Online Play** in Mario Kart.
 
 Version 0.4.0 adds **Ultrawide (experimental)** under Video settings in the launcher and in-game menu. Click **Save settings** in the launcher before starting the game. It widens supported solo Time Trial, Grand Prix and no-team VS cameras between 16:9 and 32:9, preserves vertical framing, and keeps the HUD proportional at the outer edges. Supported views include forward/rear driving in these solo modes, GP/VS course flyovers and GP/VS/Time Trial opening character close-ups. Original 16:9 and Stretch remain available. Unsupported scenes/modes, split-screen and frame generation use 16:9; this does not enable ultrawide online or replay cameras. Rebuild the game, including the affected guest units, to apply it.
 
