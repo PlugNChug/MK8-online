@@ -95,6 +95,36 @@ def synthetic_nso(path):
     path.write_bytes(header+text+ro+data)
 
 
+def synthetic_symbol_nso(path):
+    """Three authored functions: STT_FUNC, sized STT_NOTYPE, zero-sized STT_NOTYPE marker."""
+    text = bytearray(0x80)
+    struct.pack_into("<II", text, 0, 0x14000008, 0x100)
+    for address, value in ((0x20, 42), (0x40, 7), (0x60, 9)):
+        struct.pack_into("<II", text, address, 0xd2800000 | (value << 5), 0xd65f03c0)
+    ro = bytearray(0x400)
+    ro[:4] = b"MOD0"
+    struct.pack_into("<6i", ro, 4, 0x20, 0x300, 0x300, 0x1f0, 0x1f0, 0)
+    for offset, tag, value in [(0x20, 4, 0x180), (0x30, 5, 0x1a0), (0x40, 6, 0x1c0), (0x50, 0, 0)]:
+        struct.pack_into("<QQ", ro, offset, tag, value)
+    struct.pack_into("<II", ro, 0x80, 1, 4)  # DT_HASH: one bucket, four symbols
+    names = b"\x00func_normal\x00crypto_notype_sized\x00marker_notype_zero\x00"
+    ro[0xa0:0xa0+len(names)] = names
+    symbols = [(0, 0, 0, 0, 0), (1, 0x12, 1, 0x20, 8), (13, 0x10, 1, 0x40, 8), (33, 0x10, 1, 0x60, 0)]
+    for index, (name, info, shndx, value, size) in enumerate(symbols):
+        struct.pack_into("<IBBHQQ", ro, 0xc0 + index * 24, name, info, 0, shndx, value, size)
+    ro[0x1f0:0x1f4] = bytes([1, 0x1b, 0x03, 0x3b])  # empty .eh_frame_hdr search table
+    data = bytes(16)
+    header = bytearray(256); header[:4] = b"NSO0"
+    struct.pack_into("<I", header, 12, 0x38)
+    file_off = 256
+    for i, (mem_off, segment) in enumerate([(0, text), (0x100, ro), (0x500, data)]):
+        struct.pack_into("<III", header, 0x10 + i * 16, file_off, mem_off, len(segment))
+        struct.pack_into("<I", header, 0x60 + i * 4, len(segment))
+        header[0xa0+32*i:0xc0+32*i] = hashlib.sha256(segment).digest()
+        file_off += len(segment)
+    path.write_bytes(header + text + ro + data)
+
+
 class PipelineTests(unittest.TestCase):
     def test_game_identity_rejects_other_titles_and_bad_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -177,6 +207,25 @@ class PipelineTests(unittest.TestCase):
                     generator.generate(source,exefs,output,profile)
                     self.assertEqual(text, chunk.read_text())
                     self.assertEqual(json.loads(receipt.read_text())['files'][chunk.name], pipeline.sha(chunk))
+
+    def test_sized_notype_text_symbols_become_dispatch_entries(self):
+        self.assertTrue(adapter.symbol_function_entry(0x12, 8))   # STT_FUNC
+        self.assertTrue(adapter.symbol_function_entry(0x10, 172)) # STT_NOTYPE, sized: crypto helper
+        self.assertFalse(adapter.symbol_function_entry(0x10, 0))  # zero-sized marker
+        self.assertFalse(adapter.symbol_function_entry(0x11, 8))  # STT_OBJECT
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepared = root/"runtime"
+            adapter.prepare(ROOT/"upstream/smm2recomp", prepared)
+            exefs = root/"exefs"; exefs.mkdir(); synthetic_symbol_nso(exefs/"sdk")
+            profile = {"modules": {"sdk": "0x7004000000"}, "module_window_bytes": 64*1024*1024, "simd": "c"}
+            generated = root/"generated"
+            generator.generate(prepared, exefs, generated, profile)
+            table = (generated/"sdk/sdk_table.c").read_text()
+            self.assertIn("0x7004000020ull", table)
+            self.assertIn("0x7004000040ull", table)  # the sized STT_NOTYPE entry
+            self.assertNotIn("0x7004000060ull", table)  # zero-sized NOTYPE stays interior
+            self.assertIn("void f_7004000040(", (generated/"sdk/sdk_000.c").read_text())
 
     def test_missing_runtime_receipt_never_rebaselines_changed_sources(self):
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-repair-') as temporary:

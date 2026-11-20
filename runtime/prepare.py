@@ -17,6 +17,36 @@ def replace(source, relative, old, new):
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
+def symbol_function_entry(info, size):
+    """True when a defined symbol in executable text starts a function.
+
+    STT_FUNC is the normal case. Some modules also declare internal helpers as STT_NOTYPE
+    with a nonzero size: MK8 4.0.1's sdk does this for the six nndetailCryptoBignum*Words
+    helpers. They are only reached through the module's own PLT/GOT, so without a boundary
+    they remain interior to the preceding function and indirect dispatch has no entry for
+    them. A zero-sized marker such as __nnDetailNintendoSdkNsoFile is not a function.
+    """
+    kind = info & 0xF
+    return kind == 2 or (kind == 0 and size > 0)
+
+
+def adapt_recompiler(output):
+    # The pinned generator only trusts STT_FUNC. A defined text symbol with a size is an entry
+    # regardless of its type; the caller still filters it to the executable range.
+    replace(output, "tools/gen.py", "def sext26(w):", '''def symbol_function_entry(info, size):
+    """STT_FUNC, or a sized STT_NOTYPE symbol (crypto helpers declared without .type)."""
+    kind = info & 0xF
+    return kind == 2 or (kind == 0 and size > 0)
+
+
+def sext26(w):''')
+    replace(output, "tools/gen.py", '''        for name, info, shndx, value, size in n.syms:
+            if shndx and (info & 0xF) == 2:
+                starts.add(b + value)''', '''        for name, info, shndx, value, size in n.syms:
+            if shndx and symbol_function_entry(info, size):
+                starts.add(b + value)''')
+
+
 def prepare(upstream, output, profile_path=None):
     manifest = json.loads((ROOT / "upstream/manifests/smm2recomp.json").read_text())
     for relative, expected in manifest["files"].items():
@@ -32,10 +62,11 @@ def prepare(upstream, output, profile_path=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(upstream / relative, target)
     shutil.copytree(ROOT / "games/mk8d", output / "games/mk8d")
+    adapt_recompiler(output)
     adapt_modules(output, profile_path)
     replace(output, "runtime/net/vlan.c", "s > 3", "s > 11")
     result = {"schema": 2, "upstream_commit": manifest["commit"], "game": "mk8d", "abi": 3, "gameplay_verified": False,
-              "adaptations": ["profile-driven module ABI and tables", "loader and constructor candidate", "stop on unimplemented HLE", "twelve VLAN slots", "game-specific modules only"]}
+              "adaptations": ["profile-driven module ABI and tables", "loader and constructor candidate", "stop on unimplemented HLE", "twelve VLAN slots", "game-specific modules only", "sized symbols in text are function entries"]}
     (output / "MK8-ADOPTION.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
 
