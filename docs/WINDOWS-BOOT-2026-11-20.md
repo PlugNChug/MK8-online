@@ -32,7 +32,7 @@ Same data, same runtime host, old Windows game library (preserved at
 `local/run-fresh/mk8d-code-sdk.dll`, sdk function table 28228 entries):
 
 ```sh
-cd /home/mitchell/Projects/MK8-online-windows-verify/local/run-win
+cd /home/mitchell/Projects/MK8-online-windows-verify/local/run-fresh
 MK8_EXPERIMENTAL_NO_MII=1 WINEDEBUG=-all timeout 45 wine ./mk8drecomp.exe --play
 ```
 
