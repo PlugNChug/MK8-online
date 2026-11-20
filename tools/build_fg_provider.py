@@ -297,8 +297,7 @@ def build(args):
         run(["g++", "-std=c++20", "-DFFX_API_ENTRY=",
              "-I", sdk_root / "Kits" / "FidelityFX" / "api" / "include",
              "-I", sdk_root / "Kits" / "FidelityFX" / "framegeneration" / "include",
-             test_src / "test_context.cpp", "-o", test_bin, "-lvulkan", "-ldl", "-include", "cstdint",
-             str(install / produced.name)])
+             test_src / "test_context.cpp", "-o", test_bin, "-lvulkan", "-ldl", "-include", "cstdint"])
         run([test_bin, str(install / produced.name)])
 
 
