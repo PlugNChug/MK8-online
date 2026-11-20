@@ -597,15 +597,28 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
     prepare.cameraFovAngleVertical = 1.0472f;
     prepare.viewSpaceToMetersFactor = 1.0f;
     prepare.depth = ffxApiGetResourceVK(depth.image,
-        ffxApiGetImageResourceDescriptionVK(depth.image, depth_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        ffxApiGetImageResourceDescriptionVK(depth.image, depth_ci, FFX_API_RESOURCE_USAGE_READ_ONLY),
         FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     prepare.motionVectors = ffxApiGetResourceVK(motion.image,
-        ffxApiGetImageResourceDescriptionVK(motion.image, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
+        ffxApiGetImageResourceDescriptionVK(motion.image, motion_ci, FFX_API_RESOURCE_USAGE_READ_ONLY),
         FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     camera_vectors(prepare.cameraPosition, prepare.cameraUp, prepare.cameraRight, prepare.cameraForward);
     static int camera_state = -1;
-    if ((int)g_fsr_vp_valid != camera_state) {
+    static float last_camera_position[3];
+    static uint64_t last_camera_log;
+    bool camera_changed = (int)g_fsr_vp_valid != camera_state;
+    if (g_fsr_vp_valid && !camera_changed) {
+        float dx = prepare.cameraPosition[0] - last_camera_position[0];
+        float dy = prepare.cameraPosition[1] - last_camera_position[1];
+        float dz = prepare.cameraPosition[2] - last_camera_position[2];
+        // The scan overwrites the view every matching draw; log a moving camera at most every 120
+        // frames so a race position proves the gameplay matrix, not just the first matching block.
+        if (dx * dx + dy * dy + dz * dz > 1.0f && fg.frame_id - last_camera_log >= 120) camera_changed = true;
+    }
+    if (camera_changed) {
         camera_state = (int)g_fsr_vp_valid;
+        memcpy(last_camera_position, prepare.cameraPosition, sizeof last_camera_position);
+        last_camera_log = fg.frame_id;
         fprintf(stderr, "[fsr_fg] camera %s: position %.1f %.1f %.1f forward %.1f %.1f %.1f\n",
                 g_fsr_vp_valid ? "from the captured view matrix" : "default (no captured view matrix)",
                 prepare.cameraPosition[0], prepare.cameraPosition[1], prepare.cameraPosition[2],

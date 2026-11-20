@@ -75,17 +75,19 @@ class FsrFgPatchTests(unittest.TestCase):
         self.assertIn(gate, device)
 
     def test_enables_compute_shader_derivatives_for_frame_generation(self):
-        # The FG inpainting-pyramid shaders declare ComputeDerivativeGroupLinearKHR, so the device
-        # needs VK_KHR_compute_shader_derivatives and the feature; also FG-gated.
+        # The FG inpainting-pyramid and the FSR 3.1 SPD pyramid shaders declare
+        # ComputeDerivativeGroupLinearKHR, so the device needs VK_KHR_compute_shader_derivatives and
+        # the feature when either FSR or FG is requested; the no-FSR path is unchanged.
         runtime = self.patched()
         device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
         self.assertIn(
-            'if (getenv("MK8_FSR_FG") && has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
-            '        fg_derivatives = true;\n'
+            'if ((getenv("MK8_FSR_FG") || getenv("MK8_FSR4")) &&\n'
+            '        has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
+            '        fsr_derivatives = true;\n'
             '        ext[n_ext++] = VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME;',
             device)
-        self.assertIn('VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR fg_deriv_feat', device)
-        self.assertIn('f.pNext = &fg_deriv_feat;', device)
+        self.assertIn('VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR fsr_deriv_feat', device)
+        self.assertIn('f.pNext = &fsr_deriv_feat;', device)
 
     def test_enables_the_depth_capture_and_camera_scan_for_frame_generation(self):
         runtime = self.patched()

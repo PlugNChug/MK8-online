@@ -33,6 +33,7 @@
 
 #include "vulkan/vk.h"
 #include "fsr_fg.h"
+#include "dlss.h"
 
 extern "C" {
 VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
@@ -553,6 +554,12 @@ static bool init(void) {
 // Returns the upscaled view, or VK_NULL_HANDLE so the caller keeps FSR 1/bilinear.
 extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, TexBackend *depth, uint32_t rw, uint32_t rh,
                              uint32_t ow, uint32_t oh, float frame_ms) {
+    // MK8_DLSS selects the optional NGX bridge. It returns VK_NULL_HANDLE with one reasoned
+    // log when it cannot run, and the path below then applies unchanged.
+    if (getenv("MK8_DLSS")) {
+        VkImageView dlss_view = mk8_dlss_upscale(cb, color, depth, rw, rh, ow, oh, frame_ms);
+        if (dlss_view) return dlss_view;
+    }
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
     if (getenv("MK8_FSR_FG")) {  // native frame generation takes the final image; combining is not finished
         static int once;
@@ -654,14 +661,14 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
     desc.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
     desc.commandList = cb;
     desc.color = ffxApiGetResourceVK(color->image,
-        ffxApiGetImageResourceDescriptionVK(color->image, color_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(color->image, color_ci, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     desc.depth = ffxApiGetResourceVK(depth_image,
-        ffxApiGetImageResourceDescriptionVK(depth_image, depth_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(depth_image, depth_ci, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     desc.output = ffxApiGetResourceVK(fsr.output,
-        ffxApiGetImageResourceDescriptionVK(fsr.output, output_ci, VK_IMAGE_USAGE_STORAGE_BIT),
-        VK_IMAGE_LAYOUT_GENERAL);
+        ffxApiGetImageResourceDescriptionVK(fsr.output, output_ci, FFX_API_RESOURCE_USAGE_UAV),
+        FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
     desc.renderSize = {rw, rh};
     desc.upscaleSize = {ow, oh};
     bool mv = real_depth && fsr.mv_pipeline && run_mv(cb, depth, rw, rh);
@@ -671,8 +678,8 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         fprintf(stderr, "[fsr] motion now %s\n", mv ? "camera" : "neutral");
     }
     desc.motionVectors = ffxApiGetResourceVK(fsr.motion,
-        ffxApiGetImageResourceDescriptionVK(fsr.motion, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ffxApiGetImageResourceDescriptionVK(fsr.motion, motion_ci, FFX_API_RESOURCE_USAGE_READ_ONLY),
+        FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     desc.motionVectorScale = mv ? (struct FfxApiFloatCoords2D){1.0f, 1.0f}
                                 : (struct FfxApiFloatCoords2D){(float)rw, (float)rh};
     desc.jitterOffset = {g_fsr_jitter_x, g_fsr_jitter_y};
@@ -692,8 +699,9 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         return VK_NULL_HANDLE;
     }
     static int logged;
-    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion %s)\n",
-                           rw, rh, ow, oh, real_depth ? "game" : "neutral", mv ? "camera" : "neutral");
+    if (!logged++) fprintf(stderr, "[fsr] upscale active %ux%u -> %ux%u (depth %s, motion %s) color %p output %p\n",
+                           rw, rh, ow, oh, real_depth ? "game" : "neutral", mv ? "camera" : "neutral",
+                           (void *)color->image, (void *)fsr.output);
     static int timings;
     if (timings++ % 120 == 0) {
         static uint64_t last;
@@ -701,8 +709,19 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         if (last) fprintf(stderr, "[fsr] cpu dispatch %.2f ms\n", (now - last) / 1e6 / 120.0);
         last = now;
     }
-    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    // The provider samples the colour and depth inputs and leaves them in a read layout; the game's
+    // next pass uses the colour backbuffer (and, with real depth, the captured depth image) as
+    // render targets in GENERAL. Restore them after the dispatch so the next pass starts cleanly.
+    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    if (real_depth)
+        barrier(cb, depth_image, depth_aspect, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     return fsr.output_view;
 }
