@@ -24,6 +24,7 @@
 #ifdef _WIN32
 #include <direct.h>
 #include <windows.h>
+#include <winreg.h>
 #else
 #include <dirent.h>
 #include <dlfcn.h>
@@ -211,6 +212,10 @@ static int collect_plugin_candidates(const char *directory, const char *plugin_p
     if (search == INVALID_HANDLE_VALUE) return 0;
     do {
         if (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        // The SR prefix is a prefix of the FG/RR names too ("nvngx_dlss" matches
+        // nvngx_dlssg.dll); only accept the exact feature or a version suffix.
+        const char *rest = entry.cFileName + prefix;
+        if (*rest && *rest != '.') continue;
         if (count >= capacity) break;
         if (!path_join(paths[count], MK8_DLSS_PATH_MAX, directory, entry.cFileName)) continue;
         count++;
@@ -365,32 +370,72 @@ static bool probe_plugin_fg(Mk8DlssProbe *probe) {
     return probe_plugin_named(probe, MK8_DLSSG_PLUGIN_PREFIX, MK8_DLSS_PLUGIN_SUFFIX, "DLSS-G");
 }
 
+#ifdef _WIN32
+// DCH drivers keep the NGX runtime in the DriverStore and register that directory here;
+// System32 has no _nvngx.dll. Reading it also lets the plugin's own LoadLibraryA("_nvngx.dll")
+// resolve to the same module when the directory is added to the DLL search path.
+static bool registry_ngx_directory(char *out, size_t size) {
+    HKEY key = NULL;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore", 0,
+                      KEY_READ | KEY_WOW64_64KEY, &key) != ERROR_SUCCESS)
+        return false;
+    char buffer[MK8_DLSS_PATH_MAX] = {0};
+    DWORD bytes = (DWORD)sizeof buffer;
+    DWORD type = 0;
+    LONG rc = RegQueryValueExA(key, "FullPath", NULL, &type, (LPBYTE)buffer, &bytes);
+    RegCloseKey(key);
+    if (rc != ERROR_SUCCESS || type != REG_SZ || !buffer[0]) return false;
+    snprintf(out, size, "%s", buffer);
+    return true;
+}
+#endif
+
 static bool probe_core(Mk8DlssProbe *probe) {
     const char *configured = getenv("MK8_DLSS_CORE");
-    char attempts[4][MK8_DLSS_PATH_MAX];
+    char attempts[8][MK8_DLSS_PATH_MAX];
     int count = 0;
     if (configured && *configured) {
         snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", configured);
     } else {
 #ifdef _WIN32
-        static const char *const names[] = {"_nvngx.dll", "nvngx.dll"};
+        // 1. The driver's registered directory (the only copy on current DCH drivers).
+        char driver[MK8_DLSS_PATH_MAX];
+        if (registry_ngx_directory(driver, sizeof driver)) {
+            SetDllDirectoryA(driver);
+            static const char *const driver_names[] = {"_nvngx.dll", "nvngx.dll"};
+            for (size_t i = 0;
+                 i < sizeof driver_names / sizeof driver_names[0] && count < (int)(sizeof attempts / sizeof attempts[0]);
+                 i++) {
+                char candidate[MK8_DLSS_PATH_MAX];
+                if (path_join(candidate, sizeof candidate, driver, driver_names[i]) && file_exists(candidate))
+                    snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", candidate);
+            }
+        }
+        // 2. A user may keep the driver core beside the downloaded plugin.
+        static const char *const beside_names[] = {"_nvngx.dll", "nvngx.dll"};
+        for (size_t i = 0;
+             i < sizeof beside_names / sizeof beside_names[0] && count < (int)(sizeof attempts / sizeof attempts[0]);
+             i++) {
+            char beside[MK8_DLSS_PATH_MAX];
+            if (path_join(beside, sizeof beside, probe->directory, beside_names[i]) && file_exists(beside))
+                snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", beside);
+        }
+        // 3. Older drivers copy the core to System32; try the bare names last.
+        if (count < (int)(sizeof attempts / sizeof attempts[0]))
+            snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", "_nvngx.dll");
+        if (count < (int)(sizeof attempts / sizeof attempts[0]))
+            snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", "nvngx.dll");
 #else
         static const char *const names[] = {"libnvidia-ngx.so.1", "libnvidia-ngx.so"};
-#endif
         for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
             snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", names[i]);
         // A user may keep the driver core beside the downloaded plugin; try it last so the
         // driver's own copy still wins.
         char beside[MK8_DLSS_PATH_MAX];
-        if (path_join(beside, sizeof beside, probe->directory,
-#ifdef _WIN32
-                      "_nvngx.dll"
-#else
-                      "libnvidia-ngx.so.1"
-#endif
-                      ) &&
+        if (path_join(beside, sizeof beside, probe->directory, "libnvidia-ngx.so.1") &&
             file_exists(beside) && count < (int)(sizeof attempts / sizeof attempts[0]))
             snprintf(attempts[count++], MK8_DLSS_PATH_MAX, "%s", beside);
+#endif
     }
 
     char load_error[MK8_DLSS_REASON_MAX] = "not found";
@@ -413,6 +458,25 @@ static bool probe_core(Mk8DlssProbe *probe) {
         }
         snprintf(probe->core, sizeof probe->core, "%s", attempts[i]);
         probe->core_loaded = true;
+#ifdef _WIN32
+        // The Windows runtime has no NVSDK_NGX_Parameter_* C exports (the parameter object's
+        // vtable is the interface), so only Init/parameters/Shutdown are required here.
+        static const char *const required[] = {
+            "NVSDK_NGX_VULKAN_GetCapabilityParameters",
+            "NVSDK_NGX_VULKAN_Shutdown1",
+        };
+        char missing[MK8_DLSS_REASON_MAX];
+        bool common = check_symbols(library, required, (int)(sizeof required / sizeof required[0]), missing,
+                                    sizeof missing);
+        bool init = has_symbol(library, "NVSDK_NGX_VULKAN_Init_with_ProjectID") ||
+                    has_symbol(library, "NVSDK_NGX_VULKAN_Init_ProjectID");
+        if (!init) {
+            size_t used = strlen(missing);
+            snprintf(missing + used, sizeof missing - used, "%sNVSDK_NGX_VULKAN_Init_ProjectID",
+                     used ? ", " : "");
+        }
+        probe->core_exports_ok = common && init;
+#else
         static const char *const required[] = {
             "NVSDK_NGX_VULKAN_Init_with_ProjectID",
             "NVSDK_NGX_VULKAN_GetCapabilityParameters",
@@ -426,6 +490,7 @@ static bool probe_core(Mk8DlssProbe *probe) {
         char missing[MK8_DLSS_REASON_MAX];
         probe->core_exports_ok =
             check_symbols(library, required, (int)(sizeof required / sizeof required[0]), missing, sizeof missing);
+#endif
         lib_close(library);
         if (probe->core_exports_ok) return true;
         probe->status = MK8_DLSS_CORE_EXPORTS_MISSING;
@@ -435,13 +500,15 @@ static bool probe_core(Mk8DlssProbe *probe) {
     }
     probe->status = MK8_DLSS_NO_CORE;
 #ifdef _WIN32
-    const char *core_name = "_nvngx.dll";
-#else
-    const char *core_name = "libnvidia-ngx.so.1";
-#endif
     snprintf(probe->reason, sizeof probe->reason,
-             "no NGX core library (%s): %s; the core is installed by the NVIDIA driver, not by "
-             "this project", core_name, load_error);
+             "no NGX core library (_nvngx.dll): %s; checked HKLM\\SOFTWARE\\NVIDIA Corporation\\Global\\"
+             "NGXCore, the plugin directory and the DLL search path (the driver installs it, not "
+             "this project)", load_error);
+#else
+    snprintf(probe->reason, sizeof probe->reason,
+             "no NGX core library (libnvidia-ngx.so.1): %s; the core is installed by the NVIDIA "
+             "driver, not by this project", load_error);
+#endif
     return false;
 }
 
@@ -557,6 +624,7 @@ typedef struct Dlss {
     Mk8Lib plugin;
     Mk8Lib core;
     Mk8NgxInitWithProjectIdFn init;
+    Mk8NgxInitProjectIdFn init9;
     Mk8NgxGetCapabilityParametersFn get_capability_parameters;
     Mk8NgxParameterSetUiFn set_ui;
     Mk8NgxParameterSetIFn set_i;
@@ -623,7 +691,9 @@ static const char *result_name(int result) {
     switch ((unsigned)result) {
     case MK8_NGX_RESULT_SUCCESS: return "success";
     case MK8_NGX_RESULT_FAIL_FEATURE_NOT_SUPPORTED: return "feature-not-supported";
+    case MK8_NGX_RESULT_FAIL_PLATFORM_ERROR: return "platform-error";
     case MK8_NGX_RESULT_FAIL_INVALID_PARAMETER: return "invalid-parameter";
+    case MK8_NGX_RESULT_FAIL_MISSING_INPUT: return "missing-input";
     case MK8_NGX_RESULT_FAIL_NOT_INITIALIZED: return "not-initialized";
     case MK8_NGX_RESULT_FAIL_UNABLE_TO_INITIALIZE_FEATURE: return "unable-to-initialize-feature";
     case MK8_NGX_RESULT_FAIL_UNABLE_TO_WRITE_TO_APP_DATA_PATH: return "unable-to-write-app-data-path";
@@ -779,11 +849,79 @@ static bool ngx_data_directory(char *out, size_t size) {
     return true;
 }
 
+#ifdef _WIN32
+// The Windows runtime exposes parameters only through the NVSDK_NGX_Parameter C++ object.
+// MSVC's overload order differs from nvsdk_ngx_params.h; the verified slots are in
+// mk8_ngx_abi.h. These thunks are installed only when the C helpers are absent, so a core
+// that still exports them keeps using them.
+static void *ngx_parameter_slot(Mk8NgxParameter *params, int index) {
+    if (!params) return NULL;
+    void **vtable = *(void ***)params;
+    return vtable ? vtable[index] : NULL;
+}
+
+static void MK8_NGX_CONV win_parameter_set_ui(Mk8NgxParameter *params, const char *name, unsigned value) {
+    typedef void(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, unsigned);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_SET_UI);
+    if (fn) fn(params, name, value);
+}
+static void MK8_NGX_CONV win_parameter_set_i(Mk8NgxParameter *params, const char *name, int value) {
+    typedef void(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, int);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_SET_I);
+    if (fn) fn(params, name, value);
+}
+static void MK8_NGX_CONV win_parameter_set_f(Mk8NgxParameter *params, const char *name, float value) {
+    typedef void(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, float);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_SET_F);
+    if (fn) fn(params, name, value);
+}
+static void MK8_NGX_CONV win_parameter_set_ull(Mk8NgxParameter *params, const char *name,
+                                               unsigned long long value) {
+    typedef void(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, unsigned long long);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_SET_ULL);
+    if (fn) fn(params, name, value);
+}
+static void MK8_NGX_CONV win_parameter_set_pointer(Mk8NgxParameter *params, const char *name, void *value) {
+    typedef void(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, void *);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_SET_POINTER);
+    if (fn) fn(params, name, value);
+}
+static int MK8_NGX_CONV win_parameter_get_ui(Mk8NgxParameter *params, const char *name, unsigned *out) {
+    typedef int(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, unsigned *);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_GET_UI);
+    return fn ? fn(params, name, out) : (int)MK8_NGX_RESULT_FAIL;
+}
+static int MK8_NGX_CONV win_parameter_get_ull(Mk8NgxParameter *params, const char *name,
+                                              unsigned long long *out) {
+    typedef int(MK8_NGX_CONV *Fn)(Mk8NgxParameter *, const char *, unsigned long long *);
+    Fn fn = (Fn)ngx_parameter_slot(params, MK8_NGX_WIN_VTABLE_GET_ULL);
+    return fn ? fn(params, name, out) : (int)MK8_NGX_RESULT_FAIL;
+}
+#endif
+
 static bool resolve_runtime_symbols(void) {
+#ifdef _WIN32
+    // The core owns dispatch: the plugin's own CreateFeature/EvaluateFeature keep a separate
+    // state and return FAIL_NotInitialized when called directly (verified on 310.9.16).
+    dlss.create_feature1 = (Mk8NgxCreateFeature1Fn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_CreateFeature1");
+    dlss.create_feature = (Mk8NgxCreateFeatureFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_CreateFeature");
+    dlss.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_EvaluateFeature");
+    dlss.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    if (!dlss.create_feature1)
+        dlss.create_feature1 = (Mk8NgxCreateFeature1Fn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
+    if (!dlss.create_feature)
+        dlss.create_feature = (Mk8NgxCreateFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
+    if (!dlss.evaluate)
+        dlss.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_EvaluateFeature");
+    if (!dlss.release)
+        dlss.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    dlss.init9 = (Mk8NgxInitProjectIdFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_Init_ProjectID");
+#else
     dlss.create_feature1 = (Mk8NgxCreateFeature1Fn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
     dlss.create_feature = (Mk8NgxCreateFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
     dlss.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_EvaluateFeature");
     dlss.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_ReleaseFeature");
+#endif
     dlss.get_requirements =
         (Mk8NgxGetFeatureRequirementsFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_GetFeatureRequirements");
     dlss.init = (Mk8NgxInitWithProjectIdFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_Init_with_ProjectID");
@@ -798,8 +936,16 @@ static bool resolve_runtime_symbols(void) {
     dlss.shutdown1 = (Mk8NgxShutdown1Fn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_Shutdown1");
     dlss.required_extensions =
         (Mk8NgxRequiredExtensionsFn)lib_symbol(dlss.core, "NVSDK_NGX_VULKAN_RequiredExtensions");
-    return dlss.init && dlss.get_capability_parameters && dlss.set_ui && dlss.set_i && dlss.set_f &&
-           dlss.set_pointer && dlss.get_ui && dlss.evaluate && dlss.release &&
+#ifdef _WIN32
+    if (!dlss.set_ui) dlss.set_ui = win_parameter_set_ui;
+    if (!dlss.set_i) dlss.set_i = win_parameter_set_i;
+    if (!dlss.set_f) dlss.set_f = win_parameter_set_f;
+    if (!dlss.set_pointer) dlss.set_pointer = win_parameter_set_pointer;
+    if (!dlss.get_ui) dlss.get_ui = win_parameter_get_ui;
+    if (!dlss.get_ull) dlss.get_ull = win_parameter_get_ull;
+#endif
+    return (dlss.init || dlss.init9) && dlss.get_capability_parameters && dlss.set_ui && dlss.set_i &&
+           dlss.set_f && dlss.set_pointer && dlss.get_ui && dlss.evaluate && dlss.release &&
            (dlss.create_feature1 || dlss.create_feature);
 }
 
@@ -927,13 +1073,28 @@ static bool load_ngx(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
 
     fprintf(stderr, "[dlss] NGX init: project %s, plugin %s, data %s\n", project_id, dlss.probe.plugin,
             data_directory);
-    int rc = dlss.init(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1", dlss.wide_data_directory,
-                       g_vk.inst, g_vk.phys, g_vk.dev, vkGetInstanceProcAddr, vkGetDeviceProcAddr, &common,
-                       MK8_NGX_API_VERSION);
+    const char *init_name = "NVSDK_NGX_VULKAN_Init_with_ProjectID";
+    int rc;
+#ifdef _WIN32
+    if (dlss.init9) {
+        init_name = "NVSDK_NGX_VULKAN_Init_ProjectID";
+        fprintf(stderr, "[dlss] using the driver Init_ProjectID form (9 arguments, no vkGet*ProcAddr)\n");
+        rc = dlss.init9(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
+                        dlss.wide_data_directory, g_vk.inst, g_vk.phys, g_vk.dev, MK8_NGX_API_VERSION,
+                        &common);
+    } else
+#endif
+    {
+        rc = dlss.init(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
+                       dlss.wide_data_directory, g_vk.inst, g_vk.phys, g_vk.dev, vkGetInstanceProcAddr,
+                       vkGetDeviceProcAddr, &common, MK8_NGX_API_VERSION);
+    }
+    if (MK8_NGX_SUCCEEDED(rc))
+        fprintf(stderr, "[dlss] %s: 0x%08x (success)\n", init_name, (unsigned)rc);
     if (MK8_NGX_FAILED(rc)) {
-        log_result("NVSDK_NGX_VULKAN_Init_with_ProjectID", rc);
-        snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
-                 "NVSDK_NGX_VULKAN_Init_with_ProjectID failed 0x%08x (%s)", (unsigned)rc, result_name(rc));
+        log_result(init_name, rc);
+        snprintf(dlss.probe.reason, sizeof dlss.probe.reason, "%s failed 0x%08x (%s)", init_name,
+                 (unsigned)rc, result_name(rc));
         if (dlss.shutdown1) dlss.shutdown1(g_vk.dev);
         return false;
     }
@@ -963,6 +1124,7 @@ static bool load_ngx(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
         shutdown_ngx();
         return false;
     }
+    fprintf(stderr, "[dlss] SuperSampling.Available = %u\n", available);
     if (available != 1) {
         snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
                  "SuperSampling.Available = %u: this GPU or driver does not expose DLSS Super Resolution",
@@ -1076,7 +1238,10 @@ static bool create_mv_resources(void) {
     pipeline.layout = dlss.mv_pipeline_layout;
     VkResult result = vkCreateComputePipelines(g_vk.dev, g_vk.pcache, 1, &pipeline, NULL, &dlss.mv_pipeline);
     vkDestroyShaderModule(g_vk.dev, module, NULL);
-    if (result != VK_SUCCESS) return false;
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "[dlss] vkCreateComputePipelines(dlss_mv) failed: %d\n", (int)result);
+        return false;
+    }
     VkBufferCreateInfo buffer = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     buffer.size = 144;
     buffer.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -1208,7 +1373,7 @@ static bool ensure_cached_view(VkImageView *view, VkImage *cached_image, VkForma
 static bool create_output(uint32_t ow, uint32_t oh) {
     dlss.output = make_image(VK_FORMAT_R8G8B8A8_UNORM, ow, oh,
                              VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                              VK_IMAGE_ASPECT_COLOR_BIT, &dlss.output_mem);
     if (!dlss.output) return false;
     dlss.output_view = image_view_of(dlss.output, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -1242,6 +1407,8 @@ static bool ensure_feature(VkCommandBuffer cb, uint32_t rw, uint32_t rh, uint32_
                                                          dlss.params, &dlss.handle)
                                   : dlss.create_feature(cb, MK8_NGX_FEATURE_SUPER_SAMPLING, dlss.params,
                                                         &dlss.handle);
+    if (MK8_NGX_SUCCEEDED(rc) && dlss.handle)
+        fprintf(stderr, "[dlss] NVSDK_NGX_VULKAN_CreateFeature: 0x%08x (success)\n", (unsigned)rc);
     if (MK8_NGX_FAILED(rc) || !dlss.handle) {
         log_result("NVSDK_NGX_VULKAN_CreateFeature", rc);
         unsigned init_result = 0;
@@ -1427,13 +1594,22 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
         return VK_NULL_HANDLE;
     }
     static int logged;
-    if (!logged++)
+    if (!logged++) {
+        fprintf(stderr, "[dlss] NVSDK_NGX_VULKAN_EvaluateFeature: 0x%08x (success)\n", (unsigned)rc);
         fprintf(stderr, "[dlss] upscale active %ux%u -> %ux%u (quality %s, depth %s, motion %s, "
                         "jitter %.3f,%.3f)\n",
                 rw, rh, ow, oh, dlss.quality_name, real_depth ? "game" : "neutral",
                 motion ? "camera" : "zeros", jitter_x, jitter_y);
+    }
     return dlss.output_view;
 }
+
+#ifdef MK8_DLSS_TEST_API
+// Test-only accessor used by tools/dlss_bridge_harness.cpp to read the feature's output
+// back. The runtime consumes the returned view directly and never needs the image handle.
+extern "C" VkImage mk8_dlss_test_output_image(void) { return dlss.ready ? dlss.output : VK_NULL_HANDLE; }
+extern "C" VkFormat mk8_dlss_test_output_format(void) { return VK_FORMAT_R8G8B8A8_UNORM; }
+#endif
 
 // ---------------------------------------------------------------------------------------
 // DLSS Frame Generation (MK8_DLSS_FG=1).
@@ -1464,6 +1640,7 @@ typedef struct DlssFg {
     Mk8Lib plugin;
     Mk8Lib core;
     Mk8NgxInitWithProjectIdFn init;
+    Mk8NgxInitProjectIdFn init9;
     Mk8NgxGetCapabilityParametersFn get_capability_parameters;
     Mk8NgxParameterSetUiFn set_ui;
     Mk8NgxParameterSetIFn set_i;
@@ -1554,12 +1731,36 @@ static void fg_fail(const char *reason) {
 }
 
 static bool fg_resolve_symbols(void) {
+#ifdef _WIN32
+    // Windows: the core owns dispatch and the nine-argument Init; the plugin's own copies
+    // return FAIL_NotInitialized when called directly (verified on 310.9.16).
+    dlss_fg.create_feature1 =
+        (Mk8NgxCreateFeature1Fn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_CreateFeature1");
+    dlss_fg.create_feature =
+        (Mk8NgxCreateFeatureFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_CreateFeature");
+    dlss_fg.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_EvaluateFeature");
+    dlss_fg.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    if (!dlss_fg.create_feature1)
+        dlss_fg.create_feature1 =
+            (Mk8NgxCreateFeature1Fn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
+    if (!dlss_fg.create_feature)
+        dlss_fg.create_feature =
+            (Mk8NgxCreateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
+    if (!dlss_fg.evaluate)
+        dlss_fg.evaluate =
+            (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_EvaluateFeature");
+    if (!dlss_fg.release)
+        dlss_fg.release =
+            (Mk8NgxReleaseFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    dlss_fg.init9 = (Mk8NgxInitProjectIdFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_Init_ProjectID");
+#else
     dlss_fg.create_feature1 =
         (Mk8NgxCreateFeature1Fn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
     dlss_fg.create_feature =
         (Mk8NgxCreateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
     dlss_fg.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_EvaluateFeature");
     dlss_fg.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_ReleaseFeature");
+#endif
     dlss_fg.get_requirements =
         (Mk8NgxGetFeatureRequirementsFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_GetFeatureRequirements");
     dlss_fg.init = (Mk8NgxInitWithProjectIdFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_Init_with_ProjectID");
@@ -1573,9 +1774,17 @@ static bool fg_resolve_symbols(void) {
     dlss_fg.set_ull = (Mk8NgxParameterSetUllFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetULL");
     dlss_fg.get_ui = (Mk8NgxParameterGetUiFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_GetUI");
     dlss_fg.shutdown1 = (Mk8NgxShutdown1Fn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_Shutdown1");
-    return dlss_fg.init && dlss_fg.get_capability_parameters && dlss_fg.set_ui && dlss_fg.set_i &&
-           dlss_fg.set_f && dlss_fg.set_pointer && dlss_fg.get_ui && dlss_fg.evaluate && dlss_fg.release &&
-           (dlss_fg.create_feature1 || dlss_fg.create_feature);
+#ifdef _WIN32
+    if (!dlss_fg.set_ui) dlss_fg.set_ui = win_parameter_set_ui;
+    if (!dlss_fg.set_i) dlss_fg.set_i = win_parameter_set_i;
+    if (!dlss_fg.set_f) dlss_fg.set_f = win_parameter_set_f;
+    if (!dlss_fg.set_pointer) dlss_fg.set_pointer = win_parameter_set_pointer;
+    if (!dlss_fg.set_ull) dlss_fg.set_ull = win_parameter_set_ull;
+    if (!dlss_fg.get_ui) dlss_fg.get_ui = win_parameter_get_ui;
+#endif
+    return (dlss_fg.init || dlss_fg.init9) && dlss_fg.get_capability_parameters && dlss_fg.set_ui &&
+           dlss_fg.set_i && dlss_fg.set_f && dlss_fg.set_pointer && dlss_fg.get_ui && dlss_fg.evaluate &&
+           dlss_fg.release && (dlss_fg.create_feature1 || dlss_fg.create_feature);
 }
 
 static void fg_identity(float m[16]) {
@@ -1840,17 +2049,30 @@ bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
         }
     }
 
-    int rc = dlss_fg.init(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
+    const char *init_name = "NVSDK_NGX_VULKAN_Init_with_ProjectID";
+    int rc;
+#ifdef _WIN32
+    if (dlss_fg.init9) {
+        init_name = "NVSDK_NGX_VULKAN_Init_ProjectID";
+        fprintf(stderr, "[dlss_fg] using the driver Init_ProjectID form (9 arguments, no vkGet*ProcAddr)\n");
+        rc = dlss_fg.init9(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
+                           dlss_fg.wide_data_directory, init->instance, init->physical_device, init->device,
+                           MK8_NGX_API_VERSION, &common);
+    } else
+#endif
+    {
+        rc = dlss_fg.init(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
                           dlss_fg.wide_data_directory, init->instance, init->physical_device, init->device,
                           vkGetInstanceProcAddr, vkGetDeviceProcAddr, &common, MK8_NGX_API_VERSION);
+    }
+    if (MK8_NGX_SUCCEEDED(rc))
+        fprintf(stderr, "[dlss_fg] %s: 0x%08x (success)\n", init_name, (unsigned)rc);
     if (MK8_NGX_FAILED(rc)) {
-        fprintf(stderr, "[dlss_fg] NVSDK_NGX_VULKAN_Init_with_ProjectID failed 0x%08x (%s)\n", (unsigned)rc,
-                result_name(rc));
+        log_result(init_name, rc);
         if (dlss_fg.shutdown1) dlss_fg.shutdown1(init->device);
         char message[MK8_DLSS_REASON_MAX];
-        snprintf(message, sizeof message,
-                 "NVSDK_NGX_VULKAN_Init_with_ProjectID failed 0x%08x (%s); an older NGX/driver is the "
-                 "usual cause", (unsigned)rc, result_name(rc));
+        snprintf(message, sizeof message, "%s failed 0x%08x (%s); an older NGX/driver is the usual cause",
+                 init_name, (unsigned)rc, result_name(rc));
         fg_fail(message);
         return false;
     }
@@ -1927,10 +2149,33 @@ bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
     dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_HEIGHT,
                    init->render_height ? init->render_height : init->height);
     dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_DYNAMIC_RESOLUTION, 0);
+#ifdef _WIN32
+    // v310.9.16's FG helper uses CreateFeature (no VkDevice); CreateFeature1 is not the path
+    // NVIDIA exercises for FrameGeneration. Retry only if the first call fails.
+    rc = dlss_fg.create_feature
+             ? dlss_fg.create_feature(cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params, &dlss_fg.handle)
+             : (dlss_fg.create_feature1
+                    ? dlss_fg.create_feature1(init->device, cb, MK8_NGX_FEATURE_FRAME_GENERATION,
+                                              dlss_fg.params, &dlss_fg.handle)
+                    : MK8_NGX_RESULT_FAIL);
+    if (MK8_NGX_SUCCEEDED(rc))
+        fprintf(stderr, "[dlss_fg] NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration): 0x%08x (success)\n",
+                (unsigned)rc);
+    else
+        log_result("NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration)", rc);
+    if (MK8_NGX_FAILED(rc) && dlss_fg.create_feature1 && dlss_fg.create_feature) {
+        fprintf(stderr, "[dlss_fg] CreateFeature failed; retrying with CreateFeature1\n");
+        dlss_fg.handle = NULL;
+        rc = dlss_fg.create_feature1(init->device, cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params,
+                                     &dlss_fg.handle);
+        log_result("NVSDK_NGX_VULKAN_CreateFeature1(FrameGeneration)", rc);
+    }
+#else
     rc = dlss_fg.create_feature1
              ? dlss_fg.create_feature1(init->device, cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params,
                                        &dlss_fg.handle)
              : dlss_fg.create_feature(cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params, &dlss_fg.handle);
+#endif
     if (MK8_NGX_FAILED(rc) || !dlss_fg.handle) {
         unsigned init_result = 0;
         if (dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_FEATURE_INIT_RESULT, &init_result))
@@ -2199,6 +2444,10 @@ Mk8DlssFgFrame mk8_dlss_fg_evaluate(const Mk8DlssFgInputs *inputs) {
         return frame;
     }
 
+    static int eval_logged;
+    if (!eval_logged++)
+        fprintf(stderr, "[dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration): 0x%08x (success)\n",
+                (unsigned)rc);
     memcpy(dlss_fg.prev_view_proj, view_proj, sizeof dlss_fg.prev_view_proj);
     dlss_fg.have_prev = true;
     dlss_fg.frame_id = inputs->frame_id;

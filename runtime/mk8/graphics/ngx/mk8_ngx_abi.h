@@ -34,7 +34,9 @@ enum {
     MK8_NGX_RESULT_FAIL = 0xBAD00000,
     MK8_NGX_RESULT_FAIL_NOT_INITIALIZED = 0xBAD00007,
     MK8_NGX_RESULT_FAIL_FEATURE_NOT_SUPPORTED = 0xBAD00001,
+    MK8_NGX_RESULT_FAIL_PLATFORM_ERROR = 0xBAD00002,
     MK8_NGX_RESULT_FAIL_INVALID_PARAMETER = 0xBAD00005,
+    MK8_NGX_RESULT_FAIL_MISSING_INPUT = 0xBAD0000A,
     MK8_NGX_RESULT_FAIL_UNABLE_TO_INITIALIZE_FEATURE = 0xBAD0000B,
     MK8_NGX_RESULT_FAIL_UNABLE_TO_WRITE_TO_APP_DATA_PATH = 0xBAD0000F,
 };
@@ -340,6 +342,30 @@ typedef int(MK8_NGX_CONV *Mk8NgxInitWithProjectIdFn)(
     VkDevice device, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
     PFN_vkGetDeviceProcAddr get_device_proc_addr, const Mk8NgxFeatureCommonInfo *feature_info,
     int sdk_version);
+
+// Windows driver cores export this nine-argument form instead of the SDK helper above: the
+// two vkGet*ProcAddr pointers are absent and the SDK version precedes FeatureCommonInfo.
+// Calling the eleven-argument shape on such a core passes the engine-version string where the
+// path list belongs and faults inside _nvngx.dll (verified on 32.0.16.2101).
+typedef int(MK8_NGX_CONV *Mk8NgxInitProjectIdFn)(
+    const char *project_id, int engine_type, const char *engine_version,
+    const wchar_t *application_data_path, VkInstance instance, VkPhysicalDevice physical_device,
+    VkDevice device, int sdk_version, const Mk8NgxFeatureCommonInfo *feature_info);
+
+// The Windows runtime exports no NVSDK_NGX_Parameter_SetUI/SetI/SetF/SetVoidPointer/GetUI.
+// Parameters are the NVSDK_NGX_Parameter C++ object; MSVC's overload order is not the
+// header's declaration order. These are the slots the bridge uses (verified on 621.01):
+// 0 Set(void*), 3 Set(uint), 4 Set(int), 6 Set(float), 7 Set(ull),
+// 11 Get(uint), 15 Get(ull). Linux keeps the exported C helpers.
+enum {
+    MK8_NGX_WIN_VTABLE_SET_POINTER = 0,
+    MK8_NGX_WIN_VTABLE_SET_UI = 3,
+    MK8_NGX_WIN_VTABLE_SET_I = 4,
+    MK8_NGX_WIN_VTABLE_SET_F = 6,
+    MK8_NGX_WIN_VTABLE_SET_ULL = 7,
+    MK8_NGX_WIN_VTABLE_GET_UI = 11,
+    MK8_NGX_WIN_VTABLE_GET_ULL = 15,
+};
 typedef int(MK8_NGX_CONV *Mk8NgxGetCapabilityParametersFn)(Mk8NgxParameter **out_parameters);
 typedef void(MK8_NGX_CONV *Mk8NgxParameterSetUiFn)(Mk8NgxParameter *, const char *, unsigned);
 typedef void(MK8_NGX_CONV *Mk8NgxParameterSetIFn)(Mk8NgxParameter *, const char *, int);

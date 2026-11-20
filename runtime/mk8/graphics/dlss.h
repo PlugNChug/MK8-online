@@ -87,6 +87,13 @@ typedef struct TexBackend TexBackend;
 VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, TexBackend *depth, uint32_t rw,
                              uint32_t rh, uint32_t ow, uint32_t oh, float frame_ms);
 
+#ifdef MK8_DLSS_TEST_API
+// Harness-only access to the feature-owned output image, so a native test can read it back.
+// The runtime build does not define MK8_DLSS_TEST_API and keeps the view-only contract.
+VkImage mk8_dlss_test_output_image(void);
+VkFormat mk8_dlss_test_output_format(void);
+#endif
+
 // ---------------------------------------------------------------------------------------
 // DLSS Frame Generation present-time API.
 //

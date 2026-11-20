@@ -5,10 +5,12 @@ Status 20/11/2026. This covers phase 1 (DLSS Super Resolution / DLAA) and phase 
 are optional NGX Vulkan bridges in the runtime and both are compile-tested and
 loader/ABI-tested here (this host has an AMD RX 9070 XT / RADV and no NVIDIA GPU). The ABI
 the bridge uses was executed for real on a Windows machine with an RTX 5080 (driver
-621.01) by `tools/dlss_rtx_harness.cpp`: Super Resolution and Frame Generation both
-created features and wrote evaluated frames. The in-game bridge still does not run on
-Windows because four runtime details differ from the Linux shape (see "Verified on
-RTX 5080"). `gameplay_verified` stays false.
+621.01): first by `tools/dlss_rtx_harness.cpp`, then through the bridge's own public
+API (`mk8_dlss_upscale`, `mk8_dlss_fg_init`/`mk8_dlss_fg_evaluate`) by
+`tools/dlss_bridge_harness.cpp`, after the four Windows runtime differences were
+applied to `dlss.cpp`. Both SR and FG created features, evaluated frames and wrote
+PNGs. The game itself was not run and `gameplay_verified` stays false; `device.c`
+still needs the pre-device extension/low-latency hook (see the bridge section).
 
 The implementation is deliberately small and fail-closed: no vendor binary is
 committed, nothing is linked against NGX, and every failure returns `VK_NULL_HANDLE`
@@ -26,7 +28,9 @@ committed, nothing is linked against NGX, and every failure returns `VK_NULL_HAN
 | `toolchain/dlss_fg.py` | gated low-latency device/swapchain patches, depth/matrix gates, device accessor |
 | `tests/test_dlss.py` | native loader failure paths, real-plugin dlopen, SR and DLSS-G ABI static asserts |
 | `tests/test_dlss_fg.py` | toolchain patch idempotence/gating and `-fsyntax-only` compile of the patched runtime |
-| `tools/dlss_rtx_harness.cpp` | standalone Windows x86-64 harness: ran SR and FG on an RTX 5080 (not part of the runtime build) |
+| `tools/dlss_rtx_harness.cpp` | standalone Windows x86-64 harness: ran the raw NGX ABI for SR and FG on an RTX 5080 |
+| `tools/dlss_bridge_harness.cpp` | standalone Windows harness that compiles the real `dlss.cpp` and calls `mk8_dlss_upscale` / `mk8_dlss_fg_*` on the RTX 5080 |
+| `tools/dlss_bridge_include/` | shim `vulkan/vk.h`, its VMA subset and the camera-MV shader SPIR-V for that harness |
 
 `toolchain/host.py` registers `toolchain/dlss_fg.py` immediately after
 `toolchain/fsr_fg.py`; the host build already compiles every `runtime/mk8/**/*.cpp`. The SR
@@ -334,28 +338,29 @@ The struct layouts were accepted by the real binaries unchanged:
 `DlssCreateParams=28`. Resources built exactly as `dlss.cpp` builds them were
 consumed correctly.
 
-Four facts differ from the Linux shape. The in-game bridge will hit all four on
-Windows; they are recorded here so the next change is not guesswork (the runtime was
-not modified in this change because this checkout has no Windows runtime build):
+Four facts differ from the Linux shape. They were applied to the Windows branches of
+`dlss.cpp` after this direct run and are exercised again through the bridge's public
+API in the next section; the list stays here because it is the ABI evidence:
 
 1. **Init entry point and arity.** The core exports
    `NVSDK_NGX_VULKAN_Init_ProjectID`, not the SDK's `..._Init_with_ProjectID`, and it
    takes nine arguments: project id, engine type, engine version, application data
    path, `VkInstance`, `VkPhysicalDevice`, `VkDevice`, SDK version,
    `NVSDK_NGX_FeatureCommonInfo*`. The two `vkGet*ProcAddr` pointers are absent.
-   Calling it with the 11-argument SDK shape (what `dlss.cpp` does) passes the
-   engine-version string where the path list belongs and faults inside
+   Calling it with the 11-argument SDK shape (what `dlss.cpp` did before this change)
+   passes the engine-version string where the path list belongs and faults inside
    `_nvngx.dll` at `0xb999` with `0xC0000005` (confirmed in the Windows Application
    event log). `nvngx.dll` in the DriverStore is only a forwarder to the same
-   signature.
+   signature. The Windows branch now calls the nine-argument form when it is exported;
+   Linux keeps the eleven-argument helper.
 2. **Parameters are the C++ object, not C exports.** The runtime exports no
    `NVSDK_NGX_Parameter_SetUI/SetI/SetF/SetVoidPointer/GetUI`. MSVC's slot order
    differs from the header's declaration order; the slots that matter here are
    `Set(void*)=0`, `Set(uint)=3`, `Set(int)=4`, `Set(float)=6` (slot 1 is an empty
    stub), `Get(uint)=11`. With `Set(void*)` on slot 7 (the header's position) the SR
    plugin reports `could not find Color parameter`; with `Set(float)` on slot 1 it
-   reports `could not find Jitter.Offset.X`. `dlss.cpp` resolves the C helpers, so
-   it would stop at the probe on Windows.
+   reports `could not find Jitter.Offset.X`. The Windows branch now installs vtable
+   thunks only when the C helpers are absent; Linux keeps the exported helpers.
 3. **Feature dispatch comes from the core.** `CreateFeature1`, `EvaluateFeature` and
    `ReleaseFeature` resolved from `nvngx_dlss.dll` return `0xBAD00007
    (not-initialized)` when called directly. The same calls on `_nvngx.dll` succeed;
@@ -363,8 +368,9 @@ not modified in this change because this checkout has no Windows runtime build):
 4. **Core discovery.** The driver registers the core directory under
    `HKLM\SOFTWARE\NVIDIA Corporation\Global\NGXCore\FullPath` and does not copy
    `_nvngx.dll` to System32. A bare `LoadLibraryA("_nvngx.dll")` therefore reports
-   `no-core`; the loader must add that directory (or load the full path) so the
-   plugin's own lookup resolves to the same module.
+   `no-core`. The Windows probe now reads that key, prepends the directory to the DLL
+   search path with `SetDllDirectoryA`, and falls back to a copy beside the plugin and
+   then to the bare names (older drivers).
 
 Required extensions reported for this driver/plugin pair:
 instance `VK_KHR_get_physical_device_properties2`; device `VK_NVX_binary_import`,
@@ -385,32 +391,135 @@ such module exists in any search path, so no availability value exists to report
 `FrameGeneration.Available`. Do not infer support for anything beyond SR/DLAA and 2x
 FG from this run: RR, MFG and any neural-rendering path were not exercised.
 
+### Verified through the bridge API (RTX 5080, 20/11/2026)
+
+The Windows corrections were applied to `runtime/mk8/graphics/dlss.cpp` / `dlss.h` /
+`ngx/mk8_ngx_abi.h` (Windows branches only; the Linux path keeps the exported C
+helpers, `Init_with_ProjectID` and plugin-side dispatch) and the bridge itself was then
+executed through its public API. `tools/dlss_bridge_harness.cpp` compiles the real
+`dlss.cpp` against a minimal `tools/dlss_bridge_include/vulkan/vk.h` (the runtime's
+`vk.h` surface plus a three-function VMA subset), creates a Vulkan 1.3 device on the
+RTX 5080 with a hidden Win32 swapchain, and calls `mk8_dlss_upscale` (SR) or
+`mk8_dlss_fg_init` / `mk8_dlss_fg_evaluate` (FG) with synthetic images. The camera-MV
+shader is the exact GLSL from `dlss.cpp`, precompiled to SPIR-V and embedded for the
+harness.
+
+Build and run:
+
+```sh
+x86_64-w64-mingw32-g++ -std=c++17 -O2 -static -DMK8_DLSS_TEST_API \
+    -Itools/dlss_bridge_include -Iruntime/mk8/graphics \
+    -I"$HOME/.cache/mk8-dlss-rtx/include" \
+    -o dlss_bridge_harness.exe tools/dlss_bridge_harness.cpp runtime/mk8/graphics/dlss.cpp \
+    -L"$HOME/.cache/mk8-dlss-rtx" -lvulkan-1 -luser32 -ladvapi32
+
+scp dlss_bridge_harness.exe nvngx_dlss.dll nvngx_dlssg.dll Ronny@192.168.8.197:C:/Users/Ronny/mk8-rtx/dlss/
+ssh Ronny@192.168.8.197 "cd /d C:\Users\Ronny\mk8-rtx\dlss && dlss_bridge_harness.exe sr . out"
+ssh Ronny@192.168.8.197 "cd /d C:\Users\Ronny\mk8-rtx\dlss && dlss_bridge_harness.exe fg . out"
+```
+
+`MK8_DLSS_TEST_API` adds only `mk8_dlss_test_output_image`/`_format` so the harness can
+read the feature-owned output; the runtime build does not define it.
+
+**Super Resolution** (1280x720 -> 2560x1440 PERFORMANCE, six frames, camera-derived
+motion vectors, output cleared to magenta before frames 1-5):
+
+```text
+[dlss] feature requirements: supported (min GPU arch 0x160, min OS 10.0.0)
+[dlss] NGX init: project 6f1d2c3a-8b4e-4d7a-9c15-3e0a5b7c9d21, plugin ./nvngx_dlss.dll, data out\xdg/mk8online/nvidia/ngx-data
+[dlss] using the driver Init_ProjectID form (9 arguments, no vkGet*ProcAddr)
+[dlss] NVSDK_NGX_VULKAN_Init_ProjectID: 0x00000001 (success)
+[dlss] provider NGX API 0x15 from ./nvngx_dlss.dll
+[dlss] SuperSampling.Available = 1
+[dlss] creating performance feature 1280x720 -> 2560x1440, depth standard
+[dlss] NVSDK_NGX_VULKAN_CreateFeature: 0x00000001 (success)
+[dlss] depth source: captured scene depth 1280x720 fmt 100
+[dlss] motion vectors: camera-derived
+[dlss] NVSDK_NGX_VULKAN_EvaluateFeature: 0x00000001 (success)
+[dlss] upscale active 1280x720 -> 2560x1440 (quality performance, depth game, motion camera, jitter 0.000,-0.167)
+```
+
+The last frame reported `sentinel=0/3686400`, `distinct=31460`, `checksum=0xb9a947ab3245f65d`,
+`gradient=3.254`; the PNG is `out/bridge_sr_2560x1440.png` (sha256
+`854c66240a936da54a5c4572a4cc38e5562e37fa36751c7d0c1bc7a8eafc96f2`), with the 2x input at
+`out/bridge_sr_input_1280x720.png` (local copies in
+`$HOME/.cache/mk8-dlss-rtx/bridge-out/`). Zero sentinel pixels proves the clearance was
+overwritten; the changing checksums and ~31k distinct values show structured output.
+
+**Frame Generation** (1280x720 display, 960x540 render, 2x, three frames, real
+`VK_NV_low_latency2` swapchain, app-owned backbuffer/depth/MV):
+
+```text
+[dlss_fg] GetFeatureRequirements failed 0xbad00002 (platform-error); trying Init
+[dlss_fg] using the driver Init_ProjectID form (9 arguments, no vkGet*ProcAddr)
+[dlss_fg] NVSDK_NGX_VULKAN_Init_ProjectID: 0x00000001 (success)
+[dlss_fg] provider NGX API 0x15 from ./nvngx_dlssg.dll
+[dlss_fg] NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration): 0x00000001 (success)
+[dlss_fg] feature created and output primed in a one-shot submission
+[dlss_fg] active: NGX DLSS-G 2x 1280x720 (render 960x540, format 44), VK_NV_low_latency2 pacing
+[dlss_fg] mvec scale 1/960,1/540 (pixel-space MVs); jitter converted to clip space
+[harness] mk8_dlss_fg_ready = 1
+[dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration): 0x00000001 (success)
+[harness] fg frame 0: mean |interpolated - backbuffer| = 0.000
+[harness] fg frame 1: mean |interpolated - backbuffer| = 10.443
+[harness] fg frame 2: mean |interpolated - backbuffer| = 11.464
+```
+
+Frame 0 (`Reset`) equals the backbuffer; frames 1-2 differ, so the interpolated image is
+generated, not copied. The PNG is `out/bridge_fg_1280x720.png` (sha256
+`68541536b738a84d3db0fcc923900c1e4f4dcafbc36d162059ecf9e242b3a8a3`), with the corresponding
+`out/bridge_fg_backbuffer_1280x720.png` (local copies in `$HOME/.cache/mk8-dlss-rtx/bridge-out/`).
+`GetFeatureRequirements` on the FG plugin returns
+`0xBAD00002 (platform-error)`; the bridge logs it and falls back to `Init`, which
+succeeds, so this is a non-fatal provider quirk on this driver/plugin pair.
+
+**Windows runtime cross-build** (`x86_64-windows-gnu` with Zig 0.17.0, the project's
+cross-build driver):
+
+```text
+Runtime x86_64-windows-gnu: 234/234 unidades
+Executável do runtime ligado; gameplay ainda não verificado.
+host built: .../host-dlss-final2/mk8drecomp.exe (4523520 bytes)
+```
+
+`llvm-nm host-dlss-final2/obj/dlss.o` contains `T mk8_dlss_upscale`, `T mk8_dlss_fg_init`
+and `T mk8_dlss_fg_evaluate`; the exe sha256 is
+`25b417e4e4ee47fe56538d78630c4c3a1f06e826e91b520e64704bd60e405213`. It was **not executed**
+(no in-engine run, no game images).
+
+**Linux tests**: `python3 -m unittest -v tests.test_dlss tests.test_fsr_fg` -> 27 tests,
+`OK (skipped=1)`; the skip is the FSR frame-generation provider fixture, which is not
+installed on this host.
+
 ## NOT verified
 
 The harness proves the ABI and the NGX sequence, not the game. On this host the
 following still did not run:
 
-- The in-game bridge on Windows. `dlss.cpp` still uses the Linux entry-point names, the
-  C parameter helpers and plugin-side dispatch listed above; this checkout has no
-  Windows runtime tree, so it was not changed here.
-- Whether `device.c` enables the extensions NGX lists. The list is now known exactly
-  (above), but enabling it needs the pre-device-creation hook in
-  `device.c`/`toolchain/device.py`.
+- In-engine execution. The bridge compiles into `mk8drecomp.exe` and ran through its
+  public API in the harness, but the game was not started and no MK8 image was produced.
+- The in-game Vulkan device does not enable the four NGX device extensions
+  (`VK_NVX_binary_import`, `VK_NVX_image_view_handle`, `VK_KHR_buffer_device_address`,
+  `VK_KHR_push_descriptor`). `toolchain/dlss_fg.py` enables `VK_NV_low_latency2` and
+  `VK_KHR_present_id` for FG but not the NGX list. Without the pre-device hook the
+  bridge fails closed at Init with the required-extension log above.
 - Quality: the harness input is a synthetic pan with camera-only motion and a neutral
   depth ramp. Depth convention (standard/inverted), jitter/projection correctness,
   object motion vectors and the actual MK8 image are untested.
-- Frame Generation presentation and pacing: no swapchain, no
-  `vkSetLatencySleepModeNV`/`vkLatencySleepNV`, no real/interpolated interleave.
-  Only the compute evaluation and the app-owned output images are verified.
+- Frame Generation presentation and pacing in the game: the harness created a real
+  low-latency2 swapchain and `vkSetLatencySleepModeNV` succeeded, but
+  `mk8_dlss_fg_present` (two-image interleave), `mk8_dlss_fg_latency_sleep` and the
+  PRESENT markers were not exercised, and pacing/quality were not measured.
 - Multi-frame generation (`DLSSG.MultiFrameCount > 1`), DLAA at native resolution,
   Ray Reconstruction and any DLSS 4.5/5 feature.
 - Windows driver matrix, multi-GPU and the Linux NVIDIA path (`libnvidia-ngx.so.1`).
 
-## DLSS Frame Generation (phase 3): implemented, not executed
+## DLSS Frame Generation (phase 3): implemented; bridge API executed, in-game present not run
 
-Status 20/11/2026. The DLSS-G library is implemented and **compile/loader/ABI tested**;
-no NVIDIA GPU is present, so feature creation, evaluation and pacing were not executed.
-It is **off by default**: `MK8_DLSS_FG` must be set (any non-empty value except `0`) and
+Status 20/11/2026. The DLSS-G library is implemented, compiles into the Windows runtime
+and was **executed through its public API** on the RTX 5080: feature creation,
+evaluation and a real `VK_NV_low_latency2` swapchain. The in-game two-image present was
+not run. It is **off by default**: `MK8_DLSS_FG` must be set (any non-empty value except `0`) and
 `mk8_dlss_fg_init` must be called by the presenter. With the variable unset the module
 has no effect: no constructor, no hook, and the existing FSR FG/upscaler/bilinear path
 runs unchanged.
@@ -466,17 +575,19 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
    does **not** enable this extension, so a real run fails with the exact message
    "the device was created without VK_NV_low_latency2; enable the extension before
    vkCreateDevice (device.c)" until the hand-off below is applied.
-3. **Init and capability.** `NVSDK_NGX_VULKAN_Init_with_ProjectID(..., 0x15)`, then
-   `FrameGeneration.Available`. A zero is reported with
+3. **Init and capability.** `NVSDK_NGX_VULKAN_Init_with_ProjectID(..., 0x15)` on Linux;
+   the Windows core uses the nine-argument `NVSDK_NGX_VULKAN_Init_ProjectID` instead.
+   Then `FrameGeneration.Available`. A zero is reported with
    `FrameGeneration.NeedsUpdatedDriver` and the required driver major/minor read from
    the same parameter map. `GetFeatureRequirements` for
    `NVSDK_NGX_Feature_FrameGeneration` is decoded with the same bit table as SR
    ("driver too old", "GPU unsupported", ...).
 4. **Create.** `Width`/`Height` are the display size, `DLSSG.BackbufferFormat` is the
    swapchain `VkFormat`, `DLSSG.InternalWidth/Height` the render size and
-   `DLSSG.DynamicResolution = 0`; then
-   `NVSDK_NGX_VULKAN_CreateFeature1(device, cb, NVSDK_NGX_Feature_FrameGeneration,
-   params, &handle)`. `FrameGeneration.FeatureInitResult` is logged on failure.
+   `DLSSG.DynamicResolution = 0`; then on Windows
+   `NVSDK_NGX_VULKAN_CreateFeature(cb, NVSDK_NGX_Feature_FrameGeneration, params,
+   &handle)` first (the 310.9.16 helper's form) and Linux keeps `CreateFeature1`
+   first. `FrameGeneration.FeatureInitResult` is logged on failure.
    A display-size interpolated output image is allocated (`STORAGE | SAMPLED |
    TRANSFER_SRC`) and primed to `GENERAL` in the init command buffer. The **real**
    frame is the caller's backbuffer; `OutputReal` is intentionally not set, so NGX
@@ -501,6 +612,9 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
    their acquisition, semaphores and queue submission.
 
 ### What is verified here
+
+This subsection is the Linux-host evidence from before the RTX 5080 run; the Windows
+bridge-API evidence is in "Verified through the bridge API" above.
 
 - A fresh host build of the wired tree in `local/dlss-fg-final/host` compiled all 222
   units and linked `mk8drecomp`; `mk8_dlss_fg_init/evaluate/copy_interpolated/present/active`
@@ -591,20 +705,23 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
 The full runtime was built from the wired tree (222 units, `mk8drecomp` linked) and a short
 RADV run with `MK8_DLSS_FG=1` attempted DLSS-G and failed closed with the exact no-core line
 above; the normal present path then ran. `MK8_DLSS_FG` unset and `=0` produced the same
-device/swapchain startup (the only diff was romfs timing). `tests/test_dlss.py` 18/18 and
-`tests/test_dlss_fg.py` 4/4 passed; `tests/test_fsr_fg.py` ran 9 tests, 8 passed and the
-provider fixture was skipped because the FSR provider is not installed. No NVIDIA GPU is
-present, so nothing in `Init`, `FrameGeneration.Available`, `CreateFeature`,
-`EvaluateFeature`, the two-image present or pacing was executed.
+device/swapchain startup (the only diff was romfs timing). The Windows cross-build later
+compiled 234/234 units and linked `mk8drecomp.exe` (4,523,520 bytes); on the RTX 5080 the
+bridge harness then executed `mk8_dlss_fg_init` and three `mk8_dlss_fg_evaluate` calls
+through a real low-latency2 swapchain (see "Verified through the bridge API"). The
+in-game two-image present, pacing/latency sleep and resize remain unexecuted.
+`tests/test_dlss.py` and `tests/test_fsr_fg.py` pass on Linux (27 tests, 1 provider
+fixture skipped).
 
 ### NOT verified and exact remaining RTX 40/50 validation
 
-Still untested on hardware: the driver `libnvidia-ngx.so.1`, `VK_NV_low_latency2` being exposed
-and enabled, `FrameGeneration.Available = 1`, `CreateFeature`, `EvaluateFeature`, the second
-swapchain image acquire/copy and two `vkQueuePresentKHR` calls, and pacing/latency. Also
-unverified: matrix conventions, clip-space jitter, `mvecScale = 1/renderSize`, depth convention,
-`BackbufferFormat`, `InternalWidth/Height`, the `PRESENT_SRC`/`GENERAL`/`SHADER_READ_ONLY`
-layouts, render-size vs display-size depth (currently DLSS-G is skipped when they differ), and
-resize/recreation. An RTX 40/50 Linux host must run a full race with the NVIDIA driver core,
-confirm `vkSetLatencySleepModeNV` succeeds, check the two-image order and frame pacing, and
-exercise a window resize. Windows compiles the same `#ifdef` path but was not built here.
+Executed on hardware through the bridge harness: `FrameGeneration.Available = 1`,
+`CreateFeature`, `EvaluateFeature`, a real `VK_NV_low_latency2` swapchain and
+`vkSetLatencySleepModeNV`; the interpolated image differs from the backbuffer. Still
+untested: the driver's Linux `libnvidia-ngx.so.1`, the second swapchain image
+acquire/copy and the two `vkQueuePresentKHR` calls, pacing/latency in the game, and
+resize/recreation. Also unverified with real game data: matrix conventions, clip-space
+jitter, `mvecScale = 1/renderSize`, depth convention, `InternalWidth/Height`, the
+`PRESENT_SRC`/`GENERAL`/`SHADER_READ_ONLY` layouts and render-size vs display-size depth
+(currently DLSS-G is skipped when they differ). Windows compiles the path (234/234) and
+the bridge API ran; the game itself was not started.
