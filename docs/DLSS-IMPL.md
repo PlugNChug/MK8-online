@@ -28,10 +28,11 @@ runtime-only build applies it automatically.
 ## Licences: why the NVIDIA headers are not vendored
 
 The premise that the NGX headers are MIT-like is wrong for v310.9.16. Every file in
-`include/` carries:
+`include/` carries a proprietary SPDX tag (the copyright years vary per file, e.g.
+2018-2023 in `nvsdk_ngx.h` and 2019-2026 in the loader):
 
 ```text
-SPDX-FileCopyrightText: Copyright (c) 2019-2026 NVIDIA CORPORATION & AFFILIATES...
+SPDX-FileCopyrightText: Copyright (c) 2018-2026 NVIDIA CORPORATION & AFFILIATES...
 SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 ```
 
