@@ -20,9 +20,10 @@ Os pacotes Linux foram reconstruídos em Ubuntu 24.04 (`mk8-linux-package:24.04`
 
 Os pacotes foram reconstruídos no HEAD `ed468b1` com o runtime de `08fa336` (4.699.280 bytes, sha256 `dab170c0…5fbb`). Um defeito real de empacotamento foi corrigido (`ed468b1`): o `launcher-source.zip` levava `runtime/toolchain/games/scripts`, mas não `tools/build_fg_provider.py`, `tools/build_upscaler_provider.py`, os geradores de blobs, o `fg-linux*` nem `runtime/mk8/graphics/fsr_fg.cpp`/`dlss.cpp` — uma instalação limpa não conseguiria construir o provider nem ligar o runtime. Agora o payload leva todo o overlay `runtime/mk8/**/*.cpp|*.h` e os 20 arquivos de `tools/fg-linux*`; 1.013 entradas verificadas por asserção, sem artefato AMD (os 14 `.so` são do extrator .NET e nenhum exporta `ffxCreateContext`).
 
-- `MK8-online-0.3.0-linux-x86_64.tar.gz`: 42.924.562 bytes, SHA-256 `f5e73ae1b1f72431fc8670e5bc27c1527b16a7f6ec8e941037835a653cc23116`.
-- `MK8-online-0.3.0-linux-x86_64.AppImage`: 43.477.496 bytes, SHA-256 `bb5d4b0857577cf574a02f4db64ce79b33e084ff013f631539e94bc0a2198f02`.
-- Guarda e smoke passaram nos dois; `cargo check --target x86_64-pc-windows-gnu` continua OK. Cópias em `local/qualification/packages-2026-11-20-final/`.
+- `MK8-online-0.3.0-linux-x86_64.tar.gz`: 44.188.772 bytes, SHA-256 `bc6ddd9dc03b806d9097ec8b8cce0b6b19542e7faed96c2a4f804c06e112cbca`.
+- `MK8-online-0.3.0-linux-x86_64.AppImage`: 44.726.776 bytes, SHA-256 `2b8ee0ae24eef95f5f10be4028a8cbac4aeecfa026d0cb6e720607bc87435219`.
+- Payload `launcher-source.zip`: 39.693.614 bytes, SHA-256 `9982289cffc986e7bc582e590b4ede9ecd14f87c8e984260d0c2f0391a50a6a6`, com 1.151 entradas: os seis scripts de build, 133 arquivos de `tools/fsr4-linux`, o overlay de runtime (fsr.cpp/fsr_fg/dlss/xess/yaz0) e nenhum artefato AMD.
+- Guarda e smoke passaram nos dois; `cargo check --target x86_64-pc-windows-gnu` continua OK. Cópias em `local/qualification/packages-2026-11-20-8974efd/`. `tests.test_fsr_fg` e `tests.test_fg_harness` passam com o provider validado (`local/fg-provider`, sha256 `786a32c4…`); a falha registrada no relatório de empacotamento veio de um provider antigo em cache (`fsr-build3`, sem a correção de CBVs), não do código.
 
 ## DLSS 4.5/5 e XeSS — pesquisa e downloader — 20/11/2026
 
