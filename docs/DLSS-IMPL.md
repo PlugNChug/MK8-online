@@ -180,16 +180,18 @@ FSR/toolchain owner.
 
 ```text
 Runtime x86_64-linux-gnu: 218/222 unidades
+Runtime x86_64-linux-gnu: 219/222 unidades
 Runtime x86_64-linux-gnu: 220/222 unidades
 Runtime x86_64-linux-gnu: 221/222 unidades
 Runtime x86_64-linux-gnu: 222/222 unidades
-EXE .../local/dlss-fg/host/mk8drecomp
+EXE .../local/dlss-fg-final/host/mk8drecomp
 
-$ nm local/dlss-fg/host/mk8drecomp | grep -E ' T mk8_(dlss|fsr4)_upscale$'
-0000000000355160 T mk8_dlss_upscale
-000000000035dbe0 T mk8_fsr4_upscale
+$ nm local/dlss-fg-final/host/mk8drecomp | grep -E ' T (mk8_dlss_fg_init|mk8_dlss_upscale|mk8_fsr4_upscale)$'
+0000000000359350 T mk8_dlss_fg_init
+0000000000356090 T mk8_dlss_upscale
+000000000035eea0 T mk8_fsr4_upscale
 
-$ ldd local/dlss-fg/host/mk8drecomp | grep -i nvidia
+$ ldd local/dlss-fg-final/host/mk8drecomp | grep -i nvidia
 (empty: NGX is loaded with dlopen, never linked)
 
 $ sha256sum ~/.local/share/mk8online/nvidia/libnvidia-ngx-dlss.so.310.9.16
@@ -399,9 +401,10 @@ The full runtime was built from the wired tree (222 units, `mk8drecomp` linked) 
 RADV run with `MK8_DLSS_FG=1` attempted DLSS-G and failed closed with the exact no-core line
 above; the normal present path then ran. `MK8_DLSS_FG` unset and `=0` produced the same
 device/swapchain startup (the only diff was romfs timing). `tests/test_dlss.py` 18/18 and
-`tests/test_dlss_fg.py` 4/4 passed; `tests/test_fsr_fg.py` 9/9 passed with one provider test
-skipped. No NVIDIA GPU is present, so nothing in `Init`, `FrameGeneration.Available`,
-`CreateFeature`, `EvaluateFeature`, the two-image present or pacing was executed.
+`tests/test_dlss_fg.py` 4/4 passed; `tests/test_fsr_fg.py` ran 9 tests, 8 passed and the
+provider fixture was skipped because the FSR provider is not installed. No NVIDIA GPU is
+present, so nothing in `Init`, `FrameGeneration.Available`, `CreateFeature`,
+`EvaluateFeature`, the two-image present or pacing was executed.
 
 ### NOT verified and exact remaining RTX 40/50 validation
 
