@@ -487,6 +487,39 @@ static void check_tips(SDL_Joystick *generic, SDL_JoystickID spare) {
     assert(mk8_assign_gamepads(NULL)); mk8_tip_sync();
 }
 
+static void check_spare_seats(void) {
+    SDL_JoystickID layout[4][2]={{ids[PAIR_L],ids[PAIR_R]},{0},{ids[PRO]},{ids[SOLO_L],ids[SOLO_R]}};
+    assert(mk8_assign_layout(layout,1,false));
+    for (int apply=0; apply<2; ++apply) {
+        assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+        assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+        shoulders(sticks[PRO]);
+        assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY);
+        assert(!extra_pad[0] && extra_pad[1]==SDL_GetGamepadFromID(ids[PRO]) && mk8_assigned_keyboard()==1);
+        if (!apply) assert(edit(MK8_EDIT_CANCEL,0,0)==MK8_EDIT_CLOSED);
+        else assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+    }
+    assert(pad==SDL_GetGamepadFromID(ids[PAIR_L]) && mk8_partner[0]==SDL_GetGamepadFromID(ids[PAIR_R]));
+    assert(extra_pad[0]==SDL_GetGamepadFromID(ids[PRO]) && !extra_pad[1] && mk8_assigned_keyboard()==-1);
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    shoulders(sticks[SOLO_L]);
+    assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+    assert(extra_pad[0]==SDL_GetGamepadFromID(ids[SOLO_L]));
+    assert(extra_pad[2]==SDL_GetGamepadFromID(ids[SOLO_R]) && !mk8_partner[3]);
+    // Re-form the pair from one active and one spare grip.
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,true);
+    button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,true);
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,false);
+    button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,false);
+    assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+    assert(extra_pad[0]==SDL_GetGamepadFromID(ids[SOLO_L]) && mk8_partner[1]==SDL_GetGamepadFromID(ids[SOLO_R]));
+    assert(!extra_pad[2]);
+    assert(mk8_assign_gamepads(NULL));
+}
+
 static void check_live_editor(void) {
     const SDL_JoystickID old_p4=SDL_GetGamepadID(extra_pad[2]);
     assert(!mk8_explicit_slots && mk8_assigned_keyboard()==0);
@@ -517,15 +550,15 @@ static void check_live_editor(void) {
     button(usb,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
     button(usb,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
     unsigned tips_before=assignment_tips;
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true);
-    assert(assignment_tips==tips_before); // One rail button isn't a join request.
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
-    assert(assignment_tips==tips_before+1 && !strcmp(assignment_tip,"This controller is already assigned to Player 4."));
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true);
+    assert(assignment_tips==tips_before); // One shoulder isn't a join request.
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
+    assert(assignment_tips==tips_before+1 && !strcmp(assignment_tip,"This controller is already assigned to Player 1."));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
     assert(assignment_tips==tips_before+1); // The same chord is still held.
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
-    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_LISTEN);
     shoulders(usb);
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY);
@@ -619,19 +652,30 @@ static void check_live_editor(void) {
     assert(!pad && mk8_assigned_keyboard()==0 && SDL_GetGamepadID(extra_pad[0])==spare);
     mk8_tip_sync(); mk8_control_tips(false,&tips); assert(tips.source==MK8_TIP_KEYBOARD);
     assert(SDL_GetGamepadID(extra_pad[1])==ids[SOLO_R] && SDL_GetGamepadID(extra_pad[2])==ids[SOLO_L]);
-    // A two-row edit cannot take the physical keyboard away from a hidden player.
+    // A hidden keyboard stays assigned on cancel and moves only when a visible player claims it.
     assert(edit(MK8_EDIT_BEGIN,4,0)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_KEYBOARD,3,0)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_ASSIGN,0,0)==MK8_EDIT_LISTEN);
     shoulders(sticks[PRO]);
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED && mk8_assigned_keyboard()==3);
     assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
-    assert(edit(MK8_EDIT_KEYBOARD,1,0)==MK8_EDIT_FAILED);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    assert(edit(MK8_EDIT_KEYBOARD,1,1)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_CANCEL,0,0)==MK8_EDIT_CLOSED && mk8_assigned_keyboard()==3);
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_CLEAR_ALL,0,0)==MK8_EDIT_LISTEN);
     shoulders(sticks[PRO]);
     shoulders(usb);
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
     assert(mk8_assigned_keyboard()==3 && !extra_pad[2] && SDL_GetGamepadID(extra_pad[1])==ids[SOLO_R]);
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    assert(edit(MK8_EDIT_KEYBOARD,1,1)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED && mk8_assigned_keyboard()==1 && !extra_pad[0]);
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    shoulders(usb);
+    assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
     assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
     assert(SDL_DetachVirtualJoystick(spare)); pump();
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_FAILED);
@@ -744,6 +788,7 @@ int main(int argc, char **argv) {
     };
     if (!strcmp(argv[2],"editor")) {
         assert(!SDL_getenv("MK8_GAMEPAD_LAYOUT"));
+        check_spare_seats();
         check_live_editor();
         for (int i=0;i<DEVICE_COUNT;i++) {
             SDL_CloseJoystick(sticks[i]);

@@ -210,6 +210,12 @@ static void mk8_edit_register(int row, SDL_JoystickID left, SDL_JoystickID right
     mk8_edit_next();
 }
 
+static int mk8_edit_owner(SDL_JoystickID id) {
+    for (int i = 0; i < mk8_editor.rows; ++i)
+        if (mk8_editor.slots[i][0] == id || mk8_editor.slots[i][1] == id) return i;
+    return -1;
+}
+
 // Non-owner devices can enroll only through a fresh chord, never by changing menu focus.
 static void mk8_edit_button(Mk8JoinDevice *d, unsigned button, bool down) {
     if (button >= 32) return;
@@ -257,16 +263,16 @@ static void mk8_edit_button(Mk8JoinDevice *d, unsigned button, bool down) {
     }
     bool join_chord = down && (bit & chord) && !(d->blocked & chord) && (d->buttons & chord) == chord;
     bool pair_button = pair && bit == pair && !(d->blocked & pair);
-    for (int i = 0; i < 4; i++) {
-        SDL_JoystickID *slot = mk8_editor.slots[i];
-        if (i == row || (slot[0] != d->id && slot[1] != d->id)) continue;
+    int owner = mk8_edit_owner(d->id);
+    if (owner >= 0 && owner != row) {
+        SDL_JoystickID *slot = mk8_editor.slots[owner];
         if (join_chord || (down && pair_button)) {
             if (join_chord) d->blocked |= chord;
             Mk8JoinDevice *other = mk8_edit_device(slot[0] == d->id ? slot[1] : slot[0]);
             // One pair attempt can produce an outer shoulder press from each grip.
             if (!(pair_button && other && (other->buttons & mk8_pair_button(other->half)))) {
                 char message[80];
-                SDL_snprintf(message, sizeof message, "This controller is already assigned to Player %d.", i + 1);
+                SDL_snprintf(message, sizeof message, "This controller is already assigned to Player %d.", owner + 1);
                 mk8_menu_tip(message);
             }
         }
@@ -350,13 +356,19 @@ static bool mk8_edit_commit(void) {
     for (int i = 0; i < mk8_editor.rows; i++) {
         if (!mk8_editor.slots[i][0] && i != mk8_editor.keyboard) return false;
     }
-    // Other rows may have lost a device during this dialog; they always keep their live ownership.
+    // Keep spare devices in their live slots unless a player in this session claimed them.
     for (int i = mk8_editor.rows; i < 4; i++) {
         SDL_Gamepad *primary = *mk8_primary_slot(i);
-        mk8_editor.slots[i][0] = primary ? SDL_GetGamepadID(primary) : 0;
-        mk8_editor.slots[i][1] = mk8_partner[i] ? SDL_GetGamepadID(mk8_partner[i]) : 0;
+        SDL_JoystickID left = primary ? SDL_GetGamepadID(primary) : 0;
+        SDL_JoystickID right = mk8_partner[i] ? SDL_GetGamepadID(mk8_partner[i]) : 0;
+        if (left && mk8_edit_owner(left) >= 0) left = 0;
+        if (right && mk8_edit_owner(right) >= 0) right = 0;
+        mk8_editor.slots[i][0] = left ? left : right;
+        mk8_editor.slots[i][1] = left ? right : 0;
     }
-    if (!mk8_assign_layout(mk8_editor.slots, mk8_editor.keyboard, true)) return false;
+    int keyboard = mk8_editor.keyboard;
+    if (keyboard < 0 && mk8_assigned_keyboard() >= mk8_editor.rows) keyboard = mk8_assigned_keyboard();
+    if (!mk8_assign_layout(mk8_editor.slots, keyboard, true)) return false;
     if (mk8_editor.chose_keyboard && mk8_editor.keyboard >= 0)
         mk8_forget_seat((unsigned)mk8_editor.keyboard);
     return true;
@@ -380,13 +392,13 @@ static void mk8_edit_process(void) {
             return;
         }
         mk8_editor.rows = row;
-        mk8_editor.keyboard = mk8_assigned_keyboard();
+        mk8_editor.keyboard = mk8_assigned_keyboard() < row ? mk8_assigned_keyboard() : -1;
         mk8_editor.focused = mk8_title_focused;
         int count = 0;
         SDL_JoystickID *ids = SDL_GetGamepads(&count);
         for (int i = 0; i < count; i++) mk8_edit_observe(ids[i]);
         SDL_free(ids);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < row; i++) {
             SDL_Gamepad *primary = *mk8_primary_slot(i);
             mk8_editor.slots[i][0] = primary ? SDL_GetGamepadID(primary) : 0;
             mk8_editor.slots[i][1] = mk8_partner[i] ? SDL_GetGamepadID(mk8_partner[i]) : 0;
@@ -410,7 +422,6 @@ static void mk8_edit_process(void) {
         state = MK8_EDIT_LISTEN;
     } else if (action == MK8_EDIT_KEYBOARD && other &&
                (mk8_editor.keyboard >= 0 || row != mk8_editor.listening)) state = mk8_listen_state();
-    else if (action == MK8_EDIT_KEYBOARD && mk8_editor.keyboard >= mk8_editor.rows) state = MK8_EDIT_FAILED;
     else if (action == MK8_EDIT_KEYBOARD || action == MK8_EDIT_CLEAR) {
         mk8_editor.slots[row][0] = mk8_editor.slots[row][1] = 0;
         if (action == MK8_EDIT_KEYBOARD) {

@@ -2,6 +2,8 @@
 
 ## Entrada dos jogadores na seleção de personagens
 
+O editor agora permite atribuir ao jogador 2 um controle que estava em uma vaga fora da partida. No teste com Joy-Con pareados no jogador 1, teclado no jogador 2 e Pro Controller na terceira vaga, aplicar a mudança transferiu o Pro para o jogador 2 e preservou o par do jogador 1. O cancelamento preservou as atribuições anteriores. Na seleção de personagens da LAN com dois jogadores locais, **+** no controle do jogador 1 reabre o editor, inclusive com a tela experimental de configurações desativada. Na build integrada `0d4c59bf`, o mantenedor confirmou a troca de controles após uma corrida LAN entre dois laptops e também no multijogador local em tela dividida.
+
 Na compilação `7c437939…`, o botão **OK** da tela obrigatória inicia o pulso e a transição no mesmo quadro do som de confirmação, assim que o host aceita as atribuições. O teste nativo reproduziu a espera anterior com o relógio da animação parado e verificou o avanço do pulso durante os 160 ms da transição. O mantenedor confirmou o comportamento no jogo com o controle físico.
 
 Em duas entradas consecutivas na tela obrigatória para quatro jogadores, o Pro virtual cancelou com **B** enquanto faltava o jogador 4. Na revisão `e7e1286`, cada cancelamento reproduziu duas vezes o som de voltar: uma vez pela sobreposição e outra pela seleção de personagens ao receber o cancelamento. A tela demorou cerca de 1,2 s para desaparecer e, na segunda entrada, o botão já estava amarelo antes de qualquer comando.

@@ -42,7 +42,7 @@ static _Atomic bool controller_required;
 static _Atomic bool controller_ready_button;
 static _Atomic bool controller_detached;
 static _Atomic bool controller_focused=true, controller_resync;
-static _Atomic bool controller_mouse_down;
+static _Atomic bool controller_mouse_down, controller_character_shortcut;
 static _Atomic int controller_hover=-2, controller_click=-1, controller_armed=-1;
 static int controller_focus;
 enum ControllerPanel { PLAYERS, ROW_ACTIONS, SWAP_TARGET };
@@ -76,7 +76,7 @@ RT_ON_RESET(settings_page_reset) {
     owner = root = cursor_owner = button = 0; active = back = editing = entering = confirming = exiting = false;
     controller_preview=controller_visible=false;
     controller_applet_players=controller_entry_players=0;
-    controller_mouse_down=false;
+    controller_mouse_down=controller_character_shortcut=false;
     controller_armed=controller_click=-1; controller_hover=-2;
     top=top_root=restore_nav=scrollbar=0; available=requested=from_button=shared_race=hide_on_return=false;
     dialog=dialog_cursor=cursor_animation=back_animation=0;
@@ -597,7 +597,7 @@ bool mk8_controller_pointer(int x,int y,int action) {
         bool hit=x>=536 && x<744 && y>=618 && y<=668;
         enum { SHORTCUT=6 };
         if (action==1) {
-            bool capture=hit && controller_can_open();
+            bool capture=hit && controller_character_shortcut && controller_can_open();
             controller_mouse_down=capture; controller_armed=capture ? SHORTCUT : -1;
             return capture;
         }
@@ -605,7 +605,7 @@ bool mk8_controller_pointer(int x,int y,int action) {
         if (action==0 && !hit) controller_armed=-1;
         if (action==2) {
             controller_mouse_down=false;
-            if (atomic_exchange(&controller_armed,-1)==SHORTCUT && hit && controller_can_open()) controller_request_editor();
+            if (atomic_exchange(&controller_armed,-1)==SHORTCUT && hit && controller_character_shortcut && controller_can_open()) controller_request_editor();
         }
         return true;
     }
@@ -1406,7 +1406,7 @@ void mk8_settings_page_frame(uint64_t manager) {
     if(shared_race) requested=false;
     bool style=mk8_settings_style_active();
     unsigned joining=mk8_controller_join_players();
-    if(!style && (!mk8_controller_layout_available() || (!joining && !controller_required))) {
+    if(!style && (!owner || !mk8_controller_layout_available())) {
         controller_entry_players=0;
         if(mk8_controller_layout_active()) controller_release();
         return;
@@ -1416,20 +1416,31 @@ void mk8_settings_page_frame(uint64_t manager) {
     if(count>32) FATAL("[mk8:settings] unexpected active page count\n");
     uint64_t pages=LD64(manager+0xb58);
     if(count) heap(pages,count*8);
-    bool present=false,main_menu=false,local_parts=false,drivers=false;
+    bool present=false,main_menu=false;
+    unsigned parts=0,drivers=0;
     for(unsigned i=0;i<count;i++) {
         uint64_t p=LD64(pages+i*8); heap(p,0x1d0);
         if(p==owner) present=true;
         if(p==top && LD32(p+0x120)==4) main_menu=true;
         // In MK8 4.0.1 the CharaParts layout is shared by solo (0x14), WiFi (0x15) and local (0x16).
         if(LD32(p+0x120)==4 && !LD32(p+0x124)) {
-            if(LD64(p)==0x7001279040ull && LD32(p+0xe8)==0x16) local_parts=true;
-            if(LD64(p)==0x7001278940ull && LD32(p+0xe8)==0x2e) drivers=true;
+            uint64_t type=LD64(p);
+            unsigned id=LD32(p+0xe8);
+            if(type==MAIN_BASE+0x1279040 && (id==0x15 || id==0x16)) parts=id;
+            if(type==MAIN_BASE+0x1278648 && id==0x2d) drivers=2;
+            if(type==MAIN_BASE+0x1278940 && id==0x2e) drivers=4;
         }
     }
     mk8_settings_values_context(main_menu);
-    available=present && mk8_settings_values_count(0)>0;
-    controller_entry_players=style && present && local_parts && drivers ? atomic_load(&controller_applet_players) : 0;
+    available=style && present && mk8_settings_values_count(0)>0;
+    unsigned edit_players=0;
+    if(present && !shared_race) {
+        if(parts==0x16 && drivers==4) edit_players=atomic_load(&controller_applet_players);
+        if(parts==0x15 && drivers==2) edit_players=2;
+    }
+    // The LAN layout hides the on-screen shortcut. Plus still opens the editor.
+    controller_character_shortcut=parts==0x16 && edit_players!=0;
+    controller_entry_players=edit_players;
     if(!present) {
         // This same page can return after the worker has finished in another scene.
         // Keep its saved cursors until we can safely close the roster on the owner.
