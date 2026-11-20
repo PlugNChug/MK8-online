@@ -444,7 +444,10 @@ display-size interpolated image and exposes copy/present/low-latency helpers
 (`mk8_dlss_fg_*`). `toolchain/dlss_fg.py` enables the low-latency device extension and
 the sampled swapchain (plus `VkSwapchainLatencyCreateInfoNV`) only for
 `MK8_DLSS_FG=1`, and `fsr_fg.cpp` now runs the two-image evaluate/copy/present path
-when FSR FG is off. It is untested on hardware. Remaining: run it on an RTX 40/50
+when FSR FG is off. It is untested on NVIDIA hardware; a short RADV run with `MK8_DLSS_FG=1`
+built the wired runtime, reached the swapchain, enabled `VK_KHR_present_id`, and
+failed closed at the missing NVIDIA NGX core before falling back to the normal present.
+Remaining: run it on an RTX 40/50
 Linux host with the driver core, confirm `FrameGeneration.Available`/
 `vkSetLatencySleepModeNV`, validate the two-image order and pacing, and exercise a
 resize. DLSS SR and DLSS-G are mutually exclusive in this phase because they share

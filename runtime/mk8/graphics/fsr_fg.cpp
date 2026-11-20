@@ -62,6 +62,8 @@ extern float g_fsr_jitter_y;
 extern int g_fsr_vp_valid;
 // device.c: the swapchain image currently being rendered/presented (added with DLSS-G).
 uint32_t mk8_present_image_index(void);
+// device.c: the pending submission sequence (C-linkage wrapper for the C++ declaration in vk.h).
+uint64_t mk8_dlss_fg_pending_seq(void);
 }
 
 #define FG_REQUIRED_VERSION "3.1.7"
@@ -922,7 +924,7 @@ static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height)
     }
     dlss_fg_real_index = index;
     dlss_fg_interp_index = interp_index;
-    dlss_fg_seq = vk_pending_seq();
+    dlss_fg_seq = mk8_dlss_fg_pending_seq();
     dlss_fg_pending = true;
     dlss_fg_prepared_any = true;
     dlss_fg_needs_reset = false;

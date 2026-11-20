@@ -4,7 +4,8 @@ MK8_DLSS_FG=1 uses the normal window swapchain (DLSS-G does not replace it). Thi
 does what must happen before Vulkan objects are created:
 
 * enable VK_NV_low_latency2 on the device when it is requested and exposed (the extension has
-  no feature struct; vkSetLatencySleepModeNV needs the enabled extension);
+  no feature struct; it depends on VK_KHR_present_id/present_id2, so one of those is enabled
+  too), and add the swapchain latency mode;
 * add VK_IMAGE_USAGE_SAMPLED_BIT to the swapchain, because DLSS-G samples the final image;
 * chain VkSwapchainLatencyCreateInfoNV when the extension is enabled.
 
@@ -49,6 +50,16 @@ def prepare_device(runtime):
     device = runtime / 'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
 
+    # VK_NV_low_latency2 adds two extensions (low_latency2 + a present-id dependency); give the
+    # existing list headroom. This is a stack array, not a device/swapchain change.
+    text = _replace(
+        text,
+        '    // room for the swapchain/WSI extensions plus the fsr4 MLFI set\n'
+        '    const char *ext[16];',
+        '    // room for the swapchain/WSI extensions, the fsr4 MLFI set and DLSS-G\n'
+        '    const char *ext[20];',
+        'DLSS-G extension array size')
+
     # Request helper (false unless DLSS-G is the only frame-generation mode) and the flag that
     # says VK_NV_low_latency2 was actually enabled at device creation.
     text = _replace(
@@ -67,16 +78,37 @@ def prepare_device(runtime):
         '}\n',
         'DLSS-G globals')
 
-    # Enable the extension before vkCreateDevice. It has no feature struct: the Vulkan headers
-    # only define the extension name and the low-latency command structs.
+    # Enable the extension before vkCreateDevice. It has no feature struct. VK_NV_low_latency2
+    # declares a dependency on VK_KHR_present_id (or present_id2), so enable one of those too;
+    # vkSetLatencySleepModeNV fails if the dependency is not available.
     text = _replace(
         text,
         '    }\n'
         '    // LARECOMP_VK_ROBUST=1: out-of-range image reads',
         '    }\n'
         '    if (mk8_dlss_fg_requested()) {\n'
+        '#if defined(VK_KHR_present_id) || defined(VK_KHR_present_id2)\n'
+        '        bool present_id = false;\n'
+        '#if defined(VK_KHR_present_id)\n'
+        '        if (has_ext(ep, ne, VK_KHR_PRESENT_ID_EXTENSION_NAME) && n_ext < 20) {\n'
+        '            ext[n_ext++] = VK_KHR_PRESENT_ID_EXTENSION_NAME;\n'
+        '            present_id = true;\n'
+        '            LOG("[dlss_fg] VK_KHR_present_id enabled\\n");\n'
+        '        }\n'
+        '#endif\n'
+        '#if defined(VK_KHR_present_id2)\n'
+        '        if (!present_id && has_ext(ep, ne, VK_KHR_PRESENT_ID_2_EXTENSION_NAME) && n_ext < 20) {\n'
+        '            ext[n_ext++] = VK_KHR_PRESENT_ID_2_EXTENSION_NAME;\n'
+        '            present_id = true;\n'
+        '            LOG("[dlss_fg] VK_KHR_present_id2 enabled\\n");\n'
+        '        }\n'
+        '#endif\n'
+        '        if (!present_id)\n'
+        '            LOG("[dlss_fg] warning: no VK_KHR_present_id/present_id2; VK_NV_low_latency2 "\n'
+        '                "pacing may be unavailable\\n");\n'
+        '#endif\n'
         '#if defined(VK_NV_low_latency2)\n'
-        '        if (has_ext(ep, ne, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) && n_ext < 16) {\n'
+        '        if (has_ext(ep, ne, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) && n_ext < 20) {\n'
         '            ext[n_ext++] = VK_NV_LOW_LATENCY_2_EXTENSION_NAME;\n'
         '            mk8_dlss_fg_low_latency = true;\n'
         '            LOG("[dlss_fg] VK_NV_low_latency2 enabled\\n");\n'
@@ -123,13 +155,15 @@ def prepare_device(runtime):
         'VkResult mk8_fsr_fg_present(VkQueue queue, const VkPresentInfoKHR *info);\n',
         'VkResult mk8_fsr_fg_present(VkQueue queue, const VkPresentInfoKHR *info);\n'
         'bool mk8_dlss_fg_active(void);\n'
-        'uint32_t mk8_present_image_index(void);\n',
+        'uint32_t mk8_present_image_index(void);\n'
+        'uint64_t mk8_dlss_fg_pending_seq(void);\n',
         'DLSS-G bridge prototypes')
     text = _replace(
         text,
         'static Frame cur_frame;\n',
         'static Frame cur_frame;\n'
-        'uint32_t mk8_present_image_index(void) { return cur_frame.image; }\n',
+        'uint32_t mk8_present_image_index(void) { return cur_frame.image; }\n'
+        'uint64_t mk8_dlss_fg_pending_seq(void) { return vk_pending_seq(); }\n',
         'DLSS-G present image accessor')
 
     # DLSS-G presents the final window image, so it must stay in PRESENT_SRC_KHR. The FSR FG

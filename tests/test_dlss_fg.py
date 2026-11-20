@@ -58,7 +58,9 @@ class DlssFgPatchTests(unittest.TestCase):
 
     def test_patch_adds_only_gated_low_latency_and_sampled_swapchain(self):
         self.assertIn('static bool mk8_dlss_fg_requested(void)', self.device)
+        self.assertIn('VK_KHR_PRESENT_ID_EXTENSION_NAME', self.device)
         self.assertIn('VK_NV_LOW_LATENCY_2_EXTENSION_NAME', self.device)
+        self.assertIn('const char *ext[20];', self.device)
         self.assertIn('mk8_dlss_fg_low_latency = true', self.device)
         self.assertIn('VkSwapchainLatencyCreateInfoNV', self.device)
         self.assertIn('VK_IMAGE_USAGE_SAMPLED_BIT', self.device)

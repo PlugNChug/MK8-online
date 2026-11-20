@@ -309,18 +309,32 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
 
 ### What is verified here
 
-- An earlier fresh host build of the library-only commit compiled all 222 units and linked
-  `mk8drecomp`; `mk8_dlss_fg_init/evaluate/copy_interpolated/present/latency_*` and the
-  existing `mk8_dlss_upscale`/`mk8_fsr4_upscale` are present, and `ldd` shows no NVIDIA
-  link dependency (NGX is dlopen-only). After the `fsr_fg.cpp` wiring, `dlss.cpp`,
-  `fsr_fg.cpp` and the patched `device.c`/`exec.c` pass `-fsyntax-only` checks; the full
-  runtime build of the wired tree is the next evidence step.
+- A fresh host build of the wired tree in `local/dlss-fg-final/host` compiled all 222
+  units and linked `mk8drecomp`; `mk8_dlss_fg_init/evaluate/copy_interpolated/present/active`
+  and the existing `mk8_dlss_upscale`/`mk8_fsr4_upscale` are present, and `ldd` shows no
+  NVIDIA link dependency (NGX is dlopen-only).
 - `tests/test_dlss.py` runs 18 cases: all the SR cases plus the DLSS-G enabled gate
   (`unset = 0`, `1 = 1`, `0 = 0`), missing plugin, truncated real plugin, a library
   without NGX exports, an old plugin without Create/Release, version-selection/licence,
   the real pinned `libnvidia-ngx-dlssg.so.310.9.16`, the requirement-bit decoder, the
   DLSSG ABI static asserts, and a `-fsyntax-only` compile of the heavy path against the
   prepared runtime headers. `tests/test_dlss_fg.py` adds 4 patch/gating/compile cases.
+- A short RADV run of the built runtime with `MK8_DLSS_FG=1` (Xvfb, 25 s) reached the
+  swapchain and attempted DLSS-G. It logged:
+
+  ```text
+  [dlss_fg] VK_KHR_present_id enabled
+  [dlss_fg] warning: VK_NV_low_latency2 is unavailable; DLSS-G will fail closed
+  [dlss_fg] DLSS Frame Generation unavailable: no NGX core library (libnvidia-ngx.so.1): libnvidia-ngx.so.1: cannot open shared object file: No such file or directory; the core is installed by the NVIDIA driver, not by this project
+  ```
+
+  then presented the normal single-image path and kept running (exit 124 from the
+  timeout). This is the expected fail-closed behaviour without an NVIDIA driver.
+- `MK8_DLSS_FG` unset and `MK8_DLSS_FG=0` were run for 12 s each: both logs are identical
+  through the Vulkan device/swapchain selection (`AMD Radeon RX 9070 XT (RADV GFX1201),
+  swapchain 2560x1440`, no `[dlss_fg]` lines; the only difference is the romfs index
+  timing). `tests/test_fsr_fg.py` remains 9 tests OK (1 provider test skipped because the
+  FSR provider is not installed).
 - The fetched DLSS-G plugin (7,391,232 bytes, SHA-256 `574839ca…e6f7`, matching the
   pin) dlopens and exports the 12 `NVSDK_NGX_VULKAN_*` entry points. On this host the
   probe then stops at the missing core:
@@ -343,7 +357,8 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
 `fsr_fg.prepare`. It patches the prepared runtime, strictly behind a helper that is false when
 `MK8_DLSS_FG` is unset/`0` or when `MK8_FSR_FG` is active:
 
-- **device creation:** append `VK_NV_LOW_LATENCY_2_EXTENSION_NAME` when it is exposed. The
+- **device creation:** append `VK_NV_LOW_LATENCY_2_EXTENSION_NAME` when it is exposed, plus
+  `VK_KHR_present_id` (or `present_id2`), which `VK_NV_low_latency2` depends on. The
   extension has **no feature struct** in the Vulkan headers; `vkSetLatencySleepModeNV` needs the
   enabled extension and a swapchain created with latency mode. A missing extension logs a
   warning and the runtime still starts (DLSS-G then fails closed).
@@ -380,13 +395,13 @@ are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
 
 ### Compiled vs executed
 
-Compiled on this host: `dlss.cpp` and `fsr_fg.cpp` with `-fsyntax-only` against the prepared
-runtime headers; the patched `device.c`/`exec.c` with `gcc`-compatible C11 syntax checks; the
-`tests/test_dlss.py` probe/ABI units and `tests/test_dlss_fg.py` patch/compile units. The full
-runtime build and the in-game attempt were **not** run in this change (the host was executing
-timed runs); they are the next evidence step. No NVIDIA GPU is present, so nothing in
-`Init`, `FrameGeneration.Available`, `CreateFeature`, `EvaluateFeature`, the two-image present
-or pacing was executed.
+The full runtime was built from the wired tree (222 units, `mk8drecomp` linked) and a short
+RADV run with `MK8_DLSS_FG=1` attempted DLSS-G and failed closed with the exact no-core line
+above; the normal present path then ran. `MK8_DLSS_FG` unset and `=0` produced the same
+device/swapchain startup (the only diff was romfs timing). `tests/test_dlss.py` 18/18 and
+`tests/test_dlss_fg.py` 4/4 passed; `tests/test_fsr_fg.py` 9/9 passed with one provider test
+skipped. No NVIDIA GPU is present, so nothing in `Init`, `FrameGeneration.Available`,
+`CreateFeature`, `EvaluateFeature`, the two-image present or pacing was executed.
 
 ### NOT verified and exact remaining RTX 40/50 validation
 
