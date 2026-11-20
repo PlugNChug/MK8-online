@@ -9,6 +9,11 @@ Advanced Micro Devices, Inc.; apenas os caminhos de `#include` foram ajustados �
 foi preservado em cada arquivo. O provedor Vulkan é construído localmente a partir do SDK baixado pelo próprio
 usuário; nenhum binário da AMD é distribuído (ver `docs/FSR3-4-FG.md`).
 
+O mesmo SDK 2.4.0 (MIT) é a fonte de `tools/gen_upscaler_blobs.py`, `tools/fg-linux-upscaler/` e
+`tools/build_upscaler_provider.py`: o upscaler FSR 3.1.6 é compilado localmente a partir do HLSL do SDK, com
+SPIR-V gerado no build pelo DXC. Nenhum binário, SPIR-V ou modelo da AMD é distribuído (ver
+`docs/FSR3-UPSCALER.md`).
+
 ## Build e distribuição Linux
 
 O runtime usa a camada Linux da revisão fixada de SMM2Recomp. O bootstrap reutiliza os avisos do SDL 3.4.18, dos headers Vulkan 1.4.363 e do Vulkan Memory Allocator 3.4.0. O loader Vulkan e os drivers são do sistema. [SDL 3.4.18](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18) · [Vulkan-Headers 1.4.363](https://github.com/KhronosGroup/Vulkan-Headers/releases/tag/v1.4.363) · [Vulkan Memory Allocator 3.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/releases/tag/v3.4.0)
