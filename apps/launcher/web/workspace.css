@@ -55,11 +55,11 @@
 .config-menu-example { position: absolute; inset: 7% auto 7% 20%; width: 60%; display: flex; flex-direction: column; gap: .12rem; background: #222a32f5; border: 1px solid #65727b; border-radius: 4px; padding: .35rem; color: #eceff3; font-size: clamp(.4rem, .72vw, .68rem); overflow: hidden; }
 .config-menu-example strong { border-bottom: 1px solid #576675; padding-bottom: .2rem; }
 .config-menu-example span { padding: .12rem .35rem; }
-.config-menu-example .selected { background: #375d7f; }
+.config-menu-example .selected { background: #432c25; color: #ff794f; }
 .config-menu-example small { font-size: .8em; color: #b7c4cf; margin-top: auto; }
-.config-menu-example.nes { background: #e6e5dc; border: 3px solid #454447; border-radius: 0; color: #252525; font-family: var(--mono); }
-.config-menu-example.nes .selected { background: #b93638; color: #fff; }
-.config-menu-example.nes small { color: #4b4b4b; }
+.config-menu-example.nes { background: #212529; border: 3px solid #fff; border-radius: 0; color: #fff; font-family: var(--mono); }
+.config-menu-example.nes .selected { background: #209cee; color: #111; }
+.config-menu-example.nes small { color: #adafbc; }
 .config-hud { position: absolute; top: 4%; left: 3%; display: flex; gap: .2rem; }
 .config-hud span { padding: .12rem .25rem; background: #000b; color: #c5f5d2; font: .55rem var(--mono); }
 .config-figure-caption { font-size: .7rem; color: var(--muted); margin-top: .65rem; text-align: center; }

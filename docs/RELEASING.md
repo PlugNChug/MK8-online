@@ -4,26 +4,26 @@ Este é o fluxo para o mantenedor e para agentes de IA que preparam uma release.
 
 O atualizador consulta a API pública do GitHub sem autenticação. O repositório e os anexos precisam estar públicos; enquanto estiverem privados, a consulta falha. A versão 0.1.6 foi empacotada com `MK8_UPDATE_REPO=Vnnc1/MK8-online`: mudar a visibilidade desse mesmo repositório para público não exige recompilar nem configurar o PC do jogador. Não embuta tokens no launcher.
 
-Para as versões seguintes, aumente a versão compilada e publique a tag correspondente com `MK8-online-<versão>-setup.exe` e `MK8-online-<versão>-setup.exe.sha256`. O SHA-256 deve ser calculado **depois** de qualquer mudança ou assinatura do executável. Anexe também os fontes/scripts FFmpeg exigidos abaixo. Drafts não são oferecidos; pré-releases publicadas são. A atualização é acionada pelo jogador, sem instalação automática ao abrir o launcher.
+Para as versões seguintes, aumente a versão compilada e publique a tag correspondente com `MK8-online-<versão>-setup.exe` e o ZIP portátil versionado, cada um acompanhado do seu `.sha256`. O SHA-256 deve ser calculado **depois** de qualquer mudança ou assinatura do executável. Anexe também os fontes/scripts FFmpeg exigidos abaixo. Drafts não são oferecidos; pré-releases publicadas são. A atualização é acionada pelo jogador, sem instalação automática ao abrir o launcher.
 
 ## Versões
 
-O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.3.0-alpha.1`). A 0.3.0 usa a tag sem sufixo `v0.3.0`, mas é marcada explicitamente como **pré-release** no GitHub e no workflow. Seu estado experimental e as limitações CTGP/Steam permanecem explícitos no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
+O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.3.0-alpha.1`). A 0.4.0 usa a tag sem sufixo `v0.4.0` e é uma release pública experimental. O workflow mantém a exceção histórica para a tag `v0.3.0`. Seu estado experimental e as limitações CTGP/Steam permanecem explícitos no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
 
 ## Pelo GitHub Actions (recomendado)
 
 ```powershell
-python scripts/release.py --bump 0.3.0   # altera Cargo.toml, tauri.conf.json e Cargo.lock
-git commit -am "Release 0.3.0"
-git tag v0.3.0
-git push origin master v0.3.0
+python scripts/release.py --bump 0.4.0   # altera Cargo.toml, tauri.conf.json e Cargo.lock
+git commit -am "Release 0.4.0"
+git tag v0.4.0
+git push origin master v0.4.0
 ```
 
 A tag dispara `.github/workflows/release.yml`, que:
 
 1. roda `cargo fmt`, Clippy e os testes Rust;
 2. empacota o Launcher com `MK8_UPDATE_REPO` igual ao repositório, para que a build saiba onde procurar atualizações. Se a variável de repositório `MK8_RELAY_URL` existir, ela também entra na build;
-3. gera `MK8-online-<versão>-setup.exe`, o `.sha256` e as notas;
+3. gera `MK8-online-<versão>-setup.exe`, `MK8-online-<versão>-portable.zip`, os dois arquivos `.sha256` e as notas;
 4. publica o Release. Uma tag com `-` (por exemplo `-alpha.1`) ou a tag `v0.3.0` vira pré-release.
 
 Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
@@ -40,13 +40,13 @@ python scripts/release.py --skip-package   # só copia de novo target/portable/L
 
 Os scripts resolvem a pasta de saída por `cargo metadata`: `target/` nos comandos acima significa o `target_directory` configurado, inclusive quando fica em outro disco. Não mova nem limpe builds para seguir um caminho literal de exemplo.
 
-Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe` **e** o `.sha256`, além dos fontes/scripts FFmpeg. Sem SHA-256 (o `digest` do GitHub ou o arquivo `.sha256`), o Launcher recusa a atualização. Se a tag disparar uma build automática duplicada, cancele somente essa execução antes de publicar o pacote local validado, para evitar substituição posterior dos anexos.
+Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe`, o ZIP portátil e os dois arquivos `.sha256`, além dos fontes/scripts FFmpeg. Sem SHA-256 (o `digest` do GitHub ou o arquivo `.sha256`), o Launcher recusa a atualização. Se a tag disparar uma build automática duplicada, cancele somente essa execução antes de publicar o pacote local validado, para evitar substituição posterior dos anexos.
 
 ## O que vai no instalador
 
 - Só o `Launcher.exe` empacotado: fontes verificadas do runtime e do pipeline, extrator e runtime .NET. As fontes `upstream` são baixadas na hora de empacotar e conferidas pelos manifestos em `upstream/manifests`.
 - Nunca: o jogo, chaves, saves, builds, `local/` ou dados de teste.
-- O instalador é por usuário, sem administrador: copia o launcher, grava `mk8-online.json` (pasta de dados), já desempacota as fontes da versão, cria os atalhos e registra a desinstalação em `HKCU\...\Uninstall\MK8-online`. A pasta de dados fica preservada em atualizações e na desinstalação.
+- O instalador por usuário copia o launcher e o `Uninstall.exe`, grava `mk8-online.json` com a pasta de dados, desempacota as fontes da versão, cria os atalhos e registra a desinstalação em `HKCU\...\Uninstall\MK8-online`. A atualização preserva os dados. Na desinstalação, manter os dados é a opção padrão. A remoção dos dados gerenciados exige confirmação.
 - Linha de comando (o atualizador usa a primeira): `/SILENT` instala por cima com as pastas anteriores e abre o launcher; `/DIR=`, `/DATADIR=`, `/DESKTOP=0|1` e `/NOLAUNCH` mudam isso. `Launcher.exe --uninstall [/SILENT]` desinstala. Uma instalação anterior feita pelo Inno Setup (até 0.1.1) na mesma pasta é substituída, e o desinstalador e o grupo de menu antigos são removidos.
 
 ## Checagem antes de publicar

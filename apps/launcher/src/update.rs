@@ -43,7 +43,22 @@ pub fn installable() -> bool {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        cfg!(mk8_portable)
+        if !cfg!(mk8_portable) {
+            return false;
+        }
+        // After interactive setup the window stays in the installer process. A portable
+        // marker next to the downloaded setup does not describe the installed launcher.
+        #[cfg(windows)]
+        if matches!(
+            crate::installer::mode(&std::env::args().collect::<Vec<_>>()),
+            Some(crate::installer::Mode::Install { .. })
+        ) {
+            return true;
+        }
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| crate::startup::portable_home(&exe).ok())
+            .is_some_and(|home| home.is_none())
     }
 }
 

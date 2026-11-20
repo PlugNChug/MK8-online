@@ -46,6 +46,15 @@ class VulkanBundleTests(unittest.TestCase):
             resolve(folder, roots=[folder/'SDL3.dll', folder/'vulkan-1.dll'])
             loaded = probe()
             self.assertEqual(loaded.returncode, 0, loaded.stderr.decode(errors='replace'))
+            # Having the export is insufficient: SDL must actually accept the loader.
+            from native import DEFAULT_COMPILER, compiler_env
+            source = folder/'reject-loader.c'
+            source.write_text('__declspec(dllexport) void *vkGetInstanceProcAddr(void *instance, const char *name) { return 0; }', encoding='utf-8')
+            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-shared',str(source),
+                            '-o',str(folder/'vulkan-1.dll')],env=compiler_env(),check=True,capture_output=True)
+            rejected = probe()
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn(b'SDL_Vulkan_LoadLibrary', rejected.stderr)
 
     def test_prefetch_without_additional_downloads_writes_verified_receipt(self):
         with tempfile.TemporaryDirectory(prefix='mk8-prefetch-ready-') as temporary:

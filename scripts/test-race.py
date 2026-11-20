@@ -173,18 +173,27 @@ def run(args):
         MK8_EXPERIMENTAL_NO_MII='1', MK8_MII_PROFILE_PATH=str(profile),
         LARECOMP_DATA_ROOT=str(data), LARECOMP_GAME_LIB=candidate['files']['gamelib']['path'],
         LARECOMP_SAVE_DIR=str(data / 'save'),
+        PATH=str(Path(candidate['files']['gamelib']['path']).parent) + os.pathsep + os.environ.get('PATH', ''),
         LARECOMP_INPUT=args.input or script,
         LARECOMP_WINDOW_SHOT=f'{args.last_frame - args.shot_step * (args.shots - 1)}:{args.last_frame}:{args.shot_step}',
         LARECOMP_SHOT_PATH=(session / 'frame-%05d.png').as_posix(),
         LARECOMP_EXIT_AFTER_SHOT='1',
     )
+    if args.interactive:
+        for key in ('LARECOMP_INPUT', 'LARECOMP_WINDOW_SHOT', 'LARECOMP_SHOT_PATH', 'LARECOMP_EXIT_AFTER_SHOT'):
+            env.pop(key, None)
     if args.mii_resources:
         # Opt-in original Mii renderer with a MiiModel-layout folder (for example toolchain/mii_resource_nx.py output).
-        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=str(args.mii_resources))
+        resources = str(args.mii_resources.resolve())
+        if os.name == 'nt' and resources.startswith('\\\\?\\'):
+            # The native filesystem appends forward slashes; match the launcher's runtime_path.
+            resources = '\\\\' + resources[8:] if resources.startswith('\\\\?\\UNC\\') else resources[4:]
+        env.update(MK8_EXPERIMENTAL_NO_MII='0', MK8_MII_RESOURCE_DIR=resources)
     (session / 'run.json').write_text(json.dumps({
         'candidate': candidate['identity'], 'mode': args.mode, 'options': args.env,
         'course': args.course, 'cup': args.cup, 'track': args.track,
-        'input': env['LARECOMP_INPUT'], 'last_frame': args.last_frame,
+        'input': env.get('LARECOMP_INPUT'), 'last_frame': None if args.interactive else args.last_frame,
+        'interactive': args.interactive,
         'character': args.character, 'mii_profile_sha256': hashlib.sha256(profile.read_bytes()).hexdigest(),
         'model_rendering_verified': False,
         'cache_from': str(args.cache_from.resolve()) if args.cache_from else None,
@@ -203,7 +212,7 @@ def run(args):
     print(f'Exit {child.returncode}, {monotonic() - started:.1f}s', flush=True)
     for elapsed, frame, fps, peak in rows[-8:]:
         print(f'{elapsed}s | frame {frame} | {fps} FPS | max {peak} ms')
-    if child.returncode or not (session / f'frame-{args.last_frame:05d}.png').is_file():
+    if child.returncode or (not args.interactive and not (session / f'frame-{args.last_frame:05d}.png').is_file()):
         raise SystemExit('Candidate failed to reach the final capture; inspect game.log')
 
 
@@ -228,6 +237,7 @@ if __name__ == '__main__':
     parser.add_argument('--env', action='append', default=[], type=lambda x: x.split('=', 1))
     parser.add_argument('--candidate', type=Path, help='candidate.json of another data folder (e.g. a fresh build)')
     parser.add_argument('--nextendo', action='store_true', help='Authenticate in this process before boot; requires MK8_NEXTENDO_TEST=1')
+    parser.add_argument('--interactive', action='store_true', help='Use live controls and close the game normally; keeps isolated saves and the timeout')
     args = parser.parse_args()
     if args.mode != 'time-trial' and (args.course != 'stadium' or args.cup != 'mushroom' or args.track is not None):
         parser.error('--course, --cup and --track require time-trial')

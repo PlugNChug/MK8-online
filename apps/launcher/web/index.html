@@ -240,6 +240,15 @@
           </div>
           <p id="settings-hint" class="hint">As alterações valem ao iniciar o jogo. Feche o jogo para salvar.</p>
           <nav class="settings-index" aria-label="Seções de configurações"><a href="#settings-groups">Vídeo e controles</a><a href="#font-title">Fontes do jogo</a><a href="#settings-dlc-title">Conteúdo adicional</a><a href="#ctgp-title">CTGP Deluxe</a></nav>
+          <article class="card" aria-labelledby="native-settings-title">
+            <h2 id="native-settings-title">Menu nativo de configurações (experimental)</h2>
+            <fieldset id="debug-fields" disabled>
+              <label class="dlc-toggle"><input id="debug-settings" type="checkbox" aria-describedby="debug-settings-hint" /><span>Ativar o menu nativo de configurações</span></label>
+              <p id="debug-settings-hint" class="hint">Ativa o botão de chave e o menu nativo de configurações. F1 abre este menu quando o hub está desativado; caso contrário, abre o hub. Requer uma build com o experimento incluído.</p>
+            </fieldset>
+            <p class="hint">A opção é salva automaticamente e vale ao iniciar o jogo.</p>
+            <p id="debug-status" class="hint" role="status"></p>
+          </article>
           <form id="game-settings">
             <fieldset id="settings-fields" disabled><div id="settings-groups"></div></fieldset>
             <div class="row settings-actions">
@@ -404,7 +413,16 @@
               <div class="cta">
                 <button id="play-solo" class="primary big" disabled>Jogar solo</button>
                 <button id="play-online" class="ghost big" disabled>Jogar na sala</button>
+                <button id="play-nextendo" class="ghost big" disabled>Jogar no Nextendo</button>
               </div>
+              <p class="fine" id="nextendo-rebuild" hidden>Atualize a build do jogo para usar o Nextendo.</p>
+              <dialog id="nextendo-consent" aria-labelledby="nextendo-heading">
+                <h2 id="nextendo-heading">Conectar ao Nextendo</h2>
+                <p>O servidor de corrida usa um certificado próprio. Esta é a chave observada nos testes do projeto. A confirmação pelo Nextendo está pendente.</p>
+                <code id="nextendo-key" dir="ltr"></code>
+                <p>Ao confiar nesta chave neste PC, o launcher abre o login no navegador. Depois, selecione Online Play no jogo.</p>
+                <div class="cta"><button class="ghost" id="nextendo-cancel" autofocus>Cancelar</button><button class="primary" id="nextendo-accept">Confiar e entrar</button></div>
+              </dialog>
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>
@@ -481,7 +499,7 @@
               <li>O anfitrião usa Criar Sala (Automático) para abrir o jogo e criar a sala LAN sozinho, ou Jogar (Sala Manual) para navegar por conta própria. Depois usa Convidar ao lado do amigo ou Convidar pela Steam.</li>
               <li>O amigo escolhe entrada automática ou manual acima e aceita no Launcher, no chat da Steam ou em Entrar na sala do amigo. O jogo abre conectado pela Steam.</li>
               <li>A entrada automática dentro do jogo é experimental. Se ela parar, no menu do jogo segure L + R e pressione o analógico esquerdo para LAN Play: o anfitrião usa Create Room e o convidado entra pelo Lobby.</li>
-              <li>Controle sem resposta com a Steam aberta? Em Steam → Biblioteca → Spacewar → Propriedades → Controle, escolha Desativar a Entrada Steam. Depois feche e reabra o jogo e o Launcher. A Steam continua aberta para amigos e salas.</li>
+              <li>Com a Entrada Steam ativa, o MK8 procura o controle automaticamente. Se ele não responder, informe o modelo e o tipo de conexão ao gerar um relatório em Suporte.</li>
               <li>Se falhar, cada pessoa gera um relatório em Suporte e envia o .zip.</li>
             </ol>
           </details>

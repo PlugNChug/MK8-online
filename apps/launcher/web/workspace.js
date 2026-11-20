@@ -26,6 +26,7 @@
     section.hidden = true; panel.append(section); modules[name] = section;
   }
   const form = byId('game-settings');
+  modules.video.append(byId('native-settings-title').closest('article'));
   modules.video.append(form);
   const subnav = document.createElement('nav');
   subnav.className = 'config-subnav'; subnav.setAttribute('role', 'tablist'); subnav.setAttribute('aria-label', 'Vídeo, áudio e controles');
@@ -40,8 +41,8 @@
     <div id="config-display-preview" class="config-display-preview">
       <div class="config-desktop"><div id="config-monitor" class="config-monitor"><div class="config-windowbar"><span>MK8</span><span aria-hidden="true">− □ ×</span></div>
         <div class="config-screen"><div id="config-scene" class="config-scene">
-          <svg class="config-track-art" viewBox="0 0 420 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="420" height="180" fill="#18272b"/><path d="M0 180 150 30 245 15 420 180" fill="#263a39"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#929b8f" stroke-width="42"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#33413f" stroke-width="32"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#d5d6b5" stroke-width="2" stroke-dasharray="8 10"/><circle cx="210" cy="85" r="7" fill="#ff794f"/><circle cx="283" cy="117" r="5" fill="#f3e9d1"/></svg>
-          <div id="config-menu-example" class="config-menu-example"><strong>Menu F1</strong><span class="selected">Vídeo</span><span>Áudio</span><span>Controles</span><small>Voltar ao jogo</small></div>
+          <svg class="config-track-art" viewBox="0 0 320 180" preserveAspectRatio="none" aria-hidden="true"><rect x="-50" width="420" height="180" fill="#18272b"/><path d="M0 180 150 30 245 15 420 180" fill="#263a39"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#929b8f" stroke-width="42"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#33413f" stroke-width="32"/><path d="M-40 165C80 200 110 10 210 85S320 185 465 40" fill="none" stroke="#d5d6b5" stroke-width="2" stroke-dasharray="8 10"/><circle cx="210" cy="85" r="7" fill="#ff794f"/><circle cx="283" cy="117" r="5" fill="#f3e9d1"/><circle class="config-world-extra" cx="-25" cy="95" r="10" fill="#8bb8a8"/><circle class="config-world-extra" cx="345" cy="50" r="10" fill="#e3ad5e"/></svg>
+          <div id="config-menu-example" class="config-menu-example"><strong>Menu F1</strong><span class="selected">Jogar</span><span>Nextendo</span><span>Social</span><small>Voltar ao jogo</small></div>
           <div class="config-hud"><span id="config-fps-example" hidden>FPS —</span><span id="config-memory-example" hidden>RAM —</span></div>
         </div></div>
       </div></div>
@@ -130,7 +131,7 @@
   let module = 'video', sub = 'image', content = 'dlc', focusKey = 'theme', exploredLayout = null;
   const explanations = {
     theme: 'Muda a aparência do menu F1 dentro do jogo. O tema do launcher continua separado. As cores deste exemplo são ilustrativas.',
-    aspect: 'Compare em uma tela 21:9: Sem restrição acompanha a largura disponível; Original 16:9 mantém a proporção com barras laterais.',
+    aspect: 'Esticar deforma a imagem; Original 16:9 mantém barras. Ultrawide experimental mostra mais cenário sem deformar. Esta prévia usa uma tela 21:9.',
     fullscreen: 'Tela cheia ocupa o monitor; em janela, a moldura permanece visível. Durante o jogo, F11 ou Alt+Enter alterna esse modo.',
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',
@@ -209,23 +210,34 @@
   function updatePreview() {
     const input = field(focusKey);
     if (!input) return;
+    const ultrawide = value('aspect') === 'ultrawide';
+    const frameFallback = ultrawide && value('frame_gen') !== 'off';
+    const menuFallback = ultrawide && focusKey === 'theme';
+    const original = value('aspect') === 'original' || frameFallback || menuFallback;
+    const widePreview = ultrawide && !original;
     i18n.text(byId('config-tab-video').querySelector('small'), settingsDirty ? 'Alterações não salvas' : 'Imagem, áudio e comandos');
     byId('config-tab-video').classList.toggle('config-has-changes', settingsDirty);
     const title = input.closest('label').querySelector('.config-option-name')?.textContent || focusKey;
     text('config-preview-title', title);
     text('config-preview-value', input.type === 'checkbox' ? input.checked ? 'Ativado' : 'Desativado' : input.dataset.key === 'volume' ? `${input.value}%` : selectedText(focusKey));
-    text('config-preview-description', explanations[focusKey] || 'Associe o comando do jogo ao botão físico ou à tecla desejada. O mapeamento só é aplicado depois de salvar.');
+    text('config-preview-description', focusKey === 'aspect' && ultrawide
+      ? 'Ultrawide experimental: Contra o Relógio, GP e VS solo sem equipes, entre 16:9 e 32:9. Menus, câmeras sem suporte, outras proporções e geração de quadros usam 16:9. A forma da tinta ainda não foi validada. Salve para usar no próximo início.'
+      : explanations[focusKey] || 'Associe o comando do jogo ao botão físico ou à tecla desejada. O mapeamento só é aplicado depois de salvar.');
     byId('config-display-preview').hidden = sub !== 'image'; byId('config-audio-preview').hidden = sub !== 'audio'; byId('config-controller-preview').hidden = sub !== 'controls';
     byId('config-preview').dataset.section = sub;
     byId('config-monitor').classList.toggle('fullscreen', checked('fullscreen'));
-    byId('config-scene').classList.toggle('original-ratio', value('aspect') === 'original');
+    byId('config-scene').classList.toggle('original-ratio', original);
+    const art = preview.querySelector('.config-track-art');
+    art.setAttribute('viewBox', widePreview ? '-50 0 420 180' : '0 0 320 180');
     byId('config-menu-example').classList.toggle('nes', value('theme') === 'NES');
     byId('config-menu-example').hidden = focusKey !== 'theme';
     byId('config-fps-example').hidden = !checked('show_fps'); byId('config-memory-example').hidden = !checked('show_memory');
     const blur = { '25%': '1.7px', '50%': '1px', '75%': '.4px' }[value('resolution')] || '0px';
-    preview.querySelector('.config-track-art').style.filter = `blur(${focusKey === 'resolution' ? blur : '0px'})`;
+    art.style.filter = `blur(${focusKey === 'resolution' ? blur : '0px'})`;
     byId('config-frame-example').hidden = focusKey !== 'frame_gen' || value('frame_gen') === 'off';
-    text('config-screen-caption', `${i18n.t(checked('fullscreen') ? 'Tela cheia' : 'Modo janela')} · Exemplo em tela 21:9 · ${i18n.t(value('aspect') === 'original' ? 'Imagem 16:9' : 'Largura livre')}`);
+    const framing = original ? 'Imagem 16:9' : widePreview ? 'Campo de visão ampliado' : 'Imagem esticada';
+    const fallback = frameFallback ? 'Ultrawide usa 16:9 com geração de quadros.' : menuFallback ? 'Menus mantêm 16:9.' : '';
+    text('config-screen-caption', `${i18n.t(checked('fullscreen') ? 'Tela cheia' : 'Modo janela')} · Exemplo em tela 21:9 · ${i18n.t(framing)}${fallback ? ' · ' + i18n.t(fallback) : ''}`);
     const volume = Number(value('volume')) || 0;
     text('config-volume-display', `${volume}%`); preview.querySelector('.config-sound-bars').style.setProperty('--volume-scale', Math.max(.02, volume / 200));
     text('config-reverb-state', `Reverberação ${checked('reverb') ? 'ativada' : 'desativada'}`);

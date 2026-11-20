@@ -92,6 +92,7 @@ impl State {
 
 pub struct Setup {
     steps: Vec<Step>,
+    clean_after_setup: bool,
     current: usize,
     child: Option<Child>,
     guards: Vec<File>,
@@ -105,6 +106,7 @@ impl Default for Setup {
     fn default() -> Self {
         Self {
             steps: Vec::new(),
+            clean_after_setup: false,
             current: 0,
             child: None,
             guards: Vec::new(),
@@ -118,7 +120,9 @@ impl Default for Setup {
 
 impl Setup {
     pub fn start_guarded(&mut self, root: &Path, local: &Path) -> Result<(), String> {
-        self.start_steps_guarded(root, local, steps(root)?, &local.join("setup.log"))
+        self.start_steps_guarded(root, local, steps(root)?, &local.join("setup.log"))?;
+        self.clean_after_setup = true;
+        Ok(())
     }
 
     pub fn start_dlc(
@@ -215,6 +219,7 @@ impl Setup {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         File::create(log).map_err(|e| e.to_string())?;
+        self.clean_after_setup = false;
         self.steps = steps;
         self.log = log.to_path_buf();
         self.current = 0;
@@ -303,6 +308,27 @@ impl Setup {
                 }
                 self.current += 1;
                 if self.current == total {
+                    if self.clean_after_setup {
+                        if let Some((root, local)) = &self.supervised {
+                            let result = mk8_build_manager::acquire_operation(root, local)
+                                .and_then(|_guards| {
+                                    if tool_checks(root).iter().any(|check| check["ok"] != true) {
+                                        return Err("A instalação das ferramentas não passou na verificação.".into());
+                                    }
+                                    #[cfg(windows)]
+                                    {
+                                        crate::managed::clean_old_tools(root).map_err(|e| e.to_string())?;
+                                    }
+                                    #[cfg(not(windows))]
+                                    let _ = root;
+                                    Ok(())
+                                });
+                            if let Err(e) = result {
+                                self.fail(format!("Limpeza das ferramentas anteriores: {e}"));
+                                return true;
+                            }
+                        }
+                    }
                     self.state = State::Done;
                     self.guards.clear();
                     self.detail =
@@ -393,7 +419,7 @@ fn python_check(root: &Path) -> Value {
 
 /// Reads `NAME = 'value'` from a setup script so the expected paths follow it.
 #[cfg(windows)]
-fn script_constant(text: &str, name: &str) -> Option<String> {
+pub(crate) fn script_constant(text: &str, name: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let rest = line
             .trim()

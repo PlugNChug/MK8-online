@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+GAME_MENU = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc'
 sys.path.insert(0, str(ROOT/'toolchain'))
 import ctgp_pack as P
 import import_ctgp
@@ -241,9 +242,9 @@ class CtgpPackTests(unittest.TestCase):
         with self.assertRaises(P.PackError):
             P.flan_add_pattern(base, 'P_Other_00', ['x'], 25)
 
-    @unittest.skipUnless((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').is_file(), 'MK8 4.0.1 RomFS required')
+    @unittest.skipUnless(GAME_MENU.is_file(), 'MK8 4.0.1 RomFS required')
     def test_cup_icon_textures_are_added_to_the_games_bntx(self):
-        menu = P.sarc_read((ROOT/'local/imports/mk8-4.0.1/romfs/UI/cmn/menu.sarc').read_bytes())
+        menu = P.sarc_read(GAME_MENU.read_bytes())
         archive = next(b for n, _, _, b, _ in menu['files'] if n == 'mn_L_CupSlctBtn_00.szs')
         bntx = next(f[3] for f in P.sarc_read(P.yaz0_decode(archive))['files'] if f[3][:4] == b'BNTX')
         same = P.bntx_add_textures(bntx, [])  # (the same file: only the _RLT's encoding may differ)
@@ -559,6 +560,8 @@ class CtgpPackTests(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 int fatal_calls; char logged[2048];
+static const char *settings;
+const char *mk8_settings_romfs_overlay(void) { return settings; }
 const char *mk8_romfs_overlay_from(const char *value);
 const char *game_romfs_overlay(void);
 int main(int argc, char **argv) {
@@ -570,6 +573,18 @@ int main(int argc, char **argv) {
     _putenv_s("MK8_ROMFS_OVERLAY", argv[2]);
     game_romfs_overlay();
     if (fatal_calls != 1) return 5;  // an invalid pack stops the game instead of opening the base game silently
+    fatal_calls = 0;
+    _putenv_s("MK8_ROMFS_OVERLAY", "");
+    if (game_romfs_overlay()) return 6;
+    settings = "combined-settings";
+    if (strcmp(game_romfs_overlay(), settings)) return 7;
+    _putenv_s("MK8_ROMFS_OVERLAY", argv[1]);
+    _putenv_s("MK8_SETTINGS_ROMFS", settings);
+    char expected[8192]; snprintf(expected, sizeof expected, "%s\n%s", argv[1], settings);
+    if (strcmp(game_romfs_overlay(), expected) || fatal_calls) return 8;
+    _putenv_s("MK8_SETTINGS_ROMFS", "");
+    game_romfs_overlay();
+    if (fatal_calls != 1) return 9;
     return 0;
 }''', encoding='utf-8')
             exe = out/'harness.exe'

@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tiny_http::{Method, Server};
 
+#[cfg(windows)]
+use crate::installer::uninstall;
 use crate::{
     installer::{self, free_gib, hard_disk, install, Options, Previous, Progress, NEEDED_GIB},
     server::response,
@@ -18,6 +20,7 @@ use crate::{
 type Parent = Arc<OnceLock<tauri::WebviewWindow>>;
 
 struct Setup {
+    uninstall_app: Option<PathBuf>,
     previous: Previous,
     progress: Arc<Mutex<Progress>>,
     data: Option<PathBuf>,
@@ -25,7 +28,8 @@ struct Setup {
     language: String,
 }
 
-pub fn window() -> Result<(), Error> {
+pub fn window(uninstall_app: Option<PathBuf>) -> Result<(), Error> {
+    let removing = uninstall_app.is_some();
     let server = Server::http(("127.0.0.1", 0))?;
     let authority = server.server_addr().to_string();
     let url = format!("http://{authority}");
@@ -36,6 +40,7 @@ pub fn window() -> Result<(), Error> {
     let parent: Parent = Arc::new(OnceLock::new());
     let previous = Previous::find();
     let setup = Setup {
+        uninstall_app,
         language: crate::language::read(&installer::launcher_data(&previous.data)),
         previous,
         progress: Arc::new(Mutex::new(Progress::default())),
@@ -54,7 +59,11 @@ pub fn window() -> Result<(), Error> {
     tauri::Builder::default()
         .setup(move |tauri_app| {
             let window = WebviewWindowBuilder::new(tauri_app, "main", WebviewUrl::External(target))
-                .title("MK8-online")
+                .title(if removing {
+                    "MK8-online Uninstall"
+                } else {
+                    "MK8-online Setup"
+                })
                 .inner_size(880.0, 620.0)
                 .resizable(false)
                 .maximizable(false)
@@ -91,6 +100,28 @@ fn state(setup: &Setup) -> Value {
 
 fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<Value, String> {
     let body: Value = serde_json::from_str(body).unwrap_or_default();
+    if let Some(app) = &setup.uninstall_app {
+        return match (method.as_str(), path) {
+            ("GET", "/api/state") => Ok(state(setup)),
+            ("POST", "/api/uninstall") => {
+                let purge = body["purge"].as_bool().ok_or("Opção inválida")?;
+                if purge && body["confirmed"] != true {
+                    return Err("Confirme a exclusão dos dados.".into());
+                }
+                #[cfg(windows)]
+                {
+                    uninstall(app, purge).map_err(|e| e.to_string())?;
+                    Ok(json!({}))
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (app, purge);
+                    Err("Rota indisponível".into())
+                }
+            }
+            _ => Err("Rota indisponível".into()),
+        };
+    }
     match (method.as_str(), path) {
         ("GET", "/api/state") => Ok(state(setup)),
         ("POST", "/api/language") => {
@@ -118,7 +149,14 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
                     .as_str()
                     .map(|p| PathBuf::from(p.trim()))
                     .filter(|p| p.is_absolute())
-                    .ok_or_else(|| "Escolha pastas com caminhos absolutos.".to_string())
+                    .ok_or_else(|| {
+                        if cfg!(windows) {
+                            "Escolha pastas completas (por exemplo C:\\Jogos\\MK8-online)."
+                                .to_string()
+                        } else {
+                            "Escolha pastas com caminhos absolutos.".to_string()
+                        }
+                    })
             };
             let options = Options {
                 app: folder("app")?,
@@ -129,6 +167,8 @@ fn handle(setup: &mut Setup, method: &Method, path: &str, body: &str) -> Result<
             if !crate::language::valid(language) {
                 return Err("Unsupported language / Idioma não suportado".into());
             }
+            #[cfg(windows)]
+            crate::managed::create_data(&options.data).map_err(|e| e.to_string())?;
             crate::language::write(
                 &installer::launcher_data(&options.data),
                 &json!({"language": language}),
@@ -177,9 +217,13 @@ fn serve(
         let method = req.method().clone();
         let page = match (method.as_str(), path.as_str()) {
             ("GET", "/") => Some((
-                include_str!("../web/setup.html")
-                    .replace("__TOKEN__", &token)
-                    .replace("__LANGUAGE__", &setup.language),
+                (if setup.uninstall_app.is_some() {
+                    include_str!("../web/uninstall.html")
+                } else {
+                    include_str!("../web/setup.html")
+                })
+                .replace("__TOKEN__", &token)
+                .replace("__LANGUAGE__", &setup.language),
                 "text/html; charset=utf-8",
             )),
             ("GET", "/i18n.js") => Some((
@@ -193,6 +237,10 @@ fn serve(
             ("GET", "/es.json") => Some((
                 include_str!("../web/es.json").into(),
                 "application/json; charset=utf-8",
+            )),
+            ("GET", "/uninstall.js") => Some((
+                include_str!("../web/uninstall.js").into(),
+                "text/javascript; charset=utf-8",
             )),
             ("GET", "/setup.js") => Some((
                 include_str!("../web/setup.js").to_string(),
@@ -241,7 +289,7 @@ fn serve(
             response(req, 413, "{}".into(), "application/json");
             continue;
         }
-        if method == Method::Post && path == "/api/browse" {
+        if setup.uninstall_app.is_none() && method == Method::Post && path == "/api/browse" {
             let value: Value = serde_json::from_str(&body).unwrap_or_default();
             let current = PathBuf::from(value["current"].as_str().unwrap_or(""));
             let title = value["title"]
@@ -269,7 +317,15 @@ fn serve(
             });
             continue;
         }
-        let finish = method == Method::Post && path == "/api/finish";
+        if setup.uninstall_app.is_some() && method == Method::Post && path == "/api/close" {
+            response(req, 200, "{}".into(), "application/json");
+            if let Some(window) = parent.get() {
+                let _ = window.close();
+            }
+            break;
+        }
+        let finish =
+            setup.uninstall_app.is_none() && method == Method::Post && path == "/api/finish";
         let result = if finish {
             finish_setup(&setup, &body, &parent, &launcher).map_err(|e| e.to_string())
         } else {
@@ -298,11 +354,14 @@ fn finish_setup(
     launcher: &OnceLock<tauri::Url>,
 ) -> Result<Value, Error> {
     let body: Value = serde_json::from_str(body)?;
+    let launch = body["launch"]
+        .as_bool()
+        .ok_or("Opção de abertura inválida")?;
     let window = parent.get().ok_or("Janela do MK8-online indisponível")?;
     if setup.progress.lock().unwrap().state != "done" {
         return Err("A instalação precisa terminar primeiro.".into());
     }
-    if body["launch"].as_bool() != Some(true) {
+    if !launch {
         window.close()?;
         return Ok(json!({}));
     }
@@ -321,6 +380,7 @@ fn finish_setup(
     window.set_min_size(Some(tauri::LogicalSize::new(400.0, 560.0)))?;
     window.set_size(tauri::LogicalSize::new(1280.0, 880.0))?;
     window.center()?;
+    window.set_title("MK8-online")?;
     window.navigate(target)?;
     Ok(json!({}))
 }

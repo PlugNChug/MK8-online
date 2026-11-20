@@ -16,6 +16,53 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_nextendo_opt_in_button_and_backend_guard(self):
+        page = self.page()
+        try:
+            page.locator('[data-tab="play"]').click()
+            expect(page.locator('#play-nextendo')).to_be_visible()
+            expect(page.locator('#play-nextendo')).to_be_disabled()
+            token = page.locator('meta[name="mk8-token"]').get_attribute('content')
+            headers = {'X-MK8-Token': token}
+            refused = page.request.post(self.urls[0]+'/api/play', headers=headers,
+                                        data=json.dumps({'online':False, 'nextendo':True})).json()
+            self.assertFalse(refused['ok'])
+            self.assertIn('Nextendo', refused['error'])
+            status = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
+            key = status['nextendo_game_key']
+            self.assertFalse(status['nextendo_trusted'])
+            invalid = page.request.post(self.urls[0]+'/api/nextendo/trust', headers=headers,
+                                        data=json.dumps({'key':'0'*64})).json()
+            self.assertFalse(invalid['ok'])
+            status.update(nextendo_supported=False, candidate=True, game_pid=None)
+            page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
+            calls = []
+            def play(route):
+                calls.append(route.request.post_data_json)
+                route.fulfill(json={'ok':True,'data':{'message':'Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.'}})
+            page.route('**/api/play', play)
+            expect(page.locator('#nextendo-rebuild')).to_be_visible()
+            status['nextendo_supported'] = True
+            expect(page.locator('#play-nextendo')).to_be_enabled()
+            page.locator('#play-nextendo').click()
+            expect(page.locator('#nextendo-key')).to_have_text(key)
+            page.locator('#nextendo-cancel').click()
+            self.assertFalse(calls)
+            page.locator('#play-nextendo').click()
+            with page.expect_response('**/api/play'):
+                page.locator('#nextendo-accept').click()
+            self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+            actual = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
+            self.assertTrue(actual['nextendo_trusted'])
+            status['nextendo_trusted'] = True
+            expect(page.locator('#notice')).to_contain_text('CTGP')
+            page.locator('#language').select_option('en')
+            expect(page.locator('#play-nextendo')).to_have_text('Play on Nextendo')
+            status['game_pid'] = 123
+            expect(page.locator('#play-nextendo')).to_be_disabled()
+        finally:
+            page.close()
+
     def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
         page = self.page()
         try:
@@ -787,7 +834,7 @@ class LauncherTests(unittest.TestCase):
         real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
         started=int(time.time()*1000)-125000
         def status(route):
-            data=dict(real)
+            data=dict(real, tools_ready=True)
             data['build']={'state':'running','detail':'Preparando o jogo.','pid':1,'percent':37.5,
                            'phase':'Compilando para o seu PC','started_ms':started,'duration_s':None}
             route.fulfill(json={'ok':True,'data':data})
@@ -809,7 +856,7 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#build-log')).to_be_visible()
         page.screenshot(path=str(ROOT/"local/screenshots/launcher-build.png"),full_page=True)
         def done(route):
-            data=dict(real);data['candidate']=True
+            data=dict(real, tools_ready=True);data['candidate']=True
             data['build']={'state':'candidate','detail':'ok','pid':None,'percent':100,'phase':'Concluído',
                            'started_ms':started,'duration_s':1218.5}
             route.fulfill(json={'ok':True,'data':data})
@@ -826,17 +873,31 @@ class LauncherTests(unittest.TestCase):
         token=page.locator('meta[name="mk8-token"]').get_attribute('content')
         real=page.request.get(self.urls[0]+'/api/status',headers={'X-MK8-Token':token}).json()['data']
         self.assertFalse(real['candidate_stale'])  # (no game in this data folder)
+        tools_installed = False
+        files_ready = True
         def status(route):
             data=dict(real);data['candidate']=True;data['candidate_stale']=True;data['candidate_version']='0.1.2'
+            data.update(tools_ready=tools_installed, files=dict(real['files'], ready=files_ready, folder=False),
+                        setup=dict(real['setup'], state='done' if tools_installed else 'idle'))
             data['build']={'state':'idle','detail':'','pid':None,'percent':0,'phase':'','started_ms':None,'duration_s':None}
             route.fulfill(json={'ok':True,'data':data})
         page.route('**/api/status',status)
         page.reload()
+        expect(page.locator('#flow-step-0')).to_have_attribute('aria-current', 'step')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
+        tools_installed = True
+        expect(page.locator('#flow-step-2')).to_have_attribute('aria-current', 'step')
         expect(page.locator('#build-stale')).to_be_visible()
         expect(page.locator('#build-stale')).to_contain_text('versão 0.1.2')
         expect(page.get_by_role('button',name='Atualizar a build',exact=True)).to_be_visible()
         expect(page.locator('#prepare-state')).to_have_text('Atualizar')
         expect(page.locator('#build-done')).to_be_hidden()
+        tools_installed = files_ready = False
+        page.reload()
+        expect(page.locator('#flow-step-0')).to_have_attribute('aria-current', 'step')
+        tools_installed = True
+        expect(page.locator('#flow-step-1')).to_have_attribute('aria-current', 'step')
+        expect(page.locator('#flow-step-2')).to_be_disabled()
         self.assertFalse(errors);page.close()
 
     def test_mii_resource_stream_finishes_before_wasm_request(self):

@@ -55,7 +55,7 @@ fn ready(python: &Path) -> bool {
         .output().is_ok_and(|out| out.status.success())
 }
 
-fn no_link(path: &Path) -> Result<()> {
+pub(crate) fn no_link(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(meta) => {
             #[cfg(windows)]
@@ -78,7 +78,7 @@ fn no_link(path: &Path) -> Result<()> {
     }
 }
 
-fn checked_tree(path: &Path, local: &Path) -> Result<()> {
+pub(crate) fn checked_tree(path: &Path, local: &Path) -> Result<()> {
     if path.parent() != Some(local) || !local.is_absolute() {
         return Err("Pasta Python fora do diretório local.".into());
     }
@@ -102,7 +102,7 @@ fn checked_tree(path: &Path, local: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn idle(path: &Path) -> Result<()> {
+pub(crate) fn idle(path: &Path) -> Result<()> {
     use windows_sys::Win32::{
         Foundation::*,
         System::{Diagnostics::ToolHelp::*, Threading::*},

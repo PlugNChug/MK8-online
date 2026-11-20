@@ -71,8 +71,8 @@ uint64_t renderer_present_count(void) { return 0; }
 static _Atomic bool gate, entered;
 static NvnSync test_sync;
 static NvnSync *sync_of(uint64_t guest) { (void)guest; return &test_sync; }
-static void mk8_present_now(NvnTexture *t) {
-    (void)t; translator = pthread_self(); atomic_store(&entered, true);
+static void mk8_present_now(NvnTexture *t, double ultrawide) {
+    (void)t; (void)ultrawide; translator = pthread_self(); atomic_store(&entered, true);
     while (!atomic_load(&gate)) Sleep(1);
 }
 int mk8_textures_release_range(uint64_t lo, uint64_t hi, uint64_t *bytes) {

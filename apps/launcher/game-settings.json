@@ -19,8 +19,9 @@
           "default": "unlocked",
           "kind": "select",
           "options": [
-            ["unlocked", "Sem restrição"],
-            ["original", "Original 16:9"]
+            ["unlocked", "Esticar"],
+            ["original", "Original 16:9"],
+            ["ultrawide", "Ultrawide (experimental)"]
           ]
         },
         {

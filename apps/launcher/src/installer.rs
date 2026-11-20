@@ -1,13 +1,12 @@
 //! The setup program: the launcher binary itself, named `MK8-online-<version>-setup.exe` (or run with
-//! `--install`). The first-run screens collect install options and copy the app as
-//! `Launcher.exe`, writes `mk8-online.json` (the data folder), unpacks this version's sources ahead of the first
-//! start, create the shortcuts and register the uninstaller under the current user. After setup,
-//! the same window opens the launcher.
+//! `--install`). Setup saves the data folder in `mk8-online.json`, copies `Launcher.exe`,
+//! unpacks this version's sources, creates shortcuts and registers the uninstaller for the
+//! current user. It can then open the launcher in the same window.
 //!
 //! `/SILENT` (the in-launcher updater) installs over the previous installation with its folders and starts the
 //! new launcher; `/DIR=` and `/DATADIR=` choose the folders, `/DESKTOP=0|1` the desktop shortcut and `/NOLAUNCH`
-//! skips starting it (tests). `--uninstall` (Windows Settings) removes the program
-//! and its shortcuts and keeps the data folder: prepared game, builds and saves.
+//! skips starting it (tests). Installed Uninstall.exe opens the removal wizard.
+//! Silent uninstall keeps the data folder, including builds and saves.
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -61,7 +60,12 @@ pub fn mode(args: &[String]) -> Option<Mode> {
             silent,
         });
     }
-    if flag(args, &["--uninstall"]) {
+    if flag(args, &["--uninstall"])
+        || args
+            .first()
+            .and_then(|p| Path::new(p).file_name())
+            .is_some_and(|n| n.eq_ignore_ascii_case("Uninstall.exe"))
+    {
         return Some(Mode::Uninstall { silent });
     }
     let named_setup = std::env::current_exe()
@@ -95,44 +99,69 @@ pub fn run(mode: Mode, args: &[String]) -> Result<(), Error> {
             }
             launch(&options.app)
         }
-        Mode::Install { silent: false } => crate::installer_ui::window(),
+        Mode::Install { silent: false } => crate::installer_ui::window(None),
         Mode::Uninstall { silent } => {
             // Run from a copy in %TEMP%, so the installed Launcher.exe can be deleted.
             let exe = std::env::current_exe()?;
             let app = exe.parent().ok_or("pasta do programa")?.to_path_buf();
-            let temp = std::env::temp_dir()
-                .join(format!("mk8-online-uninstall-{}.exe", std::process::id()));
+            let temp = std::env::temp_dir().join(format!(
+                "mk8-online-uninstall-{:016x}.exe",
+                u64::from_le_bytes(mk8_transport::random())
+            ));
             fs::copy(&exe, &temp)?;
             let mut command = Command::new(&temp);
             command.arg("--uninstall-run").arg(&app);
             if silent {
                 command.arg("/SILENT");
             }
-            command.spawn()?;
+            let worker = command.spawn()?;
+            // The temporary image is in use until the worker exits. A separate
+            // process waits on its PID and removes only our generated literal path.
+            use std::os::windows::process::CommandExt;
+            let tidy = "Wait-Process -Id ([int]$env:MK8_WORKER_PID) -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $env:MK8_WORKER_COPY";
+            let shell = PathBuf::from(std::env::var_os("SystemRoot").ok_or("SystemRoot ausente")?)
+                .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+            let _ = Command::new(shell)
+                .args(["-NoProfile", "-NonInteractive", "-Command", tidy])
+                .env("MK8_WORKER_PID", worker.id().to_string())
+                .env("MK8_WORKER_COPY", &temp)
+                .creation_flags(NO_WINDOW)
+                .spawn();
             Ok(())
         }
-        Mode::UninstallRun { app, silent } => uninstall(&app, silent),
+        Mode::UninstallRun { app, silent: true } => uninstall(&app, false),
+        Mode::UninstallRun { app, silent: false } => crate::installer_ui::window(Some(app)),
     }
 }
 
 /* ---------- folders of a previous installation ---------- */
 
 fn reg_query(key: &str, name: &str) -> Option<String> {
-    use std::os::windows::process::CommandExt;
-    let output = Command::new("reg")
-        .args(["query", key, "/v", name])
-        .creation_flags(NO_WINDOW)
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let rest = line.strip_prefix(name)?.trim_start();
-        let rest = rest
-            .strip_prefix("REG_SZ")
-            .or_else(|| rest.strip_prefix("REG_EXPAND_SZ"))?;
-        Some(rest.trim().to_string()).filter(|v| !v.is_empty())
-    })
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
+    };
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let key = wide(key.strip_prefix(r"HKCU\")?);
+    let name = wide(name);
+    let mut buffer = vec![0u16; 32768];
+    let mut size = (buffer.len() * 2) as u32;
+    let code = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if code != 0 || size < 2 {
+        return None;
+    }
+    String::from_utf16(&buffer[..size as usize / 2 - 1])
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 fn local_appdata() -> PathBuf {
@@ -416,10 +445,13 @@ fn copy_self(target: &Path, progress: &Mutex<Progress>, from: f64, to: f64) -> R
     if exe.canonicalize().ok() == target.canonicalize().ok() {
         return Ok(());
     }
-    let partial = target.with_extension("exe.new");
+    let partial = target.with_extension(format!(
+        "exe.new-{:016x}",
+        u64::from_le_bytes(mk8_transport::random())
+    ));
     let mut source = fs::File::open(&exe)?;
     let total = source.metadata()?.len().max(1);
-    let mut out = fs::File::create(&partial)?;
+    let mut out = fs::File::create_new(&partial)?;
     let mut buffer = vec![0u8; 1 << 20];
     let mut copied = 0u64;
     loop {
@@ -487,8 +519,23 @@ fn install_steps(options: &Options, progress: &Mutex<Progress>) -> Result<(), Er
     fs::create_dir_all(data)?;
     let exe = app.join("Launcher.exe");
     report(progress, 5.0, "Preparando a instalação");
+    let uninstaller = app.join("Uninstall.exe");
+    for part in uninstaller.ancestors() {
+        crate::python_setup::no_link(part)?;
+    }
+    if uninstaller.exists()
+        && !(reg_query(UNINSTALL_KEY, "InstallLocation").is_some_and(|p| same_dir(&p, app))
+            && reg_query(UNINSTALL_KEY, "UninstallString")
+                .is_some_and(|p| p.trim_matches('"') == uninstaller.to_string_lossy()))
+        && mk8_manifest::hash_file(&uninstaller)?.sha256
+            != mk8_manifest::hash_file(&std::env::current_exe()?)?.sha256
+    {
+        return Err("Já existe um Uninstall.exe de outro programa nessa pasta. Escolha uma pasta própria para o MK8-online.".into());
+    }
     stop_launcher(&exe);
-    copy_self(&exe, progress, 6.0, 40.0)?;
+    copy_self(&exe, progress, 6.0, 32.0)?;
+    copy_self(&uninstaller, progress, 32.0, 40.0)?;
+    crate::managed::create_data(data)?;
     fs::write(
         app.join("mk8-online.json"),
         format!("{}\r\n", json!({ "home": data })),
@@ -538,12 +585,12 @@ fn install_steps(options: &Options, progress: &Mutex<Progress>) -> Result<(), Er
         (
             "UninstallString",
             "REG_SZ",
-            format!("\"{exe_text}\" --uninstall"),
+            format!("\"{}\"", uninstaller.display()),
         ),
         (
             "QuietUninstallString",
             "REG_SZ",
-            format!("\"{exe_text}\" --uninstall /SILENT"),
+            format!("\"{}\" /SILENT", uninstaller.display()),
         ),
         ("DataFolder", "REG_SZ", data.display().to_string()),
         ("NoModify", "REG_DWORD", "1".to_string()),
@@ -589,98 +636,44 @@ fn launch(app: &Path) -> Result<(), Error> {
 
 /* ---------- uninstalling ---------- */
 
-fn uninstall(app: &Path, silent: bool) -> Result<(), Error> {
+pub(crate) fn uninstall(app: &Path, purge: bool) -> Result<(), Error> {
+    let registered =
+        reg_query(UNINSTALL_KEY, "InstallLocation").ok_or("Instalação não registrada.")?;
+    let data = reg_query(UNINSTALL_KEY, "DataFolder").ok_or("Pasta de dados não registrada.")?;
+    if crate::canonical(app)? != crate::canonical(Path::new(&registered))? {
+        return Err("Esta pasta não corresponde à instalação registrada.".into());
+    }
+    for part in app.ancestors() {
+        crate::python_setup::no_link(part)?;
+    }
+    let receipt: Value = serde_json::from_slice(&fs::read(app.join("mk8-online.json"))?)?;
+    if receipt["home"].as_str().map(Path::new) != Some(Path::new(&data)) {
+        return Err("A pasta de dados diverge do registro da instalação.".into());
+    }
     let exe = app.join("Launcher.exe");
-    let data = fs::read_to_string(app.join("mk8-online.json"))
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|v| v["home"].as_str().map(str::to_string))
-        .unwrap_or_else(|| local_appdata().join("MK8-online").display().to_string());
-    let language = crate::language::read(&PathBuf::from(&data).join("data"));
-    if !silent {
-        let answer = rfd::MessageDialog::new()
-            .set_title(crate::language::pick(
-                &language,
-                "Desinstalar MK8-online",
-                "Uninstall MK8-online",
-                "Desinstalar MK8-online",
-            ))
-            .set_level(rfd::MessageLevel::Info)
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .set_description(crate::language::pick(
-                &language,
-                format!(
-                    "Remover o MK8-online deste computador?
-
-Seus dados (jogo preparado, builds e saves) ficam em:
-{data}
-Apague essa pasta depois, se quiser liberar o espaço."
-                ),
-                format!(
-                    "Remove MK8-online from this PC?
-
-Your data (prepared game, builds and saves) will remain in:
-{data}
-You can remove that folder later to free up space."
-                ),
-                format!(
-                    "¿Quitar MK8-online de esta PC?
-
-Tus datos (juego preparado, compilaciones y partidas guardadas) se quedarán en:
-{data}
-Puedes borrar esa carpeta más tarde si quieres liberar espacio."
-                ),
-            ))
-            .show();
-        if answer != rfd::MessageDialogResult::Yes {
-            return Ok(());
-        }
-    }
     stop_launcher(&exe);
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while exe.exists() && fs::remove_file(&exe).is_err() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(300));
+    if purge {
+        crate::managed::remove_data(Path::new(&data))?;
     }
-    for name in [
-        "mk8-online.json",
-        "Launcher.exe.new",
-        "unins000.exe",
-        "unins000.dat",
-    ] {
-        let _ = fs::remove_file(app.join(name));
+    for name in ["Launcher.exe", "Uninstall.exe"] {
+        remove_file_if_present(&app.join(name))?;
     }
-    let _ = fs::remove_dir(app); // (only if empty)
-    let (start_menu, desktop) = shortcut_paths();
-    let _ = fs::remove_file(start_menu);
-    if let Some(desktop) = desktop {
-        let _ = fs::remove_file(desktop);
+    let (start, desktop) = shortcut_paths();
+    remove_file_if_present(&start)?;
+    if let Some(p) = desktop {
+        remove_file_if_present(&p)?;
     }
-    let _ = reg(&["delete", UNINSTALL_KEY, "/f"]);
-    if !silent {
-        rfd::MessageDialog::new()
-            .set_title("MK8-online")
-            .set_level(rfd::MessageLevel::Info)
-            .set_description(crate::language::pick(
-                &language,
-                format!("O MK8-online foi removido. Seus dados continuam em {data}."),
-                format!("MK8-online has been removed. Your data remains in {data}."),
-                format!("MK8-online se quitó. Tus datos siguen en {data}."),
-            ))
-            .show();
-    }
-    // This copy in %TEMP% removes itself once it has exited.
-    if let Ok(me) = std::env::current_exe() {
-        use std::os::windows::process::CommandExt;
-        // (raw: cmd parses its own quoting; the escaped form Rust would build is not understood)
-        let _ = Command::new("cmd")
-            .raw_arg(format!(
-                "/d /c ping -n 3 127.0.0.1 >nul & del /f /q \"{}\"",
-                me.display()
-            ))
-            .creation_flags(NO_WINDOW)
-            .spawn();
-    }
+    reg(&["delete", UNINSTALL_KEY, "/f"])?;
+    remove_file_if_present(&app.join("mk8-online.json"))?;
+    let _ = fs::remove_dir(app); // only if empty
     Ok(())
+}
+
+fn remove_file_if_present(path: &Path) -> Result<(), Error> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => Ok(result?),
+    }
 }
 
 #[cfg(test)]

@@ -52,6 +52,9 @@ pub struct Installation {
     /// The game library takes added cups (`MK8_CUPS_EXTRA`, toolchain/cup_relocation.py): CTGP's "added" layout.
     #[serde(default)]
     pub cups_supported: bool,
+    /// This host verifies community TLS by hostname and supports the default in-game hub.
+    #[serde(default)]
+    pub nextendo_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

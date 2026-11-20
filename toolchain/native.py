@@ -28,6 +28,28 @@ def cc(compiler=DEFAULT_COMPILER, cpp=False):
     return [shutil.which('clang++') or 'clang++'] if cpp else [compiler]
 
 
+def archiver(compiler=DEFAULT_COMPILER):
+    """Zig is a multicall binary; the Linux build uses the system LLVM archiver."""
+    return [str(Path(compiler).absolute()), 'ar'] if WINDOWS else [shutil.which('llvm-ar') or 'llvm-ar']
+
+
+def write_archive(compiler, archive, objects):
+    """Thin archive references follow the objects when their containing tree moves."""
+    archive = Path(archive).absolute()
+    names = []
+    for obj in objects:
+        try:
+            name = os.path.relpath(Path(obj).absolute(), archive.parent)
+        except ValueError:  # Objects on a different drive are explicitly non-portable.
+            name = str(Path(obj).absolute())
+        names.append('"' + name.replace('\\', '/') + '"')
+    response = archive.parent / 'archive.rsp'
+    response.write_text('\n'.join(names), encoding='utf-8')
+    pending = archive.with_suffix(f'.{time.time_ns()}.pending.a')
+    subprocess.run([*archiver(compiler), 'rcsT', pending.name, '@archive.rsp'],
+                   cwd=archive.parent, check=True, env=compiler_env())
+    pending.replace(archive)
+
 
 def compiler_path(path):
     # Rust canonicalize supplies extended Windows paths; clang's -I does not accept that prefix.
@@ -205,8 +227,20 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     from experimental import patch_no_mii_unit
     from yaz0_native import patch_unit as patch_yaz0_unit
     from cup_relocation import patch_unit as patch_cup_unit
-    entries = [(patch_cup_unit(patch_yaz0_unit(patch_no_mii_unit(src, output), output), output), obj)
-               for src, obj in entries]
+    from ultrawide import patch_unit as patch_ultrawide_unit
+    from ultrawide_hud import patch_unit as patch_ultrawide_hud_unit
+    from settings_menu import patch_guest as patch_settings_guest
+
+    def patch_guest(pair):
+        src, obj = pair
+        original = src
+        src = patch_ultrawide_unit(src, output)
+        src = patch_ultrawide_hud_unit(src, output)
+        src = patch_cup_unit(patch_yaz0_unit(patch_no_mii_unit(src, output), output), output)
+        src = patch_settings_guest(src, original, output)
+        return src, obj
+
+    entries = [patch_guest(pair) for pair in entries]
 
     def compile_one(pair):
         src, obj = pair
@@ -254,14 +288,9 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     objects = [obj for _, obj in entries]
     if reused:
         print(f'Cache de objetos: {len(reused)} de {len(entries)} unidades reaproveitadas sem recompilar.', flush=True)
-    response = output/'archive.rsp'
-    response.write_text('\n'.join('"'+str(p).replace('\\','/')+'"' for p in objects), encoding='utf-8')
     archive = output/'mk8d-game-code.a'
-    pending = output/'mk8d-game-code.pending.a'
     # Thin archives reference cached objects instead of duplicating several GB of debug code.
-    archiver = [str(compiler), 'ar'] if WINDOWS else ['llvm-ar']
-    subprocess.run([*archiver, 'rcsT', str(pending), '@'+str(response)], check=True, env=env)
-    pending.replace(archive)
+    write_archive(compiler, archive, objects)
     receipt = {'state': 'native_objects', 'archive': str(archive), 'sha256': digest(archive),
                'object_files': [{'path': str(p), 'sha256': digest(p)} for p in objects],
                'target': TARGET, 'modules': list(modules), 'objects': len(objects), 'optimization': optimization, 'gameplay_verified': False,

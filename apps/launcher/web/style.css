@@ -1,3 +1,13 @@
+#nextendo-consent {
+  width: min(30rem, 90vw);
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+}
+#nextendo-consent::backdrop { background: rgb(0 0 0 / 65%); }
+#nextendo-key { display: block; overflow-wrap: anywhere; user-select: all; }
 :root {
   color-scheme: dark;
   --bg: #151516;
@@ -217,7 +227,7 @@ pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-ra
 #report-path { font-family: var(--mono); font-size: 0.78rem; overflow-wrap: anywhere; }
 
 footer { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 1rem; border-top: 1px solid var(--line); }
-#settings-fields, #font-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+#settings-fields, #font-fields, #debug-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
 .settings-group, .settings-dlc { margin-bottom: var(--space); }
 .settings-group { background: transparent; padding: 1.5rem 0; border-bottom: 1px solid var(--line); border-radius: 0; }
 .settings-group h2 { margin-bottom: 1.5rem; }

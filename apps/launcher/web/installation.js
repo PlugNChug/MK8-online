@@ -76,7 +76,7 @@
     const dx = event.changedTouches[0].clientX - touch[0], dy = event.changedTouches[0].clientY - touch[1]; touch = null;
     if (Math.abs(dx) > 65 && Math.abs(dx) > Math.abs(dy) * 1.5) go(step + (dx < 0 ? 1 : -1));
   }, {passive: true});
-  let lastWheel = 0;
+  let lastWheel = 0, buildWasRunning = false;
   viewport.addEventListener('wheel', event => {
     if (Math.abs(event.deltaX) < 20 || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
     event.preventDefault();
@@ -85,17 +85,20 @@
   nav.onclick = event => { const button = event.target.closest('[data-install-addon]'); if (button) { addon = button.dataset.installAddon; mountAddon(); } };
   function updateStatus() {
     if (!status) return;
-    const tools = !!status.tools_ready && status.setup.state !== 'running';
+    const tools = !!status.tools_ready && !['running', 'failed'].includes(status.setup.state);
     const files = !installationFilesDirty && !!(status.files.ready || (status.files.folder && status.checks.every(check => check.ok)));
     const existing = !!(status.candidate || status.installed);
     const done = get('step-build').dataset.state === 'done' || (existing && !status.candidate_stale
       && status.dlc?.state !== 'unsupported' && !['running', 'failed', 'cancelled'].includes(status.build.state));
     complete = [tools, files, done, false];
-    access = [true, tools, (tools && files) || existing || status.build.state === 'running', done];
-    if (initial) {
-      step = status.build.state === 'running' || existing ? 2 : tools ? files ? 2 : 1 : 0;
+    const running = status.build.state === 'running';
+    const toolsJustInstalled = !initial && !access[1] && tools && status.setup.state === 'done';
+    access = [true, tools, running || (tools && (files || (existing && done))), tools && done];
+    if (initial || (running && !buildWasRunning) || (toolsJustInstalled && step === 0)) {
+      step = running ? 2 : !tools ? 0 : files || (done && !toolsJustInstalled) ? 2 : 1;
       initial = false;
     }
+    buildWasRunning = running;
     if (!access[step]) step = tools ? files ? 2 : 1 : 0;
     get('build').disabled ||= !tools || !files;
     draw();

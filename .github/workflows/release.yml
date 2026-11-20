@@ -87,6 +87,8 @@ jobs:
           files: |
             dist/*-setup.exe
             dist/*-setup.exe.sha256
+            dist/*-portable.zip
+            dist/*-portable.zip.sha256
             dist/ffmpeg-9.0.2.tar.xz
             dist/build-ffmpeg.sh
             dist/*-linux-x86_64.AppImage

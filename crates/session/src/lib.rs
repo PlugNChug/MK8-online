@@ -423,8 +423,11 @@ impl Gateway {
         remote
             .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| e.to_string())?;
-        let local_rx = local.try_clone().map_err(|e| e.to_string())?;
-        let remote_tx = remote.try_clone().map_err(|e| e.to_string())?;
+        // Share handles: Windows socket duplicates can be inherited by spawned children.
+        let local = Arc::new(local);
+        let remote = Arc::new(remote);
+        let local_rx = Arc::clone(&local);
+        let remote_tx = Arc::clone(&remote);
         let local_addr = local.local_addr().map_err(|e| e.to_string())?;
         let slot = invite.slot;
         let stop = Arc::new(AtomicBool::new(false));
@@ -544,6 +547,77 @@ mod tests {
             b"fixture",
         ]
         .concat()
+    }
+    #[cfg(windows)]
+    #[test]
+    fn gateway_sockets_are_not_inherited_by_child_processes() {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let host = Host::start("127.0.0.1:0".parse().unwrap(), "fixture").unwrap();
+        let remote = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let remote_addr = remote.local_addr().unwrap();
+        let gateway =
+            Gateway::start_with_remote(host.invite(host.address).unwrap(), remote).unwrap();
+        let addresses = [gateway.local_addr, remote_addr];
+        let mut child = Command::new("cmd.exe")
+            .args(["/D", "/Q", "/C", "set /p value="])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .unwrap();
+        thread::sleep(Duration::from_millis(100));
+        let child_started = matches!(child.try_wait(), Ok(None));
+        drop(gateway);
+        let mut rebound: [Option<UdpSocket>; 2] = [None, None];
+        let mut errors = [None, None];
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            for i in 0..addresses.len() {
+                if rebound[i].is_none() {
+                    match UdpSocket::bind(addresses[i]) {
+                        Ok(socket) => rebound[i] = Some(socket),
+                        Err(error) => errors[i] = error.raw_os_error(),
+                    }
+                }
+            }
+            if rebound.iter().all(Option::is_some) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let released_while_child_alive = rebound.each_ref().map(Option::is_some);
+        let child_stayed_alive = matches!(child.try_wait(), Ok(None));
+        drop(rebound);
+
+        // Clean up the held child before any assertion, including the failing regression.
+        drop(child.stdin.take());
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while matches!(child.try_wait(), Ok(None)) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if !matches!(child.try_wait(), Ok(Some(_))) {
+            let _ = child.kill();
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while !matches!(child.try_wait(), Ok(Some(_))) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        let child_exited = matches!(child.try_wait(), Ok(Some(_)));
+        let released_after_child = addresses.map(|address| UdpSocket::bind(address).is_ok());
+        assert!(
+            child_started && child_stayed_alive,
+            "child did not stay alive"
+        );
+        assert!(child_exited, "owned child {} did not exit", child.id());
+        assert_eq!(released_after_child, [true, true]);
+        assert_eq!(
+            released_while_child_alive,
+            [true, true],
+            "gateway local/remote ports stayed open in child; bind errors: {errors:?}"
+        );
     }
     #[test]
     fn twelve_players_broadcast_unicast_and_latency() {
