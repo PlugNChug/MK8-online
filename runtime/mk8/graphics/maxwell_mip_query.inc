@@ -32,12 +32,13 @@ static void mk8_emit_tmml_bindless(Ctx *c, uint64_t w, uint32_t pc) {
         if ((prev & 0xfff0000000000000ull) == 0x4bb0000000000000ull ||
             (prev & 0xfef0000000000000ull) == 0x36b0000000000000ull ||
             (prev & 0xfff0000000000000ull) == 0xe330000000000000ull) continue;
-        // TEXS.F32 2D/LOD/RGBA escreve dois pares; não basta conferir o primeiro destino.
-        if ((prev & 0xf600000000000000ull) == 0xd000000000000000ull &&
-            bits(prev, 59, 1) && bits(prev, 53, 4) == 3 && bits(prev, 50, 3) == 4) {
+        // TEXS.F32 writes R/A to one pair, or RGBA to two pairs, in these encodings.
+        if ((prev & 0xf600000000000000ull) == 0xd000000000000000ull && bits(prev, 59, 1)) {
             int d0 = (int)bits(prev, 0, 8), d1 = (int)bits(prev, 28, 8);
-            if (d1 == RZ || (d0 != RZ && handle >= d0 && handle <= d0 + 1) ||
-                (handle >= d1 && handle <= d1 + 1)) break;
+            bool rgba = d1 != RZ && bits(prev, 53, 4) == 3 && bits(prev, 50, 3) == 4;
+            bool ra = d0 != RZ && d1 == RZ && bits(prev, 53, 4) == 1 && bits(prev, 50, 3) == 5;
+            if ((!ra && !rgba) || (d0 != RZ && handle >= d0 && handle <= d0 + 1) ||
+                (d1 != RZ && handle >= d1 && handle <= d1 + 1)) break;
             continue;
         }
         bool mov_cb = (prev & 0xfff8000000000000ull) == 0x4c98000000000000ull;
@@ -45,6 +46,9 @@ static void mk8_emit_tmml_bindless(Ctx *c, uint64_t w, uint32_t pc) {
             (prev & 0xfff0000000000000ull) == 0x0100000000000000ull ||  // MOV32I
             (prev & 0xfff8000000000000ull) == 0x5080000000000000ull ||  // MUFU
             (prev & 0xfff8000000000000ull) == 0x5c68000000000000ull ||  // FMUL reg
+            (prev & 0xfff8000000000000ull) == 0x4c68000000000000ull ||  // FMUL cbuf
+            (prev & 0xff80000000000000ull) == 0x5980000000000000ull ||  // FFMA reg
+            (prev & 0xfe80000000000000ull) == 0x3280000000000000ull ||  // FFMA imediato
             (prev & 0xfef8000000000000ull) == 0x3868000000000000ull ||  // FMUL imediato
             ((prev & 0xfff8000000000000ull) == 0x5cb8000000000000ull && bits(prev, 8, 4) == 10) ||  // I2F 32
             ((prev & 0xfff8000000000000ull) == 0xdf60000000000000ull && bits(prev, 31, 4) == 2) ||  // TMML.B clamped

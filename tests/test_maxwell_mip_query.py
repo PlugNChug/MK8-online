@@ -164,6 +164,29 @@ int main(int argc, char **argv) {
         int shift = pair ? 28 : 0;
         words[31] = (words[31] & ~(255ull << shift)) | (uint64_t)dest << shift; rejected();
     }
+    // A two-component sample and scalar arithmetic can precede the mip query.
+    // Use a synthetic instruction stream and compare against the bound form.
+    memcpy(words, saved, sizeof words);
+    words[26] = 0x4c68000000070000ull;  // FMUL cbuf, R0
+    words[27] = 0x32a0000000070001ull;  // FFMA immediate, R1
+    words[30] = 0x59a0000000070002ull;  // FFMA register, R2
+    words[31] = 0xd834000ff0070004ull;  // TEXS.F32, R/A into R4 and R5
+    ShaderInfo *effect = translate(1, STAGE_FRAGMENT);
+    if (!effect->msl) fprintf(stderr, "%s\n", effect->error);
+    assert(effect->msl);
+    uint64_t bindless = words[39];
+    words[39] = (bindless & 0x0002000fffffffffull) | 0xdf58000000000000ull | (8ull << 36);
+    ShaderInfo *reference = translate(1, STAGE_FRAGMENT);
+    assert(reference->msl && reference->ntex == effect->ntex && !strcmp(effect->msl, reference->msl));
+    compile_glsl(effect); maxwell_free(reference); maxwell_free(effect);
+    words[39] = bindless;
+    for (int i = 26; i <= 31; i++) {
+        if (i == 28 || i == 29) continue;
+        uint64_t original = words[i];
+        words[i] = (original & ~255ull) | 12; rejected();
+        if (i == 31) { words[i] = (original & ~255ull) | 11; rejected(); }
+        words[i] = original;
+    }
     puts("TMML.B: baseline, equivalent bindings, GLSL and rejected provenance verified");
     return 0;
 }
