@@ -24,6 +24,14 @@ pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
 variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
 `gameplay_verified` continua falso.
 
+## Mesa 27: corridas voltam a funcionar (PS-epilog do RADV) — 20/11/2026
+
+O crash ao entrar na corrida no Mesa 27.0.0-devel foi localizado: o RADV só inicializa o cache de **PS-epilog** (`device->ps_epilogs`) quando alguma feature de `VK_EXT_extended_dynamic_state3` está ligada; este runtime usa `VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE` e o shader de corrida escreve profundidade, então o primeiro draw desse tipo chama `cache->ops` nulo em `radv_shader.c:3426`. `RADV_DEBUG=nocache` continua quebrando no mesmo ponto, então não é o cache de pipelines. O Mesa 26.2.6 não tem o problema.
+
+**Correção (`ec4cded`):** `toolchain/radv_epilog.py` habilita `VK_EXT_extended_dynamic_state3` quando anunciada e liga `extendedDynamicState3ColorBlendEquation` quando suportada; o runtime não usa blend dinâmico, então o estado dos pipelines não muda — a feature só força a inicialização do cache de PS-epilog. Sem a extensão/feature o dispositivo fica como antes, com um aviso. `tests.test_radv_epilog` 3/3.
+
+**Corridas verificadas na RX 9070 XT (Mesa 27):** FG desligado 2560x1440, FSR 3.1.7 1280x720 e 1920x1080, e **MLFI 4.0.2 1280x720** com 195 pipelines, 1.910 despachos/quadro (191 modelo + 1 compose + preparações) e **1.800 frames gerados**, todas com “1st Race”, exit 0 e capturas (`fgoff-fix-02400.png`, `fsr3-720b-02400.png`, `fsr3-1080-02400.png`, `mlfi-720b-02400.png`). MLFI a 1080p não é possível: o provider implementa só o layout 1280x720 capturado. As capturas são dos frames reais do jogo, não dos frames gerados; ghosting/detalhe/latência dos gerados continuam não verificados (a composição do MLFI é a nossa reconstrução, não a etapa final da AMD).
+
 ## FSR 3 FG, DLSS-G a 2560 e XeSS in-engine na RTX 5080 — 20/11/2026
 
 **FSR 3.1.6 frame generation com o DLL assinado da AMD** funciona nativamente em Windows/NVIDIA: `[fsr_fg] swapchain provider 3.1.7`, `frame-generation effect provider 3.1.6`, `active: FFX frame-interpolation swapchain 1920x1080`, profundidade capturada e MVs de câmera, `first interpolated frame recorded`, exit 0, sem GPUVM/device-lost (`fsrfg316-05000.png`). O mesmo caminho com o DLL `4.0.2`/MLFI continua sem provider na NVIDIA, como já registrado.
