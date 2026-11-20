@@ -32,6 +32,22 @@ with friends.
 > [!NOTE]
 > **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
 
+## Upscaling and frame generation (optional)
+
+Nothing vendor-owned ships in the releases. The launcher downloads each component from the vendor's own pinned
+source/release after you accept their terms, verifies size and SHA-256, and — where no Linux binary exists — builds
+it locally from the vendor's or this project's sources:
+
+- **AMD FSR** — on Linux, FSR 3.1.6 and FSR 4.1.2 upscaling and FSR 3 / FSR 4 (MLFI) frame generation are built
+  locally from AMD's MIT-licensed FidelityFX SDK and this project's GPL-3.0 FSR 4.1.2 port. On Windows, AMD's signed
+  Vulkan DLLs are downloaded and verified. No AMD binary, shader or model is redistributed.
+- **NVIDIA DLSS** — Super Resolution and Frame Generation load NVIDIA's official NGX Linux plugins at runtime (an
+  RTX GPU and driver are required). DLSS 5 Neural Rendering has no public plugin and is not available.
+- **Intel XeSS** — Windows only, because Intel ships no Linux library. Super Resolution is implemented and verified
+  under Wine; XeSS Frame Generation and XeLL are D3D12-only.
+
+A release guard fails the build if any provider library, model bank or generated shader blob ends up in the packages.
+
 ## What's new in 0.4.0
 
 **Native online multiplayer with Nextendo.** Select **Play → Play on Nextendo** in the launcher, sign in through your browser, then open **Online Play → Worldwide → Race** in Mario Kart to race other players. Open **F1** in the game to see rooms and friends. Nextendo sessions use the original courses.
