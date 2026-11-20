@@ -53,8 +53,8 @@ LICENSE-AMD-FSR-SDK.md
 ```
 
 A from-archive build with the pinned hash and `--self-test` completed in this checkout. Two independent
-builds (one from the pinned archive, one from the prepared SDK tree) produced the same 573,200-byte
-library, SHA-256 `beb77bfd2ceb19a03e48f2216505aa67742fca46fe9ad8b8eae00e701a9570cb`.
+builds (one from the pinned archive, one from the prepared SDK tree) produced the same 573,136-byte
+library, SHA-256 `4c3a75cf426d0df1193eaff683caf83a1993156a9b9da504cac2e0d6adfde709`.
 
 ## What the provider contains
 
@@ -79,9 +79,13 @@ library, SHA-256 `beb77bfd2ceb19a03e48f2216505aa67742fca46fe9ad8b8eae00e701a9570
   the MSVC `ui64` literal. The build fails closed if the expected SDK text is absent.
 
 Known limitation: a context created with HDR, jitter-cancelled motion vectors, inverted depth or
-display-resolution motion vectors is not in the generated set. `fsr3UpscalerGetPermutationBlobByIndex`
-returns `FFX_ERROR_INVALID_ARGUMENT` for those keys, so context creation fails honestly; it never
-returns a wrong blob. Extending the set means adding the option to `BASE_OPTIONS`/the variant list in
+display-resolution motion vectors is not in the generated set. The provider rejects those flags in
+`ffxProvider_FSR3Upscale::CreateContext` with `FFX_API_RETURN_ERROR_PARAMETER` before creating any
+pipeline, and `fsr3UpscalerGetPermutationBlobByIndex` independently validates the six-bit key and returns
+`FFX_ERROR_INVALID_ARGUMENT` for anything it did not compile. It never returns a wrong blob. The negative
+check (`test_context ... 0x108`) returns `rc=6 (PARAMETER) ctx=(nil)`; an earlier build without the early
+check crashed in the effect when a pipeline lookup failed, which is why the provider now checks first.
+Extending the set means adding the option to `BASE_OPTIONS`/the variant list in
 `tools/gen_upscaler_blobs.py` and rebuilding.
 
 ### Device features
@@ -172,11 +176,14 @@ input path as well (the `upscale active` line is logged once, when the context s
 
 Evidence (local, not committed):
 
-- `local/qualification/fsr316-source-provider-00700.png` (title, SHA-256 `156afc98…e35fda`)
-- `local/qualification/fsr316-source-title-00813.png` (title, `bdc81b79…798fbb`)
-- `local/qualification/fsr316-source-race-02400.png` (race start, `00e1e26b…2decb8f`)
-- `local/qualification/fsr316-source-provider.log`, `fsr316-source-race.log`,
-  `fsr316-source-provider-maps.txt`, `fsr316-source-parity.rgba8`
+- `local/qualification/fsr316-source2-provider-00700.png` (title, SHA-256 `ca974aec…43ba3f`)
+- `local/qualification/fsr316-source2-race-02400.png` (race start, `b5a18dd9…3abe23`)
+- `local/qualification/fsr316-source2-provider.log`, `fsr316-source2-race.log`,
+  `fsr316-source2-provider-maps.txt`, `fsr316-source-parity.rgba8`
+- `local/qualification/fsr316-source-validation-final.log` (zero validation errors),
+  `fsr316-source-build-final.log` (pinned from-archive build and self-test)
+- `local/qualification/fsr316-source-provider-00700.png`, `fsr316-source-title-00813.png`,
+  `fsr316-source-race-02400.png` and their logs are the same runs on the pre-guard build.
 
 Notes:
 
@@ -198,9 +205,10 @@ MK8_UPSCALER_SDK=$HOME/.cache/mk8online/fsr-upscaler-build/sdk-copy \
   python3 -m unittest tests.test_fg_upscaler -v
 ```
 
-Six tests pass: four generator tests (descriptor classification, storage-image format/atomic handling,
-empty binding arrays, permutation contract) and two native tests (version query; 1920x1080 ->
-2560x1440 context, dispatch, readback and destroy). Without the provider or SDK headers the native
+Seven tests pass: four generator tests (descriptor classification, storage-image format/atomic handling,
+empty binding arrays, permutation contract) and three native tests (version query; 1920x1080 ->
+2560x1440 context, dispatch, readback and destroy; unsupported inverted-depth flags rejected with a
+parameter error). Without the provider or SDK headers the native
 tests skip; `MK8_UPSCALER_LIB` points at a non-default installation.
 
 ## Launcher integration (for the launcher work)

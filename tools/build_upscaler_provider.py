@@ -104,6 +104,23 @@ PATCHES = [
         "0xF5A5'CA1Eui64",
         "0xF5A5CA1Eull",
     ),
+    (
+        # The generated blobs cover the bridge's context flags only: low-resolution motion vectors, no HDR,
+        # no jitter cancellation, normal depth. The effect does not unwind partially created pipelines when a
+        # blob lookup fails (it crashes), so reject an unsupported context before creating any.
+        PROV_UPSCALE_CPP,
+        "        InternalFsr3UpscalerUContext* internal_context = alloc.construct<InternalFsr3UpscalerUContext>();",
+        "        if (desc->flags & (FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE |\n"
+        "                           FFX_UPSCALE_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS |\n"
+        "                           FFX_UPSCALE_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION |\n"
+        "                           FFX_UPSCALE_ENABLE_DEPTH_INVERTED))\n"
+        "        {\n"
+        "            // Generated blobs: low-resolution motion vectors, no HDR/jitter/inverted depth. Return a\n"
+        "            // parameter error instead of letting a failed pipeline lookup leave partial state behind.\n"
+        "            return FFX_API_RETURN_ERROR_PARAMETER;\n"
+        "        }\n"
+        "        InternalFsr3UpscalerUContext* internal_context = alloc.construct<InternalFsr3UpscalerUContext>();",
+    ),
 ]
 
 

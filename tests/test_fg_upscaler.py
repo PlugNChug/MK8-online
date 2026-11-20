@@ -221,6 +221,17 @@ class UpscalerProviderTests(unittest.TestCase):
         self.assertIn("name=3.1.6", output, output)
         self.assertIn("id=0xf5a5ca1e00c01006", output, output)
 
+    def test_unsupported_context_flags_are_rejected(self):
+        # The generated blobs cover low-resolution motion vectors, no HDR/jitter/inverted depth. A context
+        # asking for inverted depth (0x8) must fail with a parameter error, not run the wrong shader or crash.
+        binary = self._build("test_context.cpp", "test_context_inverted")
+        proc = subprocess.run([str(binary), str(self.library), "1920", "1080", "2560", "1440", "0x108"],
+                              capture_output=True, text=True, timeout=600)
+        output = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 2, output)
+        self.assertIn("flags=0x108", output, output)
+        self.assertIn("rc=6 (PARAMETER) ctx=(nil)", output, output)
+
     def test_context_creates_dispatches_and_destroys(self):
         binary = self._build("test_context.cpp", "test_context")
         proc = subprocess.run([str(binary), str(self.library), "1920", "1080", "2560", "1440"],

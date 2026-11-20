@@ -32,10 +32,11 @@ static const char* rc_name(ffxReturnCode_t rc)
     case FFX_API_RETURN_OK: return "OK";
     case FFX_API_RETURN_ERROR: return "ERROR";
     case FFX_API_RETURN_ERROR_UNKNOWN_DESCTYPE: return "UNKNOWN_DESCTYPE";
-    case FFX_API_RETURN_ERROR_PARAMETER: return "PARAMETER";
+    case FFX_API_RETURN_ERROR_RUNTIME_ERROR: return "RUNTIME_ERROR";
     case FFX_API_RETURN_NO_PROVIDER: return "NO_PROVIDER";
     case FFX_API_RETURN_ERROR_MEMORY: return "MEMORY";
-    case FFX_API_RETURN_ERROR_RUNTIME_ERROR: return "RUNTIME_ERROR";
+    case FFX_API_RETURN_ERROR_PARAMETER: return "PARAMETER";
+    case FFX_API_RETURN_PROVIDER_NO_SUPPORT_NEW_DESCTYPE: return "PROVIDER_NO_SUPPORT_NEW_DESCTYPE";
     default: return "?";
     }
 }
@@ -109,6 +110,7 @@ int main(int argc, char** argv)
 {
     const char* lib = "build/libamd_fidelityfx_upscaler_vk.so";
     uint32_t rw = 1920, rh = 1080, ow = 2560, oh = 1440;
+    uint32_t flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // what runtime/mk8/graphics/fsr.cpp passes
     bool device_features = true;
     int positional = 0;
     for (int i = 1; i < argc; ++i)
@@ -121,6 +123,7 @@ int main(int argc, char** argv)
         case 2: rh = (uint32_t)atoi(argv[i]); break;
         case 3: ow = (uint32_t)atoi(argv[i]); break;
         case 4: oh = (uint32_t)atoi(argv[i]); break;
+        case 5: flags = (uint32_t)strtoul(argv[i], nullptr, 0); break;
         default: break;
         }
     }
@@ -225,7 +228,7 @@ int main(int argc, char** argv)
     ffxCreateContextDescUpscale upscale{};
     upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
     upscale.header.pNext = &backend.header;
-    upscale.flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // what runtime/mk8/graphics/fsr.cpp passes
+    upscale.flags = flags;
     upscale.maxRenderSize = {rw, rh};
     upscale.maxUpscaleSize = {ow, oh};
 

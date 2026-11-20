@@ -476,10 +476,22 @@ def main():
 extern "C" FfxErrorCode fsr3UpscalerGetPermutationBlobByIndex(
     FfxFsr3UpscalerPass passId, uint32_t permutationOptions, FfxShaderBlob* outBlob)
 {{
-    // Bit 0 is FSR3UPSCALER_SHADER_PERMUTATION_USE_LANCZOS_TYPE. The Vulkan backend reports wave
-    // 32/64 on RDNA (LUT) and 32/32 on some devices (reference), so both accumulate variants exist.
-    // The other key bits are fixed by this build: LOW_RES=1, HDR/JITTERED/INVERTED=0.
+    // The six-bit permutation key (POPULATE_PERMUTATION_KEY in ffx_fsr3upscaler_shaderblobs.cpp) is fixed
+    // by this build: bit 2 (LOW_RESOLUTION_MOTION_VECTORS) is set, bits 1/3/4 (HDR, jittered MVs, inverted
+    // depth) are clear, and bit 5 (APPLY_SHARPENING) selects the accumulate-sharpen pass. Bit 0 is the
+    // Lanczos choice, which only the accumulate passes read; both variants are compiled. Bits 6/7 are the
+    // wave64/fp16 table selectors and do not change the definitions. A context that asks for anything else
+    // fails here instead of silently running the wrong shader.
     const bool lanczos = (permutationOptions & (1u << 0)) != 0;
+    const bool sharpenPass = passId == FFX_FSR3UPSCALER_PASS_ACCUMULATE_SHARPEN;
+    const uint32_t key = permutationOptions & 0x3fu;
+    const uint32_t allowed = (1u << 0) | (1u << 2) | (sharpenPass ? (1u << 5) : 0u);
+    if ((key & ~allowed) != 0 || (key & (1u << 2)) == 0 ||
+        sharpenPass != ((key & (1u << 5)) != 0))
+    {{
+        return FFX_ERROR_INVALID_ARGUMENT;
+    }}
+
     const FfxShaderBlob* blob = nullptr;
     switch (passId)
     {{
