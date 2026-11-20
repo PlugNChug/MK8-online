@@ -172,7 +172,8 @@ void guest_call(Cpu *c,uint64_t address) {
     }
     else if(address==0x70008ad3c4ull) {
         assert(c->x[0]==HEAP_BASE+15200 || c->x[0]==HEAP_BASE+15400 || c->x[0]==HEAP_BASE+15500);
-        float frame; memcpy(&frame,&c->v[0],sizeof frame); assert(frame==0 || frame==2);
+        float frame; memcpy(&frame,&c->v[0],sizeof frame);
+        assert(c->x[1]==2 ? frame>=1 && frame<=8 : frame==0 || frame==2);
         if(c->x[0]!=HEAP_BASE+15200) footer_frame[c->x[0]==HEAP_BASE+15500]=frame;
     }
     else if(address==0x70008ae0b8ull) {
@@ -717,6 +718,20 @@ static void check_controller_footer(uint64_t manager) {
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(0,"Return","OK"); assert(!(LD8(keycaps[1]+0x58)&1));
+    // The guest applet can hold the stock animation clock while waiting for the popup to close.
+    int ok_sounds=decide_sounds;
+    assert(mk8_controller_pointer(640,606,1) && mk8_controller_pointer(640,606,2));
+    mk8_settings_page_frame(manager);
+    assert(last_edit==MK8_EDIT_APPLY);
+    button_done=false; join_players=0;
+    mk8_settings_page_frame(manager);
+    assert(controller_visible && decide_sounds==ok_sounds+1 && footer_drawn[0]==1);
+    now+=80000000; mk8_settings_page_frame(manager);
+    assert(reveal>.45f && reveal<.55f && footer_drawn[0]>5 && footer_drawn[0]<7);
+    now+=80000000; mk8_settings_page_frame(manager);
+    assert(!controller_visible && decide_sounds==ok_sounds+1);
+    button_done=true; join_players=4; edit_row=3; editor_state=MK8_EDIT_LISTEN;
+    mk8_settings_page_frame(manager);
     // A menu transition can temporarily remove the shared owner while the SDL applet still runs.
     ST32(manager+0xb50,0);
     mk8_settings_page_frame(manager);

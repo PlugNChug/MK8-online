@@ -908,14 +908,18 @@ static void controller_layout(Cpu *c,bool required) {
             animation_play(c,dialog_animations[controller_press],2,1);
             if(controller_focus>=4) call(c,0x7000443320ull,dialog_cursor,0,0,0,0);
             // Character selection plays Back when the mandatory applet returns ControllerSupportCanceled.
-            if(!required_cancel) {
-                menu_sound(c,accepted ? 0x7000ed87bfull : 0x7000ed87cfull);
-                return;
-            }
+            if(!required_cancel) menu_sound(c,accepted ? 0x7000ed87bfull : 0x7000ed87cfull);
+            if(!controller_required) return;
         }
-        if((!required_cancel && !call(c,0x70008ad59cull,dialog_animations[controller_press],0,0,0,0)) ||
-           !popup_fade(c,&controller_fade_at,true)) return;
-        if(required_cancel && required) return; // The host must acknowledge Cancel before this visit can end.
+        if(!controller_required && !call(c,0x70008ad59cull,dialog_animations[controller_press],0,0,0,0)) return;
+        bool faded=popup_fade(c,&controller_fade_at,true);
+        if(controller_required && accepted) {
+            // The applet waits for us. Sample the stock eight-frame Decide pulse on the fade clock.
+            float frame=1.f+(1.f-reveal)*9.6f;
+            animation_frame(c,dialog_animations[0],2,frame<8.f ? frame : 8.f);
+            call(c,0x70008ae0b8ull,dialog_buttons[0],0,0,0,0);
+        }
+        if(!faded || (controller_required && required)) return;
         show=controller_preview=false;
     } else if(controller_visible && required && (state==MK8_EDIT_PENDING || state==MK8_EDIT_CLOSED)) {
         return;
