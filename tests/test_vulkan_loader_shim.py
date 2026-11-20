@@ -22,9 +22,11 @@ PROBE = r'''
 #include <stdio.h>
 #include <wchar.h>
 HMODULE vk_shim_module(void);
-int main(void) {
+int vk_shim_load(void);
+int main(int argc, char **argv) {
     // An overlay loaded the driver's loader before the runtime started.
     if (!LoadLibraryW(L"C:\\Windows\\System32\\vulkan-1.dll")) return 77;
+    if (argc > 1) return vk_shim_load() ? 1 : 0;
     const char *ext[] = {"VK_KHR_surface", "VK_KHR_win32_surface"};
     VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_0};
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app,
@@ -42,7 +44,15 @@ int main(void) {
     fwprintf(stderr, L"surface loader: %ls\n", name);
     if (sdl != vk_shim_module()) return 1;  // (two loaders: the surface lookup is undefined, issue #78)
     PFN_vkGetInstanceProcAddr gpa = (PFN_vkGetInstanceProcAddr)(void *)GetProcAddress(sdl, "vkGetInstanceProcAddr");
-    int found = gpa && gpa(instance, "vkCreateWin32SurfaceKHR") != NULL;
+    PFN_vkCreateWin32SurfaceKHR create = gpa ? (PFN_vkCreateWin32SurfaceKHR)gpa(instance, "vkCreateWin32SurfaceKHR") : NULL;
+    HWND window = CreateWindowExW(0, L"STATIC", L"", WS_OVERLAPPEDWINDOW, 0, 0, 32, 32,
+                                  NULL, NULL, GetModuleHandleW(NULL), NULL);
+    VkWin32SurfaceCreateInfoKHR info = {.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+                                       .hinstance = GetModuleHandleW(NULL), .hwnd = window};
+    VkSurfaceKHR surface;
+    int found = window && create && create(instance, &info, NULL, &surface) == VK_SUCCESS;
+    if (found) vkDestroySurfaceKHR(instance, surface, NULL);
+    if (window) DestroyWindow(window);
     vkDestroyInstance(instance, NULL);
     return found ? 0 : 2;
 }
@@ -66,7 +76,7 @@ class VulkanLoaderShimTest(unittest.TestCase):
         probe.write_text(PROBE, encoding='utf-8')
         exe = root / ('patched.exe' if patched else 'original.exe')
         build = subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1',
-                                '-I' + str(host.DEPS / 'include'), str(probe), str(shim), '-o', str(exe)],
+                                '-I' + str(host.DEPS / 'include'), str(probe), str(shim), '-luser32', '-o', str(exe)],
                                env=compiler_env(), capture_output=True, text=True)
         self.assertEqual(build.returncode, 0, build.stderr[-3000:])
         return exe
@@ -92,6 +102,12 @@ class VulkanLoaderShimTest(unittest.TestCase):
             self.assertIn('instance loader: ' + str(SYSTEM_LOADER.resolve()).lower(), results[False].stderr.lower())
             self.assertEqual(results[True].returncode, 0, results[True].stderr)
             self.assertIn('[vk] loader ' + str(bundled), results[True].stderr)
+            env['SDL_VULKAN_LIBRARY'] = str(runtime / 'missing.dll')
+            for exe, code in [('original.exe', 1), ('patched.exe', 0)]:
+                result = subprocess.run([root / exe, 'check-loader'], env=env, cwd=root,
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, code, result.stderr)
+            self.assertIn('could not load SDL_VULKAN_LIBRARY', result.stderr)
 
     def test_changed_boundary_fails_closed(self):
         with tempfile.TemporaryDirectory() as folder:

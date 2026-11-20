@@ -497,7 +497,10 @@ def build_host(source, output, workers=None):
     def relative_of(src):
         return Path('runtime')/src.relative_to(runtime) if src.is_relative_to(runtime) else src.relative_to(source) if src.is_relative_to(source) else Path(src.name)
 
-    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc')}, common, sources, source, output)
+    manifest = ROOT/'runtime/mk8/windows.manifest'
+    resource = manifest.with_suffix('.rc')
+    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'),
+                    'windows_manifest': digest(manifest), 'resource': digest(resource)}, common, sources, source, output)
     prebuilt = use_prebuilt(key, output)
     if prebuilt:
         copy_runtime_dlls(output)
@@ -530,7 +533,8 @@ def build_host(source, output, workers=None):
     rsp = output/'host.rsp'
     rsp.write_text('\n'.join('"'+str(p).replace('\\','/')+'"' for p in objects), encoding='utf-8')
     exe = output/'mk8drecomp.exe'
-    run([DEFAULT_COMPILER, 'c++', '-target', 'x86_64-windows-gnu', '@'+str(rsp), '-o', exe,
+    run([DEFAULT_COMPILER, 'c++', '-target', 'x86_64-windows-gnu', '@'+str(rsp), resource,
+         '-o', exe,
          '-L'+str(DEPS/'lib'), '-Wl,--stack,268435456', '-Wl,--export-all-symbols',
          *(DEPS/'lib'/('lib'+lib+'.dll.a') for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']),
          *('-l'+lib for lib in ['winmm', 'ole32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt'])], output/'host-link.log', env)
@@ -586,8 +590,13 @@ def patch_vk_shim(shim):
     shim.write_text(text.replace(boundary, '''    if (!vk_shim_dll) {
         static wchar_t path[32768];  // The loader SDL uses (SDL_VULKAN_LIBRARY, set by the launcher).
         DWORD n = GetEnvironmentVariableW(L"SDL_VULKAN_LIBRARY", path, 32768);
-        if (n && n < 32768) vk_shim_dll = LoadLibraryW(path);
-        if (!vk_shim_dll) vk_shim_dll = LoadLibraryA("vulkan-1.dll");
+        if (n) {
+            if (n < 32768) vk_shim_dll = LoadLibraryW(path);
+            if (!vk_shim_dll) fprintf(stderr, "FATAL: Vulkan: could not load SDL_VULKAN_LIBRARY (Win32 %lu)\\n",
+                                      n < 32768 ? GetLastError() : ERROR_INSUFFICIENT_BUFFER);
+        } else {
+            vk_shim_dll = LoadLibraryA("vulkan-1.dll");
+        }
         if (vk_shim_dll && (n = GetModuleFileNameW(vk_shim_dll, path, 32768)) && n < 32768)
             fprintf(stderr, "[vk] loader %ls\\n", path);
     }

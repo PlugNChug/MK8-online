@@ -16,6 +16,8 @@ class PackagePayloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             required = (
+                'runtime/mk8/windows.manifest',
+                'runtime/mk8/windows.rc',
                 'runtime/mk8/net/nextendo_ca.h',
                 'runtime/mk8/ui/hub.h',
                 'runtime/mk8/ui/settings_theme.inc',

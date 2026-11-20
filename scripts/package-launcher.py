@@ -23,6 +23,8 @@ def payload_files():
     yield ROOT / "LICENSE"
     yield MANIFEST
     yield ROOT / "toolchain/mii_assembly.html"
+    yield ROOT / "runtime/mk8/windows.manifest"
+    yield ROOT / "runtime/mk8/windows.rc"
     importer = ROOT / "tools/mk8-import"
     for name in ("mk8-import.dll", "mk8-import.runtimeconfig.json", "LibHac.dll", "build-sha256.txt"):
         yield importer / name
