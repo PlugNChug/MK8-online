@@ -38,12 +38,13 @@ def payload_files():
             if path.is_file() and path.suffix in SOURCE_EXTENSIONS:
                 yield path
     if not WINDOWS:
-        # Linux builds the host runtime from these sources after the user supplies the game. The FSR bridge is
-        # optional at run time, but host.py compiles it unconditionally and needs its MIT FFX headers.
-        yield ROOT / "runtime/mk8/graphics/fsr.cpp"
+        # Linux builds the host runtime from these sources after the user supplies the game. host.py compiles every
+        # runtime/mk8/*.cpp and includes the overlay headers, so ship the whole C++/header overlay (FSR bridge,
+        # frame generation, DLSS/NGX and MIT FFX headers), not just fsr.cpp.
+        for path in sorted((ROOT / "runtime/mk8").rglob("*")):
+            if path.is_file() and path.suffix in {".cpp", ".h"}:
+                yield path
         yield ROOT / "runtime/mk8/graphics/ffx/LICENSE"
-        for path in sorted((ROOT / "runtime/mk8/graphics/ffx").rglob("*.h")):
-            yield path
         # The launcher builds the optional FSR providers locally from the user's own MIT-licensed SDK download, so
         # the build scripts and their C/C++ scaffolding must ship in the payload (they contain no AMD binaries).
         for name in ("build_fg_provider.py", "gen_fg_blobs.py", "build_upscaler_provider.py",
