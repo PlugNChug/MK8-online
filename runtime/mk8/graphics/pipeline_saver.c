@@ -8,9 +8,10 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
-void vk_pipeline_cache_save(void);
+bool mk8_pipeline_cache_save(void);
 
 #define QUIET_NS (10ull * 1000000000ull)
 #define INTERVAL_NS (60ull * 1000000000ull)
@@ -32,11 +33,12 @@ static void *saver(void *arg) {
         uint64_t built = atomic_load(&g_built), now = plat_now_ns();
         if (built == saved || now - atomic_load(&g_last_built_ns) < QUIET_NS || now - last_save < INTERVAL_NS) continue;
         uint64_t t0 = plat_now_ns();
-        vk_pipeline_cache_save();
+        bool ok = mk8_pipeline_cache_save();
+        last_save = plat_now_ns();
+        if (!ok) continue;  // Retain pending builds and retry after the normal interval.
         LOG("[mk8:pipelines] cache saved: %llu new pipelines (%.0f ms)\n", (unsigned long long)(built - saved),
             (double)(plat_now_ns() - t0) / 1e6);
         saved = built;
-        last_save = plat_now_ns();
     }
     return NULL;
 }

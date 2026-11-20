@@ -74,12 +74,13 @@ static bool mk8_targets_redrawn(void) {
         const NvnTexture *t = st.rt.color[i];
         if (!t) continue;
         const TexBackend *b = t->backend;
-        if (!b || !b->scalable) return false;
+        // Scaling the depth copy/light array does not qualify it for skipped draws.
+        if (!b || !b->scalable || t->target != 1 || !(t->flags & 8)) return false;
         n++;
     }
     if (st.rt.depth) {
         const TexBackend *b = st.rt.depth->backend;
-        if (!b || !b->scalable) return false;
+        if (!b || !b->scalable || st.rt.depth->target != 1 || !(st.rt.depth->flags & 8)) return false;
         n++;
     }
     return n > 0;

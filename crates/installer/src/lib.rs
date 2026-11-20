@@ -145,7 +145,7 @@ pub fn launch(
     username: &str,
 ) -> Result<Child> {
     validate_installation(install)?;
-    spawn_game(install, local, network, username)
+    spawn_game(install, local, network, username, false)
 }
 
 pub fn launch_candidate(
@@ -155,7 +155,37 @@ pub fn launch_candidate(
     username: &str,
 ) -> Result<Child> {
     validate_candidate(install)?;
-    spawn_game(install, local, network, username)
+    spawn_game(install, local, network, username, false)
+}
+
+/// Development-only until the MK8 production trust anchor is confirmed.
+pub fn nextendo_available() -> bool {
+    std::env::var("MK8_NEXTENDO_TEST").as_deref() == Ok("1")
+        && ["RECOMP_NEXTENDO_TLS_PIN", "RECOMP_NEXTENDO_ZNC_TLS_PIN"]
+            .iter()
+            .all(|key| {
+                std::env::var(key)
+                    .is_ok_and(|v| v.len() == 64 && v.bytes().all(|c| c.is_ascii_hexdigit()))
+            })
+}
+
+pub fn launch_nextendo(
+    install: &Installation,
+    local: &Path,
+    username: &str,
+    candidate: bool,
+) -> Result<Child> {
+    if !nextendo_available() {
+        return Err(
+            "Nextendo indisponível: configure o teste e a confiança TLS por serviço.".into(),
+        );
+    }
+    if candidate {
+        validate_candidate(install)?;
+    } else {
+        validate_installation(install)?;
+    }
+    spawn_game(install, local, None, username, true)
 }
 
 /// Number of previous game logs kept in `logs/` (the current one stays at `game.log`).
@@ -207,20 +237,29 @@ fn spawn_game(
     local: &Path,
     network: Option<(String, u8)>,
     username: &str,
+    nextendo: bool,
 ) -> Result<Child> {
     let mii_directory = mii_resources::launch_directory(local)?;
-    let native_head = mii_native::launch_directory(local, network.is_some())?;
+    let native_head = mii_native::launch_directory(local, network.is_some() || nextendo)?;
     if native_head.is_some() && mii_directory.is_some() {
         return Err("Desative os recursos MiiModel antes de usar a cabeça convertida.".into());
     }
     mii::read(local)?;
     let dlc_root = dlc::launch_root(local, install)?;
-    let pack = ctgp::launch_overlay(local, install)?;
+    let pack = if nextendo {
+        None
+    } else {
+        ctgp::launch_overlay(local, install)?
+    };
     // Online, the added cups stay off: each machine would decide alone which races are a CTGP cup's (the game sends
     // course IDs, which the added cups borrow), so all play the game's cups and courses with the pack's files.
-    let cups = match network {
-        Some(_) => String::new(),
-        None => ctgp::launch_cups(local, install)?,
+    let cups = if nextendo {
+        String::new()
+    } else {
+        match network {
+            Some(_) => String::new(),
+            None => ctgp::launch_cups(local, install)?,
+        }
     };
     let saves = local.join("user-no-mii");
     fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
@@ -232,6 +271,10 @@ fn spawn_game(
     rotate_game_log(local)?;
     let log = fs::File::create(local.join("game.log")).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&install.executable.path);
+    cmd.env("MK8_NEXTENDO_TEST", if nextendo { "1" } else { "0" });
+    if nextendo {
+        cmd.arg("--nextendo-login-play").env_remove("MK8_AUTO_LAN");
+    }
     // The runtime uses LARECOMP_DATA_ROOT as cwd; keep saves out of versioned builds.
     cmd.current_dir(&saves)
         // Steam's launcher-side SDK installs SDL device exclusion lists for Steam Input.

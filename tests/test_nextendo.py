@@ -20,22 +20,45 @@ ROOT = Path(__file__).resolve().parents[1]
 @unittest.skipUnless(os.name == 'nt', 'Windows runtime required')
 class NextendoTests(unittest.TestCase):
     def run_flow(self, scenario, login_play=False):
-        candidate = json.loads((ROOT/'local/candidate.json').read_text())
-        exe = candidate['executable']['path']
+        exe = os.environ.get('MK8_NEXTENDO_TEST_EXE')
+        if not exe:
+            candidate = json.loads((ROOT/'local/candidate.json').read_text())
+            exe = candidate['executable']['path']
+        self.assertTrue(Path(exe).is_file(), 'Build the runtime or set MK8_NEXTENDO_TEST_EXE')
         calls = []
+        client_ids = []
         class Api(BaseHTTPRequestHandler):
             def log_message(self, *_):
                 pass
             def do_POST(self):
+                client_ids.append(self.headers.get('X-Nextendo-Client-Id'))
                 body = self.rfile.read(int(self.headers['Content-Length'])).decode()
                 calls.append((self.path, parse_qs(body)))
+                if scenario == 'legacy_token_path' and self.path == '/api/oauth/token':
+                    self.send_response(404); self.end_headers(); return
                 if scenario == 'server_error':
                     self.send_response(503); self.end_headers(); return
                 payload = json.dumps({'access_token':'synthetic-access', 'refresh_token':'synthetic-refresh', 'expires_in':3600}).encode()
                 self.send_response(200); self.send_header('Content-Length', str(len(payload))); self.end_headers(); self.wfile.write(payload)
             def do_GET(self):
+                client_ids.append(self.headers.get('X-Nextendo-Client-Id'))
                 calls.append((self.path, self.headers.get('Authorization')))
-                payload = json.dumps({'allow': True, 'nex_token': '' if scenario == 'no_nex' else 'synthetic-nex', 'pid':1800000001, 'username':'Fixture', 'expires_in':86400}).encode()
+                if self.path == '/api/friends?images=0':
+                    if scenario == 'social_denied':
+                        self.send_response(403); self.end_headers(); return
+                    entries = [{'pid':123, 'name':'Friend fixture', 'presence':{'status':2}}]
+                    if scenario == 'social_malformed': entries[0]['pid'] = -1
+                    payload = json.dumps({'friends':entries, 'requests':[], 'sent':[]}).encode()
+                elif self.path == '/api/my-lobby':
+                    payload = json.dumps({'in_lobby':True,'lobby':{'id':12,'count':4,'max':12,'mode':'150 cc'}}).encode()
+                elif self.path == '/api/status/live':
+                    room = {'count':2,'max':12,'mode':'Worldwide race','kind':'mk8-world-race','state':'waiting'}
+                    game = {'titles':['0100152000022000'],'players':[{},{}],'lobbies':[room]}
+                    if scenario == 'social_list_invalid': room['count']=99
+                    if scenario == 'social_list_missing': game['titles']=['another-title']
+                    payload = json.dumps({'games':[game]}).encode()
+                else:
+                    payload = json.dumps({'allow': True, 'nex_token': '' if scenario == 'no_nex' else 'synthetic-nex', 'pid':1800000001, 'username':'Fixture', 'expires_in':86400}).encode()
                 self.send_response(200); self.send_header('Content-Length', str(len(payload))); self.end_headers(); self.wfile.write(payload)
         server = ThreadingHTTPServer(('127.0.0.1', 0), Api)
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
@@ -44,6 +67,10 @@ class NextendoTests(unittest.TestCase):
                 folder = Path(tmp)
                 (folder/'save.dat').write_bytes(b'preserve-me')
                 env = dict(os.environ, MK8_NEXTENDO_TEST='1', RECOMP_NEXTENDO_API=f'http://127.0.0.1:{server.server_port}')
+                env.pop('MK8_MENU_PROTOTYPE', None)
+                env.pop('MK8_NEXTENDO_SOCIAL_TEST', None)
+                if scenario.startswith('social_'):
+                    env.update(MK8_MENU_PROTOTYPE='1', MK8_NEXTENDO_SOCIAL_TEST='1')
                 if scenario == 'disabled': env['MK8_NEXTENDO_TEST'] = '0'
                 proc = subprocess.Popen([exe, '--nextendo-login-play' if login_play else '--nextendo-auth-test'], cwd=folder, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -62,9 +89,10 @@ class NextendoTests(unittest.TestCase):
                     threading.Thread(target=read_url, daemon=True).start()
                     url = lines.get(timeout=15).strip()
                     params = parse_qs(urlsplit(url).query)
+                    self.assertEqual(urlsplit(url).path, '/api/oauth/authorize')
                     self.assertTrue(url, 'Native probe ended before producing an authorization URL')
                     self.assertEqual(params['client_id'], ['nxc_5QmpWFAhTHSd'])
-                    self.assertEqual(params['scope'], ['identity game.matchmaking'])
+                    self.assertEqual(params['scope'], ['identity game.matchmaking' + (' friends' if scenario.startswith('social_') else '')])
                     self.assertEqual(params['code_challenge_method'], ['S256'])
                     redirect = params['redirect_uri'][0]
                     self.assertEqual(urlsplit(redirect).hostname, '127.0.0.1')
@@ -75,11 +103,25 @@ class NextendoTests(unittest.TestCase):
                     except HTTPError as error:
                         self.assertEqual(error.code, 400)
                     output, errors = proc.communicate(timeout=25)
-                    self.assertEqual(proc.returncode, 0 if scenario == 'success' else 2 if scenario == 'no_nex' else 1, errors)
-                    if scenario == 'success': self.assertIn('BAAS adapter generated a token', output)
+                    succeeded = scenario in ('success', 'legacy_token_path', 'social_success')
+                    self.assertEqual(proc.returncode, 0 if succeeded else 2 if scenario == 'no_nex' or scenario.startswith('social_') else 1, errors)
+                    if scenario.startswith('social_'):
+                        self.assertIn('lobby=1 in_lobby=1 players=4/12', output)
+                        self.assertIn('friends=0 count=0' if scenario in ('social_denied','social_malformed') else 'friends=1 count=1', output)
+                        self.assertIn('Listings: valid=0 rooms=0 players=0 ids=0' if scenario in ('social_list_invalid','social_list_missing') else 'Listings: valid=1 rooms=1 players=2 ids=0', output)
+                        self.assertIn(('/api/status/live','Bearer synthetic-access'), calls)
+                        self.assertIn(('/api/friends?images=0','Bearer synthetic-access'), calls)
+                        self.assertIn(('/api/my-lobby','Bearer synthetic-access'), calls)
+                    if succeeded: self.assertIn('BAAS adapter generated a token', output)
+                    if scenario == 'legacy_token_path':
+                        self.assertEqual(calls[1][0], '/oauth/token')
+                    if scenario == 'server_error':
+                        self.assertEqual(len(calls), 1, 'Do not retry failed requests on a different endpoint')
                     if scenario in ('wrong_state', 'denied'):
                         self.assertFalse(calls)
                     else:
+                        self.assertEqual(calls[0][0], '/api/oauth/token')
+                        self.assertTrue(all(value == 'nxc_5QmpWFAhTHSd' for value in client_ids))
                         form = calls[0][1]
                         verifier = form['code_verifier'][0]
                         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
@@ -100,6 +142,13 @@ class NextendoTests(unittest.TestCase):
             server.shutdown(); server.server_close(); thread.join()
 
     def test_native_oauth_and_nex(self): self.run_flow('success')
+    def test_social_snapshot_and_signout(self): self.run_flow('social_success')
+    def test_social_permission_denied(self): self.run_flow('social_denied')
+    def test_social_malformed_account(self): self.run_flow('social_malformed')
+    def test_lobby_invalid_capacity(self): self.run_flow('social_list_invalid')
+    def test_lobby_missing_game_not_empty_success(self): self.run_flow('social_list_missing')
+
+    def test_legacy_token_path_only_after_not_found(self): self.run_flow('legacy_token_path')
     def test_rejects_wrong_state(self): self.run_flow('wrong_state')
     def test_denied_consent(self): self.run_flow('denied')
     def test_nex_failure_is_not_success(self): self.run_flow('no_nex')

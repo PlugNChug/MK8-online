@@ -151,6 +151,15 @@ REPORT_NEW = '''            bool reset_samples = r->x[0] == 0x100000001ull;
                     vk_end_pass();  // (queries are begun and ended outside render passes: they may span several)
                     VkCommandBuffer qcb = vk_cmd();
                     Mk8Oq *o = &mk8_oq[cur_sub];
+                    // Preserve the cumulative counter across pool exhaustion instead of dropping reports.
+                    // Submit outside cq_lock; retirement resolves the old slot under that lock.
+                    if (o->n >= MK8_OQ_MAX || o->nrep >= MK8_OQ_MAX) {
+                        renderer_flush();
+                        qcb = vk_cmd();
+                        o = &mk8_oq[cur_sub];
+                    }
+                    if (!o->pool || o->n >= MK8_OQ_MAX || o->nrep >= MK8_OQ_MAX)
+                        FATAL("[mk8] occlusion report has no query capacity\\n");
                     pthread_mutex_lock(&cq_lock);
                     // (nothing written now: the GPU writes a report when it is past it - here at resolve, value and
                     // time together; a provisional value mixed with a resolved one made glows huge, boots 214/216)

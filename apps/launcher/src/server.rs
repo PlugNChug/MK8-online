@@ -381,7 +381,7 @@ impl App {
                 self.pending_play = None;
             } else if self.gateway.as_ref().is_some_and(|g| g.connected()) {
                 self.pending_play = None;
-                if let Err(error) = self.start_game(true, play.auto_lan()) {
+                if let Err(error) = self.start_game(true, play.auto_lan(), false) {
                     self.steam_error = Some(error);
                 }
             }
@@ -389,7 +389,22 @@ impl App {
     }
 
     /// Starts the game (in the connected room when `online`); `auto_lan` makes it enter the LAN room by itself.
-    fn start_game(&mut self, online: bool, auto_lan: Option<&str>) -> Result<u32> {
+    pub fn play_direct(&mut self) -> Result<()> {
+        self.start_game(false, None, false)?;
+        let mut child = self.game.take().ok_or("O jogo não iniciou")?;
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!(
+                "O jogo encerrou com erro: {status}. Consulte game.log na pasta de dados."
+            ));
+        }
+        Ok(())
+    }
+
+    fn start_game(&mut self, online: bool, auto_lan: Option<&str>, nextendo: bool) -> Result<u32> {
+        if nextendo && (!mk8_installer::nextendo_available() || online || auto_lan.is_some()) {
+            return Err("Nextendo indisponível nesta sessão.".into());
+        }
         self.dlc_import.poll();
         self.ctgp_import.poll();
         if self.imports_running() {
@@ -431,6 +446,7 @@ impl App {
             username: self.username.clone(),
             candidate,
             auto_lan: auto_lan.map(str::to_owned),
+            nextendo,
         })?;
         let pid = child.id();
         self.game_exit = None;
@@ -593,6 +609,10 @@ impl App {
     }
 
     fn start_build(&mut self) -> Result<()> {
+        self.tools = setup::tool_checks(&self.root);
+        if !self.tools.iter().all(|check| check["ok"] == true) {
+            return Err("Instale as ferramentas antes de iniciar a build.".into());
+        }
         if self.imports_running() {
             return Err("Aguarde a importação do DLC ou do CTGP.".into());
         }
@@ -763,7 +783,9 @@ impl App {
             .map(|room| room.code.clone())
             .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
             .or(p2p_code);
-        json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()})
+        let mut status = json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()});
+        status["nextendo_available"] = json!(mk8_installer::nextendo_available());
+        status
     }
     fn handle(&mut self, method: &Method, path: &str, body: &str) -> Result<Value> {
         self.dlc_import.poll();
@@ -784,6 +806,13 @@ impl App {
                 ))
             }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
+            ("POST", "/api/debug-options") => {
+                let options: crate::debug_options::Options =
+                    serde_json::from_str(body).map_err(|e| e.to_string())?;
+                crate::debug_options::write(&self.local, &options)?;
+                Ok(json!({"message":"Preferência salva. A alteração vale ao iniciar o jogo."}))
+            }
             ("GET", "/api/fonts") => crate::fonts::status(&self.local),
             ("POST", "/api/settings")
             | ("POST", "/api/fonts")
@@ -1472,7 +1501,14 @@ impl App {
             ("POST", "/api/play") => {
                 self.status();
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
-                let pid = self.start_game(value["online"].as_bool().unwrap_or(false), None)?;
+                let nextendo = value["nextendo"].as_bool().unwrap_or(false);
+                let pid =
+                    self.start_game(value["online"].as_bool().unwrap_or(false), None, nextendo)?;
+                if nextendo {
+                    return Ok(
+                        json!({"message":"Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão."}),
+                    );
+                }
                 Ok(
                     json!({"message":format!("Processo iniciado ({pid}). Corrida ainda não verificada.")}),
                 )
@@ -2229,7 +2265,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mk8-prepare-dlc-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("dlc.json"), b"previous preference").unwrap();
-        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let config = Config {
+            prod_keys: root
+                .join("missing-keys/prod.keys")
+                .to_string_lossy()
+                .into_owned(),
+            ..Config::default()
+        };
+        assert!(!Path::new(&config.prod_keys).exists());
+        let mut app = App::new(root.clone(), root.clone(), config, None);
         // A previous candidate must not start the new import while tools install.
         app.prepare_after_setup = true;
         app.prepare_dlc = Some(root.join("optional.nsp"));

@@ -65,7 +65,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
-  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings()])
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadDebugOptions()])
     .catch((error) => notice(error.message, true));
 }
 document
@@ -82,6 +82,38 @@ document
 
 /* ---------- Instalação: três passos ---------- */
 let settingsLoaded = false;
+let debugSaving = false;
+let debugRequest = 0;
+let debugOptions;
+async function loadDebugOptions() {
+  if (debugSaving) return;
+  const request = ++debugRequest;
+  const data = await api("debug-options");
+  if (debugSaving || request !== debugRequest) return;
+  debugOptions = data;
+  $("debug-settings").checked = data.native_settings;
+  $("debug-fields").disabled = false;
+}
+$("debug-settings").onchange = async () => {
+  ++debugRequest;
+  debugSaving = true;
+  $("debug-fields").disabled = true;
+  i18n.text($("debug-status"), "Salvando…");
+  try {
+    const result = await api("debug-options", {
+      ...debugOptions,
+      native_settings: $("debug-settings").checked,
+    });
+    i18n.text($("debug-status"), result.message);
+    return result;
+  } catch (error) {
+    i18n.text($("debug-status"), "Não foi possível salvar a preferência.");
+    notice(error.message, true);
+  } finally {
+    debugSaving = false;
+    await loadDebugOptions().catch((error) => notice(error.message, true));
+  }
+};
 let settingsDirty = false;
 let settingsBlocked = false;
 let settingsSaving = false;
@@ -679,8 +711,8 @@ function renderInstall(status) {
   if (buildRunning) i18n.append($("build-summary"), " · " + percentText(build.percent || 0));
 
   // The step to act on is open; finished ones close unless the user opened them.
-  const current = buildRunning || build.state === "failed" || done || stale ? "step-build"
-    : toolsState !== "done" && !filesReady ? "step-tools"
+  const current = buildRunning ? "step-build" : toolsState !== "done" ? "step-tools"
+    : build.state === "failed" || done || stale ? "step-build"
       : !filesReady ? "step-files" : "step-build";
   const open = new Set([current, ...userOpened]);
   if (toolsState !== "done" && !filesReady) open.add("step-files"); // (files can be chosen while tools download)
@@ -777,6 +809,7 @@ setInterval(() => loadSteam(), 5000);
 /* ---------- Jogar e suporte ---------- */
 $("play-solo").onclick = () => action(() => api("play", { online: false }));
 $("play-online").onclick = () => action(() => api("play", { online: true }));
+$("play-nextendo").onclick = () => action(() => api("play", { online: false, nextendo: true }));
 let lastReport = null;
 let update = null;
 function renderUpdate(result) {
@@ -862,6 +895,8 @@ async function refresh() {
   $("play-solo").disabled =
     !(status.installed || status.candidate) || !!status.game_pid || running || status.setup.state === "running" || miiBusy || status.dlc_import?.state === "running";
   $("play-online").disabled = $("play-solo").disabled || !status.session.connected;
+  $("play-nextendo").hidden = !status.nextendo_available;
+  $("play-nextendo").disabled = $("play-solo").disabled;
   const session = status.session;
   const active = session.hosting || session.slot !== null;
   for (const id of ["steam-host", "steam-host-manual"]) {
@@ -927,7 +962,7 @@ async function refresh() {
     const status = await refresh();
     const linkedTab = location.hash.slice(1);
     if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
-    else if ((status.candidate || status.installed) && !status.candidate_stale) showTab("play");  // (stale: the update is on Install)
+    else if (status.tools_ready && (status.candidate || status.installed) && !status.candidate_stale) showTab("play");
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
     else i18n.append($("update-state"), ". Atualizações automáticas não configuradas nesta edição.");

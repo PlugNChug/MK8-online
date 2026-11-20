@@ -1,5 +1,8 @@
 """Bounded host-only Nextendo test adaptation, after upstream hash verification."""
 
+from pathlib import Path
+import shutil
+
 def prepare(runtime):
     def edit(relative, old, new):
         path = runtime / relative
@@ -17,8 +20,28 @@ def prepare(runtime):
             raise ValueError('Nextendo region order changed: ' + relative)
         edit(relative, text[start:stop], replacement)
 
+    source = Path(__file__).resolve().parents[1] / 'runtime/mk8/net'
+    shutil.copyfile(source / 'social.h', runtime / 'net/mk8_social.h')
+    # Prepared headers participate in the host cache key, unlike .inc files.
+    shutil.copyfile(source / 'social.inc', runtime / 'net/mk8_social_impl.h')
+    edit('net/nextendo.c', '#define SCOPE "identity%20game.matchmaking"',
+         '#define SCOPE ((getenv("MK8_MENU_PROTOTYPE") && !strcmp(getenv("MK8_MENU_PROTOTYPE"), "1")) ? "identity%20game.matchmaking%20friends" : "identity%20game.matchmaking")')
+    edit('net/nextendo.c', 'void nx_test_reset(void) {',
+         '#include "mk8_social_impl.h"\n\nvoid nx_test_reset(void) {')
     edit('net/nextendo.c', '#define CLIENT_ID "nxc_R-JWtJ6JrrgY"',
          '#define CLIENT_ID "nxc_5QmpWFAhTHSd"\nextern bool mk8_nextendo_enabled(void);')
+    # Third-party integration contract: identify our registered public client on API requests.
+    edit('net/nextendo.c', '{"/oauth/token", "/api/oauth/token"}',
+         '{"/api/oauth/token", "/oauth/token"}')
+    edit('net/nextendo.c', '"%s/oauth/authorize", api_base()',
+         '"%s/api/oauth/authorize", api_base()')
+    edit('net/nextendo.c',
+         '"Content-Type: application/x-www-form-urlencoded\\r\\nAccept: application/json\\r\\n",',
+         '"Content-Type: application/x-www-form-urlencoded\\r\\nAccept: application/json\\r\\nX-Nextendo-Client-Id: " CLIENT_ID "\\r\\n",')
+    for token in ('S.access', 'tok'):
+        edit('net/nextendo.c',
+             '"Authorization: Bearer %s\\r\\nAccept: application/json\\r\\n", ' + token,
+             '"Authorization: Bearer %s\\r\\nAccept: application/json\\r\\nX-Nextendo-Client-Id: " CLIENT_ID "\\r\\n", ' + token)
     edit('net/nextendo.c', 'static void random_bytes(uint8_t *out, size_t n) {',
          'static bool random_bytes(uint8_t *out, size_t n) {')
     edit('net/nextendo.c', '    if (mbedtls_ctr_drbg_seed(&d, mbedtls_entropy_func, &e, (const unsigned char *)pers, sizeof pers) ||\n        mbedtls_ctr_drbg_random(&d, out, n)) {\n        for (size_t i = 0; i < n; i++) out[i] = (uint8_t)(rand() ^ (int)time(NULL) >> (i & 7));  // (no entropy: weak)\n    }',

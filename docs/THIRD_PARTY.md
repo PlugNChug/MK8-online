@@ -1,5 +1,55 @@
 # Dependências e atribuições
 
+## Controles Steam no Windows
+
+A integração usa a interface GameInput v0 fornecida pelo Windows e a API pública de controles virtuais da SDL 3. As assinaturas COM e os formatos de leitura e vibração foram conferidos com o Windows SDK 10.0.26100.0. [Windows SDK — GameInput.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/GameInput.h) · [SDL — controles virtuais](https://wiki.libsdl.org/SDL3/SDL_AttachVirtualJoystick)
+
+## Direção por movimento — 18/11/2026
+
+As unidades e os eixos de entrada seguem a [documentação de sensores da SDL](https://wiki.libsdl.org/SDL3/SDL_SensorType). O relógio de amostragem vem do [evento de sensor do controle](https://wiki.libsdl.org/SDL3/SDL_GamepadSensorEvent). Conferimos a conversão para voltas por segundo e a convenção de gravidade no [histórico do backend SDL do yuzu](https://ni.4a.si/anonymous/yuzu/commit/?id=6c78c2ae38cbcdf80f2dcab40513110a072c6c18). A estrutura de saída e a ordem das colunas da matriz foram conferidas no [exemplo sixaxis do switchbrew](https://github.com/switchbrew/switch-examples/blob/master/hid/sixaxis/source/main.c). A integração e os testes são próprios.
+
+## Vibração HD do Nintendo Switch
+
+A alternância dos Joy-Con usa os modos de combinação e orientação da SDL 3.4.18. A identificação do par e o formato do relatório Bluetooth de vibração foram conferidos nos drivers HIDAPI da mesma versão. [Combinação dos Joy-Con na SDL](https://wiki.libsdl.org/SDL3/SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS) · [Driver de pareamento](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapijoystick.c) · [Driver do Switch](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c)
+
+A identificação de dispositivos HIDAPI, o formato dos relatórios e o intervalo de envio foram conferidos no [driver Switch da SDL 3.4.18](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c). A codificação própria de frequências e amplitudes usa como referência as [medições de dekuNukem e colaboradores](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/252b51b1d88d708565b100a1bf48927df64f7793/rumble_data_table.md). A validação física depende do controle.
+
+## Vibração dos controles — 18/11/2026
+
+O formato dos identificadores e dos comandos HID foi conferido nas declarações e na implementação da libnx. A conversão das amplitudes para os dois motores usa a API de gamepad da SDL3 já distribuída com o runtime. A implementação local foi testada com dispositivos virtuais. [libnx — tipos HID](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/hid.h) · [libnx — chamadas HID](https://github.com/switchbrew/libnx/blob/master/nx/source/services/hid.c) · [SDL_RumbleGamepad](https://wiki.libsdl.org/SDL3/SDL_RumbleGamepad)
+
+## Transição do instalador e consultas de tamanho de textura — 18/11/2026
+
+A transição do instalador para o launcher foi adaptada da [PR #56 de DieMitchell](https://github.com/Vnnc1/MK8-online/pull/56). O ajuste para consultas de tamanho de textura no tradutor Maxwell vem da [PR #62 de lorenzo-zurini](https://github.com/Vnnc1/MK8-online/pull/62). A [lista de GPUs da NVIDIA](https://download.nvidia.com/XFree86/Linux-x86_64/418.56/README/supportedchips.html) foi consultada para limitar a ativação ao dispositivo `10de:1b81`. As duas adaptações usam dependências já presentes no projeto.
+
+## Bias de profundidade Vulkan — 18/11/2026
+
+Consultada a [especificação Khronos de depth bias](https://docs.vulkan.org/spec/latest/chapters/primsrast.html#primsrast-depthbias): o termo slope depende do maior gradiente de profundidade em coordenadas do framebuffer; o termo constante é separado. A compensação própria considera a escala uniforme real do alvo e preserva os demais termos. O replay privado também segue as [regras de store do render pass](https://docs.vulkan.org/spec/latest/chapters/renderpass.html#renderpass-store-operations) para sincronizar a imagem de profundidade. Nenhum código dessas páginas foi copiado; dados comerciais permanecem privados e resultados externos não qualificam esta build.
+
+## Estudo de ultrawide nativo — 17/11/2026
+
+Ensaios privados de janela: consultadas as referências Microsoft de [SetWindowPos](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos), [WM_WINDOWPOSCHANGING](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-windowposchanging), [ShowWindowAsync](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindowasync) e [contexto DPI da thread](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setthreaddpiawarenesscontext), além do [tratamento de eventos Windows da SDL 3.4.18](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/video/windows/SDL_windowsevents.c). O helper privado restringe ações à janela do processo de teste e confere o tamanho real. Evitar o limite de tracking do desktop de automação não qualifica resize interativo nem monitor ultrawide físico. Nenhum trecho externo foi incorporado.
+
+Proporção variável: consultadas as referências oficiais SDL3 de [SDL_GetWindowSizeInPixels](https://wiki.libsdl.org/SDL3/SDL_GetWindowSizeInPixels) e [SDL_GetWindowFlags](https://wiki.libsdl.org/SDL3/SDL_GetWindowFlags) para obter o drawable real e identificar minimização na thread de UI. A implementação própria reutiliza a SDL já distribuída; nenhum código externo ou nova dependência foi incorporado.
+
+Controles dos ensaios: consultados o [guia oficial Nintendo de técnicas/visão traseira](https://www.nintendo.com/jp/ichikara/aabpa/02_en.html) e a [referência oficial de comandos](https://support-jp.nintendo.com/app/answers/detail/a_id/34439) para confirmar X e L. As referências orientam o script de entrada; não demonstram a identidade da câmera nem qualificam esta build. Nenhum conteúdo ou código dos guias foi incorporado.
+
+Validação de memória do protótipo Windows: consultadas as referências oficiais Microsoft de [QueryWorkingSetEx](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-queryworkingsetex) e [PSAPI_WORKING_SET_EX_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_ex_block). Os campos de proteção só são usados quando `Valid` está ligado; informações indisponíveis seguem pela validação existente com `VirtualQuery`. Implementação própria com APIs do sistema, sem copiar código externo nem acrescentar dependência distribuída.
+
+Consultado [MK8D-AAR, de Fayaz Shaikh](https://github.com/fayaz12g/mk8d-aar/tree/22efc04ae276c256a2241cf9eda61e8260a323b2), revisão `22efc04ae276c256a2241cf9eda61e8260a323b2`, somente como referência de escopo. O gerador `patch.py` lista versões 3.0.1, 3.0.3, 3.0.4 e 3.0.5; `script.py` trata layouts HUD/menu separadamente. Isso não comprova compatibilidade com MK8 4.0.1 nem com esta recompilação. Nenhum patch, endereço, código ou recurso externo foi incorporado. O metadado consultado não declara licença; eventual reutilização exigiria esclarecer a licença e validar a versão. A investigação local permanece independente, usando entradas privadas verificadas e as adaptações próprias existentes.
+
+## Saves e consultas Mii — 17/11/2026
+
+Layout de `FsSaveDataAttribute`, tipos e payload dos comandos 51/53 conferidos no [header libnx](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/fs.h) e nos [wrappers FSP](https://github.com/switchbrew/libnx/blob/master/nx/source/services/fs.c). O relato do [NX Native sobre CommonSave/UserSave](https://nx-native.com/games/mario-kart-8-deluxe#files-and-saves) direcionou a investigação anterior da branch de saves; o offset e os efeitos foram conferidos localmente.
+
+Contratos de `UpdateLatest`/`GetIndex` e resultados Mii consultados no [IDatabaseService](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/StaticService/IDatabaseService.cs), [DatabaseImpl](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/DatabaseImpl.cs) e [ResultCode](https://git.ryujinx.app/ryubing/ryujinx/src/branch/master/src/Ryujinx.HLE/HOS/Services/Mii/ResultCode.cs) de Ryujinx/Ryubing, e na [lista Switchbrew](https://switchbrew.org/wiki/Shared_Database_services#IDatabaseService). Implementação C própria para a entrada local já existente; nenhum código C# ou dependência adicional incorporado. Avisos existentes preservados; resultados externos não qualificam esta build.
+
+## Nextendo Social — 16/11/2026
+
+Listagem de salas: contrato de `/api/status/live` e tratamento de `games[].titles`, `lobbies`, `players` e `roomsAvailable` conferidos no [cliente público de status do Nextendo](https://nextendo.network/assets/js/pages.js). Implementação própria, sem copiar o cliente. `0100152000022000` filtra exclusivamente MK8 Deluxe; posição de sala na lista nunca é tratada como identificador NEX. Pesquisa de ingresso: [Matchmake Extension](https://github.com/Kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol) e [extensões MK8D](https://github.com/kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol-%28MK8D%29), referências de protocolo, sem incorporar biblioteca/código. Métodos documentados não constituem validação contra o servidor atual Nextendo ou contra esta build.
+
+Contrato consultado na [documentação oficial de desenvolvedores](https://wiki.nextendo.network/developers) e no [guia de integração](https://wiki.nextendo.network/integration): escopo OAuth `friends`, leitura de `/api/friends?images=0`, presença retornada por amigo e consulta `/api/my-lobby` com `game.matchmaking`. Implementação própria em `runtime/mk8/net/social.inc`, sem copiar código do serviço. Tokens permanecem em memória. A referência documenta leitura da sala atual; não documenta operação HTTP para entrar em uma sala. Não se infere que consulta HTTP substitua o matchmaking NEX do MK8.
+
 ## Revisão de compatibilidade — 16/11/2026
 
 Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.
@@ -108,6 +158,8 @@ Referência operacional do multiplayer: [Nintendo — How to Use the LAN Play Fe
 
 Integração solicitada pelo mantenedor: [Nextendo Network](https://nextendo.network/), consultada em 08–09/11/2026. Há um protótipo local opt-in de OAuth/NEX no MK8-online; matchmaking e corrida não estão qualificados e não há afiliação entre os projetos. A adaptação reutiliza o cliente genérico da base upstream fixada; resultados de outros clientes não qualificam este projeto.
 
+Revisão em 16/11/2026: [guia oficial para clientes independentes](https://wiki.nextendo.network/integration), conteúdo servido por `assets/js/pages/integration-guide.js`. Referência de protocolo para endpoints `/api/oauth/authorize`, `/api/oauth/token`, cabeçalho `X-Nextendo-Client-Id`, identidade NEX e versão MK8 4.0.1. Adaptação própria, sem copiar implementações do fork. A CA pública `media/certs/nextendo-network-ca.pem` confere com o fingerprint publicado `A654C0EFF8AA20A72280EA0EF2B5C2A17392922DD78FFBB11386E2E1AD2C66D49`, mas continua sem autenticar o certificado autoassinado do endpoint MK8 observado. O guia não lista MK8 entre os serviços dessa CA; não se inferiu confiança por nome. Nenhuma CA instalada no Windows ou embutida nesta mudança.
+
 A [documentação de desenvolvedores](https://wiki.nextendo.network/developers) confirma PKCE, callback loopback, escopo `game.matchmaking`, `/api/nex-token` e renovação. A [cadeia de conexão](https://wiki.nextendo.network/architecture/connection-chain) explica TLS passthrough por SNI; o [catálogo de jogos](https://wiki.nextendo.network/architecture/game-catalogue) lista MK8 4.0.0, divergente da referência anterior 4.0.1. Nenhum exemplo externo ou código do fork sob PolyForm Shield foi copiado para esta adaptação.
 
 Validação adicional em 09/11/2026: [releases atuais no Forgejo](https://git.nextendo.network/NextendoNetwork/Ryujinx-Nextendo/releases), incluindo 1.9.6/1.9.7, confirmam MK8 4.0.1 exato, superando o catálogo 4.0.0. A [implementação TLS consultada no commit 62ad252](https://git.nextendo.network/NextendoNetwork/Ryujinx-Nextendo/src/commit/62ad252c9b7379a6d83228ec46cbc65e4d30bbde/src/Ryujinx.HLE/HOS/Services/Ssl/SslService/SslManagedSocketConnection.cs) aceita certificados sem validação nesse caminho; isso não autentica o pin MK8 observado e não foi incorporado ao projeto. Nossa verificação permanece ativa.
@@ -166,6 +218,10 @@ Referências consultadas em 10/11/2026: [Switchbrew — serviço `aoc:u`](https:
 
 O protótipo consulta também as assinaturas IPC de [`nn::aocsrv::detail::IAddOnContentManager` no SwIPC](https://reswitched.github.io/SwIPC/ifaces.html#nn::aocsrv::detail::IAddOnContentManager): comandos, argumentos e descritores de saída. A implementação própria fica em `runtime/mk8/services/dlc.c` e é aplicada às cópias de build por `toolchain/dlc.py`; não houve cópia de implementação de outros emuladores.
 
+## Depth clamp Vulkan — 18/11/2026
+
+Consultadas as referências Khronos de [VkPipelineRasterizationStateCreateInfo](https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineRasterizationStateCreateInfo.html) e [VkPhysicalDeviceFeatures](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceFeatures.html): clamp habilitado altera o tratamento dos planos Z e exige a feature `depthClamp` do dispositivo. A adaptação própria conserva o contrato de comando do backend Metal já incluído no upstream fixado; nenhum código externo novo foi copiado. Avisos e licenças existentes permanecem intactos; resultados externos não qualificam este runtime.
+
 ## Applet de controles — 16/11/2026
 
 Controle local (16/11/2026): consultados o [contrato do applet HID em libnx](https://github.com/switchbrew/libnx/blob/master/nx/source/applets/hid_la.c) e o [registro técnico de ControllerSupportCanceled em nxnative_patch](https://git.dukantic.fr/dukantic/nxnative_patch/src/commit/7249ee9f95ed728aff9a86395330d10d4c91fb5c/docs/reference/services.md), para identificar o resultado `2202-3101` quando a configuração é cancelada. A adaptação própria em `toolchain/controller_applet.py` recusa sucesso com menos jogadores que o mínimo solicitado. Nenhum código dessas referências foi copiado; resultados de testes externos não qualificam este runtime.
@@ -188,3 +244,5 @@ Referências de comportamento do renderer Ryujinx, consultadas no histórico pub
 - [CommandGenerator, revisão `f556c80d0230056335632b60c71f1567e177239e`](https://git.axenov.dev/Museum/ryujinx/commit/f556c80d0230056335632b60c71f1567e177239e?files=Ryujinx.Audio%2FRenderer%2FServer): rampa de volume da voz, atualização do anterior após uso e ramps de routing separados. O mixer local já possuía ramps; a adaptação própria em `toolchain/host.py` corrige somente a inicialização do volume anterior de uma voz nova. Isso não estabelece equivalência integral ao renderer/hardware, nem atribui por si só a causa do estalo ouvido.
 
 As tentativas de baixar os arquivos inteiros receberam HTML de desafio anti-bot e não foram usadas como fonte C#. Os trechos consultados são os históricos indexados acima. Recursos `Ground_Tcroad.bars`, WAVs e coeficientes comerciais analisados permanecem privados em `local/`; os testes públicos usam somente PCM/ADPCM sintéticos. Avisos/licenças dos fontes upstream existentes foram preservados.
+
+SDL/Vulkan preflight diagnosis (2026-11-18): consulted [SDL Windows thread naming](https://github.com/libsdl-org/SDL/blob/main/src/thread/windows/SDL_systhread.c) to identify the legacy debugger notification `0x406d1388`. The launcher uses its own restricted handler based on the existing runtime treatment. Existing SDL and dependency licenses are preserved.

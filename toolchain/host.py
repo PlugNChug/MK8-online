@@ -17,6 +17,10 @@ DEPS = TOOLS / 'deps/packages/ucrt64'
 def prepare_host_sources(source, output):
     runtime = output/'runtime'
     shutil.copytree(source/'runtime', runtime, dirs_exist_ok=True)
+    from packed_color import prepare as prepare_packed_color
+    from scene_scale import prepare as prepare_scene_scale
+    prepare_packed_color(runtime)
+    prepare_scene_scale(runtime)
     for dependency in ('zstd', 'bcdec'):
         shutil.copytree(source/'third_party'/dependency, output/'third_party'/dependency, dirs_exist_ok=True)
     settings = runtime/'settings.c'
@@ -167,6 +171,33 @@ def prepare_host_sources(source, output):
     if text.count(old) != 1:
         raise ValueError('Mii IsUpdated boundary changed upstream')
     text = text.replace(old, '    case 0: OUT(uint8_t, 0) = mk8_mii_updated; mk8_mii_updated = false; resp_size(resp, 1); break;\n    case 1: case 20:')
+    old = '    case 22: break;'
+    if text.count(old) != 1:
+        raise ValueError('Mii refresh/index boundary changed upstream')
+    text = text.replace(old, '''    case 5: case 21: { // UpdateLatest / GetIndex for the local database entry.
+        if (!req->data || req->data_size < (req->cmd == 5 ? 0x5c : 0x58)) {
+            resp->result = 0x27e; break; // InvalidArgument
+        }
+        if (!mk8_charinfo_valid(req->data)) {
+            resp->result = 0xc87e; break; // InvalidCharInfo
+        }
+        uint8_t current[0x58];
+        bool found = mk8_mii_get(current, sizeof current, sizeof current, 1, one_mii()) == 1
+            && !memcmp(current, req->data, 16);
+        if (req->cmd == 21) {
+            OUT(int32_t, 0) = found ? 0 : -1;
+            resp_size(resp, 4);
+            if (!found) resp->result = 0x87e; // NotFound
+        } else if (!(IN(uint32_t, 0x58) & 1) || !found || current[0x2b] != req->data[0x2b]) {
+            resp->result = 0x87e;
+        } else {
+            memcpy(resp->data, current, sizeof current);
+            resp_size(resp, sizeof current);
+            if (!memcmp(current, req->data, sizeof current)) resp->result = 0x67e; // NotUpdated
+        }
+        break;
+    }
+'''+old)
     mii.write_text(text+'\n'+(ROOT/'runtime/mk8/mii/mii_editor.inc').read_text(encoding='utf-8'), encoding='utf-8')
     from mii_applet import adapt as adapt_mii_applet
     fs = runtime/'services/fs.c'
@@ -226,6 +257,10 @@ def prepare_host_sources(source, output):
     translator.write_text(text, encoding='utf-8')
     from maxwell_mip_query import prepare as prepare_maxwell_mip_query
     prepare_maxwell_mip_query(runtime)
+    from interpolation import prepare as prepare_interpolation
+    prepare_interpolation(runtime)
+    from texture_size_hoist import prepare as prepare_texture_size_hoist
+    prepare_texture_size_hoist(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
     prepare_texture_lifetime(runtime)
     from gpu_sync import prepare as prepare_gpu_sync
@@ -276,6 +311,8 @@ def prepare_host_sources(source, output):
     prepare_ipc_core_release(runtime)
     from save_file_close import prepare as prepare_save_file_close
     prepare_save_file_close(runtime)
+    from save_data import prepare as prepare_save_data
+    prepare_save_data(runtime)
     from vram_trace import prepare as prepare_vram_trace
     prepare_vram_trace(runtime)
     from auto_lan import prepare as prepare_auto_lan
@@ -292,8 +329,26 @@ def prepare_host_sources(source, output):
     prepare_vertex_cache_age(runtime)
     from texture_retire import prepare as prepare_texture_retire
     prepare_texture_retire(runtime)
+    from compact_commands import prepare as prepare_compact_commands
+    prepare_compact_commands(runtime)
+    from output_aspect import prepare as prepare_output_aspect
+    prepare_output_aspect(runtime)
+    from depth_bias import prepare as prepare_depth_bias
+    prepare_depth_bias(runtime)
+    from snapshot_memory import prepare as prepare_snapshot_memory
+    prepare_snapshot_memory(runtime)
+    from depth_clamp import prepare as prepare_depth_clamp
+    prepare_depth_clamp(runtime)
     from controller_applet import prepare as prepare_controller_applet
     prepare_controller_applet(runtime)
+    from controller_discovery import prepare as prepare_controller_discovery
+    prepare_controller_discovery(runtime)
+    from controller_rumble import prepare as prepare_controller_rumble
+    prepare_controller_rumble(runtime)
+    from controller_sensors import prepare as prepare_controller_sensors
+    prepare_controller_sensors(runtime)
+    from controller_motion import prepare as prepare_controller_motion
+    prepare_controller_motion(runtime)
     from texture_readback import prepare as prepare_texture_readback
     prepare_texture_readback(runtime)
     from entry_trace import prepare as prepare_entry_trace  # (read-only tracing for reverse engineering)
@@ -312,6 +367,17 @@ def prepare_host_sources(source, output):
         raise ValueError('Runtime room menu boundary changed')
     text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n'
                         '        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();\n' + boundary)
+    hub = runtime/'ui/mk8_hub.h'
+    shutil.copyfile(ROOT/'runtime/mk8/ui/hub.h', hub)
+    boundary = 'static bool g_drew;  // the last menu_render drew (menu_redraw draws it again)'
+    if text.count(boundary) != 1:
+        raise ValueError('MK8 hub declaration boundary changed')
+    text = text.replace(boundary, '#include "mk8_hub.h"\n' + boundary)
+    boundary = '    if (open) {\n        // dim the game behind the menu'
+    if text.count(boundary) != 1:
+        raise ValueError('MK8 hub render boundary changed')
+    text = text.replace(boundary, '    if (open && mk8_hub_enabled()) mk8_hub_draw(scale);\n'
+                        '    if (open && !mk8_hub_enabled()) {\n        // dim the game behind the menu')
     menu.write_text('extern "C" bool mk8_mii_menu_available(void);\nextern "C" void mk8_open_mii_menu(void);\n'
                    'extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
     kernel = runtime/'kernel.c'
@@ -355,6 +421,10 @@ def prepare_host_sources(source, output):
         return EXCEPTION_CONTINUE_EXECUTION;
 ''')
     windows.write_text(text, encoding='utf-8')
+    from settings_menu import prepare as prepare_settings_menu
+    prepare_settings_menu(runtime)
+    from joycon_modes import prepare as prepare_joycon_modes
+    prepare_joycon_modes(runtime)
     return runtime
 
 
@@ -384,6 +454,8 @@ def build_host(source, output, workers=None):
     # Export only the shared runtime ABI used by the generated game code.
     exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
     exports = output/'exports.def'
+    exported.extend(['mk8_ultrawide_camera', 'mk8_ultrawide_hud', 'mk8_settings_top_event',
+                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_page_frame'])
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'
     directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)
@@ -415,6 +487,7 @@ def build_host(source, output, workers=None):
     sources = [runtime/p.relative_to(source/'runtime') if p.is_relative_to(source/'runtime') else p for p in sources]
     headers = {str(p.relative_to(source)): digest(p) for folder in ['runtime', 'third_party', 'games/mk8d'] for p in (source/folder).rglob('*.h')}
     headers.update({'prepared/'+str(p.relative_to(runtime)): digest(p) for p in runtime.rglob('*.h')})
+    headers.update({str(p.relative_to(ROOT)): digest(p) for p in (ROOT/'runtime/mk8').rglob('*.h')})
     dep_headers = {str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
     environment = hashlib.sha256(json.dumps({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'), 'compiler': digest(DEFAULT_COMPILER), 'flags': common}, sort_keys=True).encode()).hexdigest()
 

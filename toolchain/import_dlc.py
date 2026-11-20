@@ -134,7 +134,7 @@ def install(package, keys, local, *, reinstall=False):
         with package.open("rb") as stream:
             index = entries(stream, package.stat().st_size)
             wanted = {name.encode() for name in CONTENTS}
-            if {name for name in index if name.endswith((b".nca", b".ncz"))} != wanted:
+            if not wanted.issubset(index):
                 raise ValueError("DLC: pacote não corresponde ao Booster Course Pass verificado.")
             for name, (size, expected) in CONTENTS.items():
                 member = Entry(stream, *index[name.encode()])
@@ -144,8 +144,9 @@ def install(package, keys, local, *, reinstall=False):
                 if hashlib.sha256(payload).hexdigest() != expected:
                     raise ValueError("DLC: tamanho ou hash do NCA divergente.")
                 (stage / name).write_bytes(payload)
-            tickets = [name for name in index if name.endswith(b".tik")]
-            if len(tickets) != 1 or not tickets[0].startswith(b"0100152000023001") or index[tickets[0]][1] > 16384:
+            # Combined NSPs may contain other titles; extract only this pinned DLC and its ticket.
+            tickets = [name for name in index if name.endswith(b".tik") and name.startswith(b"0100152000023001")]
+            if len(tickets) != 1 or index[tickets[0]][1] > 16384:
                 raise ValueError("DLC: ticket ausente ou incompatível.")
             (stage / "content.tik").write_bytes(Entry(stream, *index[tickets[0]]).read())
         require_space(ROOT / "tools", 4 * GIB + 128 * 1024**2)

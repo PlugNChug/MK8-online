@@ -1,6 +1,6 @@
 """Build a release: the packaged launcher, its setup.exe and the SHA-256 the in-launcher updater checks.
 
-    python scripts/release.py --bump 0.3.0    # set the version (Cargo.toml, tauri.conf.json, Cargo.lock)
+    python scripts/release.py --bump 0.4.0    # set the version (Cargo.toml, tauri.conf.json, Cargo.lock)
     python scripts/release.py                         # build target/dist/MK8-online-<version>-setup.exe
 
 Set MK8_UPDATE_REPO=owner/name (the GitHub repository whose Releases the launcher reads) and, if there is one,
@@ -76,8 +76,12 @@ def build(args):
     # (the name is what makes the launcher open as the installer)
     setup = DIST / f"MK8-online-{version}-setup.exe"
     shutil.copyfile(launcher, setup)
+    portable = DIST / f"MK8-online-{version}-portable.zip"
+    shutil.copyfile(launcher.parent / "MK8-online-portable.zip", portable)
     digest = sha256(setup)
+    portable_digest = sha256(portable)
     (DIST / f"{setup.name}.sha256").write_text(f"{digest}  {setup.name}\n", encoding="ascii")
+    (DIST / f"{portable.name}.sha256").write_text(f"{portable_digest}  {portable.name}\n", encoding="ascii")
     # LGPL: the setup carries FFmpeg DLLs built by scripts/build-ffmpeg.sh, so its source goes with the release.
     ffmpeg = TARGET / "prebuilt-ffmpeg"
     for name in ("ffmpeg-9.0.2.tar.xz", "build-ffmpeg.sh"):
@@ -102,7 +106,9 @@ def build(args):
         "The corresponding source (`ffmpeg-9.0.2.tar.xz`) and build script are attached.\n\n"
         f"Known issues / Limitações: [docs/STATUS.md](https://github.com/{os.environ.get('MK8_UPDATE_REPO', 'Vnnc1/MK8-online')}/blob/v{version}/docs/STATUS.md). "
         "Attach the ZIP from **Support → Generate report / Suporte → Gerar relatório** when reporting a bug.\n\n"
-        f"SHA-256 — `{setup.name}`: `{digest}`\n",
+        f"| Windows x64 | SHA-256 |\n| --- | --- |\n"
+        f"| `{setup.name}` | `{digest}` |\n"
+        f"| `{portable.name}` | `{portable_digest}` |\n",
         encoding="utf-8")
     print(f"{setup}\n{digest}")
 

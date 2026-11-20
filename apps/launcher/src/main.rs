@@ -2,6 +2,7 @@
 //! MK8-online Launcher: a native Tauri window over the local API server.
 //! `--headless` (or the older `--no-browser`) keeps only the server, for tests.
 mod console;
+mod debug_options;
 #[cfg(debug_assertions)]
 mod debug_web;
 mod fonts;
@@ -9,13 +10,16 @@ mod game_session;
 mod game_settings;
 mod installer;
 mod language;
+mod managed;
 mod manual;
 mod mii_download;
+mod portable;
 mod python_setup;
 mod relay;
 mod report;
 mod server;
 mod setup;
+mod startup;
 mod update;
 mod vulkan;
 
@@ -91,6 +95,14 @@ fn main() {
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--check-vulkan") {
+        // Driver worker threads may still notify after SDL_Quit; retain until process exit.
+        let _thread_names = match vulkan::ThreadNameHandler::register() {
+            Ok(handler) => handler,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
         let result = args
             .get(2)
             .ok_or_else(|| "Pasta do runtime ausente".to_string())
@@ -133,7 +145,7 @@ fn main() {
     }
     let headless = args
         .iter()
-        .any(|v| v == "--headless" || v == "--no-browser");
+        .any(|v| v == "--headless" || v == "--no-browser" || v == "--play");
     if headless {
         console::attach_parent();
     }
@@ -148,6 +160,7 @@ fn main() {
 }
 
 fn run(args: &[String], headless: bool) -> Result<(), Error> {
+    startup::validate_args(args)?;
     let root = project_root()?;
     run_at(root, args, headless)
 }
@@ -163,7 +176,12 @@ fn project_root() -> Result<PathBuf, Error> {
 
 #[cfg(mk8_portable)]
 fn project_root() -> Result<PathBuf, Error> {
-    let base = match home_from_setup()? {
+    let home = if let Some(home) = startup::portable_home(&std::env::current_exe()?)? {
+        Some(home)
+    } else {
+        home_from_setup()?
+    };
+    let base = match home {
         Some(home) => home,
         None => PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA ausente")?)
             .join("MK8-online"),
@@ -243,6 +261,8 @@ fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> R
 #[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
 fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
     let shared = base.join("native-tools");
+    managed::direct(&shared)?;
+    managed::direct(&root.join("local"))?;
     let tools = |dir: &Path| dir.join("local").join("native-tools");
     let own = tools(root);
     if let Ok(target) = fs::read_link(&own) {
@@ -254,8 +274,9 @@ fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
     if !shared.exists() {
         let previous = std::iter::once(root.to_path_buf())
             .chain(fs::read_dir(base)?.filter_map(|entry| entry.ok().map(|e| e.path())))
+            .filter(|dir| managed::payload(dir))
             .map(|dir| tools(&dir))
-            .find(|dir| fs::read_link(dir).is_err() && dir.is_dir());
+            .find(|dir| managed::direct(dir).is_ok() && dir.is_dir());
         if let Some(previous) = previous {
             // Two launchers may start together (multiplayer tests): one of them moves it.
             if let Err(error) = fs::rename(&previous, &shared) {
@@ -265,7 +286,11 @@ fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
             }
         }
     }
-    fs::create_dir_all(&shared)?;
+    match fs::create_dir(&shared) {
+        Ok(()) => fs::write(shared.join(".mk8-managed-tools"), b"MK8-online tools v1")?,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && shared.is_dir() => (),
+        Err(e) => return Err(e.into()),
+    }
     Ok(shared)
 }
 
@@ -289,9 +314,13 @@ fn home_from_setup() -> Result<Option<PathBuf>, Error> {
 }
 
 fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
+    startup::validate_args(args)?;
     // The packaged launcher unpacks each version beside the others; its data stays in one folder for all
     // versions, so an update keeps the import, tools, builds and saves.
-    let default_data = if cfg!(mk8_portable) {
+    let portable_home = startup::portable_home(&std::env::current_exe()?)?;
+    let default_data = if let Some(home) = &portable_home {
+        home.join("data")
+    } else if cfg!(mk8_portable) {
         root.parent().ok_or("pasta do launcher")?.join("data")
     } else {
         root.join("local")
@@ -301,45 +330,22 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         .unwrap_or(default_data);
     fs::create_dir_all(&local)?;
     let local = canonical(&local)?;
-    let mut config = if local.join("config.json").exists() {
-        load(&local.join("config.json"))?
-    } else {
-        Config {
-            upstream: root.join("upstream/smm2recomp").display().to_string(),
-            ..Config::default()
-        }
-    };
-    if cfg!(mk8_portable) {
-        // (a data folder written by an earlier version names that version's sources)
-        config.upstream = root.join("upstream/smm2recomp").display().to_string();
+    if let Some(home) = portable_home {
+        portable::relocate(&home, &root, &local)?;
     }
-    let port = argument(args, "--port")
-        .unwrap_or_else(|| "0".into())
-        .parse::<u16>()?;
-    let server = Server::http(("127.0.0.1", port))?;
-    let authority = server.server_addr().to_string();
-    let url = format!("http://{authority}");
-    let token = mk8_transport::random::<32>()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
     let parent = (!headless).then(|| Arc::new(OnceLock::new()));
-    let mut app = server::App::new(root, local.clone(), config, parent.clone());
-    if let Some(lobby) = argument(args, "+connect_lobby") {
-        app.auto_join_steam_lobby(&lobby);
+    let mut app = launcher_app(root, &local, parent.clone())?;
+    if args.iter().any(|arg| arg == "--play") {
+        return app.play_direct().map_err(Into::into);
     }
-    save(
-        &local.join("launcher.json"),
-        &json!({"url":url,"pid":std::process::id()}),
-    )?;
-    println!("MK8-online: {url}");
+    let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
+    println!("MK8-online: {page}");
     let Some(parent) = parent else {
-        server::serve(app, server, authority, url, token);
+        server::serve(app, server, authority, page, token);
         return Ok(());
     };
-    let page = url.clone();
-    std::thread::spawn(move || server::serve(app, server, authority, url, token));
     let target: tauri::Url = page.parse()?;
+    std::thread::spawn(move || server::serve(app, server, authority, page, token));
     let origin = target.origin();
     tauri::Builder::default()
         .setup(move |tauri_app| {
@@ -360,6 +366,70 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     Ok(())
 }
 
+type LauncherServer = (Server, server::App, String, String, String);
+
+fn launcher_app(
+    root: PathBuf,
+    local: &Path,
+    parent: Option<Arc<OnceLock<tauri::WebviewWindow>>>,
+) -> Result<server::App, Error> {
+    let mut config = if local.join("config.json").exists() {
+        load(&local.join("config.json"))?
+    } else {
+        Config {
+            upstream: root.join("upstream/smm2recomp").display().to_string(),
+            ..Config::default()
+        }
+    };
+    if cfg!(mk8_portable) {
+        // (a data folder written by an earlier version names that version's sources)
+        config.upstream = root.join("upstream/smm2recomp").display().to_string();
+    }
+    Ok(server::App::new(root, local.to_path_buf(), config, parent))
+}
+
+fn launcher_server(
+    mut app: server::App,
+    local: &Path,
+    args: &[String],
+) -> Result<LauncherServer, Error> {
+    let port = argument(args, "--port")
+        .unwrap_or_else(|| "0".into())
+        .parse::<u16>()?;
+    let server = Server::http(("127.0.0.1", port))?;
+    let authority = server.server_addr().to_string();
+    let url = format!("http://{authority}");
+    let token = mk8_transport::random::<32>()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    if let Some(lobby) = argument(args, "+connect_lobby") {
+        app.auto_join_steam_lobby(&lobby);
+    }
+    save(
+        &local.join("launcher.json"),
+        &json!({"url":url,"pid":std::process::id()}),
+    )?;
+    Ok((server, app, authority, url, token))
+}
+
+#[cfg(windows)]
+fn launcher_after_setup(
+    base: &Path,
+    parent: Arc<OnceLock<tauri::WebviewWindow>>,
+) -> Result<tauri::Url, Error> {
+    #[cfg(mk8_portable)]
+    let root = unpack_payload(base)?;
+    #[cfg(not(mk8_portable))]
+    let root = project_root()?;
+    let local = canonical(&base.join("data"))?;
+    let app = launcher_app(root, &local, Some(parent))?;
+    let (server, app, authority, page, token) = launcher_server(app, &local, &[])?;
+    let target = page.parse()?;
+    std::thread::spawn(move || server::serve(app, server, authority, page, token));
+    Ok(target)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{canonical, share_tools};
@@ -369,7 +439,11 @@ mod tests {
     fn versions_share_one_tool_folder() {
         let base = std::env::temp_dir().join(format!("mk8-share-tools-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
-        let old = base.join("aaaa");
+        let old = base.join("aaaaaaaaaaaaaaaa");
+        fs::create_dir_all(old.join("upstream/manifests")).unwrap();
+        fs::create_dir_all(old.join("scripts")).unwrap();
+        fs::write(old.join("upstream/manifests/smm2recomp.json"), "{}").unwrap();
+        fs::write(old.join("scripts/setup-native.py"), "").unwrap();
         fs::create_dir_all(old.join("local/native-tools/deps")).unwrap();
         fs::write(old.join("local/native-tools/deps/x.done"), "hash").unwrap();
         // An update unpacks a new version first: it adopts the older version's download.

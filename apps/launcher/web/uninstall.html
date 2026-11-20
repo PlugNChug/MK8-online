@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mk8-token" content="__TOKEN__" />
+    <meta name="mk8-language" content="__LANGUAGE__" />
+    <title>Desinstalar MK8-online</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/setup.css" />
+    <script src="/i18n.js" defer></script>
+    <script src="/uninstall.js" defer></script>
+  </head>
+  <body class="setup">
+    <aside class="side">
+      <div class="brand"><span class="logo" aria-hidden="true">8</span>MK8<b>online</b></div>
+      <ol class="side-steps"><li class="active">Desinstalação</li></ol>
+      <span class="chip" id="version"></span>
+    </aside>
+    <main class="screens">
+      <section class="screen" id="choices">
+        <h1>Desinstalar MK8-online</h1>
+        <p class="lead">Escolha o que deseja remover deste computador.</p>
+        <label class="check"><input type="radio" name="mode" value="keep" checked><span>Remover o launcher e guardar meus dados</span></label>
+        <p class="fine">Mantenha seus saves, Miis, configurações, ferramentas e jogo preparado para uma reinstalação.</p>
+        <label class="check"><input type="radio" name="mode" value="all"><span>Remover o launcher e todos os dados do MK8-online</span></label>
+        <p id="data-path" class="note" data-user-content></p>
+        <label class="check" id="confirmation" hidden><input id="confirm" type="checkbox"><span>Confirmo a exclusão permanente dos saves, Miis, ferramentas e builds desta instalação.</span></label>
+        <p class="error" id="error" role="alert"></p>
+        <div class="actions"><button class="ghost" id="cancel">Cancelar</button><button class="primary big" id="remove" disabled>Desinstalar</button></div>
+      </section>
+      <section class="screen" id="done" hidden>
+        <h1>Desinstalação concluída</h1><p id="result" role="status"></p>
+        <div class="actions"><span></span><button class="primary big" id="close">Fechar</button></div>
+      </section>
+    </main>
+  </body>
+</html>

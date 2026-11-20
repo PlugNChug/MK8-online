@@ -60,5 +60,7 @@ jobs:
           files: |
             target/dist/*-setup.exe
             target/dist/*-setup.exe.sha256
+            target/dist/*-portable.zip
+            target/dist/*-portable.zip.sha256
             target/dist/ffmpeg-9.0.2.tar.xz
             target/dist/build-ffmpeg.sh

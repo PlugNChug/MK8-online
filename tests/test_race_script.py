@@ -1,5 +1,6 @@
 """Course selection precedes confirmation; acceleration lasts through the capture."""
 import runpy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -16,6 +17,42 @@ profile_environment = script['profile_environment']
 
 
 class RaceScriptTests(unittest.TestCase):
+    def test_interactive_session_uses_live_input_and_preserves_source_save(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'user-no-mii'
+            (source / 'save').mkdir(parents=True)
+            (source / 'save/test.dat').write_text('original')
+            (source / 'mk8d.ini').write_text('frame_gen = on\n')
+            (root / 'mii-profile.json').write_text(json.dumps(dict(
+                schema=1, id=[0]*8 + [128] + [0]*7,
+                appearance=dict(name='Test', color=0, gender=0))))
+            # A real child process exercises environment, normal exit and isolated writes.
+            (root / 'extracted').write_text(
+                'import os,json,pathlib\n'
+                'pathlib.Path("observed.json").write_text(json.dumps(dict(os.environ)))\n'
+                'pathlib.Path(os.environ["LARECOMP_SAVE_DIR"],"test.dat").write_text("changed")\n')
+            exe = Path(sys.executable)
+            candidate = dict(identity='fixture', executable=dict(path=str(exe),
+                sha256=hashlib.sha256(exe.read_bytes()).hexdigest()),
+                files=dict(gamelib=dict(path=str(root / 'extracted'),
+                    sha256=hashlib.sha256((root / 'extracted').read_bytes()).hexdigest())),
+                data_root=str(root))
+            (root / 'candidate.json').write_text(json.dumps(candidate))
+            args = SimpleNamespace(candidate=None, mode='time-trial', cache_from=None,
+                mii_profile=None, mii_resources=None, course='stadium', cup='mushroom',
+                track=None, character='mario', last_frame=3400, shots=2, shot_step=400,
+                env=[], input=None, interactive=True, nextendo=False, timeout=15)
+            with patch.dict(script['run'].__globals__, LOCAL=root):
+                script['run'](args)
+            session, = root.glob('race-time-trial-*')
+            env = json.loads((session / 'data/observed.json').read_text())
+            for key in ('LARECOMP_INPUT', 'LARECOMP_EXIT_AFTER_SHOT', 'LARECOMP_WINDOW_SHOT'):
+                self.assertNotIn(key, env)
+            self.assertTrue(env['PATH'].startswith(str(root)))
+            self.assertEqual((source / 'save/test.dat').read_text(), 'original')
+            self.assertEqual((session / 'data/save/test.dat').read_text(), 'changed')
+
     def test_mii_navigation_selects_profile_and_suit_before_kart(self):
         steps = [s.split(':') for s in race_input('time-trial', 4200, character='mii').split(',')]
         self.assertEqual([int(s[0]) for s in steps], sorted(int(s[0]) for s in steps))

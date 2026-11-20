@@ -4,6 +4,8 @@
 #include "net/nextendo.h"
 #include "net/netcfg.h"
 #include "net/token.h"
+#include "net/mk8_social.h"
+#include <stdlib.h>
 #include <string.h>
 
 extern void game_net_config_set(const char *, const char *);
@@ -31,6 +33,26 @@ int mk8_nextendo_probe(bool keep_session) {
                 ok = net_backend() == NET_BACKEND_NEXTENDO && net_id_token(jwt, sizeof jwt) > 0;
                 SecureZeroMemory(jwt, sizeof jwt);
                 puts(ok ? "BAAS adapter generated a token; server acceptance not verified." : "BAAS adapter unavailable or online access refused.");
+            }
+            if (ok && getenv("MK8_NEXTENDO_SOCIAL_TEST")) {
+                Mk8Social *social=calloc(1,sizeof *social);
+                if (!social) return 2;
+                mk8_social_refresh();
+                for (int j=0;j<250;++j) {
+                    mk8_social_snapshot(social);
+                    if (!social->busy) break;
+                    Sleep(100);
+                }
+                printf("Social: friends=%d count=%d lobby=%d in_lobby=%d players=%d/%d\n",
+                    social->friends_ok,social->count,social->lobby_ok,social->in_lobby,social->players,social->capacity);
+                int ids=0;
+                for (int r=0;r<social->lobby_count;++r) if (social->lobbies[r].id[0]) ++ids;
+                printf("Listings: valid=%d rooms=%d players=%d ids=%d\n",social->listings_ok,social->lobby_count,social->online_players,ids);
+                ok=!social->busy && social->friends_ok && social->lobby_ok && social->listings_ok;
+                nextendo_sign_out();
+                mk8_social_snapshot(social);
+                if (social->friends_ok || social->count || social->lobby_ok) ok=false;
+                free(social);
             }
             if (!ok || !keep_session) nextendo_sign_out();
             return ok ? 0 : 2;

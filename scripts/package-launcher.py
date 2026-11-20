@@ -16,7 +16,7 @@ OUTPUT = TARGET / "portable"
 # (its own target folder: the packaged build embeds the payload, unlike target/release used in development)
 BUILD = TARGET / "package"
 MANIFEST = ROOT / "upstream/manifests/smm2recomp.json"
-SOURCE_EXTENSIONS = {".c", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
+SOURCE_EXTENSIONS = {".c", ".h", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
 
 
 def payload_files():
@@ -75,6 +75,18 @@ def main():
     )
     launcher = OUTPUT / "Launcher.exe"
     shutil.copyfile(BUILD / "release/Launcher.exe", launcher)
+    # A separate archive opts into sibling storage without changing the setup executable's behavior.
+    with ZipFile(OUTPUT / "MK8-online-portable.zip", "w", ZIP_DEFLATED) as archive:
+        archive.write(launcher, "Launcher.exe")
+        archive.writestr("portable.txt", "MK8-online portable mode\n")
+        archive.write(ROOT / "LICENSE", "LICENSE")
+        archive.writestr("README.txt", "Extract to a writable folder. Run Launcher.exe to prepare your own game files.\n"
+                         "Run Launcher.exe --play to start an already prepared game without the launcher window.\n"
+                         "Data is stored in portable/. Keep this folder when updating Launcher.exe.\n"
+                         "Open this version once before moving it. Close all MK8 processes, then move the whole folder.\n"
+                         "Internal paths are repaired automatically on next start; metadata backups are retained.\n"
+                         "Files selected outside portable/ are external dependencies: include them inside the tree before preparing.\n"
+                         "Windows x64 only; game files and keys are not included.\n")
     print(launcher)
 
 

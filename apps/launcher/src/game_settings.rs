@@ -216,4 +216,41 @@ mod tests {
         assert_eq!(read(&local).unwrap()["values"]["volume"], "0.25");
         std::fs::remove_dir_all(local).unwrap();
     }
+
+    #[test]
+    fn aspect_modes_round_trip_without_changing_legacy_defaults_or_other_data() {
+        let local =
+            std::env::temp_dir().join(format!("mk8-settings-aspect-{}", std::process::id()));
+        let user = local.join("user-no-mii");
+        std::fs::create_dir_all(user.join("save")).unwrap();
+        let path = user.join("mk8d.ini");
+        assert_eq!(read(&local).unwrap()["values"]["aspect"], "unlocked");
+        assert!(!path.exists());
+        std::fs::write(user.join("save/marker"), b"existing progress").unwrap();
+        std::fs::write(
+            &path,
+            "# existing settings\r\nfuture_option = keep\r\naspect = original\r\naspect = original\r\nframe_gen = 120\r\nvolume = 0.65\r\n",
+        )
+        .unwrap();
+        for value in ["original", "unlocked", "ultrawide", "original"] {
+            write(&local, &json!({"aspect": value})).unwrap();
+            let saved = std::fs::read_to_string(&path).unwrap();
+            assert_eq!(saved.matches(&format!("aspect = {value}\r\n")).count(), 2);
+            assert!(saved.starts_with("# existing settings\r\nfuture_option = keep\r\n"));
+            assert!(saved.ends_with("frame_gen = 120\r\nvolume = 0.65\r\n"));
+            let loaded = read(&local).unwrap();
+            assert_eq!(loaded["values"]["aspect"], value);
+            assert_eq!(loaded["values"]["frame_gen"], "120");
+            assert_eq!(
+                std::fs::read(user.join("save/marker")).unwrap(),
+                b"existing progress"
+            );
+        }
+        let before = std::fs::read(&path).unwrap();
+        for invalid in ["wide", "ultrawide\nframe_gen=off", ""] {
+            assert!(write(&local, &json!({"aspect": invalid})).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+        std::fs::remove_dir_all(local).unwrap();
+    }
 }

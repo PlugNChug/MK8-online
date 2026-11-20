@@ -209,7 +209,7 @@ class PipelineTests(unittest.TestCase):
 class RuntimeDependencyManifestTests(unittest.TestCase):
     def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
-            local = Path(temporary)
+            local = Path(temporary).resolve()
             source = local/'runtime'
             source.mkdir()
             (local/'runtime-hashes.json').write_text('{}')
@@ -221,17 +221,32 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             game.write_bytes(b'preserved game')
             save = local/'user-save.bin'
             save.write_bytes(b'preserved save')
+            native = local/'native.json'
+            native.write_bytes(b'{"identity": "fixture", "object_files": []}')
+            layout = output/'settings-menu/romfs/UI/cmn/menu.sarc'
+            layout.parent.mkdir(parents=True)
+            layout.write_bytes(b'authored settings menu')
+            common_layout = layout.with_name('common.sarc')
+            common_layout.write_bytes(b'authored settings common layout')
             (local/'candidate.json').write_text(json.dumps({'executable': pipeline.file_record(exe),
                 'files': {'gamelib': pipeline.file_record(game)}, 'data_root': str(local/'game-data/test'),
                 'gameplay_verified': False}))
             def dependencies(*args, **kwargs):
                 (output/'vulkan-1.dll').write_bytes(b'verified loader fixture')
-            with patch('host.build_host', return_value=exe), patch.object(pipeline.subprocess, 'run', side_effect=dependencies):
+            # Archive derivation has separate authored tests; this fixture checks refresh records.
+            with (patch('host.build_host', return_value=exe),
+                  patch.object(pipeline.subprocess, 'run', side_effect=dependencies),
+                  patch('settings_layout.prepare', return_value=layout) as prepare_layout):
                 pipeline.refresh_runtime(local)
+            prepare_layout.assert_called_once_with(local/'game-data/test/extracted/romfs', output)
             candidate = json.loads((local/'candidate.json').read_text())
             self.assertEqual(candidate['files']['vulkan-1.dll'], pipeline.file_record(output/'vulkan-1.dll'))
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
+            self.assertEqual(candidate['files']['settings-layout'], pipeline.file_record(layout))
+            self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
+            self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')
+            self.assertEqual(native.read_bytes(), b'{"identity": "fixture", "object_files": []}')
             self.assertFalse(candidate['gameplay_verified'])
             self.assertTrue(candidate['dlc_supported'])
             self.assertTrue(candidate['pack_supported'])  # (runtime/mk8/support/romfs_overlay.c)

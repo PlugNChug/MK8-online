@@ -241,7 +241,8 @@ def mirror(path, target, copy_ok=False):
             if copy_ok and (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns):
                 continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        pending = dst.with_name(dst.name + f'.pending-{os.getpid()}-{time.time_ns()}')
+        # Appending to a valid game filename can exceed Windows' component limit.
+        pending = dst.with_name(f'.mk8-{os.getpid()}-{time.time_ns()}.pending')
         try:
             os.link(src, pending)
         except OSError as error:
@@ -287,6 +288,14 @@ def finish(config, local, executable=None):
     if not nacp.is_file() or nacp.read_bytes()[0x3060:0x3070].split(b'\0')[0] != b'4.0.1':
         raise ValueError('Esta build experimental exige NACP do MK8 4.0.1')
     output = job/('host-debug' if native['optimization'] == '-O0' else 'host-optimized')
+    # Old thin archives can still name objects at the portable tree's previous absolute location.
+    if native.get('object_files'):
+        from native import write_archive, DEFAULT_COMPILER
+        write_archive(DEFAULT_COMPILER, native['archive'], [obj['path'] for obj in native['object_files']])
+        native['sha256'] = sha(native['archive'])
+        atomic_json(local/'native.json', native)
+    from settings_layout import prepare as prepare_settings_layout
+    settings_layout = prepare_settings_layout(romfs, output)
     exe = executable if executable is not None else build_host(source, output)
     dll = link_game(native['archive'], output, source, native['modules'])
     subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
@@ -304,6 +313,8 @@ def finish(config, local, executable=None):
     files['gamelib'] = files.pop(dll.name)
     files['gamelib-id'] = file_record(output/'mk8dgame.dll.id')
     files['nacp'] = file_record(nacp)
+    files['settings-layout'] = file_record(settings_layout)
+    files['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))
     for name in ('main', 'sdk', 'subsdk0', 'main.npdm'):
         files['npdm' if name == 'main.npdm' else name] = file_record(job/'inputs/exefs'/name)
     executable = file_record(exe)
@@ -330,6 +341,11 @@ def refresh_runtime(local):
         if sha(source/rel) != expected:
             raise ValueError('Runtime preparado alterado; use uma preparação completa: '+rel)
     output = Path(candidate['executable']['path']).parent
+    from settings_layout import prepare as prepare_settings_layout
+    # Derived layouts are private build data; old candidates can predate this entry.
+    candidate['files'].pop('settings-layout', None)
+    candidate['files'].pop('settings-common-layout', None)
+    settings_layout = prepare_settings_layout(Path(candidate['data_root'])/'extracted/romfs', output)
     exe = build_host(source, output)
     for file in candidate['files'].values():
         if sha(file['path']) != file['sha256']:
@@ -340,6 +356,8 @@ def refresh_runtime(local):
         if dll.resolve() != Path(candidate['files']['gamelib']['path']).resolve():
             candidate['files'][dll.name] = file_record(dll)
     candidate['executable'] = {'path': str(exe), 'sha256': sha(exe), 'bytes': exe.stat().st_size}
+    candidate['files']['settings-layout'] = file_record(settings_layout)
+    candidate['files']['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': candidate['files'], 'exe': candidate['executable']}, sort_keys=True).encode()).hexdigest()

@@ -93,7 +93,7 @@ window.i18n = (() => {
   }
   function render() {
     document.documentElement.lang = language;
-    picker.value = language;
+    if (picker) picker.value = language;
     const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       const node = walker.currentNode;
@@ -107,14 +107,14 @@ window.i18n = (() => {
       if (element.textContent !== translated) element.textContent = translated;
     }
   }
-  picker.disabled = true;
+  if (picker) picker.disabled = true;
   const ready = load(language).then((loaded) => {
     use(language, loaded);
     register(document.documentElement);
     render();
-    picker.disabled = false;
+    if (picker) picker.disabled = false;
   });
-  picker.addEventListener("change", async () => {
+  picker?.addEventListener("change", async () => {
     const next = picker.value;
     picker.disabled = true;
     try {

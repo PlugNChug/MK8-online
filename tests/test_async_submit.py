@@ -70,8 +70,8 @@ void mk8_texture_release(NvnTexture *t) { if (t) { if (t != read_texture || !rea
 void renderer_prefetch_verify(void) {}
 uint64_t renderer_fence_seq(void) { return seq; }
 void renderer_submit(void) {}
-static void mk8_present_now(NvnTexture *t) { (void)t; while (!gate) Sleep(1); order[norder++] = 'P'; }
-''' + queue.replace('static void mk8_present_now(NvnTexture *t);  // (below, with nvnQueuePresentTexture)\n', '') + readback + r'''
+static void mk8_present_now(NvnTexture *t, double ultrawide) { (void)t; (void)ultrawide; while (!gate) Sleep(1); order[norder++] = 'P'; }
+''' + queue + readback + r'''
 static _Alignas(8) uint8_t list_a[1024], list_b[1024], list_c[1024];
 static uint8_t *put(uint8_t *p, uint32_t op, uint64_t x0, uint64_t x1, uint64_t tag) {
     CmdRec *r = (CmdRec *)p;
@@ -158,6 +158,17 @@ int main(int argc, char **argv) {
             (runtime/'nvn/objects.c').write_text('int y;\n')
             with self.assertRaises(ValueError):
                 async_submit.prepare(runtime)
+        for copies in (0, 2):
+            with self.subTest(present_entries=copies), tempfile.TemporaryDirectory() as folder:
+                runtime = Path(folder)
+                (runtime/'nvn').mkdir(parents=True)
+                (runtime/'nvn/nvn.h').write_text(async_submit.SYNC_OLD, encoding='utf-8')
+                text = '\n'.join((async_submit.SYNC_OF, async_submit.SUBMIT_OLD, async_submit.FINISH_OLD,
+                                  async_submit.FENCE_OLD, async_submit.WAIT_OLD,
+                                  async_submit.PRESENT_ENTRY*copies, async_submit.PRESENT_OLD))
+                (runtime/'nvn/objects.c').write_text(text, encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'nvnQueuePresentTexture'):
+                    async_submit.prepare(runtime)
 
 
 if __name__ == '__main__':
