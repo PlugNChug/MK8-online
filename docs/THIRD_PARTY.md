@@ -1,5 +1,14 @@
 # Dependências e atribuições
 
+## Headers do FidelityFX Frame Generation — 20/11/2026
+
+`runtime/mk8/graphics/ffx/ffx_framegeneration.h`, `ffx_framegeneration_api_types.h` e
+`vk/ffx_api_framegeneration_vk.h` são cópias não modificadas dos headers públicos do
+[FidelityFX SDK 2.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK), licença MIT, Copyright (C) 2026
+Advanced Micro Devices, Inc.; apenas os caminhos de `#include` foram ajustados à árvore deste projeto e o aviso MIT
+foi preservado em cada arquivo. O provedor Vulkan é construído localmente a partir do SDK baixado pelo próprio
+usuário; nenhum binário da AMD é distribuído (ver `docs/FSR3-4-FG.md`).
+
 ## Build e distribuição Linux
 
 O runtime usa a camada Linux da revisão fixada de SMM2Recomp. O bootstrap reutiliza os avisos do SDL 3.4.18, dos headers Vulkan 1.4.363 e do Vulkan Memory Allocator 3.4.0. O loader Vulkan e os drivers são do sistema. [SDL 3.4.18](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18) · [Vulkan-Headers 1.4.363](https://github.com/KhronosGroup/Vulkan-Headers/releases/tag/v1.4.363) · [Vulkan Memory Allocator 3.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/releases/tag/v3.4.0)
