@@ -1,6 +1,7 @@
 """Opt-in Settings entry experiment for the verified MK8 4.0.1 top menu."""
-import hashlib
 from pathlib import Path
+
+from guest_source import verified_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = 'main_114.c'
@@ -17,8 +18,7 @@ def patch_guest(source, original, output):
     if original.parent.name != 'main' or original.name not in (UNIT, 'main_113.c', 'main_082.c', 'main_115.c', *SHARED_HASHES):
         return source
     expected = {UNIT: SOURCE_SHA256, 'main_113.c': BUILD_SHA256, 'main_082.c': NAV_SHA256, 'main_115.c': TICK_SHA256, **SHARED_HASHES}[original.name]
-    if hashlib.sha256(original.read_bytes()).hexdigest() != expected:
-        raise ValueError('Settings experiment requires verified MK8 4.0.1 top-menu code')
+    verified_bytes(original, expected, 'Settings experiment requires verified MK8 4.0.1 top-menu code')
     text = source.read_text(encoding='utf-8').replace('\r\n', '\n')
     if original.name in SHARED_HASHES:
         function, marker, hook = ('f_700049a8fc', '    { uint64_t ea = c->x[19] + 0x1f0ull; ST32(ea, 0u); }', 'mk8_settings_shared_build') if original.name == 'main_100.c' else (

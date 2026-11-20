@@ -1,7 +1,7 @@
-"""Reject AMD FidelityFX provider artifacts from a Linux release package.
+"""Reject AMD FidelityFX provider artifacts from a release package.
 
 The FSR provider is an optional, private component: its binaries, ML models and
-frame-generation SPIR-V blobs must never be redistributed.  The Linux package
+frame-generation SPIR-V blobs must never be redistributed.  The release package
 contains runtime *sources* (including the MIT FFX headers and the optional
 bridge), so a name check is enough for files; ELF shared objects are also
 checked for the FFX entry point in case a provider was copied in by accident.
@@ -26,8 +26,14 @@ FORBIDDEN = (
      "FSR4 model assets"),
     (re.compile(r"(^|/)fg_blobs(?:/|$)", re.I),
      "frame-generation SPIR-V blobs"),
-    (re.compile(r"(^|/)fg[-_][^/]*\.spv$", re.I),
-     "frame-generation SPIR-V blob"),
+    (re.compile(r"(^|/)libmk8_mlfi_[^/]*\.so(?:\..*)?$", re.I),
+     "AMD FidelityFX provider library"),
+    (re.compile(r"(^|/)(?:models/[^/]+\.(?:bin|dat|weights)|[^/]+\.(?:onnx|weights))$", re.I),
+     "generated model"),
+    (re.compile(r"(^|/)(?:[^/]+\.spv|(?:fg|upscaler)_blobs\.(?:h|hpp|inc)|mlfi_shaders\.h)$", re.I),
+     "generated shader"),
+    (re.compile(r"(^|/)mk8d(?:game|[-_]code[-_][^/]+)\.(?:dll|so)(?:\.id)?$", re.I),
+     "recompiled game module"),
 )
 
 
@@ -43,11 +49,21 @@ def _check_name(name):
         if pattern.search(relative):
             raise ForbiddenArtifact(
                 f"{description} in the release package: {name}\n"
-                "Remove the provider/assets and rebuild the package; the FSR provider is not redistributable."
+                "Remove the artifact and rebuild the package."
             )
 
 
+def _binary(name):
+    name = name.lower()
+    return name.endswith((".dll", ".so")) or ".so." in name
+
+
 def _exports_symbol(data):
+    if data.startswith(b"MZ"):
+        # The PE export name table contains the exact NUL-terminated entry point.
+        return b"\0" + SYMBOL.encode() + b"\0" in data
+    if not data.startswith(b"\x7fELF"):
+        return False
     with tempfile.NamedTemporaryFile(prefix="mk8-package-guard-", suffix=".so") as temporary:
         temporary.write(data)
         temporary.flush()
@@ -74,7 +90,7 @@ def _exports_symbol(data):
 
 
 def _audit_file(path):
-    if path.name.endswith(".so") or ".so." in path.name:
+    if _binary(path.name):
         try:
             data = path.read_bytes()
         except OSError as error:
@@ -104,7 +120,7 @@ def audit_archive(path):
         with zipfile.ZipFile(path) as archive:
             for name in archive.namelist():
                 _check_name(name)
-                if name.endswith(".so") or ".so." in name:
+                if _binary(name):
                     with archive.open(name) as member:
                         data = member.read()
                     if _exports_symbol(data):
@@ -117,7 +133,7 @@ def audit_archive(path):
         with tarfile.open(path) as archive:
             for member in archive.getmembers():
                 _check_name(member.name)
-                if member.isfile() and (member.name.endswith(".so") or ".so." in member.name):
+                if member.isfile() and _binary(member.name):
                     extracted = archive.extractfile(member)
                     data = extracted.read() if extracted is not None else b""
                     if _exports_symbol(data):

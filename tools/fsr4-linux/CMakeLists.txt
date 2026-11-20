@@ -8,7 +8,7 @@ find_package(Vulkan REQUIRED)
 
 # The FFX API headers come from the user's FidelityFX SDK 2.4.0 tree. Inside the
 # SDK this directory is <sdk>/linux and the default below is right; when the
-# port is vendored outside the SDK (tools/fsr4-linux) pass -DFSRSDK_ROOT=<sdk>
+# port is vendored outside the SDK (tools/fsr4-linux) pass -DFSR4_SDK_ROOT=<sdk>
 # or set the FSR4_SDK_ROOT environment variable.
 set(FSR4_SDK_ROOT "$ENV{FSR4_SDK_ROOT}" CACHE PATH
     "FidelityFX SDK 2.4.0 tree (contains Kits/FidelityFX)")
@@ -19,7 +19,7 @@ get_filename_component(FSR4_SDK_ROOT "${FSR4_SDK_ROOT}" ABSOLUTE)
 if(NOT EXISTS "${FSR4_SDK_ROOT}/Kits/FidelityFX/api/include/ffx_api.h")
     message(FATAL_ERROR
         "FSR4_SDK_ROOT must point at the FidelityFX SDK 2.4.0 tree "
-        "(got '${FSR4_SDK_ROOT}'); set -DFSRSDK_ROOT or the FSR4_SDK_ROOT environment variable")
+        "(got '${FSR4_SDK_ROOT}'); set -DFSR4_SDK_ROOT or the FSR4_SDK_ROOT environment variable")
 endif()
 set(FSR4_FFX_API_INCLUDE "${FSR4_SDK_ROOT}/Kits/FidelityFX/api/include")
 set(FSR4_FFX_UPSCALER_INCLUDE "${FSR4_SDK_ROOT}/Kits/FidelityFX/upscalers/include")

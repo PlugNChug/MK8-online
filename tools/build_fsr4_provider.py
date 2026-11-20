@@ -411,7 +411,7 @@ def build(args):
     env = os.environ.copy()
     env["FSR4_SDK_ROOT"] = str(sdk_root)
     run(["cmake", "-S", PORT, "-B", build_dir, "-G", "Ninja",
-         "-DCMAKE_BUILD_TYPE=Release", f"-DFSRSDK_ROOT={sdk_root}"], env=env)
+         "-DCMAKE_BUILD_TYPE=Release", f"-DFSR4_SDK_ROOT={sdk_root}"], env=env)
     # Only the provider is installed; the loader and the Phase 0 runner are not
     # part of the runtime path and would add compile time and an unnecessary .so.
     run(["cmake", "--build", build_dir, "--target", "amd_fidelityfx_upscaler_vk",

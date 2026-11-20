@@ -11,7 +11,7 @@ This is the project's own GPL-3.0-only native Linux FSR 4.1.2 port, vendored at
 `tools/fsr4-linux`. The user builds it locally with
 `tools/build_fsr4_provider.py`; AMD's signed DLL and the extracted SPIR-V/models
 are never committed. The FFX headers come from the user's FidelityFX SDK 2.4.0
-tree: pass `-DFSRSDK_ROOT=<sdk>` (or set `FSR4_SDK_ROOT`) when configuring
+tree: pass `-DFSR4_SDK_ROOT=<sdk>` (or set `FSR4_SDK_ROOT`) when configuring
 outside the SDK. See `docs/FSR4-UPSCALER.md`. The layout below is the original
 SDK-relative view; the vendored copy has no `build/` directory.
 
@@ -50,7 +50,7 @@ Build the native runner and the reference tracer:
 ```sh
 cd linux
 cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DFSRSDK_ROOT=/path/to/FidelityFX-SDK-2.4.0
+  -DFSR4_SDK_ROOT=/path/to/FidelityFX-SDK-2.4.0
 cmake --build build/native
 sh tests/reference/build.sh          # mingw PE; copies the signed DLLs
 ```

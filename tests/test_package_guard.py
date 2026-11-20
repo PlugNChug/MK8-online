@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -15,6 +16,8 @@ spec.loader.exec_module(guard)
 
 
 def shared_object(path, source):
+    if sys.platform != "linux":
+        raise unittest.SkipTest("ELF fixture requires Linux")
     clang = shutil.which("clang")
     if not clang:
         raise unittest.SkipTest("clang is required to build a test shared object")
@@ -25,7 +28,9 @@ def shared_object(path, source):
 class PackageGuardTests(unittest.TestCase):
     def test_provider_libraries_and_private_assets_are_rejected_by_name(self):
         for name in ("libamd_fidelityfx_upscaler_vk.so", "amd_fidelityfx_loader.dll",
-                     "fsr4-assets/models.bin", "fg_blobs/pass.spv", "fg_apply.spv"):
+                     "fsr4-assets/models.bin", "fg_blobs/pass.spv", "fg_apply.spv",
+                     "tools/fsr4-linux/models/FP8_standard.bin", "mlfi_shaders.h",
+                     "runtime/mk8dgame.dll", "runtime/mk8d-code-main.dll", "runtime/mk8dgame.so"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 path = root / name

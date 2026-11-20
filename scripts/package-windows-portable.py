@@ -7,14 +7,16 @@ create the MSVC setup.exe; that remains a Windows CI/release step.
 """
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from launcher_payload import FFMPEG_FILES, HOST_FILES, write_payload
+from package_guard import audit_archive
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,42 +32,6 @@ def version():
     if not match:
         raise SystemExit('workspace version not found')
     return match.group(1)
-
-
-def payload_files():
-    yield ROOT / 'LICENSE'
-    yield ROOT / 'upstream/manifests/smm2recomp.json'
-    for folder, suffixes in (
-        ('runtime', None),
-        ('toolchain', {'.py', '.txt', '.html'}),
-        ('games/mk8d', None),
-        ('scripts', {'.py', '.ps1'}),
-        ('docs/licenses', None),
-    ):
-        for path in sorted((ROOT / folder).rglob('*')):
-            if not path.is_file() or '__pycache__' in path.parts:
-                continue
-            if suffixes is not None and path.suffix not in suffixes:
-                continue
-            yield path
-    for name in (
-        'build_fg_provider.py', 'gen_fg_blobs.py', 'build_upscaler_provider.py',
-        'gen_upscaler_blobs.py', 'build_fsr4_provider.py', 'fetch_vendor_sdk.py',
-        'extract_fg_spv.py', 'extract_mlfi.py', 'dlss_rtx_harness.cpp',
-        'dlss_bridge_harness.cpp', 'mlfi_probe.c',
-    ):
-        path = ROOT / 'tools' / name
-        if path.is_file():
-            yield path
-
-
-def write_payload(path):
-    with ZipFile(path, 'w', ZIP_DEFLATED) as archive:
-        for source in payload_files():
-            entry = ZipInfo(source.relative_to(ROOT).as_posix())
-            entry.date_time = (2026, 11, 20, 0, 0, 0)
-            archive.writestr(entry, source.read_bytes(), compress_type=ZIP_DEFLATED)
-    return digest(path)
 
 
 def build_launcher(payload, payload_id, target_dir):
@@ -85,57 +51,49 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'local/windows-portable')
     parser.add_argument('--target-dir', type=Path, default=ROOT / 'local/windows-portable/target')
-    parser.add_argument('--host-dir', type=Path, default=ROOT / 'local/windows-rtx2/host')
-    parser.add_argument('--game-dir', type=Path, default=ROOT / 'local/windows-rtx2/native-all')
-    parser.add_argument('--deps-dir', type=Path,
-                        default=ROOT / 'local/windows-verify/run-win')
-    parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--host-dir', type=Path, default=ROOT / 'prebuilt/host')
+    parser.add_argument('--importer-dir', type=Path, default=ROOT / 'tools/mk8-import')
+    parser.add_argument('--ffmpeg-dir', type=Path, default=ROOT / 'prebuilt/ffmpeg')
+    parser.add_argument('--deps-dir', type=Path, default=ROOT / 'local/windows-verify/run-win')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, ROOT / 'scripts/fetch-upstream.py'], check=True)
     payload = output / 'launcher-source.zip'
-    payload_id = write_payload(payload)
-    print(f'payload {payload} {payload.stat().st_size} bytes sha256={payload_id}', flush=True)
-    launcher, webview = build_launcher(payload, payload_id, args.target_dir.resolve()) \
-        if not args.skip_build else (
-            args.target_dir.resolve() / 'x86_64-pc-windows-gnu/release/Launcher.exe',
-            args.target_dir.resolve() / 'x86_64-pc-windows-gnu/release/WebView2Loader.dll')
+    payload_id = write_payload(payload, True, importer=args.importer_dir, host=args.host_dir, ffmpeg=args.ffmpeg_dir)
+    launcher, webview = build_launcher(payload, payload_id, args.target_dir.resolve())
     tree = output / f'MK8-online-{version()}-windows-x86_64-portable'
+    inventory = {
+        'Launcher.exe': launcher,
+        'WebView2Loader.dll': webview,
+        'launcher-source.zip': payload,
+        'LICENSE': ROOT / 'LICENSE',
+        **{f'runtime/{name}': args.host_dir / name for name in HOST_FILES},
+        **{f'runtime/{name}': args.ffmpeg_dir / name for name in FFMPEG_FILES},
+        **{f'runtime/{name}': args.deps_dir / name
+           for name in ('SDL3.dll', 'vulkan-1.dll', 'libshaderc_shared.dll')},
+    }
+    for name, source in inventory.items():
+        if not source.is_file():
+            raise ValueError(f'Missing {name}: {source}')
     if tree.exists():
         shutil.rmtree(tree)
-    runtime = tree / 'runtime'
-    runtime.mkdir(parents=True)
-    shutil.copy2(launcher, tree / 'Launcher.exe')
-    shutil.copy2(webview, tree / 'WebView2Loader.dll')
-    shutil.copy2(payload, tree / 'launcher-source.zip')
-    shutil.copy2(ROOT / 'LICENSE', tree / 'LICENSE')
+    (tree / 'runtime').mkdir(parents=True)
+    for name, source in inventory.items():
+        shutil.copy2(source, tree / name)
+    (tree / 'portable.txt').write_text('MK8-online portable mode\n', encoding='utf-8')
     (tree / 'README.txt').write_text(
         'MK8-online Windows x86-64 portable build\n\n'
-        'This tree was cross-built without the MSVC/WebView2 setup.exe path.\n'
-        'Run Launcher.exe --headless --port 0 --data-dir <folder> for the local API, or\n'
-        'run runtime/mk8drecomp.exe <extracted data folder> for the game. Game files,\n'
-        'keys, saves and vendor DLLs are not included. The runtime needs SDL3, vulkan-1,\n'
-        'libshaderc_shared and the FFmpeg DLLs in runtime/.\n', encoding='utf-8')
-    for path in sorted(args.host_dir.glob('*')):
-        if path.is_file() and path.suffix.lower() in ('.exe', '.dll', '.dll.a'):
-            shutil.copy2(path, runtime / path.name)
-    for path in sorted(args.game_dir.glob('*')):
-        if path.is_file() and (path.suffix.lower() in ('.dll', '.id')):
-            shutil.copy2(path, runtime / path.name)
-    for path in sorted(args.deps_dir.glob('*.dll')):
-        target = runtime / path.name
-        if not target.is_file():
-            shutil.copy2(path, target)
+        'Run Launcher.exe to prepare your own game files. Data is stored in portable/.\n'
+        'Launcher.exe --headless --port 0 starts the local API.\n', encoding='utf-8')
     archive = output / f'{tree.name}.zip'
     with ZipFile(archive, 'w', ZIP_DEFLATED) as bundle:
         for path in sorted(tree.rglob('*')):
             if path.is_file():
                 bundle.write(path, path.relative_to(output).as_posix())
+    audit_archive(archive)
     print(f'tree {tree}', flush=True)
     print(f'archive {archive} {archive.stat().st_size} bytes sha256={digest(archive)}', flush=True)
-    for label, path in (('Launcher.exe', tree / 'Launcher.exe'), ('mk8drecomp.exe', runtime / 'mk8drecomp.exe'),
-                        ('mk8dgame.dll', runtime / 'mk8dgame.dll'), ('launcher-source.zip', payload)):
-        print(f'{label} {path.stat().st_size} {digest(path)}', flush=True)
 
 
 if __name__ == '__main__':
