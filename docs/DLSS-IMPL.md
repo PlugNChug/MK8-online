@@ -1,29 +1,29 @@
-# DLSS Super Resolution / DLAA: implementation notes
+# DLSS Super Resolution / DLAA and Frame Generation: implementation notes
 
-Status 20/11/2026. This is the first implementable DLSS milestone from
-[DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md) (phase 1): an optional NGX Vulkan bridge
-beside the FSR one. It is **compile-tested and loader-tested only**. This host has an
-AMD RX 9070 XT (RADV) and no NVIDIA GPU, so feature creation and evaluation were not
-executed and no image was produced. `gameplay_verified` stays false.
+Status 20/11/2026. This covers phase 1 (DLSS Super Resolution / DLAA) and phase 3
+(DLSS Frame Generation, DLSS-G) from [DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md). Both
+are optional NGX Vulkan bridges; both are **compile-tested and loader/ABI-tested only**.
+This host has an AMD RX 9070 XT (RADV) and no NVIDIA GPU, so feature creation and
+evaluation were not executed and no image was produced. `gameplay_verified` stays false.
 
 The implementation is deliberately small and fail-closed: no vendor binary is
-committed, nothing is linked against NGX, and every failure returns
-`VK_NULL_HANDLE` with one line that names the missing piece.
+committed, nothing is linked against NGX, and every failure returns `VK_NULL_HANDLE`
+(SR) or a zeroed frame with a reasoned one-time log (DLSS-G), so the existing path runs.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `runtime/mk8/graphics/dlss.cpp` | loader probe, NGX init, feature creation, per-frame EvaluateFeature |
-| `runtime/mk8/graphics/dlss.h` | probe/status API and the `mk8_dlss_upscale` declaration |
-| `runtime/mk8/graphics/ngx/mk8_ngx_abi.h` | hand-written minimal NGX Vulkan ABI (see licences below) |
-| `runtime/mk8/graphics/fsr.cpp` | one dispatch hunk: `MK8_DLSS=1` calls the bridge before the FSR path |
-| `tests/test_dlss.py` | native loader failure paths, real-plugin dlopen, ABI static asserts |
+| `runtime/mk8/graphics/dlss.cpp` | loaders, NGX init, SR feature, DLSS-G feature, evaluate, present helpers |
+| `runtime/mk8/graphics/dlss.h` | probe/status API, `mk8_dlss_upscale`, `mk8_dlss_fg_*` |
+| `runtime/mk8/graphics/ngx/mk8_ngx_abi.h` | hand-written minimal NGX Vulkan ABI, including the DLSS-G structs (see licences below) |
+| `runtime/mk8/graphics/fsr.cpp` | one dispatch hunk: `MK8_DLSS=1` calls the SR bridge before the FSR path |
+| `tests/test_dlss.py` | native loader failure paths, real-plugin dlopen, SR and DLSS-G ABI static asserts |
 
 No `toolchain/dlss.py` and no `toolchain/host.py` change were needed: the host build
-already compiles every `runtime/mk8/**/*.cpp`, and the dispatch lives in `fsr.cpp`,
-so the prepared `exec.c` anchor from `toolchain/fsr.py` is reused unchanged. The
-runtime-only build applies it automatically.
+already compiles every `runtime/mk8/**/*.cpp`, the SR dispatch lives in `fsr.cpp`, and
+the DLSS-G API is a library waiting for the present-path hand-off documented below.
+`fsr_fg.cpp`/`device.c` were not edited (owned by other work).
 
 ## Licences: why the NVIDIA headers are not vendored
 
@@ -153,7 +153,7 @@ FSR/toolchain owner.
 ## Verified here
 
 - `dlss.cpp` and the edited `fsr.cpp` compile with the runtime's C++17 flags.
-- A fresh runtime-only host build in `local/dlss-sr/host` compiled every prepared unit,
+- A fresh runtime-only host build in `local/dlss-fg/host` compiled every prepared unit,
   linked and produced `mk8drecomp`. The build applies `toolchain/fsr.py` and the other
   preparation steps to its own copy, so the present-hook anchor is the real one.
 - `tests/test_dlss.py` (8 cases) exercises the compiled probe natively:
@@ -176,16 +176,17 @@ FSR/toolchain owner.
 ### Evidence (20/11/2026)
 
 ```text
-Runtime x86_64-linux-gnu: 219/221 unidades
-Runtime x86_64-linux-gnu: 220/221 unidades
-Runtime x86_64-linux-gnu: 221/221 unidades
-EXE .../local/dlss-sr/host/mk8drecomp
+Runtime x86_64-linux-gnu: 218/222 unidades
+Runtime x86_64-linux-gnu: 220/222 unidades
+Runtime x86_64-linux-gnu: 221/222 unidades
+Runtime x86_64-linux-gnu: 222/222 unidades
+EXE .../local/dlss-fg/host/mk8drecomp
 
-$ nm local/dlss-sr/host/mk8drecomp | grep -E ' T mk8_(dlss|fsr4)_upscale$'
-0000000000351fb0 T mk8_dlss_upscale
-00000000003576c0 T mk8_fsr4_upscale
+$ nm local/dlss-fg/host/mk8drecomp | grep -E ' T mk8_(dlss|fsr4)_upscale$'
+0000000000355160 T mk8_dlss_upscale
+000000000035dbe0 T mk8_fsr4_upscale
 
-$ ldd local/dlss-sr/host/mk8drecomp | grep -i nvidia
+$ ldd local/dlss-fg/host/mk8drecomp | grep -i nvidia
 (empty: NGX is loaded with dlopen, never linked)
 
 $ sha256sum ~/.local/share/mk8online/nvidia/libnvidia-ngx-dlss.so.310.9.16
@@ -207,9 +208,10 @@ NVSDK_NGX_VULKAN_Shutdown
 NVSDK_NGX_VULKAN_Shutdown1
 ```
 
-`python -m unittest tests.test_dlss` reports 8 tests OK. The probe harness is built from
-the shipped `dlss.cpp` with `-DMK8_DLSS_PROBE_ONLY`, so its failure paths are the real
-ones, not a re-implementation.
+`python -m unittest tests.test_dlss` reports 18 tests OK (the SR and DLSS-G cases
+share one probe harness). The harness is built from the shipped `dlss.cpp` with
+`-DMK8_DLSS_PROBE_ONLY`, so its failure paths are the real ones, not a
+re-implementation.
 
 ## NOT verified
 
@@ -232,26 +234,143 @@ No NVIDIA GPU and no `libnvidia-ngx.so.1` on this host, so none of the following
   `nvngx_dlss.dll`) is implemented but **not compiled** in this checkout, which has no
   Windows dependency tree (`tools/deps` and the zig MINGW toolchain are absent).
 
-## DLSS Frame Generation: the hook point, not implemented
+## DLSS Frame Generation (phase 3): implemented, not executed
 
-DLSS-G is a separate phase and deliberately absent. The next step is:
+Status 20/11/2026. The DLSS-G library is implemented and **compile/loader/ABI tested**;
+no NVIDIA GPU is present, so feature creation, evaluation and pacing were not executed.
+It is **off by default**: `MK8_DLSS_FG` must be set (any non-empty value except `0`) and
+`mk8_dlss_fg_init` must be called by the presenter. With the variable unset the module
+has no effect: no constructor, no hook, and the existing FSR FG/upscaler/bilinear path
+runs unchanged.
 
-1. Fetch `libnvidia-ngx-dlssg.so.310.9.16` (already pinned by
-   `tools/fetch_vendor_sdk.py`) and check it exports `NVSDK_NGX_VULKAN_CreateFeature`
-   for `NVSDK_NGX_Feature_FrameGeneration`.
-2. Require `VK_NV_low_latency2` on the device and implement
-   `vkSetLatencySleepModeNV` / `vkLatencySleepNV` / `vkGetLatencyTimingsNV` around
-   present. Without it the pacing and latency are wrong even when the images are.
-3. Put the integration beside `runtime/mk8/graphics/fsr_fg.cpp`'s swapchain wrapper,
-   not in this upscale bridge: NGX does not intercept `vkQueuePresentKHR`, so the
-   application must own both output images and present the real and interpolated
-   frames once each, in order. The current `post_process` hook returns a single view
-   and cannot express that.
-4. Create with `NVSDK_NGX_DLSSG_Create_Params{Width, Height, RenderWidth,
-   RenderHeight, NativeBackbufferFormat, DynamicResolutionScaling}` and evaluate with
-   `NVSDK_NGX_VK_DLSSG_Eval_Params` plus `NVSDK_NGX_DLSSG_Opt_Eval_Params`
-   (`multiFrameCount = 1` for 2x, camera matrices without TAA jitter, `Reset`).
-5. Validate on RTX 40/50 only; keep FG off by default, and never combine it with the
-   FSR frame-generation proxy in the same run.
+`MK8_DLSS` (Super Resolution) and `MK8_DLSS_FG` are **mutually exclusive in this
+phase**. Both would call `NVSDK_NGX_VULKAN_Init_with_ProjectID` and share the capability
+parameter map; separate maps plus a shared init are the next integration step. DLSS-G
+does not need DLSS SR for a display-size backbuffer: the game's FSR1 upscaler (or a
+future DLSS SR output) is enough.
 
-Do not use Streamline for the native Linux path: 2.14.16 ships Windows DLLs only.
+### API sequence implemented
+
+`mk8_dlss_fg_*` lives in `runtime/mk8/graphics/dlss.cpp`/`dlss.h`; the ABI additions
+(`Mk8NgxDlssgCreateParams`, `Mk8NgxDlssgOptEvalParams`, the `DLSSG.*` parameter names)
+are in `ngx/mk8_ngx_abi.h` and are static-asserted against the official
+`nvsdk_ngx_defs_dlssg.h` / `nvsdk_ngx_params_dlssg.h` by `tests/test_dlss.py`.
+
+1. **Probe.** `mk8_dlss_fg_probe` resolves `libnvidia-ngx-dlssg.so*` (highest version
+   first; `dlss`/`dlssd` excluded), validates the ELF before `dlopen`, checks
+   `CreateFeature1`/`CreateFeature`, `EvaluateFeature`, `ReleaseFeature`,
+   `GetFeatureRequirements`, then loads the driver core and its Vulkan parameter
+   entry points. Missing plugin/core, truncated files and an old plugin without the
+   Create/Release ABI are rejected with a reason.
+2. **Low latency gate.** `mk8_dlss_fg_init` requires `VK_NV_low_latency2` to be
+   advertised by the physical device and the device to have been created with it
+   (`vkSetLatencySleepModeNV`, `vkLatencySleepNV`, `vkSetLatencyMarkerNV` resolved
+   through `vkGetDeviceProcAddr`). It calls `vkSetLatencySleepModeNV` with
+   `lowLatencyMode = VK_TRUE` and fails closed on any error. The current `device.c`
+   does **not** enable this extension, so a real run fails with the exact message
+   "the device was created without VK_NV_low_latency2; enable the extension before
+   vkCreateDevice (device.c)" until the hand-off below is applied.
+3. **Init and capability.** `NVSDK_NGX_VULKAN_Init_with_ProjectID(..., 0x15)`, then
+   `FrameGeneration.Available`. A zero is reported with
+   `FrameGeneration.NeedsUpdatedDriver` and the required driver major/minor read from
+   the same parameter map. `GetFeatureRequirements` for
+   `NVSDK_NGX_Feature_FrameGeneration` is decoded with the same bit table as SR
+   ("driver too old", "GPU unsupported", ...).
+4. **Create.** `Width`/`Height` are the display size, `DLSSG.BackbufferFormat` is the
+   swapchain `VkFormat`, `DLSSG.InternalWidth/Height` the render size and
+   `DLSSG.DynamicResolution = 0`; then
+   `NVSDK_NGX_VULKAN_CreateFeature1(device, cb, NVSDK_NGX_Feature_FrameGeneration,
+   params, &handle)`. `FrameGeneration.FeatureInitResult` is logged on failure.
+   A display-size interpolated output image is allocated (`STORAGE | SAMPLED |
+   TRANSFER_SRC`) and primed to `GENERAL` in the init command buffer. The **real**
+   frame is the caller's backbuffer; `OutputReal` is intentionally not set, so NGX
+   does not touch it.
+5. **Evaluate (per rendered frame).** Inputs: the display-size backbuffer, depth, MVs,
+   jitter, row-major view (3x4) and projection (4x4), frame id, reset/pause flags.
+   The module derives `cameraViewToClip`, `clipToCameraView`, `clipToLensClip`
+   (identity), `clipToPrevClip` and `prevClipToClip`; camera position/up/right/forward
+   from the view matrix; FOV/aspect from the projection when not supplied; jitter in
+   clip space (`2 * pixels / render size`); and `mvecScale = 1/renderWidth,
+   1/renderHeight` because the runtime's vectors are pixel-space. It sets
+   `multiFrameCount = 1` / `multiFrameIndex = 1` (2x), `BackbufferFrameID`, the camera
+   parameters and `Reset`, records `NVSDK_NGX_VULKAN_EvaluateFeature` into the caller's
+   command buffer and restores the input layouts. `DepthInverted`, `ColorBuffersHDR`,
+   `NotRenderingGameFrames` and `Reset` come from the caller/init.
+6. **Copy and present.** `mk8_dlss_fg_copy_interpolated` copies the interpolated image
+   into a second acquired swapchain image and transitions it to
+   `PRESENT_SRC_KHR`. `mk8_dlss_fg_present` presents the real and interpolated images
+   in order, with `VK_NV_low_latency2` PRESENT_START/PRESENT_END markers.
+   `mk8_dlss_fg_latency_sleep` wraps `vkLatencySleepNV` for the simulation loop.
+   **NGX does not present**: the module presents the two WSI images; the caller owns
+   their acquisition, semaphores and queue submission.
+
+### What is verified here
+
+- A fresh host build in `local/dlss-fg/host` compiled all 222 units and linked
+  `mk8drecomp`; `mk8_dlss_fg_init/evaluate/copy_interpolated/present/latency_*` and the
+  existing `mk8_dlss_upscale`/`mk8_fsr4_upscale` are present, and `ldd` shows no NVIDIA
+  link dependency (NGX is dlopen-only).
+- `tests/test_dlss.py` now runs 18 cases: all the SR cases plus the DLSS-G enabled gate
+  (`unset = 0`, `1 = 1`, `0 = 0`), missing plugin, truncated real plugin, a library
+  without NGX exports, an old plugin without Create/Release, version-selection/licence,
+  the real pinned `libnvidia-ngx-dlssg.so.310.9.16`, the requirement-bit decoder, the
+  DLSSG ABI static asserts, and a `-fsyntax-only` compile of the heavy path against the
+  prepared runtime headers.
+- The fetched DLSS-G plugin (7,391,232 bytes, SHA-256 `574839ca…e6f7`, matching the
+  pin) dlopens and exports the 12 `NVSDK_NGX_VULKAN_*` entry points. On this host the
+  probe then stops at the missing core:
+
+  ```text
+  [dlss_fg] DLSS Frame Generation unavailable: no NGX core library (libnvidia-ngx.so.1): libnvidia-ngx.so.1: cannot open shared object file: No such file or directory; the core is installed by the NVIDIA driver, not by this project
+  ```
+
+  With no plugin, the exact line is
+  `[dlss_fg] DLSS Frame Generation unavailable: no DLSS-G plugin
+  (libnvidia-ngx-dlssg.so*) in <dir>; fetch it with tools/fetch_vendor_sdk.py
+  --accept-license nvidia`.
+- The official `nvsdk_ngx_params_dlssg.h` is **not pinned by the current downloader**
+  manifest (it was fetched manually for the ABI test); the test skips when it is absent.
+  Pinning it is a small follow-up for the downloader's owner.
+
+### NOT verified (no NVIDIA GPU), and the remaining hand-off
+
+Not executed: `Init`, `FrameGeneration.Available = 1`, `GetFeatureRequirements`,
+`CreateFeature`, `EvaluateFeature`, the copy/present pair, the low-latency sleep/marker
+calls, and any image or frame pacing. The matrix conventions, jitter units
+(clip-space conversion), `mvecScale = 1/renderSize`, the depth convention, the input
+layouts (`PRESENT_SRC`/`GENERAL`/`SHADER_READ_ONLY`), `BackbufferFormat`, and the
+`InternalWidth/Height` hint all need validation on RTX 40/50 hardware. Windows compiles
+the same `#ifdef` path but was not built here (no Windows dependency tree).
+
+Two runtime hand-offs remain, because `fsr_fg.cpp`/`device.c` are owned elsewhere and
+were not edited:
+
+1. **Device creation (`device.c` / its toolchain step).** When
+   `MK8_DLSS_FG` is set, append `VK_NV_LOW_LATENCY_2_EXTENSION_NAME` to the device
+   extension list if `vkEnumerateDeviceExtensionProperties` reports it, before
+   `vkCreateDevice`. Some drivers also require
+   `VkSwapchainLatencyCreateInfoNV{latencyModeEnable = VK_TRUE}` chained into
+   `VkSwapchainCreateInfoKHR`. Without this, `mk8_dlss_fg_init` fails closed with the
+   message above.
+2. **Present path (`fsr_fg.cpp`, or the presenter).** The smallest useful integration
+   is:
+   - at swapchain creation, call `mk8_dlss_fg_init` with the instance, physical
+     device, device, present queue, an open command buffer, the swapchain, format,
+     display/render sizes; if it returns true, do **not** create the FFX FG proxy
+     (DLSS-G uses the normal swapchain);
+   - where the final display-size image and command buffer are available, fill
+     `Mk8DlssFgInputs` (backbuffer = that image, depth/MVs from `mk8_fsr_fg_inputs`,
+     view/projection/jitter from `g_fsr_view/g_fsr_proj/g_fsr_jitter_*`, frame id,
+     layout fields) and call `mk8_dlss_fg_evaluate`; then acquire a second swapchain
+     image, record `mk8_dlss_fg_copy_interpolated(cb, second_image, layout)`, submit
+     with two signal semaphores, and call `mk8_dlss_fg_present(queue, swapchain,
+     real_index, interp_index, real_sem, interp_sem)`;
+   - call `mk8_dlss_fg_latency_sleep` before simulation and
+     `mk8_dlss_fg_latency_marker` around the submit/present markers if the existing
+     pacing code wants the full Reflex sequence.
+
+   This is intentionally more than two lines because DLSS-G needs two swapchain images
+   and two signal semaphores; the module cannot acquire WSI images or submit the
+   caller's command buffer without taking over `fsr_fg.cpp`'s present ownership. The
+   API is complete, so the hand-off is mechanical. If `mk8_dlss_fg_evaluate` returns
+   `valid = false`, the caller must present the existing path's frame unchanged.

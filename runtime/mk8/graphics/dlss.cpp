@@ -49,6 +49,7 @@ static void lib_error_text(char *out, size_t n) {
     else while (written && (out[written - 1] == '\r' || out[written - 1] == '\n')) out[--written] = 0;
 }
 #define MK8_DLSS_PLUGIN_PREFIX "nvngx_dlss"
+#define MK8_DLSSG_PLUGIN_PREFIX "nvngx_dlssg"
 #define MK8_DLSS_PLUGIN_SUFFIX ".dll"
 #else
 typedef void *Mk8Lib;
@@ -60,6 +61,7 @@ static void lib_error_text(char *out, size_t n) {
     snprintf(out, n, "%s", error && *error ? error : "unknown dlopen error");
 }
 #define MK8_DLSS_PLUGIN_PREFIX "libnvidia-ngx-dlss.so"
+#define MK8_DLSSG_PLUGIN_PREFIX "libnvidia-ngx-dlssg.so"
 #define MK8_DLSS_PLUGIN_SUFFIX ""
 #endif
 
@@ -193,12 +195,17 @@ static int compare_paths(const void *left, const void *right) {
 
 // Collect plugin candidates from `directory`, sorted ascending. The caller tries the last
 // (highest) version first, so libnvidia-ngx-dlss.so.310.9.16 wins over libnvidia-ngx-dlss.so.
-static int collect_plugin_candidates(const char *directory, char paths[][MK8_DLSS_PATH_MAX], int capacity) {
+static int collect_plugin_candidates(const char *directory, const char *plugin_prefix,
+                                     const char *plugin_suffix,
+                                     char paths[][MK8_DLSS_PATH_MAX], int capacity) {
     int count = 0;
-    size_t prefix = strlen(MK8_DLSS_PLUGIN_PREFIX);
+    size_t prefix = strlen(plugin_prefix);
 #ifdef _WIN32
     char pattern[MK8_DLSS_PATH_MAX];
-    if (!path_join(pattern, sizeof pattern, directory, MK8_DLSS_PLUGIN_PREFIX "*" MK8_DLSS_PLUGIN_SUFFIX)) return 0;
+    if (!path_join(pattern, sizeof pattern, directory, plugin_prefix) ||
+        strlen(pattern) + strlen("*") + strlen(plugin_suffix) + 1 > sizeof pattern)
+        return 0;
+    snprintf(pattern + strlen(pattern), sizeof pattern - strlen(pattern), "*%s", plugin_suffix);
     WIN32_FIND_DATAA entry;
     HANDLE search = FindFirstFileA(pattern, &entry);
     if (search == INVALID_HANDLE_VALUE) return 0;
@@ -210,12 +217,13 @@ static int collect_plugin_candidates(const char *directory, char paths[][MK8_DLS
     } while (FindNextFileA(search, &entry));
     FindClose(search);
 #else
+    (void)plugin_suffix; // versioned .so names carry no suffix to strip
     DIR *dir = opendir(directory);
     if (!dir) return 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (strncmp(entry->d_name, MK8_DLSS_PLUGIN_PREFIX, prefix) != 0) continue;
-        // Exclude the Ray Reconstruction (dlssd) and Frame Generation (dlssg) plugins.
+        if (strncmp(entry->d_name, plugin_prefix, prefix) != 0) continue;
+        // Exclude other features (dlssd/dlssg) and unrelated files.
         char next = entry->d_name[prefix];
         if (next != 0 && next != '.') continue;
         if (count >= capacity) break;
@@ -261,7 +269,11 @@ void mk8_dlss_log_unavailable(const Mk8DlssProbe *probe) {
     fprintf(stderr, "[dlss] DLSS unavailable: %s\n", reason);
 }
 
-static bool probe_plugin(Mk8DlssProbe *probe) {
+static bool probe_plugin_named(Mk8DlssProbe *probe, const char *plugin_prefix, const char *plugin_suffix,
+                               const char *label) {
+#ifndef _WIN32
+    (void)plugin_suffix;  // the ELF plugin name has no suffix; versioned .so files are scanned
+#endif
     const char *configured = getenv("MK8_DLSS_LIB");
     char candidates[MK8_DLSS_MAX_CANDIDATES][MK8_DLSS_PATH_MAX];
     int count = 0;
@@ -270,24 +282,27 @@ static bool probe_plugin(Mk8DlssProbe *probe) {
         path_directory(candidates[0], probe->directory, sizeof probe->directory);
         count = 1;
     } else {
-        count = collect_plugin_candidates(probe->directory, candidates, MK8_DLSS_MAX_CANDIDATES);
+        count = collect_plugin_candidates(probe->directory, plugin_prefix, plugin_suffix, candidates,
+                                          MK8_DLSS_MAX_CANDIDATES);
         if (!count) {
 #ifdef _WIN32
-            // The SDK layout puts nvngx_dlss.dll beside the executable; the downloader layout
+            // The SDK layout puts nvngx_*.dll beside the executable; the downloader layout
             // puts it in the vendor directory. Both are covered by the scan above plus this.
             char executable[MK8_DLSS_PATH_MAX];
             DWORD length = GetModuleFileNameA(NULL, executable, (DWORD)sizeof executable);
             if (length && length < sizeof executable) {
+                char name[MK8_DLSS_PATH_MAX];
                 path_directory(executable, executable, sizeof executable);
-                if (path_join(candidates[0], sizeof candidates[0], executable, "nvngx_dlss.dll")) count = 1;
+                snprintf(name, sizeof name, "%s%s", plugin_prefix, plugin_suffix);
+                if (path_join(candidates[0], sizeof candidates[0], executable, name)) count = 1;
             }
 #endif
         }
         if (!count) {
             probe->status = MK8_DLSS_NO_PLUGIN;
             snprintf(probe->reason, sizeof probe->reason,
-                     "no DLSS plugin (%s*) in %s; fetch it with tools/fetch_vendor_sdk.py "
-                     "--accept-license nvidia", MK8_DLSS_PLUGIN_PREFIX, probe->directory);
+                     "no %s plugin (%s*) in %s; fetch it with tools/fetch_vendor_sdk.py "
+                     "--accept-license nvidia", label, plugin_prefix, probe->directory);
             return false;
         }
     }
@@ -332,14 +347,22 @@ static bool probe_plugin(Mk8DlssProbe *probe) {
         }
         lib_close(library);
         probe->status = MK8_DLSS_PLUGIN_EXPORTS_MISSING;
-        snprintf(probe->reason, sizeof probe->reason, "DLSS plugin %s lacks NGX exports: %s",
+        snprintf(probe->reason, sizeof probe->reason, "%s plugin %s lacks NGX exports: %s", label,
                  probe->plugin, missing);
         return false;
     }
     probe->status = MK8_DLSS_PLUGIN_LOAD_FAILED;
-    snprintf(probe->reason, sizeof probe->reason, "DLSS plugin %s did not load: %s",
+    snprintf(probe->reason, sizeof probe->reason, "%s plugin %s did not load: %s", label,
              candidates[count - 1], load_error);
     return false;
+}
+
+static bool probe_plugin(Mk8DlssProbe *probe) {
+    return probe_plugin_named(probe, MK8_DLSS_PLUGIN_PREFIX, MK8_DLSS_PLUGIN_SUFFIX, "DLSS");
+}
+
+static bool probe_plugin_fg(Mk8DlssProbe *probe) {
+    return probe_plugin_named(probe, MK8_DLSSG_PLUGIN_PREFIX, MK8_DLSS_PLUGIN_SUFFIX, "DLSS-G");
 }
 
 static bool probe_core(Mk8DlssProbe *probe) {
@@ -440,6 +463,61 @@ bool mk8_dlss_probe(Mk8DlssProbe *out) {
     local.reason[0] = 0;
     if (out) *out = local;
     return true;
+}
+
+bool mk8_dlss_fg_enabled(void) {
+    const char *value = getenv("MK8_DLSS_FG");
+    return value && *value && strcmp(value, "0") != 0;
+}
+
+bool mk8_dlss_fg_probe(Mk8DlssProbe *out) {
+    Mk8DlssProbe local;
+    memset(&local, 0, sizeof local);
+    local.status = MK8_DLSS_NO_PLUGIN;
+    default_plugin_directory(local.directory, sizeof local.directory);
+
+    if (!probe_plugin_fg(&local)) {
+        if (out) *out = local;
+        return false;
+    }
+    if (!probe_core(&local)) {
+        if (out) *out = local;
+        return false;
+    }
+    local.status = MK8_DLSS_OK;
+    local.reason[0] = 0;
+    if (out) *out = local;
+    return true;
+}
+
+const char *mk8_dlss_fg_status_name(Mk8DlssLoadStatus status) { return mk8_dlss_status_name(status); }
+
+void mk8_dlss_fg_log_unavailable(const Mk8DlssProbe *probe) {
+    const char *reason = probe && probe->reason[0] ? probe->reason : "no reason recorded";
+    fprintf(stderr, "[dlss_fg] DLSS Frame Generation unavailable: %s\n", reason);
+}
+
+const char *mk8_dlss_requirement_text(unsigned bits, char *buffer, size_t size) {
+    if (!bits) return "supported";
+    if (!buffer || size < 2) return "unsupported";
+    buffer[0] = 0;
+    struct {
+        unsigned bit;
+        const char *text;
+    } const reasons[] = {
+        {MK8_DLSS_SUPPORT_CHECK_NOT_PRESENT, "feature missing"},
+        {MK8_DLSS_SUPPORT_DRIVER_VERSION_UNSUPPORTED, "driver too old"},
+        {MK8_DLSS_SUPPORT_ADAPTER_UNSUPPORTED, "GPU unsupported"},
+        {MK8_DLSS_SUPPORT_OS_VERSION_BELOW_MINIMUM, "OS too old"},
+        {MK8_DLSS_SUPPORT_NOT_IMPLEMENTED, "not implemented"},
+    };
+    for (size_t i = 0; i < sizeof reasons / sizeof reasons[0]; i++) {
+        if (!(bits & reasons[i].bit)) continue;
+        size_t used = strlen(buffer);
+        if (used + 1 >= size) break;
+        snprintf(buffer + used, size - used, "%s%s", used ? ", " : "", reasons[i].text);
+    }
+    return buffer[0] ? buffer : "unsupported";
 }
 
 // ---------------------------------------------------------------------------------------
@@ -683,6 +761,22 @@ static bool to_wide(const char *text, wchar_t *out, size_t capacity) {
 #endif
 }
 
+// NGX writes logs/config under this directory; it must be writable by the process.
+static bool ngx_data_directory(char *out, size_t size) {
+    const char *base = getenv("XDG_DATA_HOME");
+    if (base && *base) {
+        snprintf(out, size, "%s/mk8online/nvidia/ngx-data", base);
+        return true;
+    }
+    base = getenv("HOME");
+#ifdef _WIN32
+    if (!base || !*base) base = getenv("USERPROFILE");
+#endif
+    if (!base || !*base) return false;
+    snprintf(out, size, "%s/.local/share/mk8online/nvidia/ngx-data", base);
+    return true;
+}
+
 static bool resolve_runtime_symbols(void) {
     dlss.create_feature1 = (Mk8NgxCreateFeature1Fn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
     dlss.create_feature = (Mk8NgxCreateFeatureFn)lib_symbol(dlss.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
@@ -760,21 +854,10 @@ static bool load_ngx(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
     if (!project_id || !*project_id) project_id = "6f1d2c3a-8b4e-4d7a-9c15-3e0a5b7c9d21";
 
     char data_directory[MK8_DLSS_PATH_MAX];
-    const char *data_base = getenv("XDG_DATA_HOME");
-    if (data_base && *data_base)
-        snprintf(data_directory, sizeof data_directory, "%s/mk8online/nvidia/ngx-data", data_base);
-    else {
-        data_base = getenv("HOME");
-#ifdef _WIN32
-        if (!data_base || !*data_base) data_base = getenv("USERPROFILE");
-#endif
-        if (!data_base || !*data_base) {
-            snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
-                     "no writable NGX data directory: XDG_DATA_HOME and HOME are unset");
-            return false;
-        }
-        snprintf(data_directory, sizeof data_directory, "%s/.local/share/mk8online/nvidia/ngx-data",
-                 data_base);
+    if (!ngx_data_directory(data_directory, sizeof data_directory)) {
+        snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
+                 "no writable NGX data directory: XDG_DATA_HOME and HOME are unset");
+        return false;
     }
     if (!mkdir_p(data_directory)) {
         snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
@@ -808,26 +891,12 @@ static bool load_ngx(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
         int rc = dlss.get_requirements(g_vk.inst, g_vk.phys, &discovery, &requirement);
         if (MK8_NGX_SUCCEEDED(rc)) {
             if (requirement.FeatureSupported != 0) {
-                char reasons[256] = {0};
+                char reasons[256];
                 unsigned bits = (unsigned)requirement.FeatureSupported;
-                if (bits & MK8_NGX_FEATURE_CHECK_NOT_PRESENT)
-                    snprintf(reasons + strlen(reasons), sizeof reasons - strlen(reasons), "%sfeature missing",
-                             reasons[0] ? ", " : "");
-                if (bits & MK8_NGX_FEATURE_DRIVER_VERSION_UNSUPPORTED)
-                    snprintf(reasons + strlen(reasons), sizeof reasons - strlen(reasons), "%sdriver too old",
-                             reasons[0] ? ", " : "");
-                if (bits & MK8_NGX_FEATURE_ADAPTER_UNSUPPORTED)
-                    snprintf(reasons + strlen(reasons), sizeof reasons - strlen(reasons), "%sGPU unsupported",
-                             reasons[0] ? ", " : "");
-                if (bits & MK8_NGX_FEATURE_OS_VERSION_BELOW_MINIMUM)
-                    snprintf(reasons + strlen(reasons), sizeof reasons - strlen(reasons), "%sOS too old",
-                             reasons[0] ? ", " : "");
-                if (bits & MK8_NGX_FEATURE_NOT_IMPLEMENTED)
-                    snprintf(reasons + strlen(reasons), sizeof reasons - strlen(reasons), "%snot implemented",
-                             reasons[0] ? ", " : "");
+                mk8_dlss_requirement_text(bits, reasons, sizeof reasons);
                 snprintf(dlss.probe.reason, sizeof dlss.probe.reason,
                          "NGX reports SuperSampling unsupported (0x%x: %s; min GPU arch 0x%x)", bits,
-                         reasons[0] ? reasons : "no detail", requirement.MinHWArchitecture);
+                         reasons, requirement.MinHWArchitecture);
                 return false;
             }
             fprintf(stderr, "[dlss] feature requirements: supported (min GPU arch 0x%x, min OS %s)\n",
@@ -1362,6 +1431,838 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
                 rw, rh, ow, oh, dlss.quality_name, real_depth ? "game" : "neutral",
                 motion ? "camera" : "zeros", jitter_x, jitter_y);
     return dlss.output_view;
+}
+
+// ---------------------------------------------------------------------------------------
+// DLSS Frame Generation (MK8_DLSS_FG=1).
+//
+// NGX DLSS-G does not present and does not replace the swapchain. It produces two display-
+// size images (real + interpolated) and the application presents both. This module owns the
+// feature and those images; the WSI images, semaphores and queue submission stay with the
+// caller. The API is deliberately self-contained so fsr_fg.cpp can call it with a small
+// hand-off (docs/DLSS-IMPL.md) and no other runtime file changes.
+// ---------------------------------------------------------------------------------------
+
+#if defined(VK_NV_low_latency2)
+typedef PFN_vkSetLatencySleepModeNV Mk8FgSetSleepModeFn;
+typedef PFN_vkLatencySleepNV Mk8FgLatencySleepFn;
+typedef PFN_vkSetLatencyMarkerNV Mk8FgSetMarkerFn;
+#else
+typedef VkResult (*Mk8FgSetSleepModeFn)(VkDevice, VkSwapchainKHR, const void *);
+typedef VkResult (*Mk8FgLatencySleepFn)(VkDevice, VkSwapchainKHR, const void *);
+typedef void (*Mk8FgSetMarkerFn)(VkDevice, VkSwapchainKHR, const void *);
+#endif
+
+typedef struct DlssFg {
+    bool tried;
+    bool ready;
+    bool failed;
+    Mk8DlssProbe probe;
+
+    Mk8Lib plugin;
+    Mk8Lib core;
+    Mk8NgxInitWithProjectIdFn init;
+    Mk8NgxGetCapabilityParametersFn get_capability_parameters;
+    Mk8NgxParameterSetUiFn set_ui;
+    Mk8NgxParameterSetIFn set_i;
+    Mk8NgxParameterSetFFn set_f;
+    Mk8NgxParameterSetVoidPointerFn set_pointer;
+    Mk8NgxParameterSetUllFn set_ull;
+    Mk8NgxParameterGetUiFn get_ui;
+    Mk8NgxCreateFeature1Fn create_feature1;
+    Mk8NgxCreateFeatureFn create_feature;
+    Mk8NgxEvaluateFeatureFn evaluate;
+    Mk8NgxReleaseFeatureFn release;
+    Mk8NgxShutdown1Fn shutdown1;
+    Mk8NgxGetFeatureRequirementsFn get_requirements;
+
+    Mk8NgxParameter *params;
+    Mk8NgxHandle *handle;
+    bool ngx_initialised;
+    VkInstance instance;
+    VkPhysicalDevice physical_device;
+    VkDevice device;
+    VkQueue queue;
+    VkSwapchainKHR swapchain;
+    VkFormat format;
+    uint32_t width, height;
+    uint32_t render_width, render_height;
+    bool color_hdr;
+    bool depth_inverted;
+    wchar_t wide_plugin_directory[MK8_DLSS_PATH_MAX];
+    wchar_t wide_data_directory[MK8_DLSS_PATH_MAX];
+    const wchar_t *search_paths[1];
+
+    VkImage interpolated_image;
+    VmaAllocation interpolated_mem;
+    VkImageView interpolated_view;
+
+    float prev_view_proj[16];
+    bool have_prev;
+    bool reset_next;
+    uint64_t frame_id;
+    uint64_t present_id;
+    bool logged_active;
+    int warned;
+
+    Mk8FgSetSleepModeFn set_sleep_mode;
+    Mk8FgLatencySleepFn latency_sleep;
+    Mk8FgSetMarkerFn set_marker;
+} DlssFg;
+
+static DlssFg dlss_fg;
+
+static void fg_destroy_outputs(void) {
+    if (dlss_fg.interpolated_view) vkDestroyImageView(g_vk.dev, dlss_fg.interpolated_view, NULL);
+    if (dlss_fg.interpolated_image) {
+        vkDestroyImage(g_vk.dev, dlss_fg.interpolated_image, NULL);
+        vmaFreeMemory(g_vk.vma, dlss_fg.interpolated_mem);
+    }
+    dlss_fg.interpolated_image = VK_NULL_HANDLE;
+    dlss_fg.interpolated_mem = VK_NULL_HANDLE;
+    dlss_fg.interpolated_view = VK_NULL_HANDLE;
+}
+
+// Releases everything but keeps tried/failed/probe.reason for the one-time failure report.
+static void fg_teardown(void) {
+    if (dlss_fg.handle && dlss_fg.release) dlss_fg.release(dlss_fg.handle);
+    dlss_fg.handle = NULL;
+    fg_destroy_outputs();
+    if (dlss_fg.ngx_initialised && dlss_fg.shutdown1) dlss_fg.shutdown1(dlss_fg.device);
+    dlss_fg.ngx_initialised = false;
+    dlss_fg.params = NULL;
+    if (dlss_fg.plugin) lib_close(dlss_fg.plugin);
+    if (dlss_fg.core) lib_close(dlss_fg.core);
+    dlss_fg.plugin = NULL;
+    dlss_fg.core = NULL;
+    dlss_fg.ready = false;
+}
+
+void mk8_dlss_fg_shutdown(void) {
+    fg_teardown();
+    memset(&dlss_fg, 0, sizeof dlss_fg);
+}
+
+static void fg_fail(const char *reason) {
+    snprintf(dlss_fg.probe.reason, sizeof dlss_fg.probe.reason, "%s", reason);
+    dlss_fg.tried = true;
+    dlss_fg.failed = true;
+    mk8_dlss_fg_log_unavailable(&dlss_fg.probe);
+    fg_teardown();
+}
+
+static bool fg_resolve_symbols(void) {
+    dlss_fg.create_feature1 =
+        (Mk8NgxCreateFeature1Fn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature1");
+    dlss_fg.create_feature =
+        (Mk8NgxCreateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_CreateFeature");
+    dlss_fg.evaluate = (Mk8NgxEvaluateFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_EvaluateFeature");
+    dlss_fg.release = (Mk8NgxReleaseFeatureFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    dlss_fg.get_requirements =
+        (Mk8NgxGetFeatureRequirementsFn)lib_symbol(dlss_fg.plugin, "NVSDK_NGX_VULKAN_GetFeatureRequirements");
+    dlss_fg.init = (Mk8NgxInitWithProjectIdFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_Init_with_ProjectID");
+    dlss_fg.get_capability_parameters =
+        (Mk8NgxGetCapabilityParametersFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_GetCapabilityParameters");
+    dlss_fg.set_ui = (Mk8NgxParameterSetUiFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetUI");
+    dlss_fg.set_i = (Mk8NgxParameterSetIFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetI");
+    dlss_fg.set_f = (Mk8NgxParameterSetFFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetF");
+    dlss_fg.set_pointer =
+        (Mk8NgxParameterSetVoidPointerFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetVoidPointer");
+    dlss_fg.set_ull = (Mk8NgxParameterSetUllFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_SetULL");
+    dlss_fg.get_ui = (Mk8NgxParameterGetUiFn)lib_symbol(dlss_fg.core, "NVSDK_NGX_Parameter_GetUI");
+    dlss_fg.shutdown1 = (Mk8NgxShutdown1Fn)lib_symbol(dlss_fg.core, "NVSDK_NGX_VULKAN_Shutdown1");
+    return dlss_fg.init && dlss_fg.get_capability_parameters && dlss_fg.set_ui && dlss_fg.set_i &&
+           dlss_fg.set_f && dlss_fg.set_pointer && dlss_fg.get_ui && dlss_fg.evaluate && dlss_fg.release &&
+           (dlss_fg.create_feature1 || dlss_fg.create_feature);
+}
+
+static void fg_identity(float m[16]) {
+    memset(m, 0, 16 * sizeof(float));
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+}
+
+static void fg_view4x4(const float view[12], float out[16]) {
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 4; c++) out[r * 4 + c] = view[r * 4 + c];
+    out[12] = out[13] = out[14] = 0.0f;
+    out[15] = 1.0f;
+}
+
+static void fg_normalize3(float v[3]) {
+    float length = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (length < 1e-6f) return;
+    v[0] /= length;
+    v[1] /= length;
+    v[2] /= length;
+}
+
+// Row-major view matrix: right/up/forward are the first three rows and the translation is
+// the fourth column. Position = -R^T * t.
+static void fg_camera_from_view(const float view[12], float position[3], float up[3], float right[3],
+                                float forward[3]) {
+    right[0] = view[0], right[1] = view[1], right[2] = view[2];
+    up[0] = view[4], up[1] = view[5], up[2] = view[6];
+    forward[0] = -view[8], forward[1] = -view[9], forward[2] = -view[10];
+    fg_normalize3(right);
+    fg_normalize3(up);
+    fg_normalize3(forward);
+    position[0] = -(view[0] * view[3] + view[4] * view[7] + view[8] * view[11]);
+    position[1] = -(view[1] * view[3] + view[5] * view[7] + view[9] * view[11]);
+    position[2] = -(view[2] * view[3] + view[6] * view[7] + view[10] * view[11]);
+}
+
+// Source access that is compatible with the image's current layout. Using a write mask for a
+// PRESENT_SRC image is a validation error even though it is harmless on many drivers.
+static VkAccessFlags fg_layout_source_access(VkImageLayout layout) {
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return VK_ACCESS_MEMORY_READ_BIT;
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return VK_ACCESS_TRANSFER_WRITE_BIT;
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return VK_ACCESS_SHADER_READ_BIT;
+    default: return VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+}
+
+static VkAccessFlags fg_layout_destination_access(VkImageLayout layout) {
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return 0;
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return VK_ACCESS_TRANSFER_WRITE_BIT;
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return VK_ACCESS_SHADER_READ_BIT;
+    case VK_IMAGE_LAYOUT_UNDEFINED: return 0;
+    default: return VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+}
+
+static Mk8NgxResourceVk fg_image_resource(VkImage image, VkImageView view, VkFormat format, uint32_t width,
+                                          uint32_t height, VkImageAspectFlags aspect, bool read_write) {    Mk8NgxResourceVk resource = {};
+    resource.Type = 0;
+    resource.ReadWrite = read_write;
+    resource.Resource.ImageViewInfo.ImageView = view;
+    resource.Resource.ImageViewInfo.Image = image;
+    resource.Resource.ImageViewInfo.SubresourceRange = (VkImageSubresourceRange){aspect, 0, 1, 0, 1};
+    resource.Resource.ImageViewInfo.Format = format;
+    resource.Resource.ImageViewInfo.Width = width;
+    resource.Resource.ImageViewInfo.Height = height;
+    return resource;
+}
+
+static void fg_warn(const char *message) {
+    if (dlss_fg.warned >= 3) return;
+    dlss_fg.warned++;
+    fprintf(stderr, "[dlss_fg] WARNING: %s\n", message);
+}
+
+extern "C" bool mk8_dlss_fg_ready(void) { return dlss_fg.ready; }
+
+bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
+    if (!mk8_dlss_fg_enabled()) return false;
+    if (dlss_fg.failed) return false;
+    if (!init || !init->instance || !init->physical_device || !init->device || !init->swapchain ||
+        !init->command_buffer || !init->width || !init->height) {
+        fg_fail("invalid init: instance, physical device, device, swapchain, command buffer and sizes are required");
+        return false;
+    }
+    if (getenv("MK8_FSR_FG")) {
+        fg_fail("MK8_FSR_FG is active; only one frame-generation path can present");
+        return false;
+    }
+    if (getenv("MK8_DLSS")) {
+        fg_fail("MK8_DLSS (Super Resolution) and MK8_DLSS_FG cannot share the NGX init yet; "
+                "run with MK8_DLSS unset");
+        return false;
+    }
+    if (init->device != g_vk.dev) {
+        fg_fail("the DLSS-G bridge must use the runtime's VkDevice (g_vk.dev)");
+        return false;
+    }
+    if (dlss_fg.ready && dlss_fg.swapchain == init->swapchain && dlss_fg.format == init->format &&
+        dlss_fg.width == init->width && dlss_fg.height == init->height &&
+        dlss_fg.render_width == init->render_width && dlss_fg.render_height == init->render_height)
+        return true;
+    if (dlss_fg.ready) mk8_dlss_fg_shutdown();
+
+    dlss_fg.tried = true;
+    dlss_fg.instance = init->instance;
+    dlss_fg.physical_device = init->physical_device;
+    dlss_fg.device = init->device;
+    dlss_fg.queue = init->present_queue;
+    dlss_fg.swapchain = init->swapchain;
+    if (!mk8_dlss_fg_probe(&dlss_fg.probe)) {
+        dlss_fg.failed = true;
+        mk8_dlss_fg_log_unavailable(&dlss_fg.probe);
+        return false;
+    }
+    dlss_fg.plugin = lib_open(dlss_fg.probe.plugin);
+    if (!dlss_fg.plugin) {
+        fg_fail("the DLSS-G plugin did not load now");
+        return false;
+    }
+    dlss_fg.core = lib_open(dlss_fg.probe.core);
+    if (!dlss_fg.core) {
+        fg_fail("the NGX core did not load now");
+        return false;
+    }
+    if (!fg_resolve_symbols()) {
+        fg_fail("the DLSS-G plugin/core lost the exports the probe found");
+        return false;
+    }
+
+#if !defined(VK_NV_low_latency2)
+    fg_fail("this build's Vulkan headers do not define VK_NV_low_latency2");
+    return false;
+#else
+    uint32_t extension_count = 0;
+    bool advertised = false;
+    if (vkEnumerateDeviceExtensionProperties(init->physical_device, NULL, &extension_count, NULL) == VK_SUCCESS &&
+        extension_count) {
+        VkExtensionProperties *extensions =
+            (VkExtensionProperties *)malloc((size_t)extension_count * sizeof *extensions);
+        if (extensions) {
+            if (vkEnumerateDeviceExtensionProperties(init->physical_device, NULL, &extension_count, extensions) ==
+                VK_SUCCESS) {
+                for (uint32_t i = 0; i < extension_count; i++)
+                    if (strcmp(extensions[i].extensionName, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0)
+                        advertised = true;
+            }
+            free(extensions);
+        }
+    }
+    if (!advertised) {
+        fg_fail("VK_NV_low_latency2 is not exposed by this GPU/driver");
+        return false;
+    }
+    dlss_fg.set_sleep_mode = (Mk8FgSetSleepModeFn)vkGetDeviceProcAddr(init->device, "vkSetLatencySleepModeNV");
+    dlss_fg.latency_sleep = (Mk8FgLatencySleepFn)vkGetDeviceProcAddr(init->device, "vkLatencySleepNV");
+    dlss_fg.set_marker = (Mk8FgSetMarkerFn)vkGetDeviceProcAddr(init->device, "vkSetLatencyMarkerNV");
+    if (!dlss_fg.set_sleep_mode || !dlss_fg.latency_sleep || !dlss_fg.set_marker) {
+        fg_fail("the device was created without VK_NV_low_latency2; enable the extension before "
+                "vkCreateDevice (device.c)");
+        return false;
+    }
+#endif
+
+    char data_directory[MK8_DLSS_PATH_MAX];
+    if (!ngx_data_directory(data_directory, sizeof data_directory) || !mkdir_p(data_directory)) {
+        fg_fail("no writable NGX data directory (XDG_DATA_HOME/HOME)");
+        return false;
+    }
+    if (!to_wide(dlss_fg.probe.directory, dlss_fg.wide_plugin_directory, MK8_DLSS_PATH_MAX) ||
+        !to_wide(data_directory, dlss_fg.wide_data_directory, MK8_DLSS_PATH_MAX)) {
+        fg_fail("cannot convert the plugin/data path to wchar_t (non-UTF-8 locale?)");
+        return false;
+    }
+    dlss_fg.search_paths[0] = dlss_fg.wide_plugin_directory;
+    Mk8NgxFeatureCommonInfo common = {};
+    common.PathListInfo.Path = dlss_fg.search_paths;
+    common.PathListInfo.Length = 1;
+
+    const char *project_id = getenv("MK8_DLSS_PROJECT_ID");
+    if (!project_id || !*project_id) project_id = "6f1d2c3a-8b4e-4d7a-9c15-3e0a5b7c9d21";
+    Mk8NgxFeatureDiscoveryInfo discovery = {};
+    discovery.SDKVersion = MK8_NGX_API_VERSION;
+    discovery.FeatureID = MK8_NGX_FEATURE_FRAME_GENERATION;
+    discovery.Identifier.IdentifierType = MK8_NGX_IDENTIFIER_PROJECT_ID;
+    discovery.Identifier.v.ProjectDesc.ProjectId = project_id;
+    discovery.Identifier.v.ProjectDesc.EngineType = MK8_NGX_ENGINE_TYPE_CUSTOM;
+    discovery.Identifier.v.ProjectDesc.EngineVersion = "mk8-online";
+    discovery.ApplicationDataPath = dlss_fg.wide_data_directory;
+    discovery.FeatureInfo = &common;
+
+    if (dlss_fg.get_requirements) {
+        Mk8NgxFeatureRequirement requirement = {};
+        int rc = dlss_fg.get_requirements(init->instance, init->physical_device, &discovery, &requirement);
+        if (MK8_NGX_SUCCEEDED(rc)) {
+            if (requirement.FeatureSupported != 0) {
+                char reasons[256];
+                mk8_dlss_requirement_text((unsigned)requirement.FeatureSupported, reasons, sizeof reasons);
+                char message[MK8_DLSS_REASON_MAX];
+                snprintf(message, sizeof message,
+                         "NGX reports FrameGeneration unsupported (0x%x: %s; min GPU arch 0x%x)",
+                         (unsigned)requirement.FeatureSupported, reasons, requirement.MinHWArchitecture);
+                fg_fail(message);
+                return false;
+            }
+            fprintf(stderr, "[dlss_fg] feature requirements: supported (min GPU arch 0x%x, min OS %s)\n",
+                    requirement.MinHWArchitecture, requirement.MinOSVersion);
+        } else {
+            fprintf(stderr, "[dlss_fg] GetFeatureRequirements failed 0x%08x (%s); trying Init\n", (unsigned)rc,
+                    result_name(rc));
+        }
+    }
+
+    int rc = dlss_fg.init(project_id, MK8_NGX_ENGINE_TYPE_CUSTOM, "mk8-online 4.0.1",
+                          dlss_fg.wide_data_directory, init->instance, init->physical_device, init->device,
+                          vkGetInstanceProcAddr, vkGetDeviceProcAddr, &common, MK8_NGX_API_VERSION);
+    if (MK8_NGX_FAILED(rc)) {
+        fprintf(stderr, "[dlss_fg] NVSDK_NGX_VULKAN_Init_with_ProjectID failed 0x%08x (%s)\n", (unsigned)rc,
+                result_name(rc));
+        if (dlss_fg.shutdown1) dlss_fg.shutdown1(init->device);
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message,
+                 "NVSDK_NGX_VULKAN_Init_with_ProjectID failed 0x%08x (%s); an older NGX/driver is the "
+                 "usual cause", (unsigned)rc, result_name(rc));
+        fg_fail(message);
+        return false;
+    }
+    dlss_fg.ngx_initialised = true;
+    fprintf(stderr, "[dlss_fg] provider NGX API 0x%x from %s\n", MK8_NGX_API_VERSION, dlss_fg.probe.plugin);
+
+    rc = dlss_fg.get_capability_parameters(&dlss_fg.params);
+    if (MK8_NGX_FAILED(rc) || !dlss_fg.params) {
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message, "NVSDK_NGX_VULKAN_GetCapabilityParameters failed 0x%08x (%s)",
+                 (unsigned)rc, result_name(rc));
+        fg_fail(message);
+        return false;
+    }
+    unsigned available = 0;
+    rc = dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_AVAILABLE, &available);
+    if (MK8_NGX_FAILED(rc)) {
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message, "FrameGeneration.Available could not be read (0x%08x)",
+                 (unsigned)rc);
+        fg_fail(message);
+        return false;
+    }
+    if (available != 1) {
+        unsigned needs_driver = 0, min_major = 0, min_minor = 0;
+        dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_NEEDS_UPDATED_DRIVER, &needs_driver);
+        dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_MIN_DRIVER_MAJOR, &min_major);
+        dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_MIN_DRIVER_MINOR, &min_minor);
+        char message[MK8_DLSS_REASON_MAX];
+        if (min_major || min_minor)
+            snprintf(message, sizeof message,
+                     "FrameGeneration.Available = %u (needsUpdatedDriver=%u, driver %u.%u or newer)",
+                     available, needs_driver, min_major, min_minor);
+        else
+            snprintf(message, sizeof message,
+                     "FrameGeneration.Available = %u (needsUpdatedDriver=%u): this GPU/driver does not "
+                     "expose DLSS Frame Generation", available, needs_driver);
+        fg_fail(message);
+        return false;
+    }
+
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_CREATION_NODE_MASK, 1);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_VISIBILITY_NODE_MASK, 1);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_WIDTH, init->width);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_HEIGHT, init->height);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_BACKBUFFER_FORMAT, (unsigned)init->format);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_WIDTH,
+                   init->render_width ? init->render_width : init->width);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_HEIGHT,
+                   init->render_height ? init->render_height : init->height);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_DYNAMIC_RESOLUTION, 0);
+    rc = dlss_fg.create_feature1
+             ? dlss_fg.create_feature1(init->device, init->command_buffer, MK8_NGX_FEATURE_FRAME_GENERATION,
+                                       dlss_fg.params, &dlss_fg.handle)
+             : dlss_fg.create_feature(init->command_buffer, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params,
+                                      &dlss_fg.handle);
+    if (MK8_NGX_FAILED(rc) || !dlss_fg.handle) {
+        unsigned init_result = 0;
+        if (dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_FEATURE_INIT_RESULT, &init_result))
+            fprintf(stderr, "[dlss_fg] FrameGeneration.FeatureInitResult = %u\n", init_result);
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message, "NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration) failed 0x%08x (%s)",
+                 (unsigned)rc, result_name(rc));
+        dlss_fg.handle = NULL;
+        fg_fail(message);
+        return false;
+    }
+
+    VkImageUsageFlags usage =
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    dlss_fg.interpolated_image = make_image(init->format, init->width, init->height, usage,
+                                            VK_IMAGE_ASPECT_COLOR_BIT, &dlss_fg.interpolated_mem);
+    if (!dlss_fg.interpolated_image) {
+        fg_fail("cannot create the display-size DLSS-G interpolated output image");
+        return false;
+    }
+    dlss_fg.interpolated_view =
+        image_view_of(dlss_fg.interpolated_image, init->format, VK_IMAGE_ASPECT_COLOR_BIT);
+    if (!dlss_fg.interpolated_view) {
+        fg_fail("cannot create the DLSS-G output image view");
+        return false;
+    }
+    barrier(init->command_buffer, dlss_fg.interpolated_image, VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+#if defined(VK_NV_low_latency2)
+    VkLatencySleepModeInfoNV sleep_mode = {VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV};
+    sleep_mode.lowLatencyMode = VK_TRUE;
+    sleep_mode.lowLatencyBoost = VK_FALSE;
+    sleep_mode.minimumIntervalUs = 0;
+    VkResult latency_result = dlss_fg.set_sleep_mode(init->device, init->swapchain, &sleep_mode);
+    if (latency_result != VK_SUCCESS) {
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message, "vkSetLatencySleepModeNV failed (%d); DLSS-G needs working "
+                                          "VK_NV_low_latency2 pacing", latency_result);
+        fg_fail(message);
+        return false;
+    }
+#endif
+
+    dlss_fg.instance = init->instance;
+    dlss_fg.physical_device = init->physical_device;
+    dlss_fg.device = init->device;
+    dlss_fg.queue = init->present_queue;
+    dlss_fg.swapchain = init->swapchain;
+    dlss_fg.format = init->format;
+    dlss_fg.width = init->width;
+    dlss_fg.height = init->height;
+    dlss_fg.render_width = init->render_width ? init->render_width : init->width;
+    dlss_fg.render_height = init->render_height ? init->render_height : init->height;
+    dlss_fg.color_hdr = init->color_hdr;
+    dlss_fg.depth_inverted = init->depth_inverted;
+    dlss_fg.have_prev = false;
+    dlss_fg.reset_next = true;
+    dlss_fg.frame_id = 0;
+    dlss_fg.present_id = 0;
+    dlss_fg.ready = true;
+    dlss_fg.failed = false;
+    fprintf(stderr,
+            "[dlss_fg] active: NGX DLSS-G 2x %ux%u (render %ux%u, format %d), VK_NV_low_latency2 pacing\n",
+            init->width, init->height, dlss_fg.render_width, dlss_fg.render_height, init->format);
+    fprintf(stderr, "[dlss_fg] mvec scale 1/%u,1/%u (pixel-space MVs); jitter converted to clip space\n",
+            dlss_fg.render_width, dlss_fg.render_height);
+    dlss_fg.logged_active = true;
+    return true;
+}
+
+Mk8DlssFgFrame mk8_dlss_fg_evaluate(const Mk8DlssFgInputs *inputs) {
+    Mk8DlssFgFrame frame;
+    memset(&frame, 0, sizeof frame);
+    if (!dlss_fg.ready || !inputs || !inputs->command_buffer || !inputs->backbuffer ||
+        !inputs->backbuffer_view || !inputs->depth || !inputs->depth_view || !inputs->depth_width ||
+        !inputs->depth_height || !inputs->motion || !inputs->motion_view || !inputs->motion_width ||
+        !inputs->motion_height) {
+        fg_warn("DLSS-G evaluate needs a command buffer, sized backbuffer, depth and motion-vector images");
+        return frame;
+    }
+    if (inputs->backbuffer_width != dlss_fg.width || inputs->backbuffer_height != dlss_fg.height) {
+        char message[256];
+        snprintf(message, sizeof message,
+                 "backbuffer %ux%u is not the %ux%u display size; DLSS-G interpolates the final "
+                 "image (enable the FSR1/DLSS SR upscale)",
+                 inputs->backbuffer_width, inputs->backbuffer_height, dlss_fg.width, dlss_fg.height);
+        fg_warn(message);
+        return frame;
+    }
+    if (inputs->backbuffer_format != dlss_fg.format) {
+        char message[256];
+        snprintf(message, sizeof message,
+                 "backbuffer format %d does not match the DLSS-G output format %d", inputs->backbuffer_format,
+                 dlss_fg.format);
+        fg_warn(message);
+        return frame;
+    }
+
+    float projection[16], view4[16], view_proj[16], inv_view_proj[16], inv_projection[16];
+    memcpy(projection, inputs->projection, sizeof projection);
+    fg_view4x4(inputs->view, view4);
+    mul4(projection, view4, view_proj);
+    bool invert_ok = invert4(view_proj, inv_view_proj) && invert4(projection, inv_projection);
+    if (!invert_ok) {
+        fg_warn("the view/projection matrices are singular; DLSS-G skipped for this frame");
+        return frame;
+    }
+
+    bool reset = inputs->reset || dlss_fg.reset_next || !dlss_fg.have_prev;
+    dlss_fg.reset_next = false;
+    float clip_to_prev[16], prev_clip_to_clip[16], clip_to_lens[16];
+    fg_identity(clip_to_lens);
+    if (reset) {
+        fg_identity(clip_to_prev);
+        fg_identity(prev_clip_to_clip);
+    } else {
+        mul4(dlss_fg.prev_view_proj, inv_view_proj, clip_to_prev);
+        if (!invert4(clip_to_prev, prev_clip_to_clip)) fg_identity(prev_clip_to_clip);
+    }
+
+    float camera_position[3], camera_up[3], camera_right[3], camera_forward[3];
+    fg_camera_from_view(inputs->view, camera_position, camera_up, camera_right, camera_forward);
+    float camera_near = inputs->camera_near > 0 ? inputs->camera_near : 0.1f;
+    float camera_far = inputs->camera_far > 0 ? inputs->camera_far : 1000.0f;
+    float camera_fov = inputs->camera_fov > 0
+                           ? inputs->camera_fov
+                           : (fabsf(projection[5]) > 1e-6f ? 2.0f * atanf(1.0f / fabsf(projection[5]))
+                                                         : 1.0472f);
+    float camera_aspect = inputs->camera_aspect > 0
+                              ? inputs->camera_aspect
+                              : (fabsf(projection[0]) > 1e-6f ? fabsf(projection[5] / projection[0])
+                                                              : 1.7778f);
+    float jitter_x = inputs->jitter_x, jitter_y = inputs->jitter_y;
+    if (getenv("MK8_DLSS_FG_NO_JITTER")) jitter_x = jitter_y = 0.0f;
+    float jitter_clip_x = 2.0f * jitter_x / (float)dlss_fg.render_width;
+    float jitter_clip_y = 2.0f * jitter_y / (float)dlss_fg.render_height;
+    float mvec_scale_x = 1.0f / (float)dlss_fg.render_width;
+    float mvec_scale_y = 1.0f / (float)dlss_fg.render_height;
+
+    Mk8NgxDlssgOptEvalParams opt = {};
+    opt.multiFrameCount = 1;
+    opt.multiFrameIndex = 1;
+    memcpy(opt.cameraViewToClip, projection, sizeof opt.cameraViewToClip);
+    memcpy(opt.clipToCameraView, inv_projection, sizeof opt.clipToCameraView);
+    memcpy(opt.clipToLensClip, clip_to_lens, sizeof opt.clipToLensClip);
+    memcpy(opt.clipToPrevClip, clip_to_prev, sizeof opt.clipToPrevClip);
+    memcpy(opt.prevClipToClip, prev_clip_to_clip, sizeof opt.prevClipToClip);
+    opt.jitterOffset[0] = jitter_clip_x;
+    opt.jitterOffset[1] = jitter_clip_y;
+    opt.mvecScale[0] = mvec_scale_x;
+    opt.mvecScale[1] = mvec_scale_y;
+    opt.cameraPinholeOffset[0] = 0.0f;
+    opt.cameraPinholeOffset[1] = 0.0f;
+    memcpy(opt.cameraPos, camera_position, sizeof opt.cameraPos);
+    memcpy(opt.cameraUp, camera_up, sizeof opt.cameraUp);
+    memcpy(opt.cameraRight, camera_right, sizeof opt.cameraRight);
+    memcpy(opt.cameraFwd, camera_forward, sizeof opt.cameraFwd);
+    opt.cameraNear = camera_near;
+    opt.cameraFar = camera_far;
+    opt.cameraFOV = camera_fov;
+    opt.cameraAspectRatio = camera_aspect;
+    opt.colorBuffersHDR = dlss_fg.color_hdr;
+    opt.depthInverted = dlss_fg.depth_inverted;
+    opt.cameraMotionIncluded = true;
+    opt.reset = reset;
+    opt.automodeOverrideReset = false;
+    opt.notRenderingGameFrames = inputs->not_rendering;
+    opt.orthoProjection = false;
+    opt.motionVectorsInvalidValue = 0.0f;
+    opt.motionVectorsDilated = false;
+    opt.menuDetectionEnabled = false;
+    opt.minRelativeLinearDepthObjectSeparation = 40.0f;
+
+    VkImageAspectFlags depth_aspect =
+        inputs->depth_aspect ? inputs->depth_aspect : VK_IMAGE_ASPECT_COLOR_BIT;
+    Mk8NgxResourceVk backbuffer_resource =
+        fg_image_resource(inputs->backbuffer, inputs->backbuffer_view, inputs->backbuffer_format,
+                          inputs->backbuffer_width, inputs->backbuffer_height, VK_IMAGE_ASPECT_COLOR_BIT, false);
+    Mk8NgxResourceVk depth_resource =
+        fg_image_resource(inputs->depth, inputs->depth_view, inputs->depth_format, inputs->depth_width,
+                          inputs->depth_height, depth_aspect, false);
+    Mk8NgxResourceVk motion_resource =
+        fg_image_resource(inputs->motion, inputs->motion_view, inputs->motion_format, inputs->motion_width,
+                          inputs->motion_height, VK_IMAGE_ASPECT_COLOR_BIT, false);
+    Mk8NgxResourceVk interp_resource = fg_image_resource(dlss_fg.interpolated_image, dlss_fg.interpolated_view,
+                                                         dlss_fg.format, dlss_fg.width, dlss_fg.height,
+                                                         VK_IMAGE_ASPECT_COLOR_BIT, true);
+
+    VkCommandBuffer cb = inputs->command_buffer;
+    VkAccessFlags backbuffer_src = fg_layout_source_access(inputs->backbuffer_layout);
+    VkAccessFlags depth_src = fg_layout_source_access(inputs->depth_layout);
+    VkAccessFlags motion_src = fg_layout_source_access(inputs->motion_layout);
+    barrier(cb, inputs->backbuffer, VK_IMAGE_ASPECT_COLOR_BIT, inputs->backbuffer_layout,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, backbuffer_src, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, inputs->depth, depth_aspect, inputs->depth_layout,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, depth_src, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, inputs->motion, VK_IMAGE_ASPECT_COLOR_BIT, inputs->motion_layout,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, motion_src, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_WIDTH, dlss_fg.width);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_HEIGHT, dlss_fg.height);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_MULTI_FRAME_COUNT, opt.multiFrameCount);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_MULTI_FRAME_INDEX, opt.multiFrameIndex);
+    if (dlss_fg.set_ull)
+        dlss_fg.set_ull(dlss_fg.params, MK8_NGX_DLSSG_BACKBUFFER_FRAME_ID, inputs->frame_id);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_BACKBUFFER, &backbuffer_resource);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_MVECS, &motion_resource);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_DEPTH, &depth_resource);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_OUTPUT_INTERPOLATED, &interp_resource);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_VIEW_TO_CLIP, opt.cameraViewToClip);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_CLIP_TO_CAMERA_VIEW, opt.clipToCameraView);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_CLIP_TO_LENS_CLIP, opt.clipToLensClip);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_CLIP_TO_PREV_CLIP, opt.clipToPrevClip);
+    dlss_fg.set_pointer(dlss_fg.params, MK8_NGX_DLSSG_PREV_CLIP_TO_CLIP, opt.prevClipToClip);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_JITTER_OFFSET_X, opt.jitterOffset[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_JITTER_OFFSET_Y, opt.jitterOffset[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_MVEC_SCALE_X, opt.mvecScale[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_MVEC_SCALE_Y, opt.mvecScale[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_PINHOLE_OFFSET_X, opt.cameraPinholeOffset[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_PINHOLE_OFFSET_Y, opt.cameraPinholeOffset[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_POS_X, opt.cameraPos[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_POS_Y, opt.cameraPos[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_POS_Z, opt.cameraPos[2]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_UP_X, opt.cameraUp[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_UP_Y, opt.cameraUp[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_UP_Z, opt.cameraUp[2]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_RIGHT_X, opt.cameraRight[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_RIGHT_Y, opt.cameraRight[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_RIGHT_Z, opt.cameraRight[2]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_FWD_X, opt.cameraFwd[0]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_FWD_Y, opt.cameraFwd[1]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_FWD_Z, opt.cameraFwd[2]);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_NEAR, opt.cameraNear);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_FAR, opt.cameraFar);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_FOV, opt.cameraFOV);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_ASPECT_RATIO, opt.cameraAspectRatio);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_COLOR_BUFFERS_HDR, opt.colorBuffersHDR ? 1 : 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_DEPTH_INVERTED, opt.depthInverted ? 1 : 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_CAMERA_MOTION_INCLUDED, opt.cameraMotionIncluded ? 1 : 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_RESET, opt.reset ? 1 : 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_AUTOMODE_OVERRIDE_RESET, 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_NOT_RENDERING_GAME_FRAMES,
+                   opt.notRenderingGameFrames ? 1 : 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_ORTHO_PROJECTION, 0);
+    dlss_fg.set_f(dlss_fg.params, MK8_NGX_DLSSG_MVEC_INVALID_VALUE, opt.motionVectorsInvalidValue);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_MVEC_DILATED, 0);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_MENU_DETECTION_ENABLED, 0);
+
+    int rc = dlss_fg.evaluate(cb, dlss_fg.handle, dlss_fg.params, NULL);
+
+    barrier(cb, inputs->backbuffer, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            inputs->backbuffer_layout, VK_ACCESS_SHADER_READ_BIT,
+            fg_layout_destination_access(inputs->backbuffer_layout), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, inputs->depth, depth_aspect, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, inputs->depth_layout,
+            VK_ACCESS_SHADER_READ_BIT, fg_layout_destination_access(inputs->depth_layout),
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, inputs->motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            inputs->motion_layout, VK_ACCESS_SHADER_READ_BIT, fg_layout_destination_access(inputs->motion_layout),
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    if (MK8_NGX_FAILED(rc)) {
+        if (dlss_fg.warned < 3) {
+            dlss_fg.warned++;
+            fprintf(stderr, "[dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration) failed 0x%08x (%s)\n",
+                    (unsigned)rc, result_name(rc));
+        }
+        dlss_fg.have_prev = false;
+        return frame;
+    }
+
+    memcpy(dlss_fg.prev_view_proj, view_proj, sizeof dlss_fg.prev_view_proj);
+    dlss_fg.have_prev = true;
+    dlss_fg.frame_id = inputs->frame_id;
+    frame.valid = true;
+    frame.interpolated = true;
+    frame.real_image = inputs->backbuffer;
+    frame.real_view = inputs->backbuffer_view;
+    frame.interpolated_image = dlss_fg.interpolated_image;
+    frame.interpolated_view = dlss_fg.interpolated_view;
+    frame.format = dlss_fg.format;
+    frame.width = dlss_fg.width;
+    frame.height = dlss_fg.height;
+    frame.frame_id = inputs->frame_id;
+    return frame;
+}
+
+bool mk8_dlss_fg_copy_interpolated(VkCommandBuffer cb, VkImage destination, VkImageLayout destination_layout) {
+    if (!dlss_fg.ready || !cb || !destination) return false;
+    barrier(cb, dlss_fg.interpolated_image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    barrier(cb, destination, VK_IMAGE_ASPECT_COLOR_BIT, destination_layout,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkImageCopy region = {};
+    region.srcSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.extent = (VkExtent3D){dlss_fg.width, dlss_fg.height, 1};
+    vkCmdCopyImage(cb, dlss_fg.interpolated_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    barrier(cb, destination, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, dlss_fg.interpolated_image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    return true;
+}
+
+void mk8_dlss_fg_latency_marker(int marker, uint64_t present_id) {
+#if defined(VK_NV_low_latency2)
+    if (!dlss_fg.ready || !dlss_fg.set_marker || marker < 0 || marker > 7) return;
+    VkSetLatencyMarkerInfoNV info = {VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV};
+    info.presentID = present_id;
+    info.marker = (VkLatencyMarkerNV)marker;
+    dlss_fg.set_marker(dlss_fg.device, dlss_fg.swapchain, &info);
+#else
+    (void)marker;
+    (void)present_id;
+#endif
+}
+
+bool mk8_dlss_fg_latency_sleep(VkSemaphore signal, uint64_t value) {
+#if defined(VK_NV_low_latency2)
+    if (!dlss_fg.ready || !dlss_fg.latency_sleep || !signal) return false;
+    VkLatencySleepInfoNV info = {VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV};
+    info.signalSemaphore = signal;
+    info.value = value;
+    VkResult result = dlss_fg.latency_sleep(dlss_fg.device, dlss_fg.swapchain, &info);
+    if (result != VK_SUCCESS) {
+        if (dlss_fg.warned < 3) {
+            dlss_fg.warned++;
+            fprintf(stderr, "[dlss_fg] vkLatencySleepNV failed (%d)\n", result);
+        }
+        return false;
+    }
+    return true;
+#else
+    (void)signal;
+    (void)value;
+    return false;
+#endif
+}
+
+static VkResult fg_present_image(VkQueue queue, uint32_t image_index, VkSemaphore ready, int start_marker,
+                                 int end_marker, uint64_t present_id) {
+#if defined(VK_NV_low_latency2)
+    if (dlss_fg.set_marker) {
+        VkSetLatencyMarkerInfoNV marker = {VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV};
+        marker.presentID = present_id;
+        marker.marker = (VkLatencyMarkerNV)start_marker;
+        dlss_fg.set_marker(dlss_fg.device, dlss_fg.swapchain, &marker);
+    }
+#else
+    (void)start_marker;
+    (void)end_marker;
+#endif
+    VkPresentInfoKHR info = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    info.waitSemaphoreCount = ready ? 1 : 0;
+    info.pWaitSemaphores = ready ? &ready : NULL;
+    info.swapchainCount = 1;
+    info.pSwapchains = &dlss_fg.swapchain;
+    info.pImageIndices = &image_index;
+    VkResult result = vkQueuePresentKHR(queue, &info);
+#if defined(VK_NV_low_latency2)
+    if (dlss_fg.set_marker) {
+        VkSetLatencyMarkerInfoNV marker = {VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV};
+        marker.presentID = present_id;
+        marker.marker = (VkLatencyMarkerNV)end_marker;
+        dlss_fg.set_marker(dlss_fg.device, dlss_fg.swapchain, &marker);
+    }
+#endif
+    return result;
+}
+
+VkResult mk8_dlss_fg_present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t real_index,
+                             uint32_t interpolated_index, VkSemaphore real_ready,
+                             VkSemaphore interpolated_ready) {
+    if (!dlss_fg.ready || !queue || swapchain != dlss_fg.swapchain) {
+        if (dlss_fg.warned < 3) {
+            dlss_fg.warned++;
+            fprintf(stderr, "[dlss_fg] present refused: module is not ready for this swapchain\n");
+        }
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (real_index == interpolated_index) {
+        if (dlss_fg.warned < 3) {
+            dlss_fg.warned++;
+            fprintf(stderr, "[dlss_fg] present refused: the real and interpolated frames need two "
+                            "different swapchain images\n");
+        }
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    uint64_t real_id = dlss_fg.present_id++;
+    VkResult result = fg_present_image(queue, real_index, real_ready, MK8_DLSS_FG_MARKER_PRESENT_START,
+                                       MK8_DLSS_FG_MARKER_PRESENT_END, real_id);
+    if (result != VK_SUCCESS) return result;
+    uint64_t interp_id = dlss_fg.present_id++;
+    return fg_present_image(queue, interpolated_index, interpolated_ready, MK8_DLSS_FG_MARKER_PRESENT_START,
+                            MK8_DLSS_FG_MARKER_PRESENT_END, interp_id);
 }
 
 #endif  // !MK8_DLSS_PROBE_ONLY

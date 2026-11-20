@@ -42,7 +42,7 @@ enum {
 #define MK8_NGX_SUCCEEDED(result) (!MK8_NGX_FAILED(result))
 
 // NVSDK_NGX_Feature / NVSDK_NGX_EngineType / NVSDK_NGX_Application_Identifier_Type
-enum { MK8_NGX_FEATURE_SUPER_SAMPLING = 1 };
+enum { MK8_NGX_FEATURE_SUPER_SAMPLING = 1, MK8_NGX_FEATURE_FRAME_GENERATION = 11 };
 enum { MK8_NGX_ENGINE_TYPE_CUSTOM = 0 };
 enum { MK8_NGX_IDENTIFIER_PROJECT_ID = 1 };
 
@@ -101,6 +101,67 @@ enum {
 #define MK8_NGX_PARAM_RENDER_SUBRECT_WIDTH "DLSS.Render.Subrect.Dimensions.Width"
 #define MK8_NGX_PARAM_RENDER_SUBRECT_HEIGHT "DLSS.Render.Subrect.Dimensions.Height"
 
+// DLSS Frame Generation (nvsdk_ngx_defs_dlssg.h / nvsdk_ngx_params_dlssg.h).
+#define MK8_NGX_PARAM_FRAME_GENERATION_AVAILABLE "FrameGeneration.Available"
+#define MK8_NGX_PARAM_FRAME_GENERATION_FEATURE_INIT_RESULT "FrameGeneration.FeatureInitResult"
+#define MK8_NGX_PARAM_FRAME_GENERATION_NEEDS_UPDATED_DRIVER "FrameGeneration.NeedsUpdatedDriver"
+#define MK8_NGX_PARAM_FRAME_GENERATION_MIN_DRIVER_MAJOR "FrameGeneration.MinDriverVersionMajor"
+#define MK8_NGX_PARAM_FRAME_GENERATION_MIN_DRIVER_MINOR "FrameGeneration.MinDriverVersionMinor"
+#define MK8_NGX_DLSSG_BACKBUFFER_FORMAT "DLSSG.BackbufferFormat"
+#define MK8_NGX_DLSSG_BACKBUFFER "DLSSG.Backbuffer"
+#define MK8_NGX_DLSSG_MVECS "DLSSG.MVecs"
+#define MK8_NGX_DLSSG_DEPTH "DLSSG.Depth"
+#define MK8_NGX_DLSSG_HUDLESS "DLSSG.HUDLess"
+#define MK8_NGX_DLSSG_UI "DLSSG.UI"
+#define MK8_NGX_DLSSG_UI_ALPHA "DLSSG.UIAlpha"
+#define MK8_NGX_DLSSG_BIDIRECTIONAL_DISTORTION_FIELD "DLSSG.BidirectionalDistortionField"
+#define MK8_NGX_DLSSG_OUTPUT_INTERPOLATED "DLSSG.OutputInterpolated"
+#define MK8_NGX_DLSSG_OUTPUT_REAL "DLSSG.OutputReal"
+#define MK8_NGX_DLSSG_OUTPUT_DISABLE_INTERPOLATION "DLSSG.OutputDisableInterpolation"
+#define MK8_NGX_DLSSG_MULTI_FRAME_COUNT "DLSSG.MultiFrameCount"
+#define MK8_NGX_DLSSG_MULTI_FRAME_INDEX "DLSSG.MultiFrameIndex"
+#define MK8_NGX_DLSSG_BACKBUFFER_FRAME_ID "DLSSG.BackbufferFrameID"
+#define MK8_NGX_DLSSG_CAMERA_VIEW_TO_CLIP "DLSSG.CameraViewToClip"
+#define MK8_NGX_DLSSG_CLIP_TO_CAMERA_VIEW "DLSSG.ClipToCameraView"
+#define MK8_NGX_DLSSG_CLIP_TO_LENS_CLIP "DLSSG.ClipToLensClip"
+#define MK8_NGX_DLSSG_CLIP_TO_PREV_CLIP "DLSSG.ClipToPrevClip"
+#define MK8_NGX_DLSSG_PREV_CLIP_TO_CLIP "DLSSG.PrevClipToClip"
+#define MK8_NGX_DLSSG_JITTER_OFFSET_X "DLSSG.JitterOffsetX"
+#define MK8_NGX_DLSSG_JITTER_OFFSET_Y "DLSSG.JitterOffsetY"
+#define MK8_NGX_DLSSG_MVEC_SCALE_X "DLSSG.MvecScaleX"
+#define MK8_NGX_DLSSG_MVEC_SCALE_Y "DLSSG.MvecScaleY"
+#define MK8_NGX_DLSSG_CAMERA_PINHOLE_OFFSET_X "DLSSG.CameraPinholeOffsetX"
+#define MK8_NGX_DLSSG_CAMERA_PINHOLE_OFFSET_Y "DLSSG.CameraPinholeOffsetY"
+#define MK8_NGX_DLSSG_CAMERA_POS_X "DLSSG.CameraPosX"
+#define MK8_NGX_DLSSG_CAMERA_POS_Y "DLSSG.CameraPosY"
+#define MK8_NGX_DLSSG_CAMERA_POS_Z "DLSSG.CameraPosZ"
+#define MK8_NGX_DLSSG_CAMERA_UP_X "DLSSG.CameraUpX"
+#define MK8_NGX_DLSSG_CAMERA_UP_Y "DLSSG.CameraUpY"
+#define MK8_NGX_DLSSG_CAMERA_UP_Z "DLSSG.CameraUpZ"
+#define MK8_NGX_DLSSG_CAMERA_RIGHT_X "DLSSG.CameraRightX"
+#define MK8_NGX_DLSSG_CAMERA_RIGHT_Y "DLSSG.CameraRightY"
+#define MK8_NGX_DLSSG_CAMERA_RIGHT_Z "DLSSG.CameraRightZ"
+#define MK8_NGX_DLSSG_CAMERA_FWD_X "DLSSG.CameraFwdX"
+#define MK8_NGX_DLSSG_CAMERA_FWD_Y "DLSSG.CameraFwdY"
+#define MK8_NGX_DLSSG_CAMERA_FWD_Z "DLSSG.CameraFwdZ"
+#define MK8_NGX_DLSSG_CAMERA_NEAR "DLSSG.CameraNear"
+#define MK8_NGX_DLSSG_CAMERA_FAR "DLSSG.CameraFar"
+#define MK8_NGX_DLSSG_CAMERA_FOV "DLSSG.CameraFOV"
+#define MK8_NGX_DLSSG_CAMERA_ASPECT_RATIO "DLSSG.CameraAspectRatio"
+#define MK8_NGX_DLSSG_COLOR_BUFFERS_HDR "DLSSG.ColorBuffersHDR"
+#define MK8_NGX_DLSSG_DEPTH_INVERTED "DLSSG.DepthInverted"
+#define MK8_NGX_DLSSG_CAMERA_MOTION_INCLUDED "DLSSG.CameraMotionIncluded"
+#define MK8_NGX_DLSSG_RESET "DLSSG.Reset"
+#define MK8_NGX_DLSSG_AUTOMODE_OVERRIDE_RESET "DLSSG.AutomodeOverrideReset"
+#define MK8_NGX_DLSSG_NOT_RENDERING_GAME_FRAMES "DLSSG.NotRenderingGameFrames"
+#define MK8_NGX_DLSSG_ORTHO_PROJECTION "DLSSG.OrthoProjection"
+#define MK8_NGX_DLSSG_MVEC_INVALID_VALUE "DLSSG.MvecInvalidValue"
+#define MK8_NGX_DLSSG_MVEC_DILATED "DLSSG.MvecDilated"
+#define MK8_NGX_DLSSG_MENU_DETECTION_ENABLED "DLSSG.MenuDetectionEnabled"
+#define MK8_NGX_DLSSG_INTERNAL_WIDTH "DLSSG.InternalWidth"
+#define MK8_NGX_DLSSG_INTERNAL_HEIGHT "DLSSG.InternalHeight"
+#define MK8_NGX_DLSSG_DYNAMIC_RESOLUTION "DLSSG.DynamicResolution"
+
 // NVSDK_NGX_PathListInfo
 typedef struct Mk8NgxPathListInfo {
     const wchar_t *const *Path;
@@ -153,6 +214,23 @@ typedef struct Mk8NgxFeatureRequirement {
     char MinOSVersion[255];
 } Mk8NgxFeatureRequirement;
 
+// NVSDK_NGX_Coordinates / NVSDK_NGX_Dimensions / NVSDK_NGX_PrecisionInfo
+typedef struct Mk8NgxCoordinates {
+    unsigned X;
+    unsigned Y;
+} Mk8NgxCoordinates;
+
+typedef struct Mk8NgxDimensions {
+    unsigned Width;
+    unsigned Height;
+} Mk8NgxDimensions;
+
+typedef struct Mk8NgxPrecisionInfo {
+    unsigned IsLowPrecision;
+    float Bias;
+    float Scale;
+} Mk8NgxPrecisionInfo;
+
 // NVSDK_NGX_ImageViewInfo_VK / NVSDK_NGX_BufferInfo_VK / NVSDK_NGX_Resource_VK
 typedef struct Mk8NgxImageViewInfoVk {
     VkImageView ImageView;
@@ -191,6 +269,69 @@ typedef struct Mk8NgxDlssCreateParams {
     bool InEnableOutputSubrects;
 } Mk8NgxDlssCreateParams;
 
+// NVSDK_NGX_DLSSG_Create_Params (nvsdk_ngx_params_dlssg.h).
+typedef struct Mk8NgxDlssgCreateParams {
+    unsigned Width;
+    unsigned Height;
+    unsigned NativeBackbufferFormat;
+    unsigned RenderWidth;
+    unsigned RenderHeight;
+    bool DynamicResolutionScaling;
+} Mk8NgxDlssgCreateParams;
+
+// NVSDK_NGX_DLSSG_Opt_Eval_Params. The official struct has C++ default member initializers;
+// they do not affect the layout, and the bridge fills every member it passes.
+typedef struct Mk8NgxDlssgOptEvalParams {
+    unsigned multiFrameCount;
+    unsigned multiFrameIndex;
+    float cameraViewToClip[4][4];
+    float clipToCameraView[4][4];
+    float clipToLensClip[4][4];
+    float clipToPrevClip[4][4];
+    float prevClipToClip[4][4];
+    float jitterOffset[2];
+    float mvecScale[2];
+    float cameraPinholeOffset[2];
+    float cameraPos[3];
+    float cameraUp[3];
+    float cameraRight[3];
+    float cameraFwd[3];
+    float cameraNear;
+    float cameraFar;
+    float cameraFOV;
+    float cameraAspectRatio;
+    bool colorBuffersHDR;
+    bool depthInverted;
+    bool cameraMotionIncluded;
+    bool reset;
+    bool automodeOverrideReset;
+    bool notRenderingGameFrames;
+    bool orthoProjection;
+    float motionVectorsInvalidValue;
+    bool motionVectorsDilated;
+    bool menuDetectionEnabled;
+    Mk8NgxCoordinates mvecsSubrectBase;
+    Mk8NgxDimensions mvecsSubrectSize;
+    Mk8NgxCoordinates depthSubrectBase;
+    Mk8NgxDimensions depthSubrectSize;
+    Mk8NgxCoordinates hudLessSubrectBase;
+    Mk8NgxDimensions hudLessSubrectSize;
+    Mk8NgxCoordinates uiSubrectBase;
+    Mk8NgxDimensions uiSubrectSize;
+    Mk8NgxCoordinates uiAlphaSubrectBase;
+    Mk8NgxDimensions uiAlphaSubrectSize;
+    Mk8NgxCoordinates bidirectionalDistFieldSubrectBase;
+    Mk8NgxDimensions bidirectionalDistFieldSubrectSize;
+    Mk8NgxPrecisionInfo bidirectionalDistFieldPrecisionInfo;
+    float minRelativeLinearDepthObjectSeparation;
+    Mk8NgxCoordinates backbufferSubrectBase;
+    Mk8NgxDimensions backbufferSubrectSize;
+    Mk8NgxCoordinates outputInterpSubrectBase;
+    Mk8NgxDimensions outputInterpSubrectSize;
+    Mk8NgxCoordinates outputRealSubrectBase;
+    Mk8NgxDimensions outputRealSubrectSize;
+} Mk8NgxDlssgOptEvalParams;
+
 // Entry points. The feature plugin exports CreateFeature*/EvaluateFeature/ReleaseFeature/
 // GetFeatureRequirements; the driver-provided NGX core exports Init/parameters/Shutdown.
 typedef int(MK8_NGX_CONV *Mk8NgxInitWithProjectIdFn)(
@@ -204,6 +345,7 @@ typedef void(MK8_NGX_CONV *Mk8NgxParameterSetUiFn)(Mk8NgxParameter *, const char
 typedef void(MK8_NGX_CONV *Mk8NgxParameterSetIFn)(Mk8NgxParameter *, const char *, int);
 typedef void(MK8_NGX_CONV *Mk8NgxParameterSetFFn)(Mk8NgxParameter *, const char *, float);
 typedef void(MK8_NGX_CONV *Mk8NgxParameterSetVoidPointerFn)(Mk8NgxParameter *, const char *, void *);
+typedef void(MK8_NGX_CONV *Mk8NgxParameterSetUllFn)(Mk8NgxParameter *, const char *, unsigned long long);
 typedef int(MK8_NGX_CONV *Mk8NgxParameterGetUiFn)(Mk8NgxParameter *, const char *, unsigned *);
 typedef int(MK8_NGX_CONV *Mk8NgxParameterGetUllFn)(Mk8NgxParameter *, const char *, unsigned long long *);
 typedef int(MK8_NGX_CONV *Mk8NgxCreateFeature1Fn)(VkDevice, VkCommandBuffer, int feature, Mk8NgxParameter *,

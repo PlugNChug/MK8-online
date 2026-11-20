@@ -1,9 +1,11 @@
 # DLSS 4.5 / DLSS 5 / XeSS: Linux feasibility and integration surface
 
-Status 20/11/2026. Research only: no vendor code is integrated in `runtime/` and no
-vendor binary is committed. The runtime work is owned by the FSR/frame-generation
-branch; this document records what the host can actually load, what the licences
-allow, and the first milestone that is worth implementing.
+Status 20/11/2026. Research plus the first two implementation milestones
+([DLSS-IMPL.md](DLSS-IMPL.md)): DLSS Super Resolution/DLAA (phase 1) and the DLSS-G
+library (phase 3) are in `runtime/mk8/graphics/dlss.cpp`. Both are compile- and
+loader/ABI-tested only; no vendor code is committed and no NVIDIA execution happened.
+This document records what the host can actually load, what the licences allow, and
+what remains for a real NVIDIA host.
 
 Host limitation: this machine has an **AMD RX 9070 XT (Navi 48, RADV)** and no NVIDIA
 GPU, so nothing below was executed on DLSS hardware. "Verified" means the file,
@@ -403,20 +405,15 @@ with FSR, not a blocker for a first milestone.
 **Phase 0 — this turn (done).** Research, pinned manifest, fail-closed downloader,
 tests. No runtime change.
 
-**Phase 1 — DLSS SR on native Linux Vulkan (first implementable milestone).**
-Add an optional `MK8_DLSS=1` path beside the FSR path:
-`dlopen("libnvidia-ngx.so.1")`, resolve the NGX Vulkan entry points, init with a
-GUID-shaped project id, create a DLSS context for `1920x1080 -> 2560x1440`, and
-evaluate after the existing depth/MV/jitter capture. It must:
-- log `[dlss] provider <version>`, input/output resolution, and the exact reason
-  when unavailable (no NVIDIA GPU, no NGX core, driver too old, feature init
-  failed);
-- fall back to the current FSR/bilinear path without changing behaviour when
-  unavailable;
-- never load or copy vendor files from the repository; use the downloader's
-  `$XDG_DATA_HOME/mk8online/nvidia` directory;
-- be validated on an NVIDIA host with screenshots and a full race, because this
-  checkout cannot run it.
+**Phase 1 — DLSS SR on native Linux Vulkan (implemented, unexecuted).**
+The optional `MK8_DLSS=1` path is in `runtime/mk8/graphics/dlss.cpp`: it loads the
+driver NGX core and `libnvidia-ngx-dlss.so`, initializes with a GUID-shaped project
+id, creates a SuperSampling feature, and evaluates after the existing depth/MV/jitter
+capture. It logs `[dlss] provider <version>`, the resolutions, and the exact reason
+when unavailable (no NVIDIA GPU, no NGX core, driver too old, feature init failed),
+and falls back without changing the existing path. The loader and ABI are tested on
+this host; see [DLSS-IMPL.md](DLSS-IMPL.md). It still must be validated on an NVIDIA
+host with screenshots and a full race.
 
 Acceptance evidence: `NVSDK_NGX_VULKAN_Init` OK, `SuperSampling.Available = 1`,
 `upscale active 1920x1080 -> 2560x1440`, A/B screenshots at the same frame, and no
@@ -427,10 +424,17 @@ the feature plugin, or the model produces worse output than FSR on the same fram
 karts ghost. This is renderer work in the guest-to-host draw path, not a vendor
 integration, and should be prioritised before judging DLSS quality.
 
-**Phase 3 — DLSS FG 2x on native Linux.** Add `VK_NV_low_latency2` pacing and the
-NGX DLSS-G evaluate/present pair; validate frame pacing and latency on RTX 40/50.
-Fixed MFG is a separate query (`multiFrameCount`); Dynamic MFG stays out because it
-is D3D12-only. Do not enable FG by default.
+**Phase 3 — DLSS FG 2x on native Linux (library implemented, unexecuted).**
+`runtime/mk8/graphics/dlss.cpp` now loads `libnvidia-ngx-dlssg.so`, requires
+`VK_NV_low_latency2`, creates the FrameGeneration feature, evaluates into a
+display-size interpolated image and exposes copy/present/low-latency helpers
+(`mk8_dlss_fg_*`). It is gated on `MK8_DLSS_FG` and untested on hardware. Remaining:
+enable `VK_NV_low_latency2` in `device.c` before `vkCreateDevice`, and call the
+init/evaluate/copy/present API from the present path (`fsr_fg.cpp`, owned elsewhere).
+DLSS SR and DLSS-G are mutually exclusive in this phase because they share NGX's
+capability parameter map. Fixed MFG is a separate query (`multiFrameCount`); Dynamic
+MFG stays out because it is D3D12-only. Do not enable FG by default. See
+[DLSS-IMPL.md](DLSS-IMPL.md) for the exact sequence and hand-off.
 
 **Phase 4 — Windows build.** The same NGX Vulkan path works on Windows; Streamline
 is only needed if a D3D12 backend is ever added. If XeSS SR is wanted for non-NVIDIA
