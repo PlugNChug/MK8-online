@@ -48,8 +48,12 @@ def payload_files():
         # The launcher builds the optional FSR providers locally from the user's own MIT-licensed SDK download, so
         # the build scripts and their C/C++ scaffolding must ship in the payload (they contain no AMD binaries).
         for name in ("build_fg_provider.py", "gen_fg_blobs.py", "build_upscaler_provider.py",
-                     "gen_upscaler_blobs.py", "fetch_vendor_sdk.py"):
+                     "gen_upscaler_blobs.py", "fetch_vendor_sdk.py", "build_fsr4_provider.py"):
             yield ROOT / "tools" / name
+        # The vendored GPL-3.0 FSR 4.1.2 port the launcher builds one-click (sources only, no AMD assets).
+        for path in sorted((ROOT / "tools" / "fsr4-linux").rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                yield path
         for folder in ("fg-linux", "fg-linux-upscaler"):
             for path in sorted((ROOT / "tools" / folder).rglob("*")):
                 if path.is_file() and "__pycache__" not in path.parts:
