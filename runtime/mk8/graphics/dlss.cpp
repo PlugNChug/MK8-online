@@ -465,10 +465,12 @@ bool mk8_dlss_probe(Mk8DlssProbe *out) {
     return true;
 }
 
-bool mk8_dlss_fg_enabled(void) {
-    const char *value = getenv("MK8_DLSS_FG");
+static bool env_enabled(const char *name) {
+    const char *value = getenv(name);
     return value && *value && strcmp(value, "0") != 0;
 }
+
+bool mk8_dlss_fg_enabled(void) { return env_enabled("MK8_DLSS_FG"); }
 
 bool mk8_dlss_fg_probe(Mk8DlssProbe *out) {
     Mk8DlssProbe local;
@@ -1653,21 +1655,68 @@ static void fg_warn(const char *message) {
     fprintf(stderr, "[dlss_fg] WARNING: %s\n", message);
 }
 
+// Feature creation and the output-image barrier need a command buffer. When the caller does not
+// have one open (the swapchain-creation hook), the bridge records into a one-shot buffer and
+// submits it on the game queue. This runs at device-idle points: initial swapchain creation and
+// recreate_swapchain after device_wait_idle().
+static bool fg_oneshot_begin(VkCommandBuffer *out) {
+    VkCommandBufferAllocateInfo allocate = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    allocate.commandPool = g_vk.pool;
+    allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate.commandBufferCount = 1;
+    VkCommandBuffer cb = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(g_vk.dev, &allocate, &cb) != VK_SUCCESS) return false;
+    VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cb, &begin) != VK_SUCCESS) {
+        vkFreeCommandBuffers(g_vk.dev, g_vk.pool, 1, &cb);
+        return false;
+    }
+    *out = cb;
+    return true;
+}
+
+static void fg_oneshot_free(VkCommandBuffer cb) {
+    if (cb) vkFreeCommandBuffers(g_vk.dev, g_vk.pool, 1, &cb);
+}
+
+static void fg_oneshot_abort(VkCommandBuffer cb) {
+    if (!cb) return;
+    vkEndCommandBuffer(cb);
+    fg_oneshot_free(cb);
+}
+
+static bool fg_oneshot_submit(VkCommandBuffer cb) {
+    if (!cb) return false;
+    VkResult result = vkEndCommandBuffer(cb);
+    VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkFence fence = VK_NULL_HANDLE;
+    if (result == VK_SUCCESS) result = vkCreateFence(g_vk.dev, &fence_info, NULL, &fence);
+    VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cb;
+    if (result == VK_SUCCESS) result = vkQueueSubmit(g_vk.queue, 1, &submit, fence);
+    if (result == VK_SUCCESS) result = vkWaitForFences(g_vk.dev, 1, &fence, VK_TRUE, UINT64_MAX);
+    if (fence) vkDestroyFence(g_vk.dev, fence, NULL);
+    fg_oneshot_free(cb);
+    return result == VK_SUCCESS;
+}
+
 extern "C" bool mk8_dlss_fg_ready(void) { return dlss_fg.ready; }
 
 bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
     if (!mk8_dlss_fg_enabled()) return false;
     if (dlss_fg.failed) return false;
     if (!init || !init->instance || !init->physical_device || !init->device || !init->swapchain ||
-        !init->command_buffer || !init->width || !init->height) {
-        fg_fail("invalid init: instance, physical device, device, swapchain, command buffer and sizes are required");
+        !init->width || !init->height) {
+        fg_fail("invalid init: instance, physical device, device, swapchain and sizes are required");
         return false;
     }
-    if (getenv("MK8_FSR_FG")) {
+    if (env_enabled("MK8_FSR_FG")) {
         fg_fail("MK8_FSR_FG is active; only one frame-generation path can present");
         return false;
     }
-    if (getenv("MK8_DLSS")) {
+    if (env_enabled("MK8_DLSS")) {
         fg_fail("MK8_DLSS (Super Resolution) and MK8_DLSS_FG cannot share the NGX init yet; "
                 "run with MK8_DLSS unset");
         return false;
@@ -1843,33 +1892,6 @@ bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
         return false;
     }
 
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_CREATION_NODE_MASK, 1);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_VISIBILITY_NODE_MASK, 1);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_WIDTH, init->width);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_HEIGHT, init->height);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_BACKBUFFER_FORMAT, (unsigned)init->format);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_WIDTH,
-                   init->render_width ? init->render_width : init->width);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_HEIGHT,
-                   init->render_height ? init->render_height : init->height);
-    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_DYNAMIC_RESOLUTION, 0);
-    rc = dlss_fg.create_feature1
-             ? dlss_fg.create_feature1(init->device, init->command_buffer, MK8_NGX_FEATURE_FRAME_GENERATION,
-                                       dlss_fg.params, &dlss_fg.handle)
-             : dlss_fg.create_feature(init->command_buffer, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params,
-                                      &dlss_fg.handle);
-    if (MK8_NGX_FAILED(rc) || !dlss_fg.handle) {
-        unsigned init_result = 0;
-        if (dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_FEATURE_INIT_RESULT, &init_result))
-            fprintf(stderr, "[dlss_fg] FrameGeneration.FeatureInitResult = %u\n", init_result);
-        char message[MK8_DLSS_REASON_MAX];
-        snprintf(message, sizeof message, "NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration) failed 0x%08x (%s)",
-                 (unsigned)rc, result_name(rc));
-        dlss_fg.handle = NULL;
-        fg_fail(message);
-        return false;
-    }
-
     VkImageUsageFlags usage =
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     dlss_fg.interpolated_image = make_image(init->format, init->width, init->height, usage,
@@ -1884,9 +1906,53 @@ bool mk8_dlss_fg_init(const Mk8DlssFgInit *init) {
         fg_fail("cannot create the DLSS-G output image view");
         return false;
     }
-    barrier(init->command_buffer, dlss_fg.interpolated_image, VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+    VkCommandBuffer owned = VK_NULL_HANDLE;
+    VkCommandBuffer cb = init->command_buffer;
+    if (!cb) {
+        if (!fg_oneshot_begin(&owned)) {
+            fg_fail("cannot allocate a one-shot command buffer for DLSS-G feature creation");
+            return false;
+        }
+        cb = owned;
+    }
+
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_CREATION_NODE_MASK, 1);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_VISIBILITY_NODE_MASK, 1);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_WIDTH, init->width);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_PARAM_HEIGHT, init->height);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_BACKBUFFER_FORMAT, (unsigned)init->format);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_WIDTH,
+                   init->render_width ? init->render_width : init->width);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_INTERNAL_HEIGHT,
+                   init->render_height ? init->render_height : init->height);
+    dlss_fg.set_ui(dlss_fg.params, MK8_NGX_DLSSG_DYNAMIC_RESOLUTION, 0);
+    rc = dlss_fg.create_feature1
+             ? dlss_fg.create_feature1(init->device, cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params,
+                                       &dlss_fg.handle)
+             : dlss_fg.create_feature(cb, MK8_NGX_FEATURE_FRAME_GENERATION, dlss_fg.params, &dlss_fg.handle);
+    if (MK8_NGX_FAILED(rc) || !dlss_fg.handle) {
+        unsigned init_result = 0;
+        if (dlss_fg.get_ui(dlss_fg.params, MK8_NGX_PARAM_FRAME_GENERATION_FEATURE_INIT_RESULT, &init_result))
+            fprintf(stderr, "[dlss_fg] FrameGeneration.FeatureInitResult = %u\n", init_result);
+        char message[MK8_DLSS_REASON_MAX];
+        snprintf(message, sizeof message, "NVSDK_NGX_VULKAN_CreateFeature(FrameGeneration) failed 0x%08x (%s)",
+                 (unsigned)rc, result_name(rc));
+        dlss_fg.handle = NULL;
+        fg_oneshot_abort(owned);
+        fg_fail(message);
+        return false;
+    }
+    barrier(cb, dlss_fg.interpolated_image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    if (owned) {
+        if (!fg_oneshot_submit(owned)) {
+            fg_fail("submitting the one-shot DLSS-G creation command buffer failed");
+            return false;
+        }
+        fprintf(stderr, "[dlss_fg] feature created and output primed in a one-shot submission\n");
+    }
 
 #if defined(VK_NV_low_latency2)
     VkLatencySleepModeInfoNV sleep_mode = {VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV};

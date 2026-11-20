@@ -437,17 +437,20 @@ the feature plugin, or the model produces worse output than FSR on the same fram
 karts ghost. This is renderer work in the guest-to-host draw path, not a vendor
 integration, and should be prioritised before judging DLSS quality.
 
-**Phase 3 — DLSS FG 2x on native Linux (library implemented, unexecuted).**
-`runtime/mk8/graphics/dlss.cpp` now loads `libnvidia-ngx-dlssg.so`, requires
+**Phase 3 — DLSS FG 2x on native Linux (wired, unexecuted).**
+`runtime/mk8/graphics/dlss.cpp` loads `libnvidia-ngx-dlssg.so`, requires
 `VK_NV_low_latency2`, creates the FrameGeneration feature, evaluates into a
 display-size interpolated image and exposes copy/present/low-latency helpers
-(`mk8_dlss_fg_*`). It is gated on `MK8_DLSS_FG` and untested on hardware. Remaining:
-enable `VK_NV_low_latency2` in `device.c` before `vkCreateDevice`, and call the
-init/evaluate/copy/present API from the present path (`fsr_fg.cpp`, owned elsewhere).
-DLSS SR and DLSS-G are mutually exclusive in this phase because they share NGX's
-capability parameter map. Fixed MFG is a separate query (`multiFrameCount`); Dynamic
-MFG stays out because it is D3D12-only. Do not enable FG by default. See
-[DLSS-IMPL.md](DLSS-IMPL.md) for the exact sequence and hand-off.
+(`mk8_dlss_fg_*`). `toolchain/dlss_fg.py` enables the low-latency device extension and
+the sampled swapchain (plus `VkSwapchainLatencyCreateInfoNV`) only for
+`MK8_DLSS_FG=1`, and `fsr_fg.cpp` now runs the two-image evaluate/copy/present path
+when FSR FG is off. It is untested on hardware. Remaining: run it on an RTX 40/50
+Linux host with the driver core, confirm `FrameGeneration.Available`/
+`vkSetLatencySleepModeNV`, validate the two-image order and pacing, and exercise a
+resize. DLSS SR and DLSS-G are mutually exclusive in this phase because they share
+NGX's capability parameter map. Fixed MFG is a separate query (`multiFrameCount`);
+Dynamic MFG stays out because it is D3D12-only. Do not enable FG by default. See
+[DLSS-IMPL.md](DLSS-IMPL.md) for the exact sequence and validation list.
 
 **Phase 4 — Windows build.** The same NGX Vulkan path works on Windows; Streamline
 is only needed if a D3D12 backend is ever added. The XeSS SR bridge for non-NVIDIA

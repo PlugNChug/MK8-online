@@ -46,6 +46,7 @@
 
 #include "vulkan/vk.h"
 #include "fsr_fg.h"
+#include "dlss.h"
 
 extern "C" {
 // device.c: set when the extra present/acquire queue family was found and created.
@@ -55,9 +56,12 @@ void mk8_fsr_fg_queue_lock(void);
 void mk8_fsr_fg_queue_unlock(void);
 // exec.c (captured per main draw when MK8_FSR_FG is set).
 extern float g_fsr_view[12];
+extern float g_fsr_proj[16];
 extern float g_fsr_jitter_x;
 extern float g_fsr_jitter_y;
 extern int g_fsr_vp_valid;
+// device.c: the swapchain image currently being rendered/presented (added with DLSS-G).
+uint32_t mk8_present_image_index(void);
 }
 
 #define FG_REQUIRED_VERSION "3.1.7"
@@ -142,6 +146,59 @@ typedef struct {
 } Fg;
 
 static Fg fg;
+
+// ------------------------------------------------------------------ DLSS Frame Generation (optional)
+//
+// MK8_DLSS_FG replaces the single-image present with the two-image DLSS-G path. It does not
+// replace the swapchain: the module creates a FrameGeneration feature for the window swapchain,
+// evaluates it from the final display-size image, copies the interpolated result into a second
+// acquired swapchain image, and presents both. Everything is gated on MK8_DLSS_FG and refuses
+// MK8_FSR_FG; the FSR paths below are untouched when it is off.
+static bool dlss_fg_wired;
+static bool dlss_fg_failed;
+static bool dlss_fg_refused;
+static bool dlss_fg_pending;
+static bool dlss_fg_logged_inputs;
+static bool dlss_fg_logged_acquire;
+static uint32_t dlss_fg_real_index;
+static uint32_t dlss_fg_interp_index;
+static uint64_t dlss_fg_seq;
+static uint64_t dlss_fg_frame_id;
+static bool dlss_fg_prepared_any;
+static bool dlss_fg_needs_reset;
+static VkFence dlss_fg_acquire_fence;
+static VkSemaphore dlss_fg_sems[8];
+static VkSwapchainKHR dlss_fg_pending_old;
+
+static bool fsr_fg_requested(void) {
+    const char *value = getenv("MK8_FSR_FG");
+    return value && *value && strcmp(value, "0") != 0;
+}
+
+static bool dlss_fg_requested(void) {
+    return mk8_dlss_fg_enabled() && !fsr_fg_requested();
+}
+
+extern "C" bool mk8_dlss_fg_active(void) {
+    return dlss_fg_wired && !dlss_fg_failed;
+}
+
+static void dlss_fg_destroy_sems(void) {
+    for (unsigned i = 0; i < 8; i++) {
+        if (dlss_fg_sems[i]) vkDestroySemaphore(g_vk.dev, dlss_fg_sems[i], NULL);
+        dlss_fg_sems[i] = VK_NULL_HANDLE;
+    }
+}
+
+static VkSemaphore dlss_fg_sem(uint32_t index) {
+    if (index >= 8) return VK_NULL_HANDLE;
+    if (!dlss_fg_sems[index]) {
+        VkSemaphoreCreateInfo info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        if (vkCreateSemaphore(g_vk.dev, &info, NULL, &dlss_fg_sems[index]) != VK_SUCCESS)
+            return VK_NULL_HANDLE;
+    }
+    return dlss_fg_sems[index];
+}
 
 static ffxReturnCode_t frame_generation_callback(ffxDispatchDescFrameGeneration *params, void *context);
 
@@ -710,8 +767,235 @@ static bool create_contexts(const VkSwapchainCreateInfoKHR *ci) {
     return true;
 }
 
+// ------------------------------------------------------------------ DLSS-G swapchain/present
+
+static bool dlss_fg_create_swapchain(const VkSwapchainCreateInfoKHR *ci, VkSwapchainKHR *swapchain) {
+    if (dlss_fg_refused) return false;
+    VkSwapchainKHR created = VK_NULL_HANDLE;
+    VkResult create_result = vkCreateSwapchainKHR(g_vk.dev, ci, NULL, &created);
+    if (create_result != VK_SUCCESS) {
+        static int said;
+        if (!said++) fprintf(stderr, "[dlss_fg] swapchain creation failed (%d); using the normal path\n",
+                             (int)create_result);
+        return false;
+    }
+    dlss_fg_pending_old = ci->oldSwapchain;
+    dlss_fg_destroy_sems();  // the previous swapchain was drained by device_wait_idle before this call
+    dlss_fg_pending = false;
+    dlss_fg_prepared_any = false;
+    dlss_fg_needs_reset = true;
+    dlss_fg_frame_id = 0;
+
+    Mk8DlssFgInit init = {0};
+    init.instance = g_vk.inst;
+    init.physical_device = g_vk.phys;
+    init.device = g_vk.dev;
+    init.present_queue = g_vk.queue;
+    init.command_buffer = VK_NULL_HANDLE;  // the bridge submits its own one-shot creation buffer
+    init.swapchain = created;
+    init.format = ci->imageFormat;
+    init.width = ci->imageExtent.width;
+    init.height = ci->imageExtent.height;
+    init.render_width = ci->imageExtent.width;
+    init.render_height = ci->imageExtent.height;
+    init.color_hdr = false;
+    const char *inverted = getenv("MK8_DLSS_FG_DEPTH_INVERTED");
+    init.depth_inverted = inverted && *inverted && atoi(inverted) != 0;
+    if (!mk8_dlss_fg_init(&init)) {
+        // The module logged the exact reason. Keep the swapchain we just created and let the
+        // normal single-image present run; dlss_fg_active() stays false.
+        dlss_fg_wired = false;
+        dlss_fg_failed = true;
+        *swapchain = created;
+        return true;
+    }
+    dlss_fg_wired = true;
+    dlss_fg_failed = false;
+    *swapchain = created;
+    fprintf(stderr, "[fsr_fg] DLSS-G takes the present path (FSR frame generation is off)\n");
+    return true;
+}
+
+static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height) {
+    if (!mk8_dlss_fg_active() || !cb || !g_vk.swapchain) return;
+    if (width != g_vk.sc_extent.width || height != g_vk.sc_extent.height) return;
+    uint64_t frame_id = ++dlss_fg_frame_id;
+    uint32_t index = mk8_present_image_index();
+    if (index >= g_vk.sc_count || !g_vk.sc_images[index] || !g_vk.sc_views[index]) return;
+    if (!g_fsr_vp_valid) {
+        if (!dlss_fg_logged_inputs) {
+            dlss_fg_logged_inputs = true;
+            fprintf(stderr, "[dlss_fg] no captured view/projection; presenting the real frame only "
+                            "(MK8_DLSS_FG extends the main-draw scan)\n");
+        }
+        dlss_fg_needs_reset = true;
+        return;
+    }
+    Mk8FsrFgInput depth = {0}, motion = {0};
+    if (!mk8_fsr_fg_inputs(cb, width, height, &depth, &motion) || !depth.real || !motion.real) {
+        if (!dlss_fg_logged_inputs) {
+            dlss_fg_logged_inputs = true;
+            fprintf(stderr, "[dlss_fg] no captured depth/motion vectors; presenting the real frame only "
+                            "(set MK8_FSR4_CAPTURE=1 so the depth copy and camera vectors exist)\n");
+        }
+        dlss_fg_needs_reset = true;
+        return;
+    }
+
+    Mk8DlssFgInputs inputs = {0};
+    inputs.command_buffer = cb;
+    inputs.backbuffer = g_vk.sc_images[index];
+    inputs.backbuffer_view = g_vk.sc_views[index];
+    inputs.backbuffer_format = g_vk.sc_format;
+    inputs.backbuffer_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    inputs.backbuffer_width = width;
+    inputs.backbuffer_height = height;
+    inputs.depth = depth.image;
+    inputs.depth_view = depth.view;
+    inputs.depth_format = depth.format;
+    inputs.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    inputs.depth_width = depth.width;
+    inputs.depth_height = depth.height;
+    inputs.depth_aspect = VK_IMAGE_ASPECT_COLOR_BIT;  // the captured depth is a colour R32F copy
+    inputs.motion = motion.image;
+    inputs.motion_view = motion.view;
+    inputs.motion_format = motion.format;
+    inputs.motion_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    inputs.motion_width = motion.width;
+    inputs.motion_height = motion.height;
+    inputs.jitter_x = g_fsr_jitter_x;
+    inputs.jitter_y = g_fsr_jitter_y;
+    memcpy(inputs.view, g_fsr_view, sizeof inputs.view);
+    memcpy(inputs.projection, g_fsr_proj, sizeof inputs.projection);
+    inputs.frame_id = frame_id;
+    inputs.reset = !dlss_fg_prepared_any || dlss_fg_needs_reset;
+    inputs.not_rendering = false;
+
+    Mk8DlssFgFrame frame = mk8_dlss_fg_evaluate(&inputs);
+    if (!frame.valid) {
+        static int said;
+        if (!said++) fprintf(stderr, "[dlss_fg] evaluate failed; presenting the real frame only this frame\n");
+        dlss_fg_needs_reset = true;
+        return;
+    }
+
+    if (!dlss_fg_acquire_fence) {
+        VkFenceCreateInfo info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        if (vkCreateFence(g_vk.dev, &info, NULL, &dlss_fg_acquire_fence) != VK_SUCCESS) {
+            if (!dlss_fg_logged_acquire) {
+                dlss_fg_logged_acquire = true;
+                fprintf(stderr, "[dlss_fg] cannot create the second-image acquire fence; presenting real frames only\n");
+            }
+            dlss_fg_needs_reset = true;
+            return;
+        }
+    }
+    vkResetFences(g_vk.dev, 1, &dlss_fg_acquire_fence);
+    uint32_t interp_index = 0;
+    VkResult acquire = vkAcquireNextImageKHR(g_vk.dev, g_vk.swapchain, 100000000ull, VK_NULL_HANDLE,
+                                             dlss_fg_acquire_fence, &interp_index);
+    if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
+        if (!dlss_fg_logged_acquire) {
+            dlss_fg_logged_acquire = true;
+            fprintf(stderr, "[dlss_fg] no second swapchain image for the interpolated frame (%d); "
+                            "presenting real frames only\n", (int)acquire);
+        }
+        dlss_fg_needs_reset = true;
+        return;
+    }
+    if (vkWaitForFences(g_vk.dev, 1, &dlss_fg_acquire_fence, VK_TRUE, 1000000000ull) != VK_SUCCESS) {
+        // The image may still become available; stop attempting rather than risk a stale reset.
+        fprintf(stderr, "[dlss_fg] waiting for the second swapchain image timed out; presenting real frames only\n");
+        dlss_fg_failed = true;
+        dlss_fg_needs_reset = true;
+        return;
+    }
+    if (interp_index >= g_vk.sc_count || interp_index == index) {
+        dlss_fg_needs_reset = true;
+        return;
+    }
+    if (!mk8_dlss_fg_copy_interpolated(cb, g_vk.sc_images[interp_index], VK_IMAGE_LAYOUT_UNDEFINED)) {
+        static int said;
+        if (!said++) fprintf(stderr, "[dlss_fg] copying the interpolated result failed; presenting real frames only\n");
+        dlss_fg_needs_reset = true;
+        return;
+    }
+    dlss_fg_real_index = index;
+    dlss_fg_interp_index = interp_index;
+    dlss_fg_seq = vk_pending_seq();
+    dlss_fg_pending = true;
+    dlss_fg_prepared_any = true;
+    dlss_fg_needs_reset = false;
+    static int said;
+    if (!said++)
+        fprintf(stderr, "[dlss_fg] first evaluated frame %llu: %ux%u backbuffer, second image %u\n",
+                (unsigned long long)frame_id, width, height, interp_index);
+}
+
+static VkResult dlss_fg_present(VkQueue queue, const VkPresentInfoKHR *info) {
+    if (!dlss_fg_pending) return vkQueuePresentKHR(queue, info);
+    if (!info || info->swapchainCount != 1 || !info->pSwapchains || info->pSwapchains[0] != g_vk.swapchain ||
+        !info->pImageIndices || info->pImageIndices[0] != dlss_fg_real_index ||
+        info->waitSemaphoreCount != 1 || !info->pWaitSemaphores) {
+        dlss_fg_pending = false;
+        dlss_fg_needs_reset = true;
+        return vkQueuePresentKHR(queue, info);
+    }
+    VkSemaphore interpolated_sem = dlss_fg_sem(dlss_fg_interp_index);
+    if (!interpolated_sem) {
+        dlss_fg_pending = false;
+        dlss_fg_needs_reset = true;
+        return vkQueuePresentKHR(queue, info);
+    }
+
+    // The runtime's frame submission signals only one binary semaphore. A semaphore-only submit
+    // waits for that frame's timeline value and signals the second one, without touching the
+    // generated submission path.
+    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+    wait.semaphore = g_vk.timeline;
+    wait.value = dlss_fg_seq;
+    wait.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkSemaphoreSubmitInfo signal = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+    signal.semaphore = interpolated_sem;
+    signal.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkSubmitInfo2 submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+    submit.waitSemaphoreInfoCount = 1;
+    submit.pWaitSemaphoreInfos = &wait;
+    submit.signalSemaphoreInfoCount = 1;
+    submit.pSignalSemaphoreInfos = &signal;
+    mk8_fsr_fg_queue_lock();
+    VkResult submitted = vkQueueSubmit2(g_vk.queue, 1, &submit, VK_NULL_HANDLE);
+    mk8_fsr_fg_queue_unlock();
+    if (submitted != VK_SUCCESS) {
+        static int said;
+        if (!said++) fprintf(stderr, "[dlss_fg] second present signal submission failed (%d); "
+                                     "presenting real frames only\n", (int)submitted);
+        dlss_fg_pending = false;
+        dlss_fg_failed = true;
+        dlss_fg_needs_reset = true;
+        return vkQueuePresentKHR(queue, info);
+    }
+
+    VkResult result = mk8_dlss_fg_present(queue, info->pSwapchains[0], dlss_fg_real_index, dlss_fg_interp_index,
+                                          info->pWaitSemaphores[0], interpolated_sem);
+    dlss_fg_pending = false;
+    if (result != VK_SUCCESS) {
+        // The module presents the real image first; an interp failure is logged and returns success.
+        // A failure here means the real present failed and device.c handles out-of-date/surface loss.
+        dlss_fg_failed = true;
+        dlss_fg_needs_reset = true;
+    }
+    return result;
+}
+
 // Called by device.c instead of vkCreateSwapchainKHR when MK8_FSR_FG=fsr3.
 extern "C" bool mk8_fsr_fg_create_swapchain(const VkSwapchainCreateInfoKHR *ci, VkSwapchainKHR *swapchain) {
+    if (mk8_dlss_fg_enabled() && fsr_fg_requested() && !dlss_fg_refused) {
+        dlss_fg_refused = true;
+        fprintf(stderr, "[dlss_fg] refused: MK8_DLSS_FG=1 and MK8_FSR_FG=%s are mutually exclusive; "
+                        "using the existing FSR frame-generation path only\n", getenv("MK8_FSR_FG"));
+    }
+    if (dlss_fg_requested() && !dlss_fg_refused) return dlss_fg_create_swapchain(ci, swapchain);
     if (!enabled_by_env() || fg.failed) return false;
     if (!load_provider()) return false;
     if (!load_effect_provider()) return false;
@@ -759,10 +1043,16 @@ extern "C" bool mk8_fsr_fg_create_swapchain(const VkSwapchainCreateInfoKHR *ci, 
     return true;
 }
 
-extern "C" bool mk8_fsr_fg_active(void) { return fg.proxied; }
+extern "C" bool mk8_fsr_fg_active(void) { return fg.proxied || mk8_dlss_fg_active(); }
 
 extern "C" VkResult mk8_fsr_fg_get_images(VkDevice device, VkSwapchainKHR swapchain,
                                           uint32_t *count, VkImage *images) {
+    if (dlss_fg_pending_old) {
+        // device.c has already destroyed the old views; the old swapchain was retired by the new
+        // creation and is safe to destroy here (the path skipped its own destroy for fg_sc).
+        vkDestroySwapchainKHR(device, dlss_fg_pending_old, NULL);
+        dlss_fg_pending_old = VK_NULL_HANDLE;
+    }
     if (!fg.proxied || swapchain != fg.proxy) return vkGetSwapchainImagesKHR(device, swapchain, count, images);
     uint32_t available = 0;
     VkResult r = fg.get_images(device, swapchain, &available, NULL);
@@ -782,6 +1072,7 @@ extern "C" VkResult mk8_fsr_fg_acquire(VkDevice device, VkSwapchainKHR swapchain
 // device.c calls this without holding vk_queue_lock: the proxy may wait for its present thread,
 // whose submissions take that same lock.
 extern "C" VkResult mk8_fsr_fg_present(VkQueue queue, const VkPresentInfoKHR *info) {
+    if (mk8_dlss_fg_active()) return dlss_fg_present(queue, info);
     if (!fg.proxied || !info || info->swapchainCount == 0 || info->pSwapchains[0] != fg.proxy)
         return vkQueuePresentKHR(queue, info);
     return fg.present(queue, info);
@@ -854,6 +1145,10 @@ static void disable_interpolation(void) {
 // is recorded into the game's command buffer; the provider's present callback dispatches the
 // interpolation later from the same thread.
 extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height) {
+    if (mk8_dlss_fg_active()) {
+        dlss_fg_prepare(cb, width, height);
+        return;
+    }
     if (!fg.proxied || fg.failed || !fg.fg_ctx || !cb || !width || !height) return;
     if (width != fg.width || height != fg.height) {
         static bool said;
@@ -984,6 +1279,23 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
 // Called by surface_lost() instead of vkDestroySwapchainKHR. Without a proxy it is the plain call.
 extern "C" void mk8_fsr_fg_destroy_swapchain(VkDevice device, VkSwapchainKHR swapchain,
                                              const VkAllocationCallbacks *allocator) {
+    if (dlss_fg_wired || dlss_fg_pending) {
+        mk8_dlss_fg_shutdown();
+        dlss_fg_wired = false;
+        dlss_fg_pending = false;
+        dlss_fg_failed = false;
+        dlss_fg_prepared_any = false;
+        dlss_fg_needs_reset = true;
+    }
+    if (dlss_fg_acquire_fence) {
+        vkDestroyFence(device, dlss_fg_acquire_fence, NULL);
+        dlss_fg_acquire_fence = VK_NULL_HANDLE;
+    }
+    dlss_fg_destroy_sems();
+    if (dlss_fg_pending_old) {
+        vkDestroySwapchainKHR(device, dlss_fg_pending_old, NULL);
+        dlss_fg_pending_old = VK_NULL_HANDLE;
+    }
     if (!fg.proxied || swapchain != fg.proxy) {
         vkDestroySwapchainKHR(device, swapchain, allocator);
         return;

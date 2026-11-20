@@ -105,8 +105,10 @@ typedef struct Mk8DlssFgInit {
     VkPhysicalDevice physical_device;
     VkDevice device;
     VkQueue present_queue;
-    // An open command buffer on the present queue. It is used once to create the feature and
-    // prime the output images and must be submitted before the first evaluate.
+    // Optional open command buffer on the present queue. When null, the bridge records feature
+    // creation and the output-image barrier into a one-shot buffer and submits it on g_vk.queue;
+    // the call must then happen at a device-idle point (swapchain creation/recreation). When
+    // non-null, the caller owns the submission and must submit it before the first evaluate.
     VkCommandBuffer command_buffer;
     VkSwapchainKHR swapchain;
     VkFormat format;      // swapchain/backbuffer format (also the two output images' format)

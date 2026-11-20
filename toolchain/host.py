@@ -349,6 +349,10 @@ def prepare_host_sources(source, output):
     # Runs last: it wraps the acquire/present calls that the WSI profiling patches above instrument.
     from fsr_fg import prepare as prepare_fsr_fg
     prepare_fsr_fg(runtime)
+    # DLSS-G: low-latency device/swapchain gating and the final-image accessor. Gated on
+    # MK8_DLSS_FG; it does not touch the FSR paths when the variable is unset.
+    from dlss_fg import prepare as prepare_dlss_fg
+    prepare_dlss_fg(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'
