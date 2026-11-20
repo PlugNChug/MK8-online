@@ -51,7 +51,7 @@ Controller discovery now tries subsequent devices for player one if the first de
 
 **Controller assignment in development builds.** At the title screen, press a button on the controller you want as player 1. A keyboard key, mouse click or tap selects the keyboard. Press **SL** or **SR** for a sideways Joy-Con. With one left and one right Joy-Con, a face button selects the pair. When several halves are connected, hold **L** on the left half and **R** on the right half you want to pair, then release both. Return to the title to choose again.
 
-To play with a keyboard, a Pro Controller and two sideways Joy-Cons, set Joy-Con mode to **Individual (horizontal)**. Press **K** on the keyboard at the title to use it as P1. To use the Pro Controller as P1, press **A** on it at the title, choose four players, then press **Enter** on the keyboard when prompted to join as P4. Confirm with **A** on the Pro Controller.
+To play with a keyboard, a Pro Controller and two sideways Joy-Cons, press **K** at the title to use the keyboard as P1, or press **A** on the Pro Controller to use it as P1. At character selection, each sideways Joy-Con joins with **SL + SR**. An available keyboard joins with **Enter**.
 
 In a local split-screen race, a disconnected player’s controls go neutral and the other players can keep racing. On reconnect, an identifiable controller returns to that slot even if Windows lists the devices in a different order. A combined pair resumes when both Joy-Cons are back. If matching controllers have no distinguishing identity, register them again at character selection.
 
@@ -59,7 +59,7 @@ When players are missing on the way to character selection, **Controller assignm
 
 The standalone controller menu works at character selection even when experimental in-game Settings are off. With two to four local players, use the **+** button on the P1 controller or the mapped keyboard Start key. In local multiplayer you can also click or tap **−/+**. The two-player LAN screen hides that on-screen button. Select a row to assign a spare controller or swap two players, or clear the rows and register players in order. If another active player owns the controller, a notice identifies them. **Apply** saves the assignments and **Cancel** keeps the previous ones. During shared-screen races and battles, the Settings shortcut shows a brief notice so everyone can keep driving. Settings remain available in menus and to a single local racer.
 
-Open **F1 → Ajustes → Controle → Joy-Con mode**. Choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
+To split a pair in **Controller assignment**, select the player who should receive one Joy-Con, choose **Assign controller**, and hold **SL + SR** on that half. The original player keeps the other half sideways. Choose **Apply** to use the new assignments or **Cancel** to keep the pair. To pair two available halves, hold **L** on the left Joy-Con and **R** on the right, then release both.
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 

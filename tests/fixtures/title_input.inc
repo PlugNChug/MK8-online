@@ -453,6 +453,26 @@ static void check_prerace_applet(void) {
     detach_title_pad(PRO); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
 }
 
+static void check_prerace_pair_split(void) {
+    attach(PAIR_L); attach(PAIR_R); pump();
+    title_ready(true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_SOUTH,true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_SOUTH,false);
+    title_accepted();
+    assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R]);
+    SDL_Thread *worker=open_prerace_applet(2,1);
+    shoulders(sticks[PAIR_L]);
+    assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY && mk8_editor.slots[0][0]==ids[PAIR_R]);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,false);
+    assert(mk8_controller_join_players()==2 && SDL_GetAtomicInt(&core_released));
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_EAST,true); pump();
+    int confirmed; SDL_WaitThread(worker,&confirmed);
+    assert(confirmed==2 && title_pad_seat(ids[PAIR_R])==0 && title_pad_seat(ids[PAIR_L])==1 && !mk8_partner[0]);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_EAST,false);
+    detach_title_pad(PAIR_L); detach_title_pad(PAIR_R);
+}
+
 static void check_prerace_sparse_seats(void) {
     title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
     attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
@@ -570,7 +590,7 @@ static void check_all_reconnect(const char *scenario) {
     fixture_serials=!identical && !stock;
     returning_serial_ready=true; spare_serial_ready=!one_serial;
     enum Device p3=stock ? PAIR_L : PAIR_R;
-    if (stock) g_settings.pads_from_p2=true;
+    if (stock) { attach_as(PAIR_R,SOLO_L); pump(); } // Automatic discovery already filled P1.
     else { title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted(); }
     attach(PRO); attach(p3); attach_as(SOLO_R,PAIR_R); pump_pro_hotplug();
     int pro=1,right=2;
@@ -613,4 +633,5 @@ static void check_all_reconnect(const char *scenario) {
         check_extra_button(SOLO_R,right); check_extra_button(p3,3);
     }
     detach_title_pad(p3); detach_title_pad(PRO); detach_title_pad(SOLO_R);
+    if (stock) detach_title_pad(PAIR_R);
 }

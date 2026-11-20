@@ -46,7 +46,8 @@ enum Mk8EditState mk8_edit_view(uint16_t names[4][80],int *row) {
     if(row) *row=edit_row;
     return editor_state;
 }
-bool mk8_edit_has_combined(void) { return false; }
+static bool assigned_pair;
+bool mk8_edit_has_pair(void) { return assigned_pair; }
 static uint16_t last_name[80];
 static char last_hint[41];
 static uint16_t shown_tips[2][41];
@@ -688,6 +689,12 @@ static void check_controller_footer(uint64_t manager) {
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(2,"J","Cancel");
+    assigned_pair=true; mk8_settings_page_frame(manager);
+    assert(!strcmp(action_strings[1],"Join sideways or split pair"));
+    assert(pane_float(action_labels[1],0x30)+pane_float(action_labels[1],0x50)/2 <
+           pane_float(keycaps[2],0x30)-pane_float(keycaps[2],0x50)/2);
+    assigned_pair=false; mk8_settings_page_frame(manager);
+    assert(!strcmp(action_strings[1],"Sideways Joy-Con"));
     assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
     assert(controller_focus==4 && cursor_x==0 && cursor_y==-246);
     assert(mk8_controller_pointer(440,606,0)); mk8_settings_page_frame(manager);

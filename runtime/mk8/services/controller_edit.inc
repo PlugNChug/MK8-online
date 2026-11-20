@@ -58,7 +58,7 @@ enum Mk8EditState mk8_edit_view(uint16_t names[4][80], int *listening_row) {
     return state;
 }
 
-bool mk8_edit_has_combined(void) {
+bool mk8_edit_has_pair(void) {
     SDL_LockSpinlock(&mk8_edit_lock);
     bool combined = mk8_mail.combined;
     SDL_UnlockSpinlock(&mk8_edit_lock);
@@ -89,11 +89,10 @@ static void mk8_edit_publish(enum Mk8EditState state) {
     if (mk8_title_observing) return;
     uint16_t names[4][80] = {0};
     bool combined = false;
-    for (Mk8JoinDevice *d = mk8_editor.devices; d; d = d->next)
-        if (SDL_GetGamepadVendor(d->pad) == 0x057e && SDL_GetGamepadProduct(d->pad) == 0x2008) combined = true;
     for (int row = 0; row < mk8_editor.rows; row++) {
         Mk8JoinDevice *left = mk8_edit_device(mk8_editor.slots[row][0]);
         Mk8JoinDevice *right = mk8_edit_device(mk8_editor.slots[row][1]);
+        if (left && right) combined = true;
         if (row == mk8_editor.listening && mk8_editor.first) {
             left = mk8_edit_device(mk8_editor.first);
             right = mk8_edit_device(mk8_editor.second);
@@ -264,7 +263,8 @@ static void mk8_edit_button(Mk8JoinDevice *d, unsigned button, bool down) {
     bool join_chord = down && (bit & chord) && !(d->blocked & chord) && (d->buttons & chord) == chord;
     bool pair_button = pair && bit == pair && !(d->blocked & pair);
     int owner = mk8_edit_owner(d->id);
-    if (owner >= 0 && owner != row) {
+    bool split = owner >= 0 && owner != row && mk8_editor.slots[owner][1] && join_chord && !mk8_editor.first;
+    if (owner >= 0 && owner != row && !split) {
         SDL_JoystickID *slot = mk8_editor.slots[owner];
         if (join_chord || (down && pair_button)) {
             if (join_chord) d->blocked |= chord;
@@ -283,6 +283,11 @@ static void mk8_edit_button(Mk8JoinDevice *d, unsigned button, bool down) {
         mk8_editor.ambiguous = mk8_editor.retry = false;
     }
     if (join_chord && !mk8_editor.first) {
+        if (split) {
+            SDL_JoystickID *pair = mk8_editor.slots[owner];
+            if (pair[0] == d->id) pair[0] = pair[1];
+            pair[1] = 0;
+        }
         d->blocked |= chord;
         mk8_edit_register(row, d->id, 0);
     } else if (pair_button) {

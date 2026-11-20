@@ -51,14 +51,12 @@ static const Option options[]={
     TOGGLE("Mute in background",mute_in_background,"Mute while another app has focus."),
     CHOICE("Game language",language,g_language_names,NULL,N_LANGUAGES,"Applies after restarting the game."),
     CHOICE("Button icons",prompts,prompts,NULL,4,"Choose controller button icons."),
-    TOGGLE("Controllers start at P2",pads_from_p2,"Keyboard P1; controllers from P2."),
-    CHOICE("Joy-Con mode",joycon_mode,mk8_joycon_modes,NULL,2,"One pair or two sideways controllers."),
     {"Mapping device","Choose bindings to edit.",NULL,&mapping_device,devices,NULL,2},
     {"Reset these bindings","Restore this device's defaults."}
 };
 #undef TOGGLE
 #undef CHOICE
-enum { VOLUME=11, SHADERS=9, JOYCONS=18, DEVICE=19, RESET=20, BINDING=21, OPTIONS=21, MAX_ROWS=40 };
+enum { VOLUME=11, SHADERS=9, DEVICE=17, RESET, BINDING, OPTIONS=BINDING, CONTROL_ROWS=4, MAX_ROWS=40 };
 static const int bind_order[]={BIND_A,BIND_B,BIND_X,BIND_Y,BIND_L,BIND_R,BIND_ZL,BIND_ZR,BIND_PLUS,BIND_MINUS,
     BIND_UP,BIND_DOWN,BIND_LEFT,BIND_RIGHT,BIND_LSTICK,BIND_RSTICK,BIND_LS_UP,BIND_LS_DOWN,BIND_LS_LEFT,BIND_LS_RIGHT,
     BIND_RS_UP,BIND_RS_DOWN,BIND_RS_LEFT,BIND_RS_RIGHT};
@@ -80,7 +78,6 @@ static bool boot_set;
 static int seen_binding=-1;
 bool mk8_settings_save_checked(void);
 void mk8_settings_window_changed(void);
-void mk8_settings_pads_changed(void);
 bool mk8_settings_style_active(void);
 void menu_notice(const char *,double);
 
@@ -167,12 +164,10 @@ static void apply(Request r) {
         for(int i=0;i<o->count;i++) if(*o->choice==(o->values ? o->values[i] : i)) index=i;
         int next=index+(r.value<0 ? -1 : 1);
         next=next<0 ? 0 : next>=o->count ? o->count-1 : next;
-        if(r.id==JOYCONS && next!=index && !mk8_set_joycon_mode(next)) return;
         *o->choice=o->values ? o->values[next] : next;
         dirty|=r.id!=DEVICE && next!=index;
     }
     if(r.id==1) mk8_settings_window_changed();
-    if(r.id==17) mk8_settings_pads_changed();
 }
 
 // Called by the existing menu renderer: all real settings writes share its thread.
@@ -191,14 +186,14 @@ void mk8_settings_values_sync(void) {
     int cd,cs,ms;
     capturing=bind_capture_active(&cd,&cs,&ms);
     Mk8Setting next[SETTINGS_CATEGORIES][MAX_ROWS]={0};
-    int sizes[]={11,4,6+(mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)};
+    int sizes[]={11,4,CONTROL_ROWS+(mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)};
     int family=mapping_device==BIND_DEV_PAD ? bind_label_family() : 0;
     for(unsigned g=0;g<SETTINGS_CATEGORIES;g++) for(int row=0;row<sizes[g];row++) {
         Mk8Setting *v=&next[g][row];
         v->enabled=true;
         v->id=g==0 ? row : g==1 ? VOLUME+row : 15+row;
-        if(g==2 && row>=6) {
-            int slot=bind_order[row-6]; v->id=BINDING+mapping_device*BIND_KEY_COUNT+slot; v->kind=SETTING_BINDING;
+        if(g==2 && row>=CONTROL_ROWS) {
+            int slot=bind_order[row-CONTROL_ROWS]; v->id=BINDING+mapping_device*BIND_KEY_COUNT+slot; v->kind=SETTING_BINDING;
             snprintf(v->label,sizeof v->label,"%s",bind_input_name(slot));
             if(capturing && cd==mapping_device && cs==slot) snprintf(v->value,sizeof v->value,"Press %s... %d",mapping_device==BIND_DEV_PAD ? "a button" : "a key",(ms+999)/1000);
             else snprintf(v->value,sizeof v->value,"%s",mapping_device==BIND_DEV_PAD ? bind_pad_label(g_bind_pad[slot],family) : bind_key_label(g_bind_key[slot]));

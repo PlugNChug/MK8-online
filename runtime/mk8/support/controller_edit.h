@@ -14,7 +14,7 @@ enum Mk8EditState {
 
 bool mk8_edit_command(enum Mk8EditCommand action,int row,int other);
 enum Mk8EditState mk8_edit_view(uint16_t names[4][80],int *listening_row);
-bool mk8_edit_has_combined(void);
+bool mk8_edit_has_pair(void);
 unsigned mk8_controller_join_players(void);
 bool mk8_controller_join_keyboard(void);
 bool mk8_controller_join_back_pressed(void);

@@ -189,11 +189,9 @@ bool settings_ahead_fast''')
                    '            if (!g_open.load() && !mk8_hub_enabled() && mk8_settings_page_toggle()) return true;\n'
                    '            set_open(!g_open.load());\n            return true;')
     marker = 'void menu_apply_window_requests(void *win) {'
-    text = replace(text, marker, '''static std::atomic<bool> mk8_pads_apply{false};
-extern "C" void mk8_settings_window_changed(void) { g_want_fullscreen_apply.store(true); }
-extern "C" void mk8_settings_pads_changed(void) { mk8_pads_apply.store(true); }
+    text = replace(text, marker, '''extern "C" void mk8_settings_window_changed(void) { g_want_fullscreen_apply.store(true); }
 ''' + marker + '\n    if (g_open.load() && mk8_settings_shared_race()) set_open(false);'
-                   '\n    if (mk8_pads_apply.exchange(false)) input_pads_reassign();\n    mk8_settings_poll(g_open.load());')
+                   '\n    mk8_settings_poll(g_open.load());')
     marker = '    bool open = g_open.load();\n    bool kbd = g_kbd.load() == 1;'
     text = replace(text, marker, '    mk8_settings_values_sync();\n' + marker + '\n    float mk8_phase = mk8_settings_phase(open);')
     marker = 'static const ThemePalette &theme_palette(void) {'

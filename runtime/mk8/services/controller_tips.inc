@@ -93,7 +93,8 @@ void mk8_tip_sync(void) {
         // Keep the current P1 available to cancel when its draft row is empty.
         if ((left || keyboard) && (first!=pad || second!=mk8_partner[0] || keyboard!=has_keyboard)) {
             snap.p1=mk8_tip_player(first,keyboard,right!=NULL);
-            navigation=left ? mk8_edit_pad_navigation(left,right) : mk8_navigation_axes(key_buttons,key_lx,key_ly);
+            navigation=keyboard ? mk8_navigation_axes(key_buttons,key_lx,key_ly) : 0;
+            if (left) navigation|=mk8_edit_pad_navigation(left,right);
             if (atomic_load(&mk8_draft_navigation)==UINT64_MAX || draft_left!=mk8_editor.slots[0][0] || draft_right!=mk8_editor.slots[0][1])
                 held_at_handoff=navigation;
             held_at_handoff &= navigation;

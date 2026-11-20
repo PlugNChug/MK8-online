@@ -19,6 +19,9 @@ class SettingsValuesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             runtime=prepare_host_sources(ROOT/'upstream/smm2recomp/recomp',root/'host')
+            fallback=(runtime/'ui/menu.mm').read_text(encoding='utf-8')
+            self.assertNotIn('Controllers start at player 2',fallback)
+            self.assertNotIn('Joy-Con mode',fallback)
             (root/'test.c').write_text(r'''
 #include "rt.h"
 #include "settings.h"
@@ -31,7 +34,7 @@ class SettingsValuesTests(unittest.TestCase):
 #include <string.h>
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={"Default"};
 const char *const g_heart_colours[N_HEART_COLOURS]={"Default"};
-static int windows,pads,reboots,notices;
+static int windows,reboots,notices;
 void menu_notice(const char *message,double seconds) {
     assert(!strcmp(message,"Settings could not be saved. Check the settings folder, then reopen Settings and go Back to retry."));
     assert(seconds>0); ++notices;
@@ -42,7 +45,6 @@ int input_pad_family(void) { family_queries++; return 0; }
 bool mk8_settings_style_active(void) { return true; }
 void rt_log(const char *fmt,...) { (void)fmt; }
 void mk8_settings_window_changed(void) { windows++; }
-void mk8_settings_pads_changed(void) { pads++; }
 AheadStatus shader_ahead_status(void) { return (AheadStatus){2,10,10}; }
 void rt_on_reset(void (*fn)(void)) { (void)fn; }
 static Mk8Setting find(unsigned group,const char *label) {
@@ -63,15 +65,19 @@ static void check_tips(void) {
 }
 int main(int argc,char **argv) {
     assert(argc==3 || argc==4); settings_load(); mk8_settings_values_context(true); mk8_settings_values_sync();
+    assert(g_bind_key[BIND_A]==SDL_SCANCODE_F10);
     if(argc==4) {
         assert(g_settings.aspect==ASPECT_ULTRAWIDE);
-        assert(g_settings.joycon_mode==1);
         assert(g_settings.volume==.65f && g_settings.show_fps && g_settings.fullscreen);
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==11 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==11 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==20);
+    for(int i=0;i<mk8_settings_values_count(2);i++) {
+        Mk8Setting row; assert(mk8_settings_values_row(2,i,&row));
+        assert(strcmp(row.label,"Controllers start at P2") && strcmp(row.label,"Joy-Con mode"));
+    }
     check_tips();
     assert(!strcmp(find(0,"Aspect ratio").value,"Stretch"));
     assert(!mk8_settings_values_row(3,0,&(Mk8Setting){0}));
@@ -111,22 +117,9 @@ int main(int argc,char **argv) {
     request(SETTINGS_SET,find(1,"Master Volume").id,200); assert(g_settings.volume==2.0f);
     request(SETTINGS_SET,find(1,"Master Volume").id,80); assert(g_settings.volume==.8f);
     request(SETTINGS_STEP,find(1,"Movie audio").id,1); assert(!g_settings.movie_audio);
-    request(SETTINGS_STEP,find(2,"Controllers start at P2").id,1); assert(g_settings.pads_from_p2 && pads==1);
-    int joycons=find(2,"Joy-Con mode").id;
-    assert(g_settings.joycon_mode==0);
-    request(SETTINGS_STEP,joycons,1);
-    assert(g_settings.joycon_mode==1 && !SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,true));
-    assert(pads==2);
-    assert(mk8_set_joycon_mode(1) && pads==2);
-    assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS,true));
-    request(SETTINGS_STEP,joycons,-1);
-    assert(g_settings.joycon_mode==0 && SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,false));
-    assert(pads==3);
-    assert(mk8_set_joycon_mode(0) && pads==3);
-    request(SETTINGS_STEP,joycons,1);
     request(SETTINGS_STEP,find(2,"Game language").id,1); assert(g_settings.language==1);
     request(SETTINGS_STEP,find(2,"Button icons").id,1); assert(g_settings.prompts==1);
-    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==30);
+    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==28);
     check_tips();
     assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_LALT && g_bind_key[BIND_ZR]==SDL_SCANCODE_SPACE);
     request(SETTINGS_ACTIVATE,find(2,"ZL").id,0); assert(mk8_settings_values_capturing());
@@ -193,11 +186,11 @@ int main(int argc,char **argv) {
             result=subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O2','-UNDEBUG',
                 '-I'+str(runtime),'-I'+str(ROOT/'runtime/mk8/support'),'-I'+str(deps/'include'),
                 str(root/'test.c'),str(ROOT/'runtime/mk8/support/settings_values.c'),str(runtime/'settings.c'),
-                str(ROOT/'runtime/mk8/support/joycon_modes.c'),str(runtime/'hle/bindings.c'),str(deps/'lib/libSDL3.dll.a'),'-o',str(exe)],
+                str(runtime/'hle/bindings.c'),str(deps/'lib/libSDL3.dll.a'),'-o',str(exe)],
                 env=compiler_env(),capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr[-4000:])
             ini=root/'settings.ini'
-            ini.write_text('bind_key_zl = Left Alt\r\nbind_key_zr = Space\r\n',encoding='utf-8',newline='')
+            ini.write_text('pads_from_p2 = 1\r\njoycon_mode = horizontal\r\nbind_key_a = F10\r\nbind_key_zl = Left Alt\r\nbind_key_zr = Space\r\n',encoding='utf-8',newline='')
             env=dict(os.environ,LARECOMP_SETTINGS=str(ini),
                      PATH=str(deps/'bin')+os.pathsep+os.environ.get('PATH',''))
             env.pop('MK8_GAMEPAD_LAYOUT', None)
@@ -208,8 +201,10 @@ int main(int argc,char **argv) {
             text=ini.read_text()
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 0.65',text)
-            self.assertIn('joycon_mode = horizontal',text)
+            self.assertNotIn('joycon_mode',text)
+            self.assertNotIn('pads_from_p2',text)
             self.assertIn('bind_key_zl = Space',text)
+            self.assertIn('bind_key_a = F10',text)
             self.assertIn('bind_key_zr = Left Alt',text)
 
 

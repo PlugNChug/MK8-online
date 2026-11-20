@@ -123,9 +123,6 @@ static void mk8_signal_styles(void) {''')
             if (mk8_startup_layout(layout, ids, n)) { mk8_startup_preset = 1; SDL_free(ids); return; }
             mk8_startup_preset = -1;
             LOG("[input] invalid MK8_GAMEPAD_LAYOUT; using automatic assignment\\n");
-            mk8_set_joycon_mode(g_settings.joycon_mode);
-            SDL_free(ids);
-            ids = SDL_GetGamepads(&n);
         }
         for (int i = 0; i < n; i++) mk8_open_gamepad(ids[i]);''')
     text = replace(text, 'void input_pads_reassign(void) {', '''void input_pads_reassign(void) {
@@ -198,10 +195,4 @@ static void mk8_signal_styles(void) {''')
                    '            if (mk8_title_event(&e,menu_input_captured() || mk8_settings_page_active() || mk8_controller_layout_active())) continue;\n'
                    '            extern void mk8_tip_event(const SDL_Event *, bool);\n'
                    '            mk8_tip_event(&e,mk8_settings_page_active() && !mk8_controller_layout_active());\n' + marker)
-    marker = '    mk8_set_joycon_mode(g_settings.joycon_mode);'
-    text = replace(text, marker, marker + '''
-    const char *controller_layout = getenv("MK8_GAMEPAD_LAYOUT");
-    extern bool mk8_title_manual_input(void), mk8_auto_lan_requested(void);
-    if ((controller_layout && *controller_layout) || (mk8_title_manual_input() && !mk8_auto_lan_requested()))
-        SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0", SDL_HINT_OVERRIDE);''')
     device.write_text(text, encoding='utf-8')

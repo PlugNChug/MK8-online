@@ -25,10 +25,3 @@ def prepare(runtime):
             raise ValueError(f'Controller sensor boundary changed: {old}')
         text = text.replace(old, new)
     path.write_text(text, encoding='utf-8')
-    # The legacy ImGui tab draws on the render thread. Use F1's existing SDL-thread reassignment request.
-    menu = runtime / 'ui/menu.mm'
-    text = menu.read_text(encoding='utf-8')
-    old = '        settings_save();\n        input_pads_reassign();'
-    if text.count(old) != 1:
-        raise ValueError('Controller sensor settings reassignment boundary changed')
-    menu.write_text(text.replace(old, '        settings_save();\n        mk8_settings_pads_changed();'), encoding='utf-8')

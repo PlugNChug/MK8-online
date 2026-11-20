@@ -20,13 +20,11 @@ typedef unsigned SDL_JoystickID;
 typedef struct { unsigned id; } SDL_Gamepad;
 static SDL_Gamepad devices[]={{0},{1},{2},{3},{4}};
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
-static bool p2;
 static unsigned opens, refreshes, styles;
 static bool real_gamepad(unsigned id) { return id != 0; }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++; return id==1 ? NULL : &devices[id]; }
 static SDL_Gamepad *mk8_rumble_open(int player, unsigned id) { assert(player==0); return SDL_OpenGamepad(id); }
-static bool pads_from_p2(void) { return p2; }
 static void open_extra(unsigned id) {
     for (unsigned i=0;i<EXTRA_PADS;i++) if (!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id); return; }
 }
@@ -43,8 +41,6 @@ int main(void) {
     pad=NULL; // player one disconnects: never steal player two on a duplicate event
     mk8_open_gamepad(3); assert(!pad && opens==3);
     mk8_open_gamepad(4); assert(pad==&devices[4]);
-    pad=NULL; extra_pad[0]=NULL; p2=true;
-    mk8_open_gamepad(2); assert(!pad && extra_pad[0]==&devices[2]);
     return 0;
 }
 '''
@@ -52,7 +48,7 @@ int main(void) {
 
 class ControllerDiscoveryTests(unittest.TestCase):
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
-    def test_failed_first_device_duplicate_events_and_player_two_mode(self):
+    def test_failed_first_device_and_duplicate_events(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
             runtime = prepare_host_sources(ROOT / 'upstream/smm2recomp/recomp', out / 'host')

@@ -166,12 +166,6 @@
             ["xbox", "Xbox"],
             ["playstation", "PlayStation"]
           ]
-        },
-        {
-          "key": "pads_from_p2",
-          "label": "Controles começam no jogador 2",
-          "default": "0",
-          "kind": "bool"
         }
       ]
     },

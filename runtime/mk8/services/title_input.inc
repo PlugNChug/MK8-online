@@ -72,8 +72,6 @@ void mk8_title_pump(void) {
         mk8_title_observing = false;
     }
     if (!waiting) return;
-    // A previous F1 mode change may have recombined the grips since the last title visit.
-    SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0", SDL_HINT_OVERRIDE);
     mk8_title_observing = true;
     mk8_observed_visit = visit;
     mk8_editor.focused = mk8_title_focused;
