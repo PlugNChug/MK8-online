@@ -2,7 +2,7 @@
 import hashlib
 
 UNIT = 'main_164.c'
-SHA256 = '3116bd458b91e70c481d5c023a145369c4d77d2e99c9923861abfeffae8d7a86'
+SHA256 = '6794319ad61606e5a2910676d06eb26f3ac3f8b748f61a2302b798f4016b4f00'
 ENTRY = 'void f_7000732600(Cpu *c) {'
 BOUNDARY = '    c->pc = c->x[8]; c->x[30] = 0x7000732668ull; rt_dispatch(c);\n'
 HOOK = BOUNDARY.replace('rt_dispatch(c)', 'mk8_ultrawide_hud(c, c->x[21])')

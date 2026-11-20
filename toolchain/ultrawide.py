@@ -6,7 +6,7 @@ manager mutex is held, before projection consumers and frustum construction.
 import hashlib
 
 UNIT = 'main_077.c'
-SHA256 = 'e2acde446b23167a4ed1bb4f211d5888773d245e4e2e9d60352d8b0f0bd5dce4'
+SHA256 = 'd4f3917c93a685cf81570987e2640c264ef5dc98c26c391ba00919dce6d6ac7d'
 ENTRY = 'void f_70003cc218(Cpu *c) {'
 BOUNDARY = ('    c->x[30] = 0x70003cc4e0ull; f_70003cc8ac(c);\n'
             '    c->x[0] = (uint64_t)(0ull | c->x[20]);\n'
