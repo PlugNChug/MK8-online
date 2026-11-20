@@ -593,6 +593,7 @@ static void check_controller_footer(uint64_t manager) {
     assert(controller_focus==3 && open_sounds==opens+1);
     assert(!(LD8(HEAP_BASE+14600+0x58)&1));
     assert(!wcscmp(shown_title,L"Player 4: choose how to join"));
+    assert(!wcscmp((const wchar_t *)shown_tips[0],L"To pair two Joy-Cons, hold L and R."));
     assert(!strcmp(action_strings[0],"Controller") && !strcmp(action_strings[1],"Sideways Joy-Con"));
     for(unsigned i=0;i<2;i++) {
         assert(!(LD8(keycaps[i]+0x58)&1) && !(LD8(key_labels[i]+0x58)&1));
@@ -600,6 +601,7 @@ static void check_controller_footer(uint64_t manager) {
         assert(pane_float(join_buttons[2*i],0x30)+(i==1 ? 48 : 40)==pane_float(join_plus[i],0x30));
         assert(pane_float(join_buttons[2*i+1],0x30)-40==pane_float(join_plus[i],0x30));
         assert(pane_float(join_buttons[2*i],0x34)+20==pane_float(join_plus[i],0x34)-9);
+        assert(pane_float(join_plus[i],0x34)==pane_float(action_labels[i],0x34)+3.5f);
     }
     assert(!(LD8(keycaps[2]+0x58)&1));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};

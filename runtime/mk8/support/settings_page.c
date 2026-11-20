@@ -291,13 +291,15 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
         float key_center=start+keys[i]/2;
         // The stock title font's baseline is nine layout units below its pane center.
         if(show_chords && i<2) {
+            // Center the chord on the label's capital letters, above the font's plus baseline.
+            float plus_y=y+3.5f;
             // The stock picture sits half its height above the part origin.
-            float icon_y=y-9-20;
+            float icon_y=plus_y-9-20;
             // The SL artwork reaches farther toward the plus than the SR artwork does.
             float left_offset=i==1 ? 48 : 40;
             hint_box(c,join_buttons[2*i],key_center-left_offset,icon_y,56,40);
             hint_box(c,join_buttons[2*i+1],key_center+40,icon_y,56,40);
-            hint_box(c,join_plus[i],key_center,y,24,50);
+            hint_box(c,join_plus[i],key_center,plus_y,24,50);
         } else {
             hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
             hint_box(c,key_labels[i],key_center,y,keys[i],50);
@@ -666,16 +668,15 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
                 help="Release both shoulder buttons to join."; break;
             case MK8_EDIT_NEED_LEFT: help="Hold [R]. Press [L] on the left Joy-Con."; break;
             case MK8_EDIT_NEED_RIGHT: help="Hold [L]. Press [R] on the right Joy-Con."; break;
-            default: help=combined ? "For separate halves, use F1: Individual." : "Pair: press [L] and [R] on opposite halves."; break;
+            default: help=combined && !controller_required ? "For separate halves, use F1: Individual." :
+                "To pair two Joy-Cons, hold L and R."; break;
             }
         } else if(state==MK8_EDIT_FAILED) help="Assign every player a connected input.";
         else if(state==MK8_EDIT_PENDING) help="Updating controller assignments...";
         if(controller_required) {
             left="Cancel";
             right=enrolling ? "Use keyboard" : "Continue";
-            if(state==MK8_EDIT_LISTEN)
-                help="Pair: hold [L] and [R] on opposite halves.";
-            else if(state==MK8_EDIT_READY) help="All players are ready.";
+            if(state==MK8_EDIT_READY) help="All players are ready.";
         }
         instruction(c,title_label,40,heading);
         const struct TipAction roster[]={{MK8_TIP_CONFIRM,"Assign"},{MK8_TIP_SWAP,"Swap"},
