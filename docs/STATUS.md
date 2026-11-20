@@ -8,13 +8,19 @@ nativamente em Windows 11 na RTX 5080 (driver 32.0.16.2101, Vulkan 1.4.357), em 
 código 0. FSR 3.1.6 da DLL assinada da AMD ativou em 1920x1080→2560x1440 (`provider 3.1.6`,
 `upscale active`, `cpu dispatch 0.02 ms`), também com código 0. DLSS SR com
 `nvngx_dlss.dll` (58 MB) passou por `SuperSampling.Available=1`, criação e avaliação
-(1920x1080→2560x1440); a profundidade/motion vectors foram neutros, então há ghosting.
-DLSS-G (`MK8_DLSS_FG=1`, `nvngx_dlssg.dll`) habilita `VK_NV_low_latency2`, mas o processo
-morre com `c0000005` dentro de `nvoglv64.dll` ao criar a swapchain (exit `-1073740791`),
-antes de `[dlss_fg] active`; desativar as camadas implícitas RTSS/OBS não mudou a falha.
-Os hooks opcionais de ultrawide/settings do guest foram pulados porque seus hashes fixados
-precedem `4318c07`. Comandos, logs e o que falta em
-[WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md). `gameplay_verified` continua falso.
+(1920x1080→2560x1440). Com `MK8_FSR4=1`/`MK8_FSR4_CAPTURE=1` recebeu profundidade
+capturada e motion vetores de câmera; o jitter Halton medido foi não nulo
+(0,125–2,667). DLSS-G
+(`MK8_DLSS_FG=1`, `nvngx_dlssg.dll`) inicialmente morria com `c0000005` em
+`nvoglv64.dll` ao encadear `VkSwapchainLatencyCreateInfoNV`; um harness mínimo de
+swapchain não reproduziu a falha em 21 variantes. O workaround em
+`toolchain/dlss_fg.py` pula essa cadeia por padrão (`MK8_DLSS_FG_LATENCY_CHAIN=1`
+reativa), mantém `VK_NV_low_latency2`/`vkSetLatencySleepModeNV` e fez o DLSS-G
+iniciar (`[dlss_fg] active`) e avaliar (`EvaluateFeature` sucesso, quadro 28,
+1920x1080) com código 0. Os hooks opcionais de ultrawide/settings do guest foram
+pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
+variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
+`gameplay_verified` continua falso.
 
 ## FSR nativo em Windows com RTX 5080: 3.1.6/2.3.4 executam, 4.x não é oferecido — 20/11/2026
 

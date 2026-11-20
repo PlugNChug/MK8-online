@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Native Windows plain boot, RTX 5080 | **PASS** | 1280x720 race render; exit 0; `race-05000.png` |
 | FSR 3.1.6 (AMD signed DLL) | **PASS** | `present 1920x1080 -> 2560x1440`, `provider 3.1.6`, `upscale active`; exit 0; `fsr-05000.png` |
-| DLSS Super Resolution (`nvngx_dlss.dll` 58 MB set) | **PASS (with zero motion)** | `SuperSampling.Available = 1`, `upscale active`; exit 0; `dlss-05000.png` |
-| DLSS Frame Generation (`MK8_DLSS_FG=1`) | **FAIL** | `c0000005` in `nvoglv64.dll` during swapchain creation; exit `-1073740791`; no `[dlss_fg] active` |
+| DLSS Super Resolution (`nvngx_dlss.dll` 58 MB set) | **PASS (captured depth/motion)** | `SuperSampling.Available = 1`, `depth source: captured scene depth`, `motion vectors: camera-derived`; exit 0; `dlssmove-05000.png` |
+| DLSS Frame Generation (`MK8_DLSS_FG=1`) | **PASS with workaround** | latency chain skipped; `[dlss_fg] active`, `EvaluateFeature` success; exit 0; `dlssfg6-05000.png` |
 | Interactive session required | **No** | SSH session 0 created the Vulkan window and swapchain normally |
 
 This is an in-engine render, not a full qualification. `gameplay_verified` stays false; audio,
@@ -40,7 +40,7 @@ python3 local/windows-rtx2/cross_build.py \
 Runtime x86_64-windows-gnu: 234/234 unidades
 Executável do runtime ligado; gameplay ainda não verificado.
 mk8drecomp.exe 4,525,568 bytes
-SHA-256 1103cdbd5e928bc62e725aa75fbf2df6a04fa80aa21eb3d20f0fe4cb68f8bb7f
+SHA-256 a1bb4359d369558717952131dd06cfc7dedf6d85796c2323fc3aa4fd7a72163a
 ```
 
 ```sh
@@ -156,73 +156,138 @@ Exit code **0**; log:
 neutral inputs in this run; the FSR bridge logs that state rather than claiming
 camera motion. No device loss.
 
-## DLSS Super Resolution
+## DLSS Super Resolution with real depth/motion
 
 `nvngx_dlss.dll` (DLSS 5 set, 58,956,912 bytes) and
 `nvngx_dlssg.dll` (7,506,544 bytes) were copied next to `mk8drecomp.exe`.
+`MK8_FSR4=1` enables the shared camera/depth capture; `MK8_FSR4_CAPTURE=1`
+records the scene-depth copy. `MK8_DLSS=1` then selects the NGX bridge.
 
 ```powershell
 $env:LARECOMP_WINDOW = '2560x1440'
 $env:MK8_DLSS = '1'
 $env:MK8_DLSS_LIB = 'C:\Users\Ronny\mk8-rtx\game\run-rtx\nvngx_dlss.dll'
+$env:MK8_FSR4 = '1'
+$env:MK8_FSR4_CAPTURE = '1'
 # same race input and captures
 ```
 
-Exit code **0**; log:
+Exit code **0**:
 
 ```text
-[dlss] VK_KHR_get_physical_device_properties2 enabled
 [dlss] NGX device extensions enabled: VK_NVX_binary_import,
        VK_NVX_image_view_handle, VK_KHR_buffer_device_address,
        VK_KHR_push_descriptor
-[dlss] feature requirements: supported (min GPU arch 0x160, min OS 10.0.0)
-[dlss] NVSDK_NGX_VULKAN_Init_ProjectID: 0x00000001 (success)
 [dlss] SuperSampling.Available = 1
 [dlss] NVSDK_NGX_VULKAN_CreateFeature: 0x00000001 (success)
 [dlss] NVSDK_NGX_VULKAN_EvaluateFeature: 0x00000001 (success)
 [dlss] upscale active 1920x1080 -> 2560x1440
        (quality quality, depth neutral, motion zeros, jitter 0.000,0.000)
+...
+[dlss] depth source: captured scene depth 1920x1080 fmt 100
+[dlss] motion vectors: camera-derived
 ```
 
-`dlss-05000.png` is a correct 2560x1440 race frame. The bridge warns that motion
-vectors are zeros because the camera view/projection were not captured in this
-run; quick-moving karts can ghost. That is an input-quality limitation, not an
-NGX failure. The task's requirement — device extensions, availability,
-feature creation and evaluation — passed.
-
-## DLSS Frame Generation — crash
-
-```powershell
-$env:MK8_DLSS_FG = '1'
-$env:DISABLE_RTSS_LAYER = '1'
-$env:DISABLE_VULKAN_OBS_CAPTURE = '1'
-$env:VK_LOADER_LAYERS_DISABLE = '~implicit~'
-# `nvngx_dlssg.dll` beside the executable, same 2560x1440 race input
-```
-
-Exit code **-1073740791** (`0xC0000409`, fail-fast). Log:
+The one-time `upscale active` line is emitted at the first evaluation, before
+the main-draw capture exists; it is stale for this run. The state-change lines
+after the first captured frame prove the real inputs. A temporary diagnostic
+(removed again) logged the actual Halton jitter passed to NGX:
 
 ```text
-[dlss] VK_KHR_get_physical_device_properties2 enabled
-[dlss_fg] VK_KHR_present_id enabled
-[dlss_fg] VK_NV_low_latency2 enabled
-[dlss] NGX device extensions enabled: ...
-*** exception c0000005 accessing 0x1
-    host pc ... (nvoglv64.dll+e0e900)
-    host backtrace ... vulkan-1.dll+52080 ... nvoglv64.dll+dfb8e6 ...
+[dlss] jitter 0.1250,2.6667
+[dlss] jitter 1.0000,1.0000
+[dlss] jitter 0.5000,2.0000
+[dlss] jitter 1.5000,0.3333
+...
 ```
 
-No `[dlss_fg] active`, no EvaluateFeature and no screenshot: the process dies
-while creating the swapchain, before the two-image present path runs. Disabling
-the RTSS and OBS implicit Vulkan layers removed `RTSSVkLayer64.dll` from the
-stack but did **not** change the crash; the fault remains inside the NVIDIA
-Vulkan driver (`nvoglv64.dll`). This is a real blocker for DLSS-G on this
-driver/machine, not a captured "no device loss" success.
+`dlssmove-05000.png` is a correct 2560x1440 race frame with captured depth and
+camera-derived motion. The start-grid frame is nearly static, so it does not
+show a dramatic ghosting difference from the earlier zero-motion screenshot;
+the player kart and track are sharp in both. A moving-camera A/B remains the
+right visual test; the inputs are now real rather than the neutral/zero
+fallback.
+
+## DLSS Frame Generation — latency-chain crash and workaround
+
+The failure was isolated with a minimal Windows Vulkan swapchain harness
+(`local/rtx-harness/swapchain_probe.c`, 13.5 KB source; not committed). It
+creates a hidden Win32 window, a surface, a device and a swapchain in the same
+session-0 SSH desktop that runs the game.
+
+| Variant | Device extensions / create chain | Result |
+| --- | --- | --- |
+| 1 plain | `VK_KHR_swapchain` | PASS |
+| 2 | + `VK_KHR_present_id` | PASS |
+| 3 | + `VK_NV_low_latency2`, `VkSwapchainLatencyCreateInfoNV` TRUE | PASS |
+| 4 | + `VK_NV_low_latency2` only | PASS |
+| 5 | + `VK_KHR_present_id`, `VkPresentIdKHR` at present | PASS |
+| 6 | present_id + low_latency, no latency struct, `vkSetLatencySleepModeNV` | PASS, sleep rc=0 |
+| 7/8 | as 3/6 with `VkPhysicalDevicePresentIdFeaturesKHR` | PASS |
+| 9 | latency struct + `SAMPLED|TRANSFER_SRC|TRANSFER_DST` usage | PASS |
+| 10 | latency struct + non-null `oldSwapchain` | PASS |
+| 11 | sampled usage + `oldSwapchain` + latency struct | PASS |
+| 12 | low_latency only + latency struct + sampled usage | PASS |
+| 13 | present_id + low_latency + sampled + old + latency | PASS |
+| 14 | variant 13 at a larger window (session-0 client 1028x732) | PASS |
+| 15/17 | latency struct with `latencyModeEnable = VK_FALSE` | PASS |
+| 16 | latency struct TRUE with `pNext = NULL` | PASS |
+| 18 | `VK_KHR_present_id` only + latency struct | PASS |
+| 21 | `VK_NV_low_latency2` only, no present_id, no struct, sleep mode | PASS, sleep rc=0 |
+
+The minimal chain and every tested variant are stable, including low-latency
+without `VK_KHR_present_id` and `latencyModeEnable` FALSE. The in-engine crash
+therefore needs the runtime's full device feature set/context, but the trigger
+is specifically the **`VkSwapchainLatencyCreateInfoNV` chain**:
+
+- with the chain in the game runtime: `c0000005` in `nvoglv64.dll`, exit
+  `-1073740791`, no `[dlss_fg] active` (the original failure);
+- with the chain removed in the same runtime: swapchain creates, DLSS-G
+  initializes and evaluates normally.
+
+The workaround is in `toolchain/dlss_fg.py`: the latency chain is **off by
+default**, `MK8_DLSS_FG_LATENCY_CHAIN=1` opts back in for testing. The
+`VK_NV_low_latency2` extension itself stays enabled and
+`vkSetLatencySleepModeNV` is still called, so low-latency pacing remains. The
+runtime logs the chosen combination:
+
+```text
+[dlss_fg] VK_KHR_present_id enabled
+[dlss_fg] VK_NV_low_latency2 enabled
+[dlss_fg] swapchain latency chain skipped (default; MK8_DLSS_FG_LATENCY_CHAIN=1 enables it)
+```
+
+In-engine run at 1920x1080 (`LARECOMP_SCALE=1.0`, `MK8_FSR4=1`,
+`MK8_FSR4_CAPTURE=1`, `MK8_DLSS_FG=1`), exit **0**:
+
+```text
+[dlss_fg] active: NGX DLSS-G 2x 1920x1080 (render 1920x1080, format 44),
+          VK_NV_low_latency2 pacing
+[fsr_fg] depth source: captured scene depth 1920x1080 fmt 100
+[fsr_fg] motion vectors: camera-derived
+[dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration): 0x00000001 (success)
+[dlss_fg] first evaluated frame 28: 1920x1080 backbuffer, second image 1
+[vk] saved .../dlssfg6-05000.png (1920x1080)
+```
+
+`dlssfg6-05000.png` is a correct race frame. Setting
+`MK8_DLSS_FG_LATENCY_CHAIN=1` reproduces the original crash with the same
+`-1073740791` exit, confirming the workaround is the chain.
+
+At 2560x1440 without `LARECOMP_SCALE=1.0`, the game renders the 3D scene at
+1152x648 while the display is 1920; the DLSS-G input path requires matching
+depth/display sizes, so it falls back to real frames only. DLSS-G at that
+resolution needs depth resampling (as the FSR upscaler already does) before it
+can evaluate; this run therefore uses 1920x1080 for the two-image path.
 
 ## What remains
 
-- Fix or isolate the DLSS-G swapchain crash (driver `32.0.16.2101` +
-  `VK_NV_low_latency2`), then run the two-image present/evaluation.
+- Verify the latency-chain workaround on other NVIDIA driver versions; the
+  `MK8_DLSS_FG_LATENCY_CHAIN=1` opt-in currently reproduces the driver bug.
+- Resample depth to the display size for DLSS-G when the game renders below
+  the window (2560x1440 with a 1152x648 scene), as the FSR upscaler does.
+- Capture a moving-camera DLSS SR A/B to quantify the remaining ghosting with
+  real motion vectors; the start-grid frame is nearly static.
 - Qualify the race with audio, controls, clock speed, a full lap/cup and a
   clean restart/save.
 - Re-enable the optional ultrawide/native-settings guest hooks after their
@@ -233,7 +298,9 @@ driver/machine, not a captured "no device loss" success.
 ## Evidence
 
 Local (ignored, not committed): `local/rtx-ingame/race-05000.png`,
-`fsr-05000.png`, `dlss-05000.png`, `local/rtx-ingame/logs/{race,fsr,dlss,dlssfg}.err`
-and the matching `.exit` files. Remote originals remain under
-`C:/Users/Ronny/mk8-rtx/game/` and `C:/Users/Ronny/mk8-rtx/game/run-rtx/`.
-No binaries, screenshots or game data are committed.
+`fsr-05000.png`, `dlssmove-05000.png`, `dlssfg6-05000.png`,
+`local/rtx-ingame/logs/{race,fsr,dlss,dlsscap,dlssfg}.err` and the matching
+`.exit` files. The harness source is `local/rtx-harness/swapchain_probe.c` with
+`probe-*.out` logs. Remote originals remain under `C:/Users/Ronny/mk8-rtx/game/`
+and `C:/Users/Ronny/mk8-rtx/game/run-rtx/`. No binaries, screenshots or game
+data are committed.
