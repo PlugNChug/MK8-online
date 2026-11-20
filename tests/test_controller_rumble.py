@@ -220,7 +220,7 @@ static void send_tone(uint32_t handle,float low,float low_hz,float high,float hi
     IpcReq req={.cmd=201,.data=payload,.data_size=sizeof payload};
     IpcResp resp={0};
     hid(NULL,&req,&resp);
-    CHECK(resp.result==(mk8_output_exiting ? 0xf601u : 0));
+    CHECK(!resp.result);
     if (!defer_output) mk8_rumble_pump();
 }
 static void send_one(uint32_t handle,float low,float high) {
@@ -665,6 +665,13 @@ static void joycon_output(void) {
     CHECK(pulse[2].low && pulse[2].high);
     quick_exit_handler();
     CHECK(fake_exit_called && !pulse[2].low && !pulse[2].high);
+    /* Guest threads can still flush valid haptics while the host drains its GPU/cache. */
+    unsigned after_stop=pulse[2].calls;
+    send_pair(h,.8f,.4f);
+    send_one(h[0],1,1);
+    readback(h[0],0,0); readback(h[1],0,0);
+    malformed(h);
+    CHECK(pulse[2].calls==after_stop && !pulse[2].low && !pulse[2].high);
     /* The rendering process would terminate here. Reset the exit latch for the next fixture. */
     SDL_SetAtomicInt(&mk8_pair_exiting,0);mk8_output_exiting=false;fake_exit_called=false;
     send_pair(h,.2f,.3f);

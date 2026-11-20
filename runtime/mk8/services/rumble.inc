@@ -473,6 +473,8 @@ void mk8_joycon_shutdown(void) {
 }
 
 static struct Mk8GuestPad *mk8_guest_rumble_pad(uint32_t handle) {
+    // Actuators are gone during the host's GPU/cache drain. The guest HID session is still open.
+    if (mk8_output_exiting) return NULL;
     unsigned player = (handle >> 8) & 255;
     if ((handle & 0xfffe00ffu) != 3 || player >= 1 + EXTRA_PADS) return NULL;
     // In a software pair the right grip has its own SDL device and output timer.
@@ -786,11 +788,6 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         until.tv_sec += until.tv_nsec / 1000000000L;
         until.tv_nsec %= 1000000000L;
         pthread_cond_timedwait(&mk8_output_space, &mk8_guest_mutex, &until);
-    }
-    if (mk8_output_exiting && values) {
-        pthread_mutex_unlock(&mk8_guest_mutex);
-        resp->result = 0xf601;  // Kernel SessionClosed
-        return;
     }
     if (cancellation != atomic_load(&mk8_output_cancellation)) pending.mask = 0;
     for (unsigned slot = 0; slot < MK8_OUTPUT_PADS; ++slot) if (pending.mask & (1u << slot)) {
