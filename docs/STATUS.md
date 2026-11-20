@@ -23,8 +23,12 @@
   leu o texto oficial e conferiu o bloqueio anterior ao aceite.
 - O tarball e o AppImage passaram na inicialização e no teste do importador. O updater
   do tarball ativou e reverteu um pacote em modo headless, preservando a porta solicitada
-  e os dados. A verificação do ZIP portátil e da chave do host Windows roda no
-  [CI do PR #83](https://github.com/Vnnc1/MK8-online/pull/83/checks).
+  e os dados. O [CI do PR #83](https://github.com/Vnnc1/MK8-online/actions/runs/44830833515)
+  passou no commit `b8fd1e8`: o Windows rodou fmt, Clippy e testes Rust, abriu o ZIP
+  portátil e conferiu a chave do host extraída; o Linux repetiu os testes nativos e o
+  empacotamento do tarball/AppImage com o updater headless. O run anterior em `9cc9441`
+  falhou no Clippy do Windows porque o `cfg` de `publish_payload` tinha perdido `windows`
+  e `fsr4_dispatch_supported` era só Linux; `b8fd1e8` corrigiu os dois.
 
 `gameplay_verified` permanece falso. Áudio, controle, reinício/save, qualidade em RDNA 4
 e RTX e multiplayer entre duas máquinas exigem qualificação própria.
