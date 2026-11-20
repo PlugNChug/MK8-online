@@ -136,12 +136,18 @@ Verified in-engine on Mesa 27, 1280x720 or 2560x1440 as noted:
 
 - FG off: `local/qualification/mesa-race-2026-11-20/fgoff-fix.log`, `fgoff-fix-02400.png` (race,
   1st Race), exit 0.
-- FSR 3 FG and MLFI: see `docs/MLFI-QUALITY.md`; both use the same workaround at 1280x720.
+- FSR 3 FG at 1280×720: `fsr3-720b.log`, `fsr3-720b-02400.png` (race, 1st Race), exit 0.
+- FSR 3 FG at 1920×1080: `fsr3-1080.log`, `fsr3-1080-02400.png` (course entry at frame 2400), exit 0.
+- MLFI 4.0.2 at 1280×720: `mlfi-720b.log`, `mlfi-720b-02400.png` (race, 1st Race), 1,800 generated
+  frames, exit 0. See `MLFI-QUALITY.md`.
 
-The workaround is a runtime device-feature change, not a claim that the driver is fixed. The upstream
-fix should initialise `ps_epilogs` whenever a PS epilog can be required (or unconditionally), not only
-for the extended-dynamic-state-3 features; `radv_shader_part_cache_get`/`lookup_ps_epilog` should also
-fail pipeline creation cleanly instead of dereferencing a NULL ops table.
+The workaround is a runtime device-feature change, not a claim that the driver is fixed. A control
+run of the unpatched build with `RADV_DEBUG=nocache` still crashes at the same
+`libvulkan_radeon.so+19d4f3` (`local/qualification/fsr4-fg-2026-11-20/nocache27.log`), so the driver
+pipeline cache is not the cause and disabling it is not a workaround. The upstream fix should
+initialise `ps_epilogs` whenever a PS epilog can be required (or unconditionally), not only for the
+extended-dynamic-state-3 features; `radv_shader_part_cache_get`/`lookup_ps_epilog` should also fail
+pipeline creation cleanly instead of dereferencing a NULL ops table.
 
 ## 4. Stable RADV and MLFI
 

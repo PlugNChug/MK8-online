@@ -18,6 +18,7 @@ All on RADV GFX1201, Mesa 27.0.0-devel (`f7dd61f78f8`), with `toolchain/radv_epi
 | --- | --- | --- | --- | --- |
 | `mlfi-720b` | `MK8_FSR_FG=fsr4` | 1280×720 | `MLFI effect provider 4.0.2`, `MLFI effect context: 1280x720 format 14`, `191 model + 1 compose` | `mlfi-720b-02400.png` |
 | `fsr3-720b` | `MK8_FSR_FG=fsr3` | 1280×720 | `frame-generation effect provider 3.1.6`, `active: FFX frame-interpolation swapchain 1280x720` | `fsr3-720b-02400.png` |
+| `fsr3-1080` | `MK8_FSR_FG=fsr3` | 1920×1080 | `active: FFX frame-interpolation swapchain 1920x1080` | `fsr3-1080-02400.png` (course entry) |
 | `fgoff-fix` | off | 2560×1440 | none | `fgoff-fix-02400.png` |
 
 The 1280×720 window is a 640×360 logical window on the 2× Wayland output (SDL's high-pixel-density
@@ -64,7 +65,8 @@ generated frames. No claim about generated-frame ghosting, detail or latency is 
 
 - Established: the MLFI 4.0.2 provider creates its 195 pipelines and 196 descriptor sets, runs the
   191-model + compose graph in a real race, and the game presents/continues to the screenshot with
-  exit 0; FSR 3.1.7 also runs the race at the same 1280×720; the Mesa 27 race crash is worked around.
+  exit 0; FSR 3.1.7 runs the race at 1280×720 and the course entry at 1920×1080; the Mesa 27 race
+  crash is worked around.
 - Not established: generated-frame image quality (no generated frame is in the captures), generated-vs-
   real pacing/latency, a real 120 Hz presentation, a full race/restart/save, or vendor-identical MLFI
   output. `MLFI-PROVIDER.md` already notes that the provider's final compose is this project's
