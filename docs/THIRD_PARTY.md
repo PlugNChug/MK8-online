@@ -1,5 +1,7 @@
 # Dependências e atribuições
 
+A atribuição de controles dentro do jogo e a recuperação da posição dos jogadores vêm da contribuição de PlugNChug. A verificação das unidades C geradas com terminações LF ou CRLF foi adaptada da contribuição de DieMitchell. [PR #75](https://github.com/Vnnc1/MK8-online/pull/75) · [PR #83](https://github.com/Vnnc1/MK8-online/pull/83)
+
 ## Controles Steam no Windows
 
 A integração usa a interface GameInput v0 fornecida pelo Windows e a API pública de controles virtuais da SDL 3. As assinaturas COM e os formatos de leitura e vibração foram conferidos com o Windows SDK 10.0.26100.0. [Windows SDK — GameInput.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/GameInput.h) · [SDL — controles virtuais](https://wiki.libsdl.org/SDL3/SDL_AttachVirtualJoystick)

@@ -234,6 +234,8 @@ sessions use the game's cups (each machine would otherwise decide on its own whi
 
 ## Build and contribute
 
+The build accepts MK8 4.0.1 generated C units with Windows (CRLF) or Unix (LF) line endings. Both must reproduce the same pinned SHA-256 before a guest hook is applied. The launcher release targets Windows x64.
+
 Feedback snapshots now retry device-memory exhaustion after collecting GPU-completed retired images, then try host-preferred compatible memory without changing image format or masking allocation errors. The launcher's isolated Vulkan probe now initializes SDL video and actually loads Vulkan through SDL rather than checking exports alone. These mitigations need retesting on the machines affected by issues #52 and #47.
 
 In 0.4.0, Steam tries the available candidate libraries until all required exports can be resolved, without accepting unverified interface versions. MK8's stretch-to-window setting now fills wide/tall windows while retaining the original camera field of view; original 16:9 keeps its proportions. Historical cube-map fallback only reuses existing GPU-owned images, and command-record headers use 72 rather than 88 bytes. Rebuild the launcher for Steam selection and all host runtime consumers for the graphics changes. These changes are not in the published 0.3.0 setup and do not establish fixes for every lighting defect or GPU-memory crash.

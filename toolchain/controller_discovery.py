@@ -51,8 +51,9 @@ def prepare(runtime):
     text = path.read_text(encoding='utf-8')
     anchor = 'void input_handle_event(const SDL_Event *e) {'
     eligible = 'static bool real_gamepad(SDL_JoystickID id) {'
-    for old, new in [(eligible, eligible + '\n    extern bool mk8_steam_pad_deferred(SDL_JoystickID);\n'
-                             '    if (mk8_steam_pad_deferred(id)) return false;'),
+    for old, new in [(eligible, eligible + '\n#ifdef _WIN32\n'
+                             '    extern bool mk8_steam_pad_deferred(SDL_JoystickID);\n'
+                             '    if (mk8_steam_pad_deferred(id)) return false;\n#endif'),
                      (anchor, HELPER + anchor),
                      (SCAN, '        for (int i = 0; i < n; i++) mk8_open_gamepad(ids[i]);'),
                      (ADDED, '        mk8_open_gamepad(e->gdevice.which);')]:

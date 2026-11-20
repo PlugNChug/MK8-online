@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Portabilidade das unidades de jogo e entrada SDL
+
+Na revisão `93b817d` da PR #83, a preparação recusou três unidades válidas geradas no Windows (`main_077.c`, `main_164.c` e `main_114.c`) e aceitou as mesmas unidades com LF. Na integração parcial da `fix-chore`, a câmera ultrawide, o HUD, as configurações, as copas, os Miis, o SDK e o Yaz0 usam os hashes já registrados nesta branch. As 29 unidades atingidas, preparadas tanto com CRLF quanto com LF no Windows e no WSL, reproduziram byte a byte os fontes adaptados da compilação anterior. Todas foram recompiladas no Windows com as opções da build. Passaram 30 testes de preparação e comportamento.
+
+O backend Linux da #83 não fornecia duas funções de GameInput chamadas pela `fix-chore` e seu inicializador retornava sucesso sem inicializar o SDL. As chamadas a GameInput agora ficam no Windows. No Linux, o código preparado inicializou vídeo e gamepad por SDL3, recebeu um botão de um controle virtual e propagou o erro de um driver de vídeo indisponível. Os 13 testes selecionados de entrada e apresentação no Windows passaram.
+
+O runtime Windows isolado da #83 compilou as 233 unidades e abriu o MK8 com a biblioteca do jogo da build local na RX 580 2048SP. O porte Linux completo, FSR e DLSS continuam em revisão. A consulta de versões FSR no launcher ainda precisa revalidar as bibliotecas instaladas ao carregá-las. Dos 17 testes gráficos selecionados, 16 passaram; dos 18 testes do carregador DLSS, 11 passaram. Na PR #81, quatro dos 12 testes de XeSS passaram no WSL. Os demais nesses grupos dependem de ferramentas, SDKs ou provedores opcionais. A falha de execução XeSS na RTX 5080 é um relato do autor da PR.
+
 ## Atribuição de controles na integração da PR #75
 
 A tela de atribuição, a seleção de P1 no título e a recuperação da posição após reconexão passaram a usar a mesma identificação de controles da Steam que a descoberta automática. O teste nativo combinou dois controles GameInput simulados com um dispositivo SDL genérico inativo. O segundo controle pôde assumir P1 e o dispositivo inativo não ocupou P3 ou P4. A suíte também exercitou a atribuição por teclado e Joy-Con, a reconexão e a vibração.

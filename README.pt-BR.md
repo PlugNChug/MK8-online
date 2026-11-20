@@ -222,6 +222,8 @@ as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha
 
 ## Compilar e contribuir
 
+A build aceita unidades C geradas do MK8 4.0.1 com quebras de linha do Windows (CRLF) ou do Unix (LF). Nos dois casos, os bytes precisam reproduzir o mesmo SHA-256 registrado antes de aplicar os hooks do jogo. O launcher publicado é para Windows x64.
+
 O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Ajustes → Controle. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
 
 Para experimentar a direção por movimento na 0.4.0, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.

@@ -4,6 +4,7 @@ The game's loop is taken at test time from the local generated main_230.c (never
 compiled next to runtime/mk8/support/yaz0.c; both decode the same streams, and an independent Python decoder gives the
 expected output."""
 import hashlib
+import os
 from pathlib import Path
 import random
 import struct
@@ -20,7 +21,8 @@ import yaz0_native
 
 
 def generated_unit():
-    for unit in sorted((ROOT/'local/builds').glob('*/generated/main/' + yaz0_native.UNIT)):
+    builds = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'builds'
+    for unit in sorted(builds.glob('*/generated/main/' + yaz0_native.UNIT)):
         if hashlib.sha256(unit.read_bytes()).hexdigest() == yaz0_native.SHA256:
             return unit
     return None

@@ -1,5 +1,5 @@
 """Wrap the verified 4.0.1 layout calculation after animation updates."""
-import hashlib
+from guest_source import verified_bytes
 
 UNIT = 'main_164.c'
 SHA256 = '3116bd458b91e70c481d5c023a145369c4d77d2e99c9923861abfeffae8d7a86'
@@ -25,11 +25,9 @@ def patch(text):
 def patch_unit(src, output):
     if src.name != UNIT or src.parent.name != 'main':
         return src
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SHA256:
-        raise ValueError('Ultrawide HUD requires the verified MK8 4.0.1 generated unit')
+    raw = verified_bytes(src, SHA256, 'Ultrawide HUD requires the verified MK8 4.0.1 generated unit')
     text = patch(raw.decode('utf-8').replace('\r\n', '\n'))
     target = output/'ultrawide_hud'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
+    target.write_text(text, encoding='utf-8', newline='\r\n')
     return target
