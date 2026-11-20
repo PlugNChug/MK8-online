@@ -53,7 +53,7 @@ set_target_properties(amd_fidelityfx_upscaler_vk PROPERTIES
 
 add_library(amd_fidelityfx_loader_vk SHARED src/loader/ffx_loader.cpp)
 target_include_directories(amd_fidelityfx_loader_vk PRIVATE ${FSR4_FFX_API_INCLUDE})
-target_link_libraries(amd_fidelityfx_loader_vk PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(amd_fidelityfx_loader_vk PRIVATE ${CMAKE_DL_LIBS} Vulkan::Vulkan)
 set_target_properties(amd_fidelityfx_loader_vk PROPERTIES
     OUTPUT_NAME amd_fidelityfx_loader_vk
     CXX_VISIBILITY_PRESET hidden)

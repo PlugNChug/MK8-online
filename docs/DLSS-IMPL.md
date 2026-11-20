@@ -106,17 +106,15 @@ passes against v310.9.16. The `.so` files are likewise never committed; they sta
    then ultra-quality, quality, balanced, performance, ultra-performance. Depth is
    assumed standard Z; `MK8_DLSS_DEPTH_INVERTED=1` sets the NGX inverted-depth flag.
 7. **Evaluate (per frame).** Set `Color`, `Output`, `Depth`, `MotionVectors` to
-   `NVSDK_NGX_Resource_VK` image views, `Jitter.Offset.X/Y` (same Halton values FSR
-   uses; `MK8_DLSS_NO_JITTER=1` forces zero), `MV.Scale.X/Y = 1` (vectors are already
+   `NVSDK_NGX_Resource_VK` image views, `Jitter.Offset.X/Y = 0`, `MV.Scale.X/Y = 1` (vectors are already
    render-pixel deltas), `Sharpness = 0`, `DLSS.Pre.Exposure = 1`,
    `FrameTimeDeltaInMsec`, `DLSS.Render.Subrect.Dimensions.*`, and `Reset = 1` on the
    first frame, on a resolution change or whenever the motion vectors are zeros.
    Then `NVSDK_NGX_VULKAN_EvaluateFeature(cb, handle, params, NULL)` and return the
-   display-size output view. The colour image is left in `GENERAL` afterwards, as the
-   FSR path does.
-8. **Resize.** Release the feature, destroy the output/neutral-depth/motion/view
-   caches and recreate on the next frame. There is no process-teardown hook in this
-   runtime; NGX is shut down on fatal init errors and the OS reclaims the rest.
+   display-size output view. The bridge restores the captured colour and depth
+   layouts on success and failure.
+8. **Resize.** Wait for the previous timeline value before replacing the feature and
+   its resources. Use the ordinary present path while those resources are still in flight.
 
 ### Inputs reused, and their actual state
 
@@ -125,7 +123,7 @@ passes against v310.9.16. The `.so` files are likewise never committed; they sta
 | Colour | the presented game image, render resolution | composed image, post-tonemap/UI (same limitation as FSR) |
 | Depth | captured scene depth (`MK8_FSR4_CAPTURE`) or a neutral R32F cleared to 1.0 | logged as `captured scene depth` / `neutral`; the bridge logs when it changes |
 | Motion vectors | recomputed here with fsr.cpp's depth/invVP/prevVP algorithm | `camera-derived` or `zeros`; karts have no object vectors |
-| Jitter | `g_fsr_jitter_x/y` from the same main-draw scan | passed as-is; whether the engine already baked it into the projection is unverified |
+| Jitter | Zero | matches the unjittered projection used by the game |
 | Reset | first frame / resize / zero MVs | also `MK8_DLSS` mode changes recreate |
 
 The FSR bridge's motion image is private to `fsr.cpp`, so this file duplicates the
@@ -143,7 +141,6 @@ prerequisite for judging DLSS quality and are not in this change.
 | `MK8_DLSS_CORE` | explicit NGX core path (default `libnvidia-ngx.so.1`) |
 | `MK8_DLSS_PROJECT_ID` | override the self-supplied GUID-shaped project id |
 | `MK8_DLSS_DEPTH_INVERTED=1` | set `NVSDK_NGX_DLSS_Feature_Flags_DepthInverted` |
-| `MK8_DLSS_NO_JITTER=1` | pass `0,0` instead of the FSR Halton jitter (diagnostic) |
 
 Recommended run for a real NVIDIA machine (the capture hooks in `toolchain/fsr.py` are
 gated on the FSR variables; that file is owned by the FSR work and was not edited):
@@ -747,17 +744,13 @@ case names the extension in one line and adds none of the set.
   records creation into its own one-shot submission because no frame command buffer is open
   yet), and reports a clear refusal if `MK8_FSR_FG` is also set (FSR-FG then keeps the path).
 - `mk8_fsr_fg_prepare`: on the DLSS-G path, takes the final display-size swapchain image, calls
-  `mk8_fsr_fg_inputs` for depth/MVs, fills `Mk8DlssFgInputs` from `g_fsr_view`, `g_fsr_proj` and
-  `g_fsr_jitter_*`, evaluates into the module's interpolated image, acquires a second swapchain
-  image with a fence, and records `mk8_dlss_fg_copy_interpolated` into the same command buffer.
-  If depth/MVs are not real (render size differs from display, capture missing) it presents the
-  real frame only with one log line.
-- `mk8_fsr_fg_present`: the runtime's frame submission signals one binary semaphore. A
-  semaphore-only `vkQueueSubmit2` waits on the frame's timeline value and signals the second
-  one; `mk8_dlss_fg_present` then presents the real image followed by the interpolated image with
-  `VK_NV_low_latency2` PRESENT markers. On init/evaluate/acquire failure it falls back to the
-  normal single-image present with one clear line; a failed frame never returns a fabricated
-  image.
+  `mk8_fsr_fg_inputs` for depth and camera motion, and evaluates with zero jitter. The first
+  evaluation seeds history and presents the real frame. For a valid pair, the runtime acquires
+  a second swapchain image and records the interpolated copy in the render command buffer.
+- `mk8_fsr_fg_present` submits both acquire waits with the render work and gives each image
+  a separate present semaphore. The interpolated image is presented before the current real
+  image. Acquire timeout or failed evaluation presents the real frame alone. A stale swapchain
+  or lost surface is handled by the renderer's recovery path.
 - `MK8_DLSS` (SR) and `MK8_DLSS_FG` remain mutually exclusive (the module refuses the shared
   NGX init); `MK8_FSR_FG=fsr3/fsr4` takes priority and DLSS-G logs the refusal.
 

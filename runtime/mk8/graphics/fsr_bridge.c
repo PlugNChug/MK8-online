@@ -10,3 +10,9 @@ VkImageView fsr_vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt,
 VkShaderModule fsr_vk_compile_glsl(const char *src, int stage, const char *name) {
     return vk_compile_glsl(src, stage, name);
 }
+
+VkSpan fsr_vk_uniform(uint64_t bytes) {
+    return vk_transient(bytes, g_vk.props.limits.minUniformBufferOffsetAlignment);
+}
+uint64_t fsr_vk_pending_seq(void) { return vk_pending_seq(); }
+uint64_t fsr_vk_completed_seq(void) { return vk_completed_seq(); }

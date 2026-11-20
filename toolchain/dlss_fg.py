@@ -40,9 +40,35 @@ def prepare_exec(runtime):
         'DLSS-G depth capture condition')
     text = _replace(
         text,
-        'if (getenv("MK8_FSR4") || getenv("MK8_FSR_FG")) {',
-        f'if (getenv("MK8_FSR4") || getenv("MK8_FSR_FG") || {gate}) {{',
+        'if (getenv("MK8_FSR4") || getenv("MK8_DLSS") || getenv("MK8_FSR_FG")) {',
+        f'if (getenv("MK8_FSR4") || getenv("MK8_DLSS") || getenv("MK8_FSR_FG") || {gate}) {{',
         'DLSS-G main-draw matrix scan condition')
+    text = _replace(
+        text,
+        '    VkSemaphoreSubmitInfo sig[2] =',
+        '    extern bool mk8_dlss_fg_submit_sync(VkSemaphore *wait, VkSemaphore *signal);\n'
+        '    VkSemaphore interp_wait = VK_NULL_HANDLE, interp_signal = VK_NULL_HANDLE;\n'
+        '    bool pair = wait && signal && mk8_dlss_fg_submit_sync(&interp_wait, &interp_signal);\n'
+        '    VkSemaphoreSubmitInfo sig[3] =',
+        'DLSS-G render submission signals')
+    text = _replace(
+        text,
+        '    VkSemaphoreSubmitInfo wt = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wait,\n'
+        '                                .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};',
+        '    sig[2] = (VkSemaphoreSubmitInfo){.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,\n'
+        '                                     .semaphore = interp_signal, .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};\n'
+        '    VkSemaphoreSubmitInfo wt[2] = {{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wait,\n'
+        '                                    .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT},\n'
+        '                                   {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = interp_wait,\n'
+        '                                    .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT}};',
+        'DLSS-G render submission waits')
+    text = _replace(
+        text,
+        '.signalSemaphoreInfoCount = signal ? 2 : 1, .pSignalSemaphoreInfos = sig,\n'
+        '                        .waitSemaphoreInfoCount = wait ? 1 : 0, .pWaitSemaphoreInfos = &wt};',
+        '.signalSemaphoreInfoCount = pair ? 3 : signal ? 2 : 1, .pSignalSemaphoreInfos = sig,\n'
+        '                        .waitSemaphoreInfoCount = pair ? 2 : wait ? 1 : 0, .pWaitSemaphoreInfos = wt};',
+        'DLSS-G render submission semaphore counts')
     exec_c.write_text(text, encoding='utf-8')
 
 
@@ -129,6 +155,11 @@ def prepare_device(runtime):
         '        .oldSwapchain = old};\n'
         '    fg_was = mk8_fsr_fg_active();\n',
         '        .oldSwapchain = old};\n'
+        '#if defined(VK_NV_low_latency2)\n'
+        '    VkSwapchainLatencyCreateInfoNV dlss_fg_latency = {\n'
+        '        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV,\n'
+        '        .latencyModeEnable = VK_TRUE};\n'
+        '#endif\n'
         '    if (mk8_dlss_fg_requested()) {\n'
         '        if (caps.supportedUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {\n'
         '            ci.imageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;  // DLSS-G samples the final image\n'
@@ -142,9 +173,6 @@ def prepare_device(runtime):
         '        const char *latency_chain = getenv("MK8_DLSS_FG_LATENCY_CHAIN");\n'
         '        if (mk8_dlss_fg_low_latency && latency_chain && *latency_chain &&\n'
         '            strcmp(latency_chain, "0") != 0) {\n'
-        '            VkSwapchainLatencyCreateInfoNV dlss_fg_latency = {\n'
-        '                .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV,\n'
-        '                .latencyModeEnable = VK_TRUE};\n'
         '            dlss_fg_latency.pNext = (void *)ci.pNext;\n'
         '            ci.pNext = &dlss_fg_latency;\n'
         '        } else if (mk8_dlss_fg_low_latency) {\n'
@@ -162,15 +190,13 @@ def prepare_device(runtime):
         'VkResult mk8_fsr_fg_present(VkQueue queue, const VkPresentInfoKHR *info);\n',
         'VkResult mk8_fsr_fg_present(VkQueue queue, const VkPresentInfoKHR *info);\n'
         'bool mk8_dlss_fg_active(void);\n'
-        'uint32_t mk8_present_image_index(void);\n'
-        'uint64_t mk8_dlss_fg_pending_seq(void);\n',
+        'uint32_t mk8_present_image_index(void);\n',
         'DLSS-G bridge prototypes')
     text = _replace(
         text,
         'static Frame cur_frame;\n',
         'static Frame cur_frame;\n'
-        'uint32_t mk8_present_image_index(void) { return cur_frame.image; }\n'
-        'uint64_t mk8_dlss_fg_pending_seq(void) { return vk_pending_seq(); }\n',
+        'uint32_t mk8_present_image_index(void) { return cur_frame.image; }\n',
         'DLSS-G present image accessor')
 
     # DLSS-G presents the final window image, so it must stay in PRESENT_SRC_KHR. The FSR FG

@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <dlfcn.h>
+#include <vulkan/vulkan.h>
 
 #include <cstdio>
 #include <string>
@@ -20,6 +21,7 @@
 namespace {
 
 void* g_effect = nullptr;
+using DispatchV1 = ffxReturnCode_t (*)(ffxContext*, const ffxDispatchDescHeader*, VkSemaphore, uint64_t);
 PfnFfxCreateContext g_create = nullptr;
 PfnFfxDestroyContext g_destroy = nullptr;
 ffxReturnCode_t (*g_configure)(ffxContext*, const ffxConfigureDescHeader*) = nullptr;
@@ -92,4 +94,12 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
                                         const ffxDispatchDescHeader* desc) {
     if (!loadEffect()) return FFX_API_RETURN_NO_PROVIDER;
     return g_dispatch(context, desc);
+}
+
+
+FSR4_EXPORT ffxReturnCode_t mk8Fsr4DispatchV1(ffxContext* context, const ffxDispatchDescHeader* desc,
+                                             VkSemaphore timeline, uint64_t submission) {
+    if (!loadEffect()) return FFX_API_RETURN_NO_PROVIDER;
+    const auto dispatch = reinterpret_cast<DispatchV1>(dlsym(g_effect, "mk8Fsr4DispatchV1"));
+    return dispatch ? dispatch(context, desc, timeline, submission) : FFX_API_RETURN_NO_PROVIDER;
 }

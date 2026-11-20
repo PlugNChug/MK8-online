@@ -17,6 +17,7 @@
 #include "ffx_api.h"
 #include "vk/ffx_api_vk.h"
 #include "ffx_upscale.h"
+#include "dispatch_slots.hpp"
 
 #include "abi/fsr4_412_abi.hpp"
 #include "abi/fsr4_412_selector_table.hpp"
@@ -68,6 +69,14 @@ struct PassPipeline {
     VkPipeline pipeline = VK_NULL_HANDLE;
 };
 
+struct DispatchSlot {
+    Buffer tensor_ubo, constants_ubo, spd_ubo, rcas_ubo;
+    VkDescriptorSet model_set = VK_NULL_HANDLE;
+    VkDescriptorSet spd_set = VK_NULL_HANDLE;
+    VkDescriptorSet rcas_set = VK_NULL_HANDLE;
+    std::vector<CachedView> views;
+};
+
 struct ProviderContext {
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
@@ -91,7 +100,10 @@ struct ProviderContext {
     Image rcas_input, exposure_atomic, exposure_mip;
     Image neutral_depth, neutral_motion;
     VkSampler sampler = VK_NULL_HANDLE;
-    Buffer weights, scratch, tensor_ubo, constants_ubo, spd_ubo, rcas_ubo;
+    Buffer weights, scratch;
+    fsr4_412::SubmissionValues submissions{};
+    std::array<DispatchSlot, 3> slots;
+    VkSemaphore timeline = VK_NULL_HANDLE;
 
     VkDescriptorSetLayout model_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout spd_layout = VK_NULL_HANDLE;
@@ -100,17 +112,11 @@ struct ProviderContext {
     VkPipelineLayout spd_pipeline_layout = VK_NULL_HANDLE;
     VkPipelineLayout rcas_pipeline_layout = VK_NULL_HANDLE;
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
-    VkDescriptorSet model_set = VK_NULL_HANDLE;
-    VkDescriptorSet spd_set = VK_NULL_HANDLE;
-    VkDescriptorSet rcas_set = VK_NULL_HANDLE;
-
     std::vector<PassPipeline> model_passes;
     PassPipeline spd_pass;
     PassPipeline rcas_pass;
     bool has_spd = false;
     bool has_rcas = false;
-
-    std::vector<CachedView> view_cache;
 
     // Descriptor infos must stay alive until vkUpdateDescriptorSets.
     VkDescriptorBufferInfo weight_info{}, scratch_info{}, tensor_info{}, constants_info{};
@@ -229,10 +235,10 @@ void destroyBuffer(const ProviderContext& c, Buffer& b) {
     b = {};
 }
 
-VkImageView cachedView(ProviderContext& c, VkImage image, VkFormat format,
+VkImageView cachedView(ProviderContext& c, DispatchSlot& slot, VkImage image, VkFormat format,
                        VkImageAspectFlags aspect) {
     if (!image) return VK_NULL_HANDLE;
-    for (const CachedView& v : c.view_cache)
+    for (const CachedView& v : slot.views)
         if (v.image == image && v.format == format && v.aspect == aspect) return v.view;
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = image;
@@ -241,7 +247,7 @@ VkImageView cachedView(ProviderContext& c, VkImage image, VkFormat format,
     vi.subresourceRange = {aspect, 0, 1, 0, 1};
     VkImageView view = VK_NULL_HANDLE;
     if (vkCreateImageView(c.device, &vi, nullptr, &view) != VK_SUCCESS) return VK_NULL_HANDLE;
-    c.view_cache.push_back({image, format, aspect, view});
+    slot.views.push_back({image, format, aspect, view});
     return view;
 }
 
@@ -341,10 +347,10 @@ uint64_t contextMemoryUsage(const ProviderContext& c) {
                              &c.neutral_motion};
     for (const Image* img : images)
         if (img->image) total += img->allocation_size;
-    const Buffer* buffers[] = {&c.weights, &c.scratch, &c.tensor_ubo, &c.constants_ubo,
-                               &c.spd_ubo, &c.rcas_ubo};
-    for (const Buffer* b : buffers)
-        if (b->buffer) total += b->allocation_size;
+    total += c.weights.allocation_size + c.scratch.allocation_size;
+    for (const auto& slot : c.slots)
+        total += slot.tensor_ubo.allocation_size + slot.constants_ubo.allocation_size +
+                 slot.spd_ubo.allocation_size + slot.rcas_ubo.allocation_size;
     return total;
 }
 
@@ -504,21 +510,7 @@ bool createContextResources(ProviderContext& c) {
                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    c.tensor_ubo = createBuffer(c, 272, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    c.constants_ubo = createBuffer(c, 104, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (c.has_spd)
-        c.spd_ubo = createBuffer(c, 32, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (c.has_rcas)
-        c.rcas_ubo = createBuffer(c, 32, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (!c.scratch.buffer || !c.tensor_ubo.buffer || !c.constants_ubo.buffer) return false;
+    if (!c.scratch.buffer) return false;
 
     VkSamplerCreateInfo sci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sci.magFilter = VK_FILTER_LINEAR;
@@ -576,7 +568,7 @@ bool createContextResources(ProviderContext& c) {
     if (c.has_spd) c.spd_pipeline_layout = createPipelineLayout(c, c.spd_layout);
     if (c.has_rcas) c.rcas_pipeline_layout = createPipelineLayout(c, c.rcas_layout);
 
-    const uint32_t set_count = 1 + (c.has_spd ? 1u : 0u) + (c.has_rcas ? 1u : 0u);
+    const uint32_t set_count = c.slots.size() * (1 + (c.has_spd ? 1u : 0u) + (c.has_rcas ? 1u : 0u));
     VkDescriptorPoolSize sizes[] = {
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8 * set_count},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * set_count},
@@ -597,105 +589,130 @@ bool createContextResources(ProviderContext& c) {
         ai.pSetLayouts = &layout;
         return vkAllocateDescriptorSets(c.device, &ai, &set) == VK_SUCCESS;
     };
-    if (!alloc(c.model_layout, c.model_set)) return false;
-    if (c.has_spd && !alloc(c.spd_layout, c.spd_set)) return false;
-    if (c.has_rcas && !alloc(c.rcas_layout, c.rcas_set)) return false;
+    for (auto& slot : c.slots) {
+        slot.tensor_ubo = createBuffer(c, 272, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        slot.constants_ubo = createBuffer(c, 104, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (c.has_spd)
+            slot.spd_ubo = createBuffer(c, 32, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (c.has_rcas)
+            slot.rcas_ubo = createBuffer(c, 32, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (!slot.tensor_ubo.buffer || !slot.constants_ubo.buffer ||
+            (c.has_spd && !slot.spd_ubo.buffer) || (c.has_rcas && !slot.rcas_ubo.buffer)) return false;
 
-    auto image = [](VkImageView view) {
-        VkDescriptorImageInfo info{};
-        info.imageView = view;
-        info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        return info;
-    };
-    c.weight_info = {c.weights.buffer, 0, VK_WHOLE_SIZE};
-    c.scratch_info = {c.scratch.buffer, 0, VK_WHOLE_SIZE};
-    c.tensor_info = {c.tensor_ubo.buffer, 0, VK_WHOLE_SIZE};
-    c.constants_info = {c.constants_ubo.buffer, 0, VK_WHOLE_SIZE};
-    c.sampler_info.sampler = c.sampler;
-    c.m0 = image(c.history.view);
-    c.m4 = image(c.recurrent.view);
-    c.m6 = image(c.dummy_exposure.view);
-    c.m9 = image(c.reprojected.view);
-    c.m17 = image(c.exposure.view);
-    c.m129 = image(c.history.view);
-    c.m131 = image(c.reprojected.view);
-    c.m134 = image(c.recurrent.view);
-    c.m137 = image(c.exposure.view);
-    c.s128 = image(c.exposure_atomic.view);
-    c.s129 = image(c.exposure_mip.view);
-    c.s130 = image(c.exposure.view);
-    c.spd_constants_info = {c.spd_ubo.buffer, 0, VK_WHOLE_SIZE};
-    c.rcas_constants_info = {c.rcas_ubo.buffer, 0, VK_WHOLE_SIZE};
-    c.r17 = image(c.exposure.view);
-    c.r18 = image(c.rcas_input.view);
+        if (!alloc(c.model_layout, slot.model_set)) return false;
+        if (c.has_spd && !alloc(c.spd_layout, slot.spd_set)) return false;
+        if (c.has_rcas && !alloc(c.rcas_layout, slot.rcas_set)) return false;
 
-    std::vector<VkWriteDescriptorSet> writes;
-    auto write_image = [&](VkDescriptorSet set, uint32_t b, VkDescriptorImageInfo* info,
-                           VkDescriptorType type) {
-        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        w.dstSet = set;
-        w.dstBinding = b;
-        w.descriptorCount = 1;
-        w.descriptorType = type;
-        w.pImageInfo = info;
-        writes.push_back(w);
-    };
-    auto write_buffer = [&](VkDescriptorSet set, uint32_t b, VkDescriptorBufferInfo* info,
-                            VkDescriptorType type) {
-        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        w.dstSet = set;
-        w.dstBinding = b;
-        w.descriptorCount = 1;
-        w.descriptorType = type;
-        w.pBufferInfo = info;
-        writes.push_back(w);
-    };
-    write_image(c.model_set, 0, &c.m0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 1, &c.dispatch1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 2, &c.dispatch2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 3, &c.dispatch3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 4, &c.m4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 6, &c.m6, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 9, &c.m9, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_image(c.model_set, 17, &c.m17, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write_buffer(c.model_set, 21, &c.weight_info, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    write_image(c.model_set, 129, &c.m129, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    write_image(c.model_set, 130, &c.dispatch130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    write_image(c.model_set, 131, &c.m131, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    write_image(c.model_set, 134, &c.m134, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    write_image(c.model_set, 137, &c.m137, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    write_buffer(c.model_set, 141, &c.scratch_info, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    write_buffer(c.model_set, 256, &c.tensor_info, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    write_buffer(c.model_set, 257, &c.constants_info, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    write_image(c.model_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
+        auto image = [](VkImageView view) {
+            VkDescriptorImageInfo info{};
+            info.imageView = view;
+            info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            return info;
+        };
+        c.weight_info = {c.weights.buffer, 0, VK_WHOLE_SIZE};
+        c.scratch_info = {c.scratch.buffer, 0, VK_WHOLE_SIZE};
+        c.tensor_info = {slot.tensor_ubo.buffer, 0, VK_WHOLE_SIZE};
+        c.constants_info = {slot.constants_ubo.buffer, 0, VK_WHOLE_SIZE};
+        c.sampler_info.sampler = c.sampler;
+        c.m0 = image(c.history.view);
+        c.m4 = image(c.recurrent.view);
+        c.m6 = image(c.dummy_exposure.view);
+        c.m9 = image(c.reprojected.view);
+        c.m17 = image(c.exposure.view);
+        c.m129 = image(c.history.view);
+        c.m131 = image(c.reprojected.view);
+        c.m134 = image(c.recurrent.view);
+        c.m137 = image(c.exposure.view);
+        c.s128 = image(c.exposure_atomic.view);
+        c.s129 = image(c.exposure_mip.view);
+        c.s130 = image(c.exposure.view);
+        c.spd_constants_info = {slot.spd_ubo.buffer, 0, VK_WHOLE_SIZE};
+        c.rcas_constants_info = {slot.rcas_ubo.buffer, 0, VK_WHOLE_SIZE};
+        c.r17 = image(c.exposure.view);
+        c.r18 = image(c.rcas_input.view);
 
-    if (c.has_spd) {
-        write_image(c.spd_set, 0, &c.s0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-        write_image(c.spd_set, 128, &c.s128, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        write_image(c.spd_set, 129, &c.s129, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        write_image(c.spd_set, 130, &c.s130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        write_buffer(c.spd_set, 256, &c.spd_constants_info,
-                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        write_image(c.spd_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
+        std::vector<VkWriteDescriptorSet> writes;
+        auto write_image = [&](VkDescriptorSet set, uint32_t b, VkDescriptorImageInfo* info,
+                               VkDescriptorType type) {
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = set;
+            w.dstBinding = b;
+            w.descriptorCount = 1;
+            w.descriptorType = type;
+            w.pImageInfo = info;
+            writes.push_back(w);
+        };
+        auto write_buffer = [&](VkDescriptorSet set, uint32_t b, VkDescriptorBufferInfo* info,
+                                VkDescriptorType type) {
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = set;
+            w.dstBinding = b;
+            w.descriptorCount = 1;
+            w.descriptorType = type;
+            w.pBufferInfo = info;
+            writes.push_back(w);
+        };
+        write_image(slot.model_set, 0, &c.m0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 1, &c.dispatch1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 2, &c.dispatch2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 3, &c.dispatch3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 4, &c.m4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 6, &c.m6, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 9, &c.m9, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_image(slot.model_set, 17, &c.m17, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write_buffer(slot.model_set, 21, &c.weight_info, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        write_image(slot.model_set, 129, &c.m129, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write_image(slot.model_set, 130, &c.dispatch130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write_image(slot.model_set, 131, &c.m131, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write_image(slot.model_set, 134, &c.m134, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write_image(slot.model_set, 137, &c.m137, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write_buffer(slot.model_set, 141, &c.scratch_info, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        write_buffer(slot.model_set, 256, &c.tensor_info, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        write_buffer(slot.model_set, 257, &c.constants_info, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        write_image(slot.model_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
+
+        if (c.has_spd) {
+            write_image(slot.spd_set, 0, &c.s0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+            write_image(slot.spd_set, 128, &c.s128, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            write_image(slot.spd_set, 129, &c.s129, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            write_image(slot.spd_set, 130, &c.s130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            write_buffer(slot.spd_set, 256, &c.spd_constants_info,
+                         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            write_image(slot.spd_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
+        }
+        if (c.has_rcas) {
+            write_buffer(slot.rcas_set, 0, &c.rcas_constants_info,
+                         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            write_image(slot.rcas_set, 11, &c.r11, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            write_image(slot.rcas_set, 17, &c.r17, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+            write_image(slot.rcas_set, 18, &c.r18, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+            write_image(slot.rcas_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
+        }
+        vkUpdateDescriptorSets(c.device, static_cast<uint32_t>(writes.size()), writes.data(), 0,
+                               nullptr);
     }
-    if (c.has_rcas) {
-        write_buffer(c.rcas_set, 0, &c.rcas_constants_info,
-                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        write_image(c.rcas_set, 11, &c.r11, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        write_image(c.rcas_set, 17, &c.r17, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-        write_image(c.rcas_set, 18, &c.r18, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-        write_image(c.rcas_set, 320, &c.sampler_info, VK_DESCRIPTOR_TYPE_SAMPLER);
-    }
-    vkUpdateDescriptorSets(c.device, static_cast<uint32_t>(writes.size()), writes.data(), 0,
-                           nullptr);
     return true;
 }
 
 void destroyContext(ProviderContext* c) {
     if (!c) return;
-    if (c->device) vkDeviceWaitIdle(c->device);
-    for (const CachedView& v : c->view_cache)
-        if (v.view) vkDestroyImageView(c->device, v.view, nullptr);
+    if (c->device && !c->timeline) vkDeviceWaitIdle(c->device);
+    for (auto& slot : c->slots) {
+        for (const CachedView& view : slot.views)
+            vkDestroyImageView(c->device, view.view, nullptr);
+        destroyBuffer(*c, slot.tensor_ubo);
+        destroyBuffer(*c, slot.constants_ubo);
+        destroyBuffer(*c, slot.spd_ubo);
+        destroyBuffer(*c, slot.rcas_ubo);
+    }
     destroyPipelines(*c);
     if (c->sampler) vkDestroySampler(c->device, c->sampler, nullptr);
     destroyImage(*c, c->history);
@@ -710,10 +727,6 @@ void destroyContext(ProviderContext* c) {
     destroyImage(*c, c->neutral_motion);
     destroyBuffer(*c, c->weights);
     destroyBuffer(*c, c->scratch);
-    destroyBuffer(*c, c->tensor_ubo);
-    destroyBuffer(*c, c->constants_ubo);
-    destroyBuffer(*c, c->spd_ubo);
-    destroyBuffer(*c, c->rcas_ubo);
     if (c->descriptor_pool) vkDestroyDescriptorPool(c->device, c->descriptor_pool, nullptr);
     if (c->model_pipeline_layout)
         vkDestroyPipelineLayout(c->device, c->model_pipeline_layout, nullptr);
@@ -810,7 +823,13 @@ FSR4_EXPORT ffxReturnCode_t ffxDestroyContext(ffxContext* context,
                                               const ffxAllocationCallbacks* mem_cb) {
     (void)mem_cb;
     if (!context || !*context) return FFX_API_RETURN_ERROR_PARAMETER;
-    destroyContext(reinterpret_cast<ProviderContext*>(*context));
+    auto* c = reinterpret_cast<ProviderContext*>(*context);
+    uint64_t completed = 0;
+    if (c->timeline &&
+        (vkGetSemaphoreCounterValue(c->device, c->timeline, &completed) != VK_SUCCESS ||
+         !fsr4_412::allSlotsComplete(c->submissions, completed)))
+        return FFX_API_RETURN_ERROR_RUNTIME_ERROR;
+    destroyContext(c);
     *context = nullptr;
     return FFX_API_RETURN_OK;
 }
@@ -925,8 +944,8 @@ FSR4_EXPORT ffxReturnCode_t ffxQuery(ffxContext* context, ffxQueryDescHeader* de
     return FFX_API_RETURN_NO_PROVIDER;
 }
 
-FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
-                                        const ffxDispatchDescHeader* desc) {
+static ffxReturnCode_t dispatch(ffxContext* context, const ffxDispatchDescHeader* desc,
+                                VkSemaphore timeline, uint64_t submission) {
     if (!context || !*context || !desc) return FFX_API_RETURN_ERROR_PARAMETER;
     if (desc->type != FFX_API_DISPATCH_DESC_TYPE_UPSCALE)
         return FFX_API_RETURN_ERROR_UNKNOWN_DESCTYPE;
@@ -946,7 +965,22 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
         return FFX_API_RETURN_ERROR_PARAMETER;
 
     const uint32_t key = computeKey(c->flags, d->flags);
-    if (!ensurePipelines(*c, key)) return FFX_API_RETURN_ERROR_RUNTIME_ERROR;
+    uint64_t completed = 0;
+    if ((c->timeline && c->timeline != timeline) || (timeline &&
+        (vkGetSemaphoreCounterValue(c->device, timeline, &completed) != VK_SUCCESS ||
+         submission <= completed)))
+        return FFX_API_RETURN_ERROR_RUNTIME_ERROR;
+    const int index = fsr4_412::availableSlot(c->submissions, completed);
+    if (index < 0 || (key != c->key && !fsr4_412::allSlotsComplete(c->submissions, completed)))
+        return FFX_API_RETURN_ERROR_RUNTIME_ERROR;
+    if (!ensurePipelines(*c, key)) {
+        destroyPipelines(*c);
+        return FFX_API_RETURN_ERROR_RUNTIME_ERROR;
+    }
+    auto& slot = c->slots[index];
+    for (const CachedView& view : slot.views)
+        vkDestroyImageView(c->device, view.view, nullptr);
+    slot.views.clear();
 
     auto* cb = reinterpret_cast<VkCommandBuffer>(d->commandList);
     const VkImage color_image = reinterpret_cast<VkImage>(d->color.resource);
@@ -966,27 +1000,27 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
     const VkFormat output_format = ffxFormatToVk(d->output.description.format);
 
     const VkImageView color_view = cachedView(
-        *c, color_image,
+        *c, slot, color_image,
         color_format == VK_FORMAT_UNDEFINED ? VK_FORMAT_R8G8B8A8_UNORM : color_format,
         VK_IMAGE_ASPECT_COLOR_BIT);
     const VkImageView depth_view =
-        depth_image ? cachedView(*c, depth_image,
+        depth_image ? cachedView(*c, slot, depth_image,
                                  depth_format == VK_FORMAT_UNDEFINED ? VK_FORMAT_D32_SFLOAT
                                                                     : depth_format,
                                  depth_aspect)
                     : c->neutral_depth.view;
     const VkImageView motion_view =
-        motion_image ? cachedView(*c, motion_image,
+        motion_image ? cachedView(*c, slot, motion_image,
                                   motion_format == VK_FORMAT_UNDEFINED
                                       ? VK_FORMAT_R16G16_SFLOAT
                                       : motion_format,
                                   VK_IMAGE_ASPECT_COLOR_BIT)
                      : c->neutral_motion.view;
     const VkImageView output_view = cachedView(
-        *c, output_image,
+        *c, slot, output_image,
         output_format == VK_FORMAT_UNDEFINED ? VK_FORMAT_R8G8B8A8_UNORM : output_format,
         VK_IMAGE_ASPECT_COLOR_BIT);
-    if (!color_view || !output_view) return FFX_API_RETURN_ERROR_PARAMETER;
+    if (!color_view || !output_view || !depth_view || !motion_view) return FFX_API_RETURN_ERROR_PARAMETER;
 
     fsr4_412::DispatchInfo di;
     di.render_w = render_w;
@@ -1028,10 +1062,10 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
     uint8_t rcas[32] = {};
     if (c->has_rcas) fsr4_412::writeRcasConstants(d->sharpness, d->preExposure, rcas);
 
-    uploadBuffer(*c, c->tensor_ubo, tensor, sizeof(tensor));
-    uploadBuffer(*c, c->constants_ubo, constants, sizeof(constants));
-    if (c->has_spd) uploadBuffer(*c, c->spd_ubo, spd, sizeof(spd));
-    if (c->has_rcas) uploadBuffer(*c, c->rcas_ubo, rcas, sizeof(rcas));
+    uploadBuffer(*c, slot.tensor_ubo, tensor, sizeof(tensor));
+    uploadBuffer(*c, slot.constants_ubo, constants, sizeof(constants));
+    if (c->has_spd) uploadBuffer(*c, slot.spd_ubo, spd, sizeof(spd));
+    if (c->has_rcas) uploadBuffer(*c, slot.rcas_ubo, rcas, sizeof(rcas));
 
     auto image = [](VkImageView view) {
         VkDescriptorImageInfo info{};
@@ -1059,14 +1093,14 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
         w.pImageInfo = info;
         writes.push_back(w);
     };
-    write(c->model_set, 1, &c->dispatch1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write(c->model_set, 2, &c->dispatch2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write(c->model_set, 3, &c->dispatch3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    write(c->model_set, 130, &c->dispatch130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    if (c->has_spd) write(c->spd_set, 0, &c->s0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    write(slot.model_set, 1, &c->dispatch1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    write(slot.model_set, 2, &c->dispatch2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    write(slot.model_set, 3, &c->dispatch3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    write(slot.model_set, 130, &c->dispatch130, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    if (c->has_spd) write(slot.spd_set, 0, &c->s0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     if (c->has_rcas) {
-        write(c->rcas_set, 11, &c->r11, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        write(c->rcas_set, 18, &c->r18, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        write(slot.rcas_set, 11, &c->r11, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        write(slot.rcas_set, 18, &c->r18, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     }
     vkUpdateDescriptorSets(c->device, static_cast<uint32_t>(writes.size()), writes.data(), 0,
                            nullptr);
@@ -1145,7 +1179,7 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
                              1, &full);
         computeBarrier(cb);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->spd_pipeline_layout, 0,
-                                1, &c->spd_set, 0, nullptr);
+                                1, &slot.spd_set, 0, nullptr);
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->spd_pass.pipeline);
         vkCmdDispatch(cb, spd_gx, spd_gy, 1);
         computeBarrier(cb);
@@ -1155,7 +1189,7 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
         const fsr4_412::DispatchGrid grid = fsr4_412::modelPassDispatch(
             i, {out_w, out_h}, {render_w, render_h}, tensor);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->model_pipeline_layout,
-                                0, 1, &c->model_set, 0, nullptr);
+                                0, 1, &slot.model_set, 0, nullptr);
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->model_passes[i].pipeline);
         vkCmdDispatch(cb, grid.x, grid.y, 1);
         computeBarrier(cb);
@@ -1165,7 +1199,7 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
         uint32_t gx = 0, gy = 0;
         fsr4_412::rcasGroups({out_w, out_h}, gx, gy);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->rcas_pipeline_layout, 0,
-                                1, &c->rcas_set, 0, nullptr);
+                                1, &slot.rcas_set, 0, nullptr);
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, c->rcas_pass.pipeline);
         vkCmdDispatch(cb, gx, gy, 1);
         computeBarrier(cb);
@@ -1186,6 +1220,10 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
                      VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, color_aspect);
 
+    if (timeline) {
+        c->timeline = timeline;
+        c->submissions[index] = submission;
+    }
     c->first_dispatch = false;
     c->has_previous_exposure = true;
     c->previous_exposure = d->preExposure;
@@ -1193,4 +1231,16 @@ FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context,
     c->previous_jitter[0] = d->jitterOffset.x;
     c->previous_jitter[1] = d->jitterOffset.y;
     return FFX_API_RETURN_OK;
+}
+
+
+FSR4_EXPORT ffxReturnCode_t ffxDispatch(ffxContext* context, const ffxDispatchDescHeader* desc) {
+    // Standalone callers serialize submissions and keep input resources alive until completion.
+    return dispatch(context, desc, VK_NULL_HANDLE, 0);
+}
+
+FSR4_EXPORT ffxReturnCode_t mk8Fsr4DispatchV1(ffxContext* context, const ffxDispatchDescHeader* desc,
+                                             VkSemaphore timeline, uint64_t submission) {
+    if (!timeline || !submission) return FFX_API_RETURN_ERROR_PARAMETER;
+    return dispatch(context, desc, timeline, submission);
 }

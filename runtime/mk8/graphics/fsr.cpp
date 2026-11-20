@@ -5,10 +5,8 @@
 // provider owns its history and model assets; this file only supplies the
 // colour, depth and motion-vector images and the output image.
 //
-// The first integration runs with a neutral depth image and zero motion
-// vectors. Real MK8 depth/motion vectors are a separate qualification step;
-// the callers log that state so a prototype is never mistaken for qualified
-// output.
+// Captured scene depth and camera-only motion are optional. Jitter is zero
+// because the game draws with an unjittered projection.
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,6 +14,7 @@
 #include <string.h>
 #include <wchar.h>
 #include <math.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -34,9 +33,13 @@
 #include "vulkan/vk.h"
 #include "fsr_fg.h"
 #include "dlss.h"
+#include "sampled_image.h"
 
 extern "C" {
 VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
+VkSpan fsr_vk_uniform(uint64_t bytes);
+uint64_t fsr_vk_pending_seq(void);
+uint64_t fsr_vk_completed_seq(void);
 VkSampler fsr_vk_default_sampler(bool linear);
 VkImageView fsr_vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv,
                               uint32_t ly0, uint32_t nly, VkComponentMapping sw, VkImageAspectFlags aspect);
@@ -53,6 +56,9 @@ typedef struct {
     PfnFfxDestroyContext destroy;
     PfnFfxQuery query;
     PfnFfxDispatch dispatch;
+    ffxReturnCode_t (*dispatch_v1)(ffxContext *, const ffxDispatchDescHeader *, VkSemaphore, uint64_t);
+    uint64_t last_upscale_use, last_fg_use;
+    bool reset_history;
     ffxContext context;
     uint32_t rw, rh, ow, oh;
     VkImage output;
@@ -69,9 +75,6 @@ typedef struct {
     VkDescriptorSetLayout mv_layout;
     VkPipelineLayout mv_pipeline_layout;
     VkPipeline mv_pipeline;
-    VkBuffer mv_ubo;
-    VmaAllocation mv_ubo_mem;
-    void *mv_ubo_ptr;
     bool have_prev;
     float prev_vp[16];
     // Frame-generation inputs (fsr_fg.cpp): independent of the upscaler's set.
@@ -95,8 +98,6 @@ extern "C" {
 extern float g_fsr_view[12];
 extern float g_fsr_proj[16];
 extern int g_fsr_vp_valid;
-extern float g_fsr_jitter_x;
-extern float g_fsr_jitter_y;
 extern TexBackend *g_fsr_captured;  // exec.c: the scene-depth copy at the pass boundary
 }
 
@@ -239,23 +240,13 @@ static bool create_mv_resources(void) {
     ci.layout = fsr.mv_pipeline_layout;
     VkResult r = vkCreateComputePipelines(g_vk.dev, g_vk.pcache, 1, &ci, NULL, &fsr.mv_pipeline);
     vkDestroyShaderModule(g_vk.dev, module, NULL);
-    if (r != VK_SUCCESS) return false;
-    VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bci.size = 144;
-    bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    VmaAllocationCreateInfo ai = {};
-    ai.usage = VMA_MEMORY_USAGE_AUTO;
-    ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    VmaAllocationInfo info = {};
-    if (vmaCreateBuffer(g_vk.vma, &bci, &ai, &fsr.mv_ubo, &fsr.mv_ubo_mem, &info) != VK_SUCCESS) return false;
-    fsr.mv_ubo_ptr = info.pMappedData;
-    return fsr.mv_ubo_ptr != NULL;
+    return r == VK_SUCCESS;
 }
 
-static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t rh) {
-    if (!g_fsr_vp_valid || !depth || !depth->image || !fsr.mv_pipeline || !fsr.mv_ubo_ptr) {
+static bool run_mv(VkCommandBuffer cb, VkImageView depth, uint32_t rw, uint32_t rh) {
+    if (!g_fsr_vp_valid || !depth || !fsr.mv_pipeline) {
         static int once;
-        if (!once++) fprintf(stderr, "[fsr] motion skipped (vp %d depth %p)\n", g_fsr_vp_valid, depth ? (void *)depth->image : NULL);
+        if (!once++) fprintf(stderr, "[fsr] motion skipped (vp %d depth %p)\n", g_fsr_vp_valid, (void *)depth);
         return false;
     }
     float v[16] = {g_fsr_view[0], g_fsr_view[1], g_fsr_view[2], g_fsr_view[3],
@@ -267,7 +258,8 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
     if (!invert4(vp, inv)) return false;
     if (fsr.have_prev) memcpy(prev, fsr.prev_vp, sizeof prev);
     else memcpy(prev, vp, sizeof prev);
-    float *u = (float *)fsr.mv_ubo_ptr;
+    VkSpan span = fsr_vk_uniform(144);
+    float *u = (float *)span.ptr;
     for (int c = 0; c < 4; c++)
         for (int r = 0; r < 4; r++) {
             u[c * 4 + r] = inv[r * 4 + c];
@@ -280,10 +272,8 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     VkDescriptorSet set = fsr_vk_alloc_set(fsr.mv_layout);
-    VkDescriptorBufferInfo bi = {fsr.mv_ubo, 0, 144};
-    VkDescriptorImageInfo di = {fsr_vk_default_sampler(true),
-                                fsr_vk_image_view(depth, VK_IMAGE_VIEW_TYPE_2D, depth->format, 0, 1, 0, 1,
-                                              VkComponentMapping{}, (depth->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
+    VkDescriptorBufferInfo bi = {span.buf, span.off, 144};
+    VkDescriptorImageInfo di = {fsr_vk_default_sampler(true), depth,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo oi = {VK_NULL_HANDLE, fsr.motion_view, VK_IMAGE_LAYOUT_GENERAL};
     VkWriteDescriptorSet w[3] = {
@@ -303,6 +293,20 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
     return true;
 }
 
+static void clear_stale_motion(VkCommandBuffer cb) {
+    if (!fsr.have_prev) return;
+    barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkClearColorValue zero = {};
+    VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdClearColorImage(cb, fsr.motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+    barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    fsr.have_prev = false;
+}
+
 static void destroy_neutral_depth(void) {
     if (fsr.neutral_depth_view) vkDestroyImageView(g_vk.dev, fsr.neutral_depth_view, NULL);
     if (fsr.neutral_depth) { vkDestroyImage(g_vk.dev, fsr.neutral_depth, NULL); vmaFreeMemory(g_vk.vma, fsr.neutral_depth_mem); }
@@ -316,6 +320,7 @@ static void destroy_neutral_depth(void) {
 // scene depth copy is not available; leaving it SHADER_READ_ONLY suits every consumer.
 static bool ensure_neutral_depth(VkCommandBuffer cb, uint32_t w, uint32_t h) {
     if (fsr.neutral_depth && fsr.neutral_w == w && fsr.neutral_h == h) return fsr.neutral_depth_view != VK_NULL_HANDLE;
+    if (fsr.last_fg_use > fsr_vk_completed_seq()) return false;
     destroy_neutral_depth();
     fsr.neutral_depth = make_image(VK_FORMAT_D32_SFLOAT, w, h,
                                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -329,7 +334,8 @@ static bool ensure_neutral_depth(VkCommandBuffer cb, uint32_t w, uint32_t h) {
 }
 
 static bool ensure_motion(VkCommandBuffer cb, uint32_t w, uint32_t h) {
-    if (!fsr.motion || fsr.motion_w != w || fsr.motion_h != h) {
+    if (!fsr.motion || !fsr.motion_view || fsr.motion_w != w || fsr.motion_h != h) {
+        if (fsr.last_fg_use > fsr_vk_completed_seq()) return false;
         if (fsr.motion_view) vkDestroyImageView(g_vk.dev, fsr.motion_view, NULL);
         if (fsr.motion) { vkDestroyImage(g_vk.dev, fsr.motion, NULL); vmaFreeMemory(g_vk.vma, fsr.motion_mem); }
         fsr.motion = make_image(VK_FORMAT_R16G16_SFLOAT, w, h,
@@ -339,6 +345,7 @@ static bool ensure_motion(VkCommandBuffer cb, uint32_t w, uint32_t h) {
         fsr.motion_w = w;
         fsr.motion_h = h;
         fsr.motion_primed = false;
+        fsr.have_prev = false;
     }
     if (!fsr.motion || !fsr.motion_view) return false;
     if (!create_mv_resources()) return false;
@@ -365,30 +372,34 @@ static bool same_aspect(uint32_t aw, uint32_t ah, uint32_t bw, uint32_t bh) {
 }
 
 static bool ensure_resampled_depth(VkCommandBuffer cb, TexBackend *cap, uint32_t w, uint32_t h) {
-    if (fsr.resampled_depth && fsr.resampled_w == w && fsr.resampled_h == h)
-        return fsr.resampled_depth_view != VK_NULL_HANDLE;
-    if (fsr.resampled_depth_view) vkDestroyImageView(g_vk.dev, fsr.resampled_depth_view, NULL);
-    if (fsr.resampled_depth) {
-        vkDestroyImage(g_vk.dev, fsr.resampled_depth, NULL);
-        vmaFreeMemory(g_vk.vma, fsr.resampled_depth_mem);
+    bool reuse = fsr.resampled_depth && fsr.resampled_depth_view &&
+                 fsr.resampled_w == w && fsr.resampled_h == h && fsr.resampled_format == cap->format;
+    if (!reuse) {
+        if (fsr.last_fg_use > fsr_vk_completed_seq()) return false;
+        if (fsr.resampled_depth_view) vkDestroyImageView(g_vk.dev, fsr.resampled_depth_view, NULL);
+        if (fsr.resampled_depth) {
+            vkDestroyImage(g_vk.dev, fsr.resampled_depth, NULL);
+            vmaFreeMemory(g_vk.vma, fsr.resampled_depth_mem);
+        }
+        fsr.resampled_depth = make_image(cap->format, w, h,
+                                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                         VK_IMAGE_ASPECT_COLOR_BIT, &fsr.resampled_depth_mem);
+        fsr.resampled_depth_view = fsr.resampled_depth
+            ? image_view(fsr.resampled_depth, cap->format, VK_IMAGE_ASPECT_COLOR_BIT) : VK_NULL_HANDLE;
+        fsr.resampled_format = cap->format;
+        fsr.resampled_w = w;
+        fsr.resampled_h = h;
+        if (!fsr.resampled_depth || !fsr.resampled_depth_view) return false;
     }
-    fsr.resampled_depth = make_image(cap->format, w, h,
-                                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                                     VK_IMAGE_ASPECT_COLOR_BIT, &fsr.resampled_depth_mem);
-    fsr.resampled_depth_view = fsr.resampled_depth
-        ? image_view(fsr.resampled_depth, cap->format, VK_IMAGE_ASPECT_COLOR_BIT) : VK_NULL_HANDLE;
-    if (!fsr.resampled_depth || !fsr.resampled_depth_view) return false;
-    fsr.resampled_format = cap->format;
-    fsr.resampled_w = w;
-    fsr.resampled_h = h;
     barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
             VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-    barrier(cb, fsr.resampled_depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    barrier(cb, fsr.resampled_depth, VK_IMAGE_ASPECT_COLOR_BIT,
+            reuse ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, reuse ? VK_ACCESS_SHADER_READ_BIT : 0,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     VkImageBlit region = {0};
     region.srcSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.srcOffsets[1] = (VkOffset3D){(int32_t)cap->width, (int32_t)cap->height, 1};
@@ -397,7 +408,8 @@ static bool ensure_resampled_depth(VkCommandBuffer cb, TexBackend *cap, uint32_t
     vkCmdBlitImage(cb, cap->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, fsr.resampled_depth,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
     barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     barrier(cb, fsr.resampled_depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
@@ -431,11 +443,7 @@ extern "C" bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t w, uint32_t h,
             : fsr_vk_image_view(cap, VK_IMAGE_VIEW_TYPE_2D, cap->format, 0, 1, 0, 1,
                                 VkComponentMapping{}, VK_IMAGE_ASPECT_COLOR_BIT);
         if (!view) return false;
-        if (!resampled)
-            barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        depth->restore_general = !resampled;
         depth->image = resampled ? fsr.resampled_depth : cap->image;
         depth->view = view;
         depth->format = resampled ? fsr.resampled_format : cap->format;
@@ -467,8 +475,16 @@ extern "C" bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t w, uint32_t h,
         fprintf(stderr, "[fsr_fg] depth source: %s %ux%u fmt %d\n",
                 depth->real ? "captured scene depth" : "neutral (no captured scene depth)", w, h, depth->format);
     }
-    if (!ensure_motion(cb, w, h)) return false;
-    bool camera = depth->real && run_mv(cb, cap, w, h);
+    bool motion_ready = ensure_motion(cb, w, h);
+    fsr.last_fg_use = fsr_vk_pending_seq();  // includes resampling and initialization on fallback
+    if (!motion_ready) return false;
+    {
+        ScopedSampledImage sampled(cb, depth->restore_general ? depth->image : VK_NULL_HANDLE,
+                                   VK_IMAGE_ASPECT_COLOR_BIT);
+        motion->real = depth->real && run_mv(cb, depth->view, w, h);
+    }
+    bool camera = motion->real;
+    if (!camera) clear_stale_motion(cb);
     motion->image = fsr.motion;
     motion->view = fsr.motion_view;
     motion->format = VK_FORMAT_R16G16_SFLOAT;
@@ -504,6 +520,7 @@ static void destroy_images(void) {
     fsr.resampled_depth_view = VK_NULL_HANDLE;
     fsr.resampled_w = fsr.resampled_h = 0;
     fsr.primed = false;
+    fsr.have_prev = false;
 }
 
 static bool create_images(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
@@ -575,6 +592,12 @@ static bool create_context(uint32_t rw, uint32_t rh, uint32_t ow, uint32_t oh) {
         }
     }
 
+    if (want && strcmp(want, "4.1.2") == 0 && !override_version.versionId) {
+        fprintf(stderr, "[fsr] FSR 4.1.2 unavailable on the selected Vulkan device\n");
+        fsr.create_failed = true;
+        return false;
+    }
+
     ffxCreateContextDescUpscale upscale = {0};
     upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
     upscale.maxRenderSize = {rw, rh};
@@ -617,6 +640,7 @@ static bool init(void) {
     fsr.destroy = (PfnFfxDestroyContext)load_symbol(fsr.library, "ffxDestroyContext");
     fsr.query = (PfnFfxQuery)load_symbol(fsr.library, "ffxQuery");
     fsr.dispatch = (PfnFfxDispatch)load_symbol(fsr.library, "ffxDispatch");
+    fsr.dispatch_v1 = reinterpret_cast<decltype(fsr.dispatch_v1)>(load_symbol(fsr.library, "mk8Fsr4DispatchV1"));
     fsr.available = fsr.create && fsr.destroy && fsr.query && fsr.dispatch;
     if (!fsr.available) fprintf(stderr, "[fsr] provider %s lacks FFX exports\n", path);
     return fsr.available;
@@ -642,18 +666,37 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
                          color ? (int)color->width : -1, color ? (int)color->height : -1);
     if (!init()) return VK_NULL_HANDLE;
     if (fsr.create_failed) return VK_NULL_HANDLE;
+    const char *want = getenv("MK8_FSR_VERSION");
+#ifndef _WIN32
+    if (want && strcmp(want, "4.1.2") == 0 && !fsr.dispatch_v1) {
+        static bool warned;
+        if (!warned) fprintf(stderr, "[fsr] install the updated FSR 4.1.2 provider (mk8Fsr4DispatchV1 missing)\n");
+        warned = true;
+        return VK_NULL_HANDLE;
+    }
+#else
+    (void)want;
+#endif
     if (!color || !color->image) return VK_NULL_HANDLE;
     if (ow <= rw + 1 || oh <= rh + 1) return VK_NULL_HANDLE;  // an upscale only
     if (fsr.context && (fsr.rw != rw || fsr.rh != rh || fsr.ow != ow || fsr.oh != oh)) {
-        fsr.destroy(&fsr.context, NULL);
+        if (fsr.last_upscale_use > fsr_vk_completed_seq() ||
+            fsr.destroy(&fsr.context, NULL) != FFX_API_RETURN_OK) {
+            fsr.reset_history = true;
+            return VK_NULL_HANDLE;
+        }
         fsr.context = NULL;
         destroy_images();
     }
     if (!fsr.context) {
-        if (!create_images(rw, rh, ow, oh) || !create_context(rw, rh, ow, oh)) return VK_NULL_HANDLE;
+        if (!create_images(rw, rh, ow, oh) || !create_context(rw, rh, ow, oh)) {
+            destroy_images();
+            return VK_NULL_HANDLE;
+        }
         create_mv_resources();
         fsr.rw = rw, fsr.rh = rh, fsr.ow = ow, fsr.oh = oh;
     }
+    fsr.last_upscale_use = fsr_vk_pending_seq();
     if (!fsr.primed) {
         // One-time initialisation of the neutral inputs and the output layout.
         barrier(cb, fsr.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -680,9 +723,7 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         fsr.primed = true;
     }
     // The provider expects the colour/depth/motion inputs in SHADER_READ_ONLY and the output in GENERAL.
-    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    ScopedSampledImage sampled_color(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT);
     VkImageCreateInfo color_ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     color_ci.imageType = VK_IMAGE_TYPE_2D;
     color_ci.format = color->format;
@@ -703,10 +744,8 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         depth_image = depth->image;
         depth_format = depth->format;
         depth_aspect = (depth->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier(cb, depth_image, depth_aspect, VK_IMAGE_LAYOUT_GENERAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
+    ScopedSampledImage sampled_depth(cb, real_depth ? depth_image : VK_NULL_HANDLE, depth_aspect);
     static int depth_state = -1;
     if ((int)real_depth != depth_state) {
         depth_state = real_depth;
@@ -742,7 +781,11 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
     desc.renderSize = {rw, rh};
     desc.upscaleSize = {ow, oh};
-    bool mv = real_depth && fsr.mv_pipeline && run_mv(cb, depth, rw, rh);
+    VkImageView depth_view = real_depth
+        ? fsr_vk_image_view(depth, VK_IMAGE_VIEW_TYPE_2D, depth_format, 0, 1, 0, 1, VkComponentMapping{}, depth_aspect)
+        : VK_NULL_HANDLE;
+    bool mv = run_mv(cb, depth_view, rw, rh);
+    if (!mv) clear_stale_motion(cb);
     static int motion_state = -1;
     if ((int)mv != motion_state) {
         motion_state = mv;
@@ -753,18 +796,22 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     desc.motionVectorScale = mv ? (struct FfxApiFloatCoords2D){1.0f, 1.0f}
                                 : (struct FfxApiFloatCoords2D){(float)rw, (float)rh};
-    desc.jitterOffset = {g_fsr_jitter_x, g_fsr_jitter_y};
     desc.enableSharpening = true;
     desc.sharpness = 0.2f;
     desc.frameTimeDelta = frame_ms > 0 ? frame_ms : 16.7f;
     desc.preExposure = 1.0f;
-    desc.reset = !mv;  // real camera motion keeps history; the neutral image resets every frame
+    desc.reset = !mv || fsr.reset_history;
     desc.cameraNear = 0.1f;
     desc.cameraFar = 1000.0f;
     desc.cameraFovAngleVertical = 1.0472f;
     desc.viewSpaceToMetersFactor = 1.0f;
     desc.flags = FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB;
-    if (fsr.dispatch(&fsr.context, &desc.header) != FFX_API_RETURN_OK) {
+    const ffxReturnCode_t result = fsr.dispatch_v1
+        ? fsr.dispatch_v1(&fsr.context, &desc.header, g_vk.timeline, fsr.last_upscale_use)
+        : fsr.dispatch(&fsr.context, &desc.header);
+    fsr.reset_history = result != FFX_API_RETURN_OK;
+    if (fsr.reset_history) {
+        clear_stale_motion(cb);
         static int warned;
         if (warned++ < 3) fprintf(stderr, "[fsr] dispatch failed\n");
         return VK_NULL_HANDLE;
@@ -780,19 +827,5 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
         if (last) fprintf(stderr, "[fsr] cpu dispatch %.2f ms\n", (now - last) / 1e6 / 120.0);
         last = now;
     }
-    // The provider samples the colour and depth inputs and leaves them in a read layout; the game's
-    // next pass uses the colour backbuffer (and, with real depth, the captured depth image) as
-    // render targets in GENERAL. Restore them after the dispatch so the next pass starts cleanly.
-    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_ACCESS_SHADER_READ_BIT,
-            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-    if (real_depth)
-        barrier(cb, depth_image, depth_aspect, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_IMAGE_LAYOUT_GENERAL,
-                VK_ACCESS_SHADER_READ_BIT,
-                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     return fsr.output_view;
 }

@@ -26,6 +26,7 @@
 #include <string.h>
 #include <strings.h>
 #include <wchar.h>
+#include <initializer_list>
 #include <SDL3/SDL.h>
 
 #ifdef _WIN32
@@ -47,6 +48,7 @@
 #include "vulkan/vk.h"
 #include "fsr_fg.h"
 #include "dlss.h"
+#include "sampled_image.h"
 
 extern "C" {
 // device.c: set when the extra present/acquire queue family was found and created.
@@ -57,13 +59,9 @@ void mk8_fsr_fg_queue_unlock(void);
 // exec.c (captured per main draw when MK8_FSR_FG is set).
 extern float g_fsr_view[12];
 extern float g_fsr_proj[16];
-extern float g_fsr_jitter_x;
-extern float g_fsr_jitter_y;
 extern int g_fsr_vp_valid;
 // device.c: the swapchain image currently being rendered/presented (added with DLSS-G).
 uint32_t mk8_present_image_index(void);
-// device.c: the pending submission sequence (C-linkage wrapper for the C++ declaration in vk.h).
-uint64_t mk8_dlss_fg_pending_seq(void);
 }
 
 #define FG_REQUIRED_VERSION "3.1.7"
@@ -164,12 +162,12 @@ static bool dlss_fg_logged_inputs;
 static bool dlss_fg_logged_acquire;
 static uint32_t dlss_fg_real_index;
 static uint32_t dlss_fg_interp_index;
-static uint64_t dlss_fg_seq;
+static VkResult dlss_fg_acquire_result;
 static uint64_t dlss_fg_frame_id;
 static bool dlss_fg_prepared_any;
 static bool dlss_fg_needs_reset;
-static VkFence dlss_fg_acquire_fence;
-static VkSemaphore dlss_fg_sems[8];
+static VkSemaphore dlss_fg_acquire_sems[8];
+static VkSemaphore dlss_fg_present_sems[8];
 static VkSwapchainKHR dlss_fg_pending_old;
 
 static bool fsr_fg_requested(void) {
@@ -186,20 +184,17 @@ extern "C" bool mk8_dlss_fg_active(void) {
 }
 
 static void dlss_fg_destroy_sems(void) {
-    for (unsigned i = 0; i < 8; i++) {
-        if (dlss_fg_sems[i]) vkDestroySemaphore(g_vk.dev, dlss_fg_sems[i], NULL);
-        dlss_fg_sems[i] = VK_NULL_HANDLE;
+    for (auto* sems : {dlss_fg_acquire_sems, dlss_fg_present_sems}) {
+        for (unsigned i = 0; i < 8; i++) {
+            if (sems[i]) vkDestroySemaphore(g_vk.dev, sems[i], NULL);
+            sems[i] = VK_NULL_HANDLE;
+        }
     }
 }
 
-static VkSemaphore dlss_fg_sem(uint32_t index) {
-    if (index >= 8) return VK_NULL_HANDLE;
-    if (!dlss_fg_sems[index]) {
-        VkSemaphoreCreateInfo info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        if (vkCreateSemaphore(g_vk.dev, &info, NULL, &dlss_fg_sems[index]) != VK_SUCCESS)
-            return VK_NULL_HANDLE;
-    }
-    return dlss_fg_sems[index];
+static bool dlss_fg_ensure_sem(VkSemaphore& sem) {
+    VkSemaphoreCreateInfo info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    return sem || vkCreateSemaphore(g_vk.dev, &info, NULL, &sem) == VK_SUCCESS;
 }
 
 static ffxReturnCode_t frame_generation_callback(ffxDispatchDescFrameGeneration *params, void *context);
@@ -819,6 +814,7 @@ static bool dlss_fg_create_swapchain(const VkSwapchainCreateInfoKHR *ci, VkSwapc
 }
 
 static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height) {
+    dlss_fg_acquire_result = VK_SUCCESS;
     if (!mk8_dlss_fg_active() || !cb || !g_vk.swapchain) return;
     if (width != g_vk.sc_extent.width || height != g_vk.sc_extent.height) return;
     uint64_t frame_id = ++dlss_fg_frame_id;
@@ -855,7 +851,7 @@ static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height)
     inputs.depth = depth.image;
     inputs.depth_view = depth.view;
     inputs.depth_format = depth.format;
-    inputs.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    inputs.depth_layout = depth.restore_general ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputs.depth_width = depth.width;
     inputs.depth_height = depth.height;
     inputs.depth_aspect = VK_IMAGE_ASPECT_COLOR_BIT;  // the captured depth is a colour R32F copy
@@ -865,8 +861,6 @@ static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height)
     inputs.motion_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputs.motion_width = motion.width;
     inputs.motion_height = motion.height;
-    inputs.jitter_x = g_fsr_jitter_x;
-    inputs.jitter_y = g_fsr_jitter_y;
     memcpy(inputs.view, g_fsr_view, sizeof inputs.view);
     memcpy(inputs.projection, g_fsr_proj, sizeof inputs.projection);
     inputs.frame_id = frame_id;
@@ -881,112 +875,62 @@ static void dlss_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t height)
         return;
     }
 
-    if (!dlss_fg_acquire_fence) {
-        VkFenceCreateInfo info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-        if (vkCreateFence(g_vk.dev, &info, NULL, &dlss_fg_acquire_fence) != VK_SUCCESS) {
-            if (!dlss_fg_logged_acquire) {
-                dlss_fg_logged_acquire = true;
-                fprintf(stderr, "[dlss_fg] cannot create the second-image acquire fence; presenting real frames only\n");
-            }
-            dlss_fg_needs_reset = true;
-            return;
-        }
-    }
-    vkResetFences(g_vk.dev, 1, &dlss_fg_acquire_fence);
+    dlss_fg_prepared_any = true;
+    dlss_fg_needs_reset = false;
+    if (!frame.interpolated) return; // The first evaluation seeds history for the next real frame.
+
+    if (!dlss_fg_ensure_sem(dlss_fg_acquire_sems[index])) return;
+    for (uint32_t i = 0; i < g_vk.sc_count; ++i)
+        if (!dlss_fg_ensure_sem(dlss_fg_present_sems[i])) return;
+
     uint32_t interp_index = 0;
-    VkResult acquire = vkAcquireNextImageKHR(g_vk.dev, g_vk.swapchain, 100000000ull, VK_NULL_HANDLE,
-                                             dlss_fg_acquire_fence, &interp_index);
-    if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
+    dlss_fg_acquire_result = vkAcquireNextImageKHR(g_vk.dev, g_vk.swapchain, 1000000ull,
+                                                   dlss_fg_acquire_sems[index], VK_NULL_HANDLE,
+                                                   &interp_index);
+    if (dlss_fg_acquire_result != VK_SUCCESS && dlss_fg_acquire_result != VK_SUBOPTIMAL_KHR) {
         if (!dlss_fg_logged_acquire) {
             dlss_fg_logged_acquire = true;
-            fprintf(stderr, "[dlss_fg] no second swapchain image for the interpolated frame (%d); "
-                            "presenting real frames only\n", (int)acquire);
+            fprintf(stderr, "[dlss_fg] no second swapchain image (%d); presenting the real frame only\n",
+                    (int)dlss_fg_acquire_result);
         }
-        dlss_fg_needs_reset = true;
         return;
     }
-    if (vkWaitForFences(g_vk.dev, 1, &dlss_fg_acquire_fence, VK_TRUE, 1000000000ull) != VK_SUCCESS) {
-        // The image may still become available; stop attempting rather than risk a stale reset.
-        fprintf(stderr, "[dlss_fg] waiting for the second swapchain image timed out; presenting real frames only\n");
-        dlss_fg_failed = true;
-        dlss_fg_needs_reset = true;
-        return;
-    }
-    if (interp_index >= g_vk.sc_count || interp_index == index) {
-        dlss_fg_needs_reset = true;
-        return;
-    }
-    if (!mk8_dlss_fg_copy_interpolated(cb, g_vk.sc_images[interp_index], VK_IMAGE_LAYOUT_UNDEFINED)) {
-        static int said;
-        if (!said++) fprintf(stderr, "[dlss_fg] copying the interpolated result failed; presenting real frames only\n");
-        dlss_fg_needs_reset = true;
+    if (interp_index >= g_vk.sc_count || interp_index == index ||
+        !mk8_dlss_fg_copy_interpolated(cb, g_vk.sc_images[interp_index], VK_IMAGE_LAYOUT_UNDEFINED)) {
+        // Recover the swapchain if an acquired image cannot be presented.
+        dlss_fg_acquire_result = VK_ERROR_OUT_OF_DATE_KHR;
         return;
     }
     dlss_fg_real_index = index;
     dlss_fg_interp_index = interp_index;
-    dlss_fg_seq = mk8_dlss_fg_pending_seq();
     dlss_fg_pending = true;
-    dlss_fg_prepared_any = true;
-    dlss_fg_needs_reset = false;
     static int said;
     if (!said++)
         fprintf(stderr, "[dlss_fg] first evaluated frame %llu: %ux%u backbuffer, second image %u\n",
                 (unsigned long long)frame_id, width, height, interp_index);
 }
 
+extern "C" bool mk8_dlss_fg_submit_sync(VkSemaphore *wait, VkSemaphore *signal) {
+    if (!dlss_fg_pending) return false;
+    *wait = dlss_fg_acquire_sems[dlss_fg_real_index];
+    *signal = dlss_fg_present_sems[dlss_fg_interp_index];
+    return true;
+}
+
 static VkResult dlss_fg_present(VkQueue queue, const VkPresentInfoKHR *info) {
-    if (!dlss_fg_pending) return vkQueuePresentKHR(queue, info);
-    if (!info || info->swapchainCount != 1 || !info->pSwapchains || info->pSwapchains[0] != g_vk.swapchain ||
-        !info->pImageIndices || info->pImageIndices[0] != dlss_fg_real_index ||
-        info->waitSemaphoreCount != 1 || !info->pWaitSemaphores) {
-        dlss_fg_pending = false;
-        dlss_fg_needs_reset = true;
-        return vkQueuePresentKHR(queue, info);
-    }
-    VkSemaphore interpolated_sem = dlss_fg_sem(dlss_fg_interp_index);
-    if (!interpolated_sem) {
-        dlss_fg_pending = false;
-        dlss_fg_needs_reset = true;
-        return vkQueuePresentKHR(queue, info);
-    }
-
-    // The runtime's frame submission signals only one binary semaphore. A semaphore-only submit
-    // waits for that frame's timeline value and signals the second one, without touching the
-    // generated submission path.
-    VkSemaphoreSubmitInfo wait = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-    wait.semaphore = g_vk.timeline;
-    wait.value = dlss_fg_seq;
-    wait.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    VkSemaphoreSubmitInfo signal = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-    signal.semaphore = interpolated_sem;
-    signal.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    VkSubmitInfo2 submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-    submit.waitSemaphoreInfoCount = 1;
-    submit.pWaitSemaphoreInfos = &wait;
-    submit.signalSemaphoreInfoCount = 1;
-    submit.pSignalSemaphoreInfos = &signal;
     mk8_fsr_fg_queue_lock();
-    VkResult submitted = vkQueueSubmit2(g_vk.queue, 1, &submit, VK_NULL_HANDLE);
+    VkResult result = dlss_fg_pending
+        ? mk8_dlss_fg_present(queue, g_vk.swapchain, dlss_fg_real_index, dlss_fg_interp_index,
+                              info->pWaitSemaphores[0], dlss_fg_present_sems[dlss_fg_interp_index])
+        : vkQueuePresentKHR(queue, info);
     mk8_fsr_fg_queue_unlock();
-    if (submitted != VK_SUCCESS) {
-        static int said;
-        if (!said++) fprintf(stderr, "[dlss_fg] second present signal submission failed (%d); "
-                                     "presenting real frames only\n", (int)submitted);
-        dlss_fg_pending = false;
-        dlss_fg_failed = true;
-        dlss_fg_needs_reset = true;
-        return vkQueuePresentKHR(queue, info);
-    }
-
-    VkResult result = mk8_dlss_fg_present(queue, info->pSwapchains[0], dlss_fg_real_index, dlss_fg_interp_index,
-                                          info->pWaitSemaphores[0], interpolated_sem);
     dlss_fg_pending = false;
-    if (result != VK_SUCCESS) {
-        // The module presents the real image first; an interp failure is logged and returns success.
-        // A failure here means the real present failed and device.c handles out-of-date/surface loss.
-        dlss_fg_failed = true;
-        dlss_fg_needs_reset = true;
-    }
+    if (result == VK_ERROR_SURFACE_LOST_KHR || dlss_fg_acquire_result == VK_ERROR_SURFACE_LOST_KHR)
+        return VK_ERROR_SURFACE_LOST_KHR;
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || dlss_fg_acquire_result == VK_ERROR_OUT_OF_DATE_KHR)
+        return VK_ERROR_OUT_OF_DATE_KHR;
+    if (result == VK_SUCCESS && dlss_fg_acquire_result == VK_SUBOPTIMAL_KHR)
+        return VK_SUBOPTIMAL_KHR;
     return result;
 }
 
@@ -1184,7 +1128,6 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
     prepare.frameID = frame_id;
     prepare.commandList = cb;
     prepare.renderSize = {width, height};
-    prepare.jitterOffset = {g_fsr_jitter_x, g_fsr_jitter_y};
     prepare.motionVectorScale.x = motion.real ? 1.0f : (float)width;
     prepare.motionVectorScale.y = motion.real ? 1.0f : (float)height;
     static uint64_t last_prepare_ns;
@@ -1226,7 +1169,11 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
                 prepare.cameraPosition[0], prepare.cameraPosition[1], prepare.cameraPosition[2],
                 prepare.cameraForward[0], prepare.cameraForward[1], prepare.cameraForward[2]);
     }
-    rc = fg.effect_dispatch(&fg.fg_ctx, &prepare.header);
+    {
+        ScopedSampledImage sampled(cb, depth.restore_general ? depth.image : VK_NULL_HANDLE,
+                                   VK_IMAGE_ASPECT_COLOR_BIT);
+        rc = fg.effect_dispatch(&fg.fg_ctx, &prepare.header);
+    }
     bool prepared = false;
     if (rc != FFX_API_RETURN_OK) {
         static char reason[128];
@@ -1260,21 +1207,6 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
         }
     }
 
-    // The captured depth is written as a colour attachment by the next frame's depth copy; give it
-    // back to GENERAL once the prepare has consumed it.
-    if (depth.real) {
-        VkImageMemoryBarrier back = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        back.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        back.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        back.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        back.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        back.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        back.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        back.image = depth.image;
-        back.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                             0, 0, NULL, 0, NULL, 1, &back);
-    }
     if (prepared) gate_signal(cb);
 }
 
@@ -1288,10 +1220,6 @@ extern "C" void mk8_fsr_fg_destroy_swapchain(VkDevice device, VkSwapchainKHR swa
         dlss_fg_failed = false;
         dlss_fg_prepared_any = false;
         dlss_fg_needs_reset = true;
-    }
-    if (dlss_fg_acquire_fence) {
-        vkDestroyFence(device, dlss_fg_acquire_fence, NULL);
-        dlss_fg_acquire_fence = VK_NULL_HANDLE;
     }
     dlss_fg_destroy_sems();
     if (dlss_fg_pending_old) {

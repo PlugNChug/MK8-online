@@ -21,6 +21,7 @@ COMPILER = shutil.which('clang')
 COMPILERXX = shutil.which('clang++')
 sys.path.insert(0, str(ROOT / 'toolchain'))
 
+from host import linux_pkg_config, prepare_host_sources  # noqa: E402
 import dlss  # noqa: E402
 import dlss_fg  # noqa: E402
 
@@ -48,13 +49,22 @@ class DlssFgPatchTests(unittest.TestCase):
         if sys.platform != 'linux':
             raise unittest.SkipTest('the DLSS-G patch test runs on Linux')
         source = prepared_runtime()
-        if source is None:
-            raise unittest.SkipTest('no prepared runtime with toolchain/fsr_fg.py in this checkout')
         cls.temp = tempfile.TemporaryDirectory(prefix='mk8-dlssfg-')
         cls.addClassCleanup(cls.temp.cleanup)
-        cls.runtime = Path(cls.temp.name) / 'runtime'
-        shutil.copytree(source, cls.runtime)
-        dlss.prepare(cls.runtime)  # must run before dlss_fg.py
+        stage = Path(cls.temp.name)
+        cls.runtime = stage / 'runtime'
+        if source is None:
+            if not (ROOT / 'upstream/smm2recomp/recomp/runtime').is_dir():
+                raise unittest.SkipTest('fetch the pinned upstream sources first')
+            prepared = stage / 'prepared'
+            subprocess.run([sys.executable, ROOT / 'runtime/prepare.py',
+                            '--upstream', ROOT / 'upstream/smm2recomp', '--output', prepared,
+                            '--profile', ROOT / 'games/mk8d/profiles/4.0.1.json'],
+                           check=True, stdout=subprocess.DEVNULL)
+            prepare_host_sources(prepared, stage)
+        else:
+            shutil.copytree(source, cls.runtime)
+        dlss.prepare(cls.runtime)
         dlss_fg.prepare(cls.runtime)
         cls.device = (cls.runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
         cls.exec_c = (cls.runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
@@ -69,6 +79,10 @@ class DlssFgPatchTests(unittest.TestCase):
         self.assertIn('VK_IMAGE_USAGE_SAMPLED_BIT', self.device)
         self.assertIn('mk8_present_image_index', self.device)
         self.assertIn('!mk8_dlss_fg_active()', self.device)
+        self.assertIn('.waitSemaphoreInfoCount = pair ? 2', self.exec_c)
+        self.assertIn('.signalSemaphoreInfoCount = pair ? 3', self.exec_c)
+        self.assertLess(self.device.index('VkSwapchainLatencyCreateInfoNV dlss_fg_latency'),
+                        self.device.index('if (mk8_dlss_fg_requested())', self.device.index('.oldSwapchain = old}')))
         self.assertGreaterEqual(self.device.count('if (mk8_dlss_fg_requested())'), 2)
         # The helper is false for MK8_DLSS_FG unset/0 and for an active MK8_FSR_FG.
         helper = self.device.split('static bool mk8_dlss_fg_requested(void)', 1)[1].split('}', 1)[0]
@@ -77,7 +91,7 @@ class DlssFgPatchTests(unittest.TestCase):
         self.assertIn('MK8_FSR_FG', helper)
         # The main-draw matrix scan and depth capture must also run for DLSS-G alone.
         self.assertIn('MK8_DLSS_FG', self.exec_c)
-        self.assertEqual(self.exec_c.count('MK8_DLSS_FG'), 4)
+        self.assertEqual(self.exec_c.count('MK8_DLSS_FG'), 5)
 
     def test_ngx_extensions_are_only_in_the_gated_blocks(self):
         device = self.device
@@ -167,10 +181,10 @@ class DlssFgPatchTests(unittest.TestCase):
         vma = ROOT / 'local/native-tools/deps/linux/include/vk_mem_alloc.h'
         if not vma.is_file():
             self.skipTest('vk_mem_alloc.h is not available')
-        pkg = subprocess.run(['pkg-config', '--cflags', 'sdl3'], capture_output=True, text=True)
-        if pkg.returncode:
-            self.skipTest('SDL3 pkg-config is not available')
-        cflags = pkg.stdout.split()
+        try:
+            cflags = linux_pkg_config('--cflags')
+        except subprocess.CalledProcessError:
+            self.skipTest('Linux development libraries are not available')
         for name in ('device.c', 'exec.c'):
             result = subprocess.run(
                 [COMPILER, '-std=gnu11', '-fsyntax-only', '-D_GNU_SOURCE', '-I', str(self.runtime),

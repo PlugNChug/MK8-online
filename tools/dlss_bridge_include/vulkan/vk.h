@@ -70,6 +70,8 @@ typedef struct {
 
 extern VkG g_vk;
 
+typedef struct { VkBuffer buf; uint64_t off; void *ptr; } VkSpan;
+
 typedef struct TexBackend {
     VkImage image;
     VmaAllocation mem;

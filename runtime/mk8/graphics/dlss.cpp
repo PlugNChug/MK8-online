@@ -7,7 +7,7 @@
 //
 // Reused inputs, same as the FSR bridge: colour at render resolution, the captured scene
 // depth (or a neutral image), camera-derived motion vectors in render-pixel units and the
-// Halton jitter offset. Motion vectors are recomputed here with the same depth/projection
+// zero jitter. Motion vectors are recomputed here with the same depth/projection
 // algorithm fsr.cpp uses; fsr.cpp's motion image is private to that file.
 //
 // Nothing NVIDIA is committed: the plugin and core are optional components loaded from the
@@ -599,9 +599,13 @@ const char *mk8_dlss_requirement_text(unsigned bits, char *buffer, size_t size) 
 
 #include "vulkan/vk.h"
 #include "ngx/mk8_ngx_abi.h"
+#include "sampled_image.h"
 
 extern "C" {
 VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
+VkSpan fsr_vk_uniform(uint64_t bytes);
+uint64_t fsr_vk_pending_seq(void);
+uint64_t fsr_vk_completed_seq(void);
 VkSampler fsr_vk_default_sampler(bool linear);
 VkImageView fsr_vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv,
                               uint32_t ly0, uint32_t nly, VkComponentMapping sw, VkImageAspectFlags aspect);
@@ -611,8 +615,6 @@ VkShaderModule fsr_vk_compile_glsl(const char *src, int stage, const char *name)
 extern float g_fsr_view[12];
 extern float g_fsr_proj[16];
 extern int g_fsr_vp_valid;
-extern float g_fsr_jitter_x;
-extern float g_fsr_jitter_y;
 }
 
 typedef struct Dlss {
@@ -678,9 +680,7 @@ typedef struct Dlss {
     VkDescriptorSetLayout mv_layout;
     VkPipelineLayout mv_pipeline_layout;
     VkPipeline mv_pipeline;
-    VkBuffer mv_ubo;
-    VmaAllocation mv_ubo_mem;
-    void *mv_ubo_ptr;
+    uint64_t last_use;
     bool have_prev;
     float prev_vp[16];
 } Dlss;
@@ -1242,21 +1242,11 @@ static bool create_mv_resources(void) {
         fprintf(stderr, "[dlss] vkCreateComputePipelines(dlss_mv) failed: %d\n", (int)result);
         return false;
     }
-    VkBufferCreateInfo buffer = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    buffer.size = 144;
-    buffer.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    VmaAllocationCreateInfo allocation = {};
-    allocation.usage = VMA_MEMORY_USAGE_AUTO;
-    allocation.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    VmaAllocationInfo info = {};
-    if (vmaCreateBuffer(g_vk.vma, &buffer, &allocation, &dlss.mv_ubo, &dlss.mv_ubo_mem, &info) != VK_SUCCESS)
-        return false;
-    dlss.mv_ubo_ptr = info.pMappedData;
-    return dlss.mv_ubo_ptr != NULL;
+    return true;
 }
 
 static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t rh) {
-    if (!g_fsr_vp_valid || !depth || !depth->image || !dlss.mv_pipeline || !dlss.mv_ubo_ptr ||
+    if (!g_fsr_vp_valid || !depth || !depth->image || !dlss.mv_pipeline ||
         !dlss.depth_view)
         return false;
     float v[16] = {g_fsr_view[0], g_fsr_view[1], g_fsr_view[2], g_fsr_view[3],
@@ -1268,7 +1258,8 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
     if (!invert4(vp, inv)) return false;
     if (dlss.have_prev) memcpy(prev, dlss.prev_vp, sizeof prev);
     else memcpy(prev, vp, sizeof prev);
-    float *uniform = (float *)dlss.mv_ubo_ptr;
+    VkSpan span = fsr_vk_uniform(144);
+    float *uniform = (float *)span.ptr;
     for (int c = 0; c < 4; c++)
         for (int r = 0; r < 4; r++) {
             uniform[c * 4 + r] = inv[r * 4 + c];
@@ -1281,7 +1272,7 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     VkDescriptorSet set = fsr_vk_alloc_set(dlss.mv_layout);
-    VkDescriptorBufferInfo buffer_info = {dlss.mv_ubo, 0, 144};
+    VkDescriptorBufferInfo buffer_info = {span.buf, span.off, 144};
     VkDescriptorImageInfo depth_info = {
         fsr_vk_default_sampler(true), dlss.depth_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo output_info = {VK_NULL_HANDLE, dlss.motion_view, VK_IMAGE_LAYOUT_GENERAL};
@@ -1361,6 +1352,7 @@ static bool ensure_cached_view(VkImageView *view, VkImage *cached_image, VkForma
                                VkImageAspectFlags aspect, uint32_t w, uint32_t h) {
     if (*view && *cached_image == image && *cached_format == format && *cached_w == w && *cached_h == h)
         return true;
+    if (*view && dlss.last_use > fsr_vk_completed_seq()) return false;
     if (*view) vkDestroyImageView(g_vk.dev, *view, NULL);
     *view = image_view_of(image, format, aspect);
     *cached_image = image;
@@ -1462,6 +1454,11 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
     }
     if (!dlss.ready || dlss.failed) return VK_NULL_HANDLE;
 
+    if ((dlss.rw != rw || dlss.rh != rh || dlss.ow != ow || dlss.oh != oh) &&
+        dlss.last_use > fsr_vk_completed_seq()) {
+        dlss.reset_next = true;
+        return VK_NULL_HANDLE;
+    }
     if (!ensure_feature(cb, rw, rh, ow, oh)) {
         if (dlss.probe.reason[0]) {
             mk8_dlss_log_unavailable(&dlss.probe);
@@ -1487,10 +1484,6 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
         depth_view = dlss.depth_view;
         depth_format = depth->format;
         depth_aspect = aspect;
-        barrier(cb, depth_image, aspect, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     } else {
         if (!ensure_neutral_depth(cb, rw, rh)) return VK_NULL_HANDLE;
         depth_image = dlss.neutral_depth;
@@ -1506,24 +1499,28 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
     }
 
     if (!ensure_motion(cb, rw, rh)) return VK_NULL_HANDLE;
-    bool motion = real_depth && run_mv(cb, depth, rw, rh);
-    static int motion_state = -1;
-    if ((int)motion != motion_state) {
-        motion_state = (int)motion;
-        if (motion) fprintf(stderr, "[dlss] motion vectors: camera-derived\n");
-        else
-            fprintf(stderr, "[dlss] WARNING: motion vectors are zeros (no captured view/projection); "
-                            "DLSS will ghost on everything that moves\n");
-    }
-
-    VkImageAspectFlags color_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     if (!ensure_cached_view(&dlss.color_view, &dlss.color_view_image, &dlss.color_view_format,
-                            &dlss.color_view_w, &dlss.color_view_h, color->image, color->format, color_aspect,
-                            rw, rh))
+                            &dlss.color_view_w, &dlss.color_view_h, color->image, color->format,
+                            VK_IMAGE_ASPECT_COLOR_BIT, rw, rh)) {
+        dlss.reset_next = true;
         return VK_NULL_HANDLE;
-    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    }
+    dlss.last_use = fsr_vk_pending_seq();
+    ScopedSampledImage sampled_color(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT);
+    ScopedSampledImage sampled_depth(cb, real_depth ? depth_image : VK_NULL_HANDLE, depth_aspect);
+    bool motion = real_depth && run_mv(cb, depth, rw, rh);
+    if (!motion && dlss.have_prev) {
+        barrier(cb, dlss.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkClearColorValue zero = {};
+        VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, dlss.motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+        barrier(cb, dlss.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        dlss.have_prev = false;
+    }
 
     Mk8NgxResourceVk color_resource = {};
     color_resource.Type = 0;
@@ -1559,8 +1556,7 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
     output_resource.Resource.ImageViewInfo.Width = ow;
     output_resource.Resource.ImageViewInfo.Height = oh;
 
-    float jitter_x = g_fsr_jitter_x, jitter_y = g_fsr_jitter_y;
-    if (getenv("MK8_DLSS_NO_JITTER")) jitter_x = jitter_y = 0.0f;
+    const float jitter_x = 0.0f, jitter_y = 0.0f;
 
     dlss.set_ui(dlss.params, MK8_NGX_PARAM_WIDTH, rw);
     dlss.set_ui(dlss.params, MK8_NGX_PARAM_HEIGHT, rh);
@@ -1584,11 +1580,8 @@ extern "C" VkImageView mk8_dlss_upscale(VkCommandBuffer cb, TexBackend *color, T
     dlss.set_i(dlss.params, MK8_NGX_PARAM_RESET, reset ? 1 : 0);
 
     int rc = dlss.evaluate(cb, dlss.handle, dlss.params, NULL);
-    // Leave the game image in GENERAL, as fsr.cpp does: the next frame renders into it there.
-    barrier(cb, color->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     if (MK8_NGX_FAILED(rc)) {
+        dlss.reset_next = true;
         static int warned;
         if (warned++ < 3) log_result("NVSDK_NGX_VULKAN_EvaluateFeature", rc);
         return VK_NULL_HANDLE;
@@ -2452,7 +2445,7 @@ Mk8DlssFgFrame mk8_dlss_fg_evaluate(const Mk8DlssFgInputs *inputs) {
     dlss_fg.have_prev = true;
     dlss_fg.frame_id = inputs->frame_id;
     frame.valid = true;
-    frame.interpolated = true;
+    frame.interpolated = !reset;
     frame.real_image = inputs->backbuffer;
     frame.real_view = inputs->backbuffer_view;
     frame.interpolated_image = dlss_fg.interpolated_image;
@@ -2571,21 +2564,21 @@ VkResult mk8_dlss_fg_present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t r
         }
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    uint64_t real_id = dlss_fg.present_id++;
-    VkResult result = fg_present_image(queue, real_index, real_ready, MK8_DLSS_FG_MARKER_PRESENT_START,
-                                       MK8_DLSS_FG_MARKER_PRESENT_END, real_id);
-    if (result != VK_SUCCESS) return result;
     uint64_t interp_id = dlss_fg.present_id++;
     VkResult interpolated = fg_present_image(queue, interpolated_index, interpolated_ready,
                                              MK8_DLSS_FG_MARKER_PRESENT_START, MK8_DLSS_FG_MARKER_PRESENT_END,
                                              interp_id);
-    if (interpolated == VK_SUCCESS) {
+    if (interpolated != VK_SUCCESS && interpolated != VK_SUBOPTIMAL_KHR) return interpolated;
+    uint64_t real_id = dlss_fg.present_id++;
+    VkResult real = fg_present_image(queue, real_index, real_ready, MK8_DLSS_FG_MARKER_PRESENT_START,
+                                     MK8_DLSS_FG_MARKER_PRESENT_END, real_id);
+    if (real == VK_SUCCESS && interpolated == VK_SUCCESS) {
         static uint64_t pairs;
         if (pairs++ == 0)
-            fprintf(stderr, "[dlss_fg] pair present: real image %u + interpolated image %u\n",
-                    real_index, interpolated_index);
+            fprintf(stderr, "[dlss_fg] pair present: interpolated image %u then real image %u\n",
+                    interpolated_index, real_index);
     }
-    return interpolated;
+    return real == VK_SUCCESS ? interpolated : real;
 }
 
 #endif  // !MK8_DLSS_PROBE_ONLY

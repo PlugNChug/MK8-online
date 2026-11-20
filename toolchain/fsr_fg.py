@@ -32,8 +32,8 @@ def prepare_exec(runtime):
                     'if ((getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) && g_pass_depth',
                     'Depth capture condition')
     text = _replace(text,
-                    'if (getenv("MK8_FSR4")) {',
-                    'if (getenv("MK8_FSR4") || getenv("MK8_FSR_FG")) {',
+                    'if (getenv("MK8_FSR4") || getenv("MK8_DLSS")) {',
+                    'if (getenv("MK8_FSR4") || getenv("MK8_DLSS") || getenv("MK8_FSR_FG")) {',
                     'Main-draw matrix scan condition')
     exec_c.write_text(text, encoding='utf-8')
 
@@ -84,9 +84,10 @@ def prepare_device(runtime):
                     '    float prio = 1.0f;\n'
                     '    VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,\n'
                     '                                  .queueCount = 1, .pQueuePriorities = &prio};\n'
+                    '    const float fg_prio[2] = {1.0f, 1.0f};\n'
                     '    VkDeviceQueueCreateInfo fg_qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,\n'
                     '                                     .queueFamilyIndex = g_vk_fg_present_family, .queueCount = 2,\n'
-                    '                                     .pQueuePriorities = &prio};\n'
+                    '                                     .pQueuePriorities = fg_prio};\n'
                     '    bool fg_queues = g_vk_fg_present_family != UINT32_MAX;\n'
                     '    VkDeviceQueueCreateInfo qis[2] = {qi, fg_qi};\n'
                     '    VkDeviceCreateInfo di = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &f,\n'

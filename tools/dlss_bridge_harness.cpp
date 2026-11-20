@@ -219,6 +219,27 @@ static VkSampler g_sampler_linear = VK_NULL_HANDLE;
 static VkSampler g_sampler_nearest = VK_NULL_HANDLE;
 static std::vector<VkDescriptorPool> g_descriptor_pools;
 
+// The harness waits for its fence before every evaluation, so one mapped span is sufficient.
+extern "C" VkSpan fsr_vk_uniform(uint64_t bytes) {
+    static VkSpan span{};
+    static VmaAllocation allocation{};
+    if (!span.buf) {
+        VkBufferCreateInfo info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        info.size = bytes;
+        info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        VmaAllocationCreateInfo flags{};
+        flags.usage = VMA_MEMORY_USAGE_AUTO;
+        flags.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        VmaAllocationInfo mapped{};
+        if (vmaCreateBuffer(g_vk.vma, &info, &flags, &span.buf, &allocation, &mapped) != VK_SUCCESS)
+            abort();
+        span.ptr = mapped.pMappedData;
+    }
+    return span;
+}
+extern "C" uint64_t fsr_vk_pending_seq() { return 1; }
+extern "C" uint64_t fsr_vk_completed_seq() { return 1; }
+
 extern "C" VkImageView fsr_vk_image_view(TexBackend *backend, VkImageViewType type, VkFormat format,
                                          uint32_t level0, uint32_t level_count, uint32_t layer0,
                                          uint32_t layer_count, VkComponentMapping swizzle,

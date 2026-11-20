@@ -53,7 +53,7 @@ CAPTURE = """    if ((getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) && g_p
     }
 """
 
-MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
+MATRIX_SCAN = """    if (getenv("MK8_FSR4") || getenv("MK8_DLSS")) {
         for (int c = 3; c < 21; c++) {
             Range ub = st.ubuf[0][c - 3];
             if (!((pr->vi->cbuf_mask >> c) & 1) || !ub.addr || ub.size < 44 * 4) continue;
@@ -64,18 +64,6 @@ MATRIX_SCAN = """    if (getenv("MK8_FSR4")) {
             memcpy(g_fsr_view, u, sizeof g_fsr_view);
             memcpy(g_fsr_proj, u + 28, sizeof g_fsr_proj);
             g_fsr_vp_valid = 1;
-            static uint64_t jitter_frame;
-            uint64_t jf = vk_frame_counter();
-            if (jf != jitter_frame) {
-                jitter_frame = jf;
-                unsigned n = (unsigned)(jf % 8) + 1;
-                float hx = 0.5f, hy = 0.5f, f = 1.0f;
-                for (unsigned v = n, b = 2; v; v /= b, f /= b) hx += (float)(v % b) * f;
-                f = 1.0f;
-                for (unsigned v = n, b = 3; v; v /= b, f /= b) hy += (float)(v % b) * f;
-                g_fsr_jitter_x = hx - 0.5f;
-                g_fsr_jitter_y = hy - 0.5f;
-            }
         }
         { static int once; if (g_fsr_vp_valid && !once++) LOG("[fsr] view/proj captured in main draw\\n"); }
     }
@@ -121,8 +109,7 @@ def prepare_exec(runtime):
     if 'TexBackend *g_fsr_captured;' not in text:
         text = text.replace(old, old + '\nNvnTexture *g_fsr_depth;\nTexBackend *g_fsr_captured;'
                             '\nfloat g_fsr_view[12], g_fsr_proj[16];'
-                            '\nint g_fsr_vp_valid;'
-                            '\nfloat g_fsr_jitter_x, g_fsr_jitter_y;', 1)
+                            '\nint g_fsr_vp_valid;', 1)
     if 'NvnTexture *mk8_fsr_last_depth(void)' not in text:
         text = text.replace('TexBackend *g_fsr_captured;',
                             'TexBackend *g_fsr_captured;\nNvnTexture *mk8_fsr_last_depth(void) { return g_fsr_depth; }', 1)
@@ -145,7 +132,8 @@ def prepare_exec(runtime):
     new = ('            VkDescriptorPoolSize sizes[6] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},\n'
            '                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},\n'
            '                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};\n'
-           '            bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG");\n'
+           '            bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG") ||\n'
+           '                               getenv("MK8_DLSS") || getenv("MK8_DLSS_FG");\n'
            '            if (fsr_mv_pool) sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};\n'
            '            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,\n'
            '                                             .poolSizeCount = fsr_mv_pool ? 6 : 5, .pPoolSizes = sizes};')
@@ -171,6 +159,12 @@ def prepare_exec(runtime):
     if 'view/proj captured' not in text:
         line = text.rfind('\n', 0, text.find(draw_anchor)) + 1
         text = text[:line] + MATRIX_SCAN + text[line:]
+    old = '    if (!smaa && !fsr) return v;'
+    new = '    if (!smaa && !fsr && !getenv("MK8_FSR4") && !getenv("MK8_DLSS")) return v;'
+    if new not in text:
+        if text.count(old) != 1:
+            raise ValueError('Present feature gate changed upstream')
+        text = text.replace(old, new, 1)
     exec_c.write_text(text, encoding='utf-8')
 
 

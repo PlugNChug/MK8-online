@@ -15,6 +15,7 @@ typedef struct {
     VkImageView view;
     VkFormat format;
     uint32_t width, height;
+    bool restore_general;
     bool real;  // depth: the game's captured scene depth; motion: camera-derived vectors
 } Mk8FsrFgInput;
 
@@ -23,8 +24,7 @@ extern "C" {
 #endif
 
 // Records the depth/motion barriers and, when available, the camera motion-vector dispatch into cb.
-// Returns false only when the resources could not be created; the images are left in
-// SHADER_READ_ONLY_OPTIMAL for the frame-generation prepare dispatch.
+// The caller transitions a capture with restore_general around the provider dispatch.
 bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t width, uint32_t height,
                        Mk8FsrFgInput *depth, Mk8FsrFgInput *motion);
 

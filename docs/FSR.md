@@ -62,16 +62,17 @@ FPS runs on an otherwise idle desktop.
   2304x1296` and `[fsr] depth now game (1920x1080 fmt 100)`; the frame at
   `fsr4-capture3600-03600.png` uses that depth. `MK8_FSR4_CAPTURE=1` enables
   the capture; it is off by default until its cost is measured.
-- **Motion vectors/jitter:** active. The main draw's `vcb3` provides a 3x4
+- **Camera motion:** The main draw's `vcb3` provides a 3x4
   view matrix at offset 0 and a 4x4 projection at offset 28; `fsr.cpp` keeps
   the current/previous view-projection, reconstructs world positions from the
   captured scene depth in a compute pass, and writes camera motion vectors in
-  pixel space. A Halton (2,3) jitter is applied to the host copy of the scene
-  projection, leaving guest memory and UI/2D untouched; FSR receives the same
-  offset in `jitterOffset`. Logs: `[fsr] view/proj captured in main draw`,
-  `[fsr] depth now game (1920x1080 fmt 100)`, `[fsr] motion now camera`; frame
-  `fsr4-jitter2400-02400.png` uses all three inputs. Object motion (karts) is
-  not in the vectors yet.
+  pixel space. FSR receives zero jitter while the rendered projection is
+  unjittered. The vectors describe camera motion only. Look for
+  `[fsr] view/proj captured in main draw` and `[fsr] motion now camera`.
+- **Native FSR 4.1.2 dispatch:** Each of three slots has its own descriptors
+  and uniforms. The provider waits for the renderer's timeline value before
+  reusing a slot. When all slots are busy, the renderer uses its ordinary
+  present path and resets temporal history on the next dispatch.
 - **FSR 3.1.6 (Windows provider, verified via Wine):** on the RX 9070 XT,
   AMD's signed 2.4 `amd_fidelityfx_upscaler_vk.dll` advertises `4.1.2`,
   `3.1.6` and `2.3.4` through `ffxQuery`. The 32-bit

@@ -27,6 +27,7 @@ static void end_pass(void) {
     in_pass = false;
 }
 static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, double oh_d) {
+    if (!smaa && !fsr) return v;
     extern void vk_frame_suspend(void);
     extern void vk_frame_resume(void);
     vk_frame_suspend();
@@ -71,6 +72,7 @@ class FsrPatchTests(unittest.TestCase):
         fsr.prepare(runtime)
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
         self.assertIn('mk8_fsr4_upscale', exec_c)
+        self.assertIn('if (!smaa && !fsr && !getenv("MK8_FSR4") && !getenv("MK8_DLSS")) return v;', exec_c)
         self.assertIn('mk8_fsr_last_depth', exec_c)
         self.assertIn('g_fsr_depth = st.rt.depth;', exec_c)
         self.assertGreater(exec_c.index('mk8_fsr4_upscale'), exec_c.index('vk_frame_suspend();'))
@@ -80,10 +82,10 @@ class FsrPatchTests(unittest.TestCase):
         fsr.prepare(runtime)
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
         self.assertIn('float g_fsr_view[12], g_fsr_proj[16];', exec_c)
-        self.assertIn('float g_fsr_jitter_x, g_fsr_jitter_y;', exec_c)
+        self.assertNotIn('g_fsr_jitter_', exec_c)
         # The log format must survive as an escape, not as a real newline in the C string.
         self.assertIn('view/proj captured in main draw\\n")', exec_c)
-        self.assertLess(exec_c.index('if (getenv("MK8_FSR4"))'),
+        self.assertLess(exec_c.index('if (getenv("MK8_FSR4") || getenv("MK8_DLSS"))'),
                         exec_c.index('debug_draw(pr, r, indexed);'))
 
     def test_rejects_a_missing_main_draw(self):

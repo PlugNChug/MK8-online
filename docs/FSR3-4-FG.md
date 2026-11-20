@@ -5,8 +5,9 @@ Status 20/11/2026. Extends `docs/FSR.md`.
 ## What exists today
 
 - **FSR 4.1.2 upscaling (native Linux)**: `runtime/mk8/graphics/fsr.cpp` loads the provider from `MK8_FSR_LIB`,
-  creates a context, records one upscale after `vk_frame_suspend`, with scene depth capture, camera motion vectors and
-  a Halton jitter. Verified in-game (`[fsr] provider FSR 4.1.2`, `[fsr] upscale active 1920x1080 -> 2560x1440`,
+  creates a context and records one upscale after `vk_frame_suspend`. The runtime can supply captured scene depth and
+  camera motion vectors. It sends zero jitter for the unjittered projection. Earlier in-game evidence
+  (`[fsr] provider FSR 4.1.2`, `[fsr] upscale active 1920x1080 -> 2560x1440`,
   screenshots `local/qualification/fsr4-*-03600.png`).
 - **FSR 3.1.6 upscaling**: the 2.4 SDK provider advertises 4.1.2 / 3.1.6 / 2.3.4 through `ffxQuery`;
   `MK8_FSR_VERSION=3.1.6` selects it (with `MK8_FSR_LEGACY_ABI=1` for the GPL 4.1.2 port's legacy descriptor).
@@ -153,12 +154,10 @@ remains vendor-agnostic. Reproduction and the raw log/capture live outside the r
   `ffxQueryDescSwapchainReplacementFunctionsVK`. Any failure disables the bridge, restores the original swapchain
   and logs one reason; it never returns a fake success.
 - **Inputs:** `runtime/mk8/graphics/fsr.cpp` shares the captured scene depth and the camera motion-vector compute
-  with the prepare dispatch. For FG the captured depth is resampled to the presented size (the game's depth pass
-  runs at 2304x1296 for a 2560x1440 window), and the view/projection captured in the main draw drives a per-frame
-  motion-vector compute at that size. Without a captured view/projection it uses a neutral depth and zero motion
-  vectors, and logs `[fsr_fg] WARNING: motion vectors are zeros ...`; without a depth copy it logs the neutral
-  source. When both `MK8_FSR4` and `MK8_FSR_FG` are set, the upscaler stays off: combining is a TODO and FG runs on
-  the game's native window image.
+  with the prepare dispatch. For FG, each captured frame is resampled to the presented size when the sizes differ
+  and their aspect ratios match. The main-draw view and projection drive the camera motion-vector pass. Missing
+  capture uses neutral depth and missing camera data uses zero motion. The runtime sends zero jitter. When both
+  `MK8_FSR4` and `MK8_FSR_FG` are set, the upscaler stays off and FG runs on the game's native window image.
 - **Provider build fix:** `tools/fg-linux/CMakeLists.txt` now defines `FFX_FRAMEGENERATION=1`. Without it the
   Vulkan backend leaves `fpSwapChainConfigureFrameGeneration` null and `ffxConfigure` on the frame-generation
   context dereferences null; a provider built before this fix cannot use the swapchain path.
