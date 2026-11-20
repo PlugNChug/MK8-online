@@ -10,8 +10,8 @@ code, ABI or toolchain change. Nothing from AMD's signed Windows DLLs is used, a
 SPIR-V or model is committed.
 
 This is the FSR **3.1.6 upscaler** path. It is separate from the source-built 3.1.7 frame-generation
-provider (`tools/build_fg_provider.py`) and from the GPL 4.1.2 port. The launcher does not offer it yet;
-the commands below are the supported diagnostic path.
+provider (`tools/build_fg_provider.py`) and from the GPL 4.1.2 port. The launcher now builds and reuses it when FSR 3.1.6 upscaling is selected
+(commit 68a3bd1); the commands below remain the diagnostic path.
 
 ## Files
 
