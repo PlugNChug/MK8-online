@@ -572,8 +572,11 @@ def build_host(source, output, workers=None, game_library=None):
                     'runtime/nvn/vulkan/*.cpp', 'runtime/ui/*.mm', 'third_party/mbedtls/library/*.c', 'games/mk8d/*.c']:
         sources.extend(sorted(source.glob(pattern)))
     sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
-    sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
-    sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.cpp')))
+    # support/steam_gamepads.c is Windows-only (GameInput); Linux builds the portable fallback in
+    # support/steam_gamepads_linux.c instead. Everything else compiles on both platforms.
+    windows_only = set() if WINDOWS else {'steam_gamepads.c'}
+    sources.extend(sorted(p for p in (ROOT/'runtime/mk8').rglob('*.c') if p.name not in windows_only))
+    sources.extend(sorted(p for p in (ROOT/'runtime/mk8').rglob('*.cpp') if p.name not in windows_only))
     if WINDOWS:
         sources += [source/'runtime/platform/windows.c', export_source, shim]
     else:
