@@ -17,8 +17,10 @@ find_package(ZLIB REQUIRED)
 
 set(FG_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+file(GLOB FG_BLOB_SOURCES ${FG_DIR}/fg_blob_*.cpp)
 set(SRC
   ${FG_DIR}/fg_blobs.cpp
+  ${FG_BLOB_SOURCES}
   ${FG_DIR}/fg_provider_list.cpp
   ${SDK}/Kits/FidelityFX/api/internal/ffx_assert.cpp
   ${SDK}/Kits/FidelityFX/api/internal/ffx_message.cpp
