@@ -30,6 +30,12 @@ bool mk8_controller_join_visible(void) { return assignment_layout; }
 void kernel_host_wait_begin(void) { SDL_SetAtomicInt(&core_released,1); }
 void kernel_host_wait_end(void) { SDL_SetAtomicInt(&core_released,0); }
 void menu_notice(const char *text,double seconds) { SDL_strlcpy(applet_notice,text,sizeof applet_notice); }
+static char assignment_tip[96];
+static unsigned assignment_tips;
+void mk8_menu_tip(const char *text) {
+    SDL_strlcpy(assignment_tip,text,sizeof assignment_tip);
+    ++assignment_tips;
+}
 void mk8_settings_pads_changed(void) { assert(0 && "No settings changes during a controller assignment"); }
 static bool host_captures;
 bool menu_input_captured(void) { return host_captures; }
@@ -509,7 +515,16 @@ static void check_live_editor(void) {
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_LISTEN);
     button(usb,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
     button(usb,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
-    shoulders(sticks[SOLO_L]); // Already belongs to P4, which isn't in this two-row popup.
+    unsigned tips_before=assignment_tips;
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true);
+    assert(assignment_tips==tips_before); // One rail button isn't a join request.
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
+    assert(assignment_tips==tips_before+1 && !strcmp(assignment_tip,"This controller is already assigned to Player 4."));
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
+    assert(assignment_tips==tips_before+1); // The same chord is still held.
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
+    button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_LISTEN);
     shoulders(usb);
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY);
@@ -565,6 +580,17 @@ static void check_live_editor(void) {
     assert(SDL_GetGamepadID(extra_pad[1])==ids[SOLO_R] && SDL_GetGamepadID(extra_pad[2])==ids[SOLO_L]);
     check_pulse(1,0,PAIR_L); check_pulse(1,1,PAIR_R); check_motion(1,PAIR_R,true);
     assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    tips_before=assignment_tips;
+    assert(edit(MK8_EDIT_ASSIGN,0,0)==MK8_EDIT_LISTEN);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,true);
+    assert(assignment_tips==tips_before+1 && !strcmp(assignment_tip,"This controller is already assigned to Player 2."));
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,false);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,false);
+    assert(mk8_edit_view(NULL,&row)==MK8_EDIT_LISTEN && row==0);
+    assert(mk8_editor.slots[1][0]==ids[PAIR_L] && mk8_editor.slots[1][1]==ids[PAIR_R]);
+    shoulders(usb); // The current row can select its own controller again.
+    assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY && assignment_tips==tips_before+1);
     assert(edit(MK8_EDIT_KEYBOARD,1,0)==MK8_EDIT_READY && mk8_assigned_keyboard()==-1);
     assert(edit(MK8_EDIT_SWAP,0,1)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);

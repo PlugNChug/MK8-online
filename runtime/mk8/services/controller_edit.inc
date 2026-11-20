@@ -1,5 +1,7 @@
 #include "controller_edit.h"
 
+void mk8_menu_tip(const char *text);
+
 // Only the SDL thread owns these device references and the draft. The guest sees copied labels and acknowledgments.
 typedef struct Mk8JoinDevice {
     struct Mk8JoinDevice *next;
@@ -239,15 +241,31 @@ static void mk8_edit_button(Mk8JoinDevice *d, unsigned button, bool down) {
             return;
         }
     }
-    for (int i = 0; i < 4; i++)
-        if (i != row && (mk8_editor.slots[i][0] == d->id || mk8_editor.slots[i][1] == d->id)) return;
+    bool join_chord = down && (bit & chord) && !(d->blocked & chord) && (d->buttons & chord) == chord;
+    bool pair_button = pair && bit == pair && !(d->blocked & pair);
+    for (int i = 0; i < 4; i++) {
+        SDL_JoystickID *slot = mk8_editor.slots[i];
+        if (i == row || (slot[0] != d->id && slot[1] != d->id)) continue;
+        if (join_chord || (down && pair_button)) {
+            if (join_chord) d->blocked |= chord;
+            Mk8JoinDevice *other = mk8_edit_device(slot[0] == d->id ? slot[1] : slot[0]);
+            // One pair attempt can produce an outer shoulder press from each grip.
+            if (!(pair_button && other && (other->buttons & mk8_pair_button(other->half)))) {
+                char message[80];
+                SDL_snprintf(message, sizeof message, "This controller is already assigned to Player %d.", i + 1);
+                mk8_menu_tip(message);
+            }
+        }
+        return;
+    }
     if (mk8_editor.ambiguous) {
         if (!mk8_editor.retry) return;
         mk8_editor.ambiguous = mk8_editor.retry = false;
     }
-    if (down && (bit & chord) && !(d->blocked & chord) && (d->buttons & chord) == chord && !mk8_editor.first) {
+    if (join_chord && !mk8_editor.first) {
+        d->blocked |= chord;
         mk8_edit_register(row, d->id, 0);
-    } else if (pair && bit == pair && !(d->blocked & pair)) {
+    } else if (pair_button) {
         Mk8JoinDevice *first = mk8_edit_device(mk8_editor.first);
         Mk8JoinDevice *second = mk8_edit_device(mk8_editor.second);
         if (down && !first) {

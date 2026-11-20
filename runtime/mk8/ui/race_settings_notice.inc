@@ -44,16 +44,20 @@ static float mk8_race_notice_alpha(Uint64 elapsed_ms) {
     return elapsed_ms<3400 ? (3400-elapsed_ms)/200.f : 0.f;
 }
 
-static bool mk8_block_shared_settings(void) {
-    if (!mk8_settings_shared_race()) return false;
+extern "C" void mk8_menu_tip(const char *text) {
     pthread_mutex_lock(&notice_lock);
     Uint64 now=SDL_GetTicks();
     // Renew the reading time on another press, starting the new fade at the current opacity.
     float alpha=notice_fades ? mk8_race_notice_alpha(now-notice_started) : 0.f;
     notice_started=now-(Uint64)(200.f*alpha);
-    snprintf(notice_text,sizeof notice_text,"Settings cannot be accessed during a multiplayer race.");
+    snprintf(notice_text,sizeof notice_text,"%s",text);
     notice_fades=true;
     notice_until=(notice_started+3400)/1000.0;
     pthread_mutex_unlock(&notice_lock);
+}
+
+static bool mk8_block_shared_settings(void) {
+    if (!mk8_settings_shared_race()) return false;
+    mk8_menu_tip("Settings cannot be accessed during a multiplayer race.");
     return true;
 }

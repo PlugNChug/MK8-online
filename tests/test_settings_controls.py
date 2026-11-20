@@ -199,6 +199,12 @@ int main() {
             check_notice("ordinary notice",1,1.5f);
             clock_ms+=100; check_notice(nullptr,0);
             shared_race=false;
+            const char *assigned="This controller is already assigned to Player 4.";
+            mk8_menu_tip(assigned); check_notice(assigned,0);
+            clock_ms+=200; check_notice(assigned,1);
+            clock_ms+=3000; check_notice(assigned,1);
+            clock_ms+=100; check_notice(assigned,.5f);
+            clock_ms+=100; check_notice(nullptr,0);
         }
         g_open=false;native_requests=0;key();
         CHECK(g_open==!intercept && native_requests==(int)intercept);
