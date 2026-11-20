@@ -156,12 +156,16 @@ MK8_FSR_FG=fsr3 MK8_FSR_FG_LIB=/path/to/libamd_fidelityfx_framegeneration_vk.so 
 ## Reproducing the provider and the checks
 
 ```sh
-# from the user's own FidelityFX SDK 2.4.0 download (MIT); nothing AMD ships as a binary is used
-python3 tools/build_fg_provider.py --sdk-archive FidelityFX-SDK-v2.4.0.tar.gz     --sdk-size <bytes> --sdk-sha256 <hex> --dxc /path/to/dxc --self-test
+# from the user's own FidelityFX SDK 2.4.0 download (MIT); nothing AMD ships as a binary is used.
+# Pinned official source archive: 253,592,010 bytes,
+# sha256 111f9b19c0c9b8a1f24d2a5104095b8e626f12deb4eca53cd0c29921aa1fd43a
+python3 tools/build_fg_provider.py --sdk-archive FidelityFX-SDK-v2.4.0.tar.gz --sdk-size 253592010 --sdk-sha256 111f9b19c0c9b8a1f24d2a5104095b8e626f12deb4eca53cd0c29921aa1fd43a --dxc /path/to/dxc --self-test
 
 # native provider tests (skip when the provider/SDK headers are absent)
-MK8_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so MK8_FG_SDK=$HOME/.cache/mk8online/fsr-build/sdk-copy     python3 -m unittest tests.test_fg_provider -v
+MK8_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so MK8_FG_SDK=$HOME/.cache/mk8online/fsr-build/sdk-copy python3 -m unittest tests.test_fg_provider -v
 ```
+
+A full from-archive run with the pinned hash, DXC shader generation, CMake build and the headless 1080p context self-test completed with exit 0.
 
 ## Evidence so far
 
