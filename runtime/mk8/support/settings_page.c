@@ -19,7 +19,7 @@ static uint64_t dialog_cursor, cursor_animation, back_animation, back_icon;
 static bool restart_prompt, restart_yes, restart_wait, restart_pressed, exit_pressed;
 static _Atomic bool from_button;
 static _Atomic bool available, requested;
-static _Atomic bool shared_race;
+static _Atomic unsigned shared_race;
 static bool hide_on_return;
 static unsigned category, focus, offset;
 static uint64_t previous;
@@ -60,6 +60,7 @@ bool touch_first(int32_t *, int32_t *);
 void mk8_settings_button_restore(uint64_t);
 void mk8_settings_top_forget(void);
 void input_reset(void);
+void mk8_input_race_players(unsigned players);
 
 RT_ON_RESET(settings_page_reset) {
     if(controller_visible) controller_release();
@@ -85,7 +86,7 @@ static bool race_heap(uint64_t p,size_t size,uint64_t end) {
 }
 
 // Evaluated on the hash-checked 4.0.1 UI tick. Other threads see only the published decision.
-static bool shared_race_scene(uint64_t manager) {
+static unsigned shared_race_scene(uint64_t manager) {
     uint64_t app=LD64(MAIN_BASE+0x1358c70);
     if(app!=MAIN_BASE+0x133ebd0) return false;
     uint64_t end=HEAP_BASE+kernel_heap_size(), node=LD64(app+0x20);
@@ -114,7 +115,7 @@ static bool shared_race_scene(uint64_t manager) {
                (id==0x72 && type==MAIN_BASE+0x1288038)) return false;
         }
     }
-    return true;
+    return players;
 }
 
 bool mk8_settings_shared_race(void) { return atomic_load(&shared_race); }
@@ -1101,7 +1102,11 @@ void mk8_settings_page_frame(uint64_t manager) {
     uint64_t page=race_heap(manager,0xc70,end) ? LD64(manager+0xc68) : 0;
     mk8_title_input_active(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 &&
                            LD32(page+0x120)==4 && LD32(page+0x124)==0 && !mk8_auto_lan_requested());
-    shared_race=shared_race_scene(manager);
+    unsigned players=shared_race_scene(manager);
+    if (players != shared_race) {
+        mk8_input_race_players(players);
+        shared_race=players;
+    }
     if(shared_race) requested=false;
     if(!mk8_settings_style_active()) {
         controller_entry_players=0;

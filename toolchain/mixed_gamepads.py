@@ -51,6 +51,7 @@ static Mk8KeyState mk8_player_keys(int player) {
     return (Mk8KeyState){key_buttons, key_lx, key_ly, key_rx, key_ry};
 }
 static _Atomic unsigned mk8_connected_mask;
+static _Atomic unsigned mk8_race_seats;
 static void mk8_publish_connections(void) {
     unsigned mask = 0;
     for (int i = 0; i < EXTRA_PADS; i++)
@@ -58,10 +59,27 @@ static void mk8_publish_connections(void) {
     atomic_store(&mk8_connected_mask, mask);
 }
 static bool extra_connected(int i) {
-    return (atomic_load(&mk8_connected_mask) & (1u << i)) || (i == 0 && script2_on());
+    return ((atomic_load(&mk8_connected_mask) | atomic_load(&mk8_race_seats)) & (1u << i)) || (i == 0 && script2_on());
 }''')
-    text = replace(text, 'static void style_changed(void) {\n    mk8_sync_sensors();',
-                   'static void style_changed(void) {\n    mk8_remember_connected();\n    mk8_publish_connections();\n    mk8_publish_names();\n    mk8_sync_sensors();')
+    text = replace(text, 'static void style_changed(void) {\n    mk8_sync_sensors();'
+                   '  // (UI thread: a controller came or went) every bound style set event', '''static void mk8_signal_styles(void);
+static void style_changed(void) {
+    mk8_remember_connected();
+    mk8_publish_connections();
+    mk8_publish_names();
+    mk8_sync_sensors();
+    mk8_signal_styles();
+}
+
+void mk8_input_race_players(unsigned players) {
+    // Preserve only seats that had a controller when this local race began.
+    unsigned participating = players ? (1u << (players - 1)) - 1u : 0;
+    unsigned seats = atomic_load(&mk8_connected_mask) & participating;
+    unsigned previous = atomic_exchange(&mk8_race_seats, seats);
+    if ((previous ^ seats) & ~atomic_load(&mk8_connected_mask)) mk8_signal_styles();
+}
+
+static void mk8_signal_styles(void) {''')
     text = replace(text, 'pad = NULL; note_family(); }', 'pad = NULL; note_family(); mk8_publish_names(); }')
     text = replace(text, '    case SDL_EVENT_GAMEPAD_REMOVED:\n',
                    '    case SDL_EVENT_GAMEPAD_REMAPPED: mk8_publish_names(); break;\n    case SDL_EVENT_GAMEPAD_REMOVED:\n')
@@ -157,7 +175,7 @@ static bool extra_connected(int i) {
         marker = '\n' + indent + '*(uint64_t *)(s + 8) = b;'
         text = replace(text, marker, '\n' + indent + 'if (!menu && !mk8_settings_page_active()) mk8_title_hid(id, &b, &lx, &ly, &rx, &ry);' + marker)
     marker = 'RT_ON_RESET(input_reboot_reset) {'
-    text = replace(text, marker, marker + ' mk8_title_input_active(false);')
+    text = replace(text, marker, marker + ' atomic_store(&mk8_race_seats, 0); mk8_title_input_active(false);')
     path.write_text(text, encoding='utf-8')
     device = runtime / 'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')

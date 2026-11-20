@@ -58,6 +58,8 @@ static bool in_main=true;
 static bool native_style=true, auto_lan, title_active;
 bool mk8_auto_lan_requested(void) { return auto_lan; }
 void mk8_title_input_active(bool active) { title_active=active; }
+static unsigned race_input_players;
+void mk8_input_race_players(unsigned players) { race_input_players=players; }
 static uint64_t game_root, root_node, root_context;
 uint64_t kernel_heap_size(void) { return HEAP_MAX; }
 static bool probe_handoff, probe_reopen;
@@ -302,6 +304,7 @@ static void check_shared_race(uint64_t manager) {
         ST32(rules+0x188,cases[i].normal_count); ST32(rules+0x19c,cases[i].alternate_count);
         mk8_settings_page_frame(manager);
         assert(mk8_settings_shared_race()==cases[i].shared);
+        assert(race_input_players==(cases[i].shared ? (cases[i].kind==4 ? cases[i].alternate_count : cases[i].normal_count) : 0));
     }
     ST32(scene+0x184,3); mk8_settings_page_frame(manager);
     native_style=true; available=true;

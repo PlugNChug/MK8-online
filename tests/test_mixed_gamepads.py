@@ -24,11 +24,14 @@ class MixedGamepadTests(unittest.TestCase):
             defaults += bindings[bindings.index('const char *bind_pad_label('):bindings.index('int bind_label_family(')]
             # Keep real discovery, event dispatch, sensors and HID vibration. The fixture supplies the surrounding UI.
             selection = source[source.index('enum {'):source.index('static _Atomic uint64_t script_buttons;')]
-            style = source[source.index('static void style_changed(void) {'):source.index('pthread_mutex_lock(&g_klock);', source.index('static void style_changed(void) {'))]
-            style += '++style_notifications; }\n'  # Stand in for the guest kernel's bound style event.
+            style = source[source.index('static KEvent *style_events[16];'):source.index('HLE_FUNC("_ZN2nn3hid27BindNpadStyleSet')]
             vibration = source[source.index('// Vibration devices:'):source.index('HLE_FUNC("_ZN2nn3hid25InitializeVibrationDevice')]
             (out / 'mixed.inc').write_text(defaults + selection + style + vibration, encoding='utf-8')
-            (out / 'guest_pad.inc').write_text(source[source.index('extern void touchpad_state('):source.index('#define FILL1')], encoding='utf-8')
+            guest = source[source.index('extern void touchpad_state('):source.index('#define FILL1')]
+            for marker in ('HLE_FUNC("_ZN2nn3hid15GetNpadStyleSetERKj"', 'int input_players(void) {'):
+                start = source.index(marker)
+                guest += source[start:source.index('\n}\n', start) + 3]
+            (out / 'guest_pad.inc').write_text(guest, encoding='utf-8')
             # Feed each queued SDL event through the same per-device chord tracker as the menu.
             menu=(runtime / 'ui/menu.mm').read_text(encoding='utf-8')
             start=menu.index('static bool mk8_settings_chord(')
@@ -65,6 +68,7 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 ('forward', None, 'all-reconnect-edited'),
                 ('forward', None, 'all-reconnect-identical'),
                 ('forward', None, 'all-reconnect-one-serial'),
+                ('forward', None, 'race-disconnect'),
                 ('forward', None, 'hotplug-open-failure'),
                 ('forward', None, 'title-reconnect'),
                 ('early-add', None, 'right-reconnect'),

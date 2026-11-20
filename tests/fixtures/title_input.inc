@@ -318,6 +318,47 @@ static void check_extra_button(enum Device device,int player) {
     button(sticks[device],SDL_GAMEPAD_BUTTON_WEST,false);
 }
 
+static bool guest_connected(unsigned player) {
+    Cpu cpu={0};
+    uint64_t state[5];
+    fill_state(&cpu,(uint8_t *)state,player,false);
+    cpu.x[0]=(uintptr_t)&player;
+    hid_style_set(&cpu);
+    assert(cpu.x[0]==(uint32_t)state[4]);
+    return cpu.x[0]==1;
+}
+
+static void check_race_disconnect(void) {
+    title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
+    attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
+    assert(guest_connected(1) && guest_connected(2) && guest_connected(3));
+    shared_race=true;
+    mk8_input_race_players(4);
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO], SDL_GAMEPAD_AXIS_LEFTX,23000));
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_WEST, true);
+    assert(guest_buttons(1));
+    detach_title_pad(PRO);
+    assert(guest_connected(1) && "disconnecting a racing player's pad removed the guest seat");
+    Cpu cpu={0};
+    uint64_t state[5];
+    fill_state(&cpu,(uint8_t *)state,1,false);
+    assert(!state[1] && !state[2] && !state[3] && input_players()==4);
+    assert(!extra_pad[0]);
+    check_extra_button(SOLO_L,2);
+    attach(PRO); pump(); check_extra_button(PRO,1);
+    detach_title_pad(PRO);
+    shared_race=false;
+    unsigned before_exit=style_notifications;
+    mk8_input_race_players(0);
+    assert(style_notifications==before_exit+1 && "menu missed the disconnected seat's style update");
+    assert(!guest_connected(1) && guest_connected(2) && guest_connected(3) && input_players()==3);
+    mk8_input_race_players(2);
+    detach_title_pad(SOLO_R);
+    assert(!guest_connected(1) && !guest_connected(3) && input_players()==2);
+    mk8_input_race_players(0);
+    detach_title_pad(SOLO_L);
+}
+
 static void pump_pro_hotplug(void) {
     // A physical hotplug has no fixture handle keeping the driver open between identity checks and assignment.
     SDL_CloseJoystick(sticks[PRO]);

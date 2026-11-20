@@ -4,6 +4,7 @@
 #include <string.h>
 #include <SDL3/SDL.h>
 #include "hle.h"
+#include "kernel.h"
 #include "settings.h"
 #include "input_bind.h"
 #include "padscript.h"
@@ -14,6 +15,12 @@
 #define LOG(...) ((void)0)
 Settings g_settings;
 static unsigned style_notifications;
+static KEvent style_event;
+pthread_mutex_t g_klock=PTHREAD_MUTEX_INITIALIZER;
+void kernel_signal(KObject *event) {
+    assert(event==&style_event && pthread_mutex_trylock(&g_klock)==EBUSY);
+    ++style_notifications;
+}
 void mk8_settings_pads_changed(void) { assert(0 && "No settings changes during a controller assignment"); }
 static bool host_captures;
 bool menu_input_captured(void) { return host_captures; }
@@ -588,6 +595,7 @@ void check_gameinput_title(SDL_JoystickID first, SDL_JoystickID second, uint32_t
 
 int steam_gamepads_title_test(void);
 int main(int argc, char **argv) {
+    style_events[nstyle_events++]=&style_event;
     assert(argc == 3);
     assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0"));
     assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS, "0"));
@@ -599,6 +607,9 @@ int main(int argc, char **argv) {
     if(!strncmp(argv[2],"all-reconnect",13)) {
         check_all_reconnect(argv[2]);
         SDL_Quit(); return 0;
+    }
+    if(!strcmp(argv[2],"race-disconnect")) {
+        check_race_disconnect(); SDL_Quit(); return 0;
     }
     if (!strcmp(argv[2],"hotplug-open-failure")) {
         check_hotplug_open_failure(); SDL_Quit(); return 0;
