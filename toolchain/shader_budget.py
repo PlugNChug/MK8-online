@@ -3,7 +3,7 @@
 Prefetch mode (the default) makes a draw wait for its program and pipeline, running a still-queued build inline.
 The first sight of a new effect then stops the whole frame while the driver compiles: 244-375 ms frames in the
 Grand Prix and Water Park runs of 06-07/11/2026 (docs/STATUS.md). The draws of one presented frame now share
-MK8_SHADER_WAIT_MS of waiting (default 4 ms). A build that is not done within it keeps going on the worker threads,
+MK8_SHADER_WAIT_MS of waiting (default 4 ms, full waits on Linux Intel iGPUs). A build that is not done within it keeps going on the worker threads,
 and its draws are skipped until it is ready, as in skip mode (LARECOMP_ASYNC_SHADERS), normally for a few frames.
 Compute dispatches still wait in full, because the game may read their results. A negative value keeps the
 upstream behaviour. Full Grand Prix with async translation (07/11/2026): one draw skipped in 11,400 frames, no
@@ -50,7 +50,16 @@ static uint64_t mk8_sb_skips;
 static double mk8_shader_budget_ms(void) {
     static double v = -2, burst = -2;
     static uint64_t burst_until;
-    if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : 4; }
+    if (v < -1) {
+        const char *e = getenv("MK8_SHADER_WAIT_MS");
+        double fallback = 4;
+#if defined(__linux__)
+        // shortcut: full waits on Intel iGPUs until one-time scene draws can be identified reliably.
+        if (g_vk.props.vendorID == 0x8086 && g_vk.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+            fallback = -1;
+#endif
+        v = e && *e ? atof(e) : fallback;
+    }
     // MK8 (toolchain/shader_budget.py): optional burst grace for diagnosis. A course entry queues hundreds of builds
     // at once; skipping the scene draws then punched holes in the loading frame (836 skipped in the first entry frame,
     // 7,118 in the next, 19/11/2026) but did shorten the hitch (2.36 s with full waits against 1.20 s with the 4 ms

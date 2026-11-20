@@ -22,10 +22,14 @@ HARNESS = r'''
 #include <stdlib.h>
 static int g_inflight;
 static uint64_t g_frame;
+#define VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU 1
+static struct { struct { unsigned vendorID, deviceType; } props; } g_vk;
 int build_inflight(void) { return g_inflight; }
 uint64_t vk_frame_counter(void) { return g_frame; }
 /*BUDGET*/
 int main(int argc, char **argv) {
+    g_vk.props.vendorID = (unsigned)strtoul(argv[5], NULL, 0);
+    g_vk.props.deviceType = (unsigned)atoi(argv[6]);
     g_inflight = atoi(argv[1]);
     g_frame = (uint64_t)atoll(argv[2]);
     double a = mk8_shader_budget_ms();
@@ -68,12 +72,13 @@ class ShaderBudgetBurstTests(unittest.TestCase):
             exe = out/'harness'
             subprocess.run(['cc', '-std=gnu11', '-O1', str(harness), '-o', str(exe)], check=True, capture_output=True)
 
-            def budget(i1, f1, i2, f2, **env):
+            def budget(i1, f1, i2, f2, vendor='0', device='0', **env):
                 e = {k: v for k, v in os.environ.items()}
                 for key in ('MK8_SHADER_WAIT_MS', 'MK8_SHADER_BURST_WAIT_MS', 'MK8_SHADER_BURST_FRAMES'):
                     e.pop(key, None)
                 e.update(env)
-                r = subprocess.run([str(exe), str(i1), str(f1), str(i2), str(f2)], capture_output=True, text=True, env=e)
+                r = subprocess.run([str(exe), str(i1), str(f1), str(i2), str(f2), vendor, device],
+                                   capture_output=True, text=True, env=e)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 return tuple(float(x) for x in r.stdout.split())
 
@@ -83,6 +88,10 @@ class ShaderBudgetBurstTests(unittest.TestCase):
             self.assertEqual(budget(100, 0, 0, 100, MK8_SHADER_BURST_WAIT_MS='-1'), (-1, -1))  # (inside the grace)
             self.assertEqual(budget(100, 0, 0, 0, MK8_SHADER_BURST_WAIT_MS='250'), (250, 250))
             self.assertEqual(budget(100, 0, 0, 0, MK8_SHADER_BURST_WAIT_MS='0'), (4, 4))
+            if sys.platform == 'linux':
+                self.assertEqual(budget(100, 0, 0, 121, vendor='0x8086', device='1'), (-1, -1))
+                self.assertEqual(budget(100, 0, 0, 121, vendor='0x8086', device='2'), (4, 4))
+                self.assertEqual(budget(100, 0, 0, 121, vendor='0x8086', device='1', MK8_SHADER_WAIT_MS='6'), (6, 6))
 
 
 if __name__ == '__main__':
