@@ -1,5 +1,34 @@
 # Estado técnico — 20/11/2026
 
+## Auditoria do PR #83 — 20/11/2026
+
+- A primeira preparação passou pelo launcher do tarball com dados isolados. Ferramentas,
+  importação 4.0.1, pins do guest, compilação de 483 unidades do jogo e link de 229 unidades
+  do host concluíram. Os hooks de ultrawide, HUD, menu nativo e copas passaram em conjunto
+  com os pins existentes. Entradas, chaves, guest gerado e capturas continuam locais.
+- Na Intel Iris Xe (ADL GT2, Mesa 26.3.1, Vulkan 1.4.363), a sessão a 1280×720
+  mostrou o kart e a pista pretos com o limite de espera de shaders. A pista tinha
+  luminância média de 0,018 no quadro 3214. A mesma configuração com espera completa
+  voltou a desenhar a pista. O runtime agora usa espera completa por padrão nas iGPUs Intel
+  em Linux e aceita `MK8_SHADER_WAIT_MS` para diagnóstico. Após recompilar só o host,
+  o teste com o padrão chegou ao quadro 6200 e saiu com código 0. A pista estava
+  visível nos quadros 3326, 4763 e 6200. Ainda há pausas de compilação no primeiro uso.
+- `cargo fmt` e Clippy passaram. A suíte Rust registrou 116 testes aprovados e 1 ignorado.
+  A suíte Python e nativa registrou 96 aprovados e 10 skips. As fixtures exercitaram a
+  reutilização dos slots FSR 4, a atualização da profundidade, a restauração de layouts
+  e a ordem dos presents DLSS-G. O loader e o provedor FSR 4 compilaram com headers MIT.
+- Oito testes no Chromium passaram. O launcher abre em inglês na primeira execução e
+  respeita o idioma salvo. O fluxo gerenciado mostra os termos verificados da AMD antes
+  de oferecer o download. O caminho manual fica em opções avançadas. A verificação local
+  leu o texto oficial e conferiu o bloqueio anterior ao aceite.
+- O tarball e o AppImage passaram na inicialização e no teste do importador. O updater
+  do tarball ativou e reverteu um pacote em modo headless, preservando a porta solicitada
+  e os dados. A verificação do ZIP portátil e da chave do host Windows roda no
+  [CI do PR #83](https://github.com/Vnnc1/MK8-online/pull/83/checks).
+
+`gameplay_verified` permanece falso. Áudio, controle, reinício/save, qualidade em RDNA 4
+e RTX e multiplayer entre duas máquinas exigem qualificação própria.
+
 ## Corrida in-engine na RTX 5080 — 20/11/2026
 
 O runtime e o jogo atuais (`4fdd9f8`, guest gerado de novo com o fix `4318c07`) rodaram
