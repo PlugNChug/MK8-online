@@ -24,6 +24,12 @@ pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
 variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
 `gameplay_verified` continua falso.
 
+## Pacote Windows portátil e hashes dos patches opcionais — 20/11/2026
+
+Os hashes fixados dos patches guest opcionais (`ultrawide`, `ultrawide_hud`, `settings_menu`) foram atualizados para as unidades geradas após a correção do recompilador (`4318c07`): `main_077.c` `d4f3917c…`, `main_164.c` `6794319a…`, `main_114.c` `bea4142a…`, `main_113.c` `ab615528…`, `main_082.c` `bcacfa65…`, `main_115.c` `02f16954…`, `main_100.c` `3134491b…`, `main_191.c` `2ae69dad…`; `tests.test_optional_guest_patches` 3/3. O build Windows passou a rodar **sem** `MK8_SKIP_OPTIONAL_GUEST_PATCHES=1` (483 unidades, hooks `mk8_ultrawide_*`/`mk8_settings_*` presentes), e o Linux também (483 unidades, `mk8dgame.so` 159.341.232 bytes).
+
+`scripts/package-windows-portable.py` produz um zip portátil (110.717.508 bytes, SHA-256 `5e02d0d14bd1e4019f9144998d1686121c31d70e69175f76628a01a1800240a2`) com `Launcher.exe` (25.603.047), `mk8drecomp.exe` (4.527.104), `mk8dgame.dll` + code DLLs, SDL3, loader Vulkan, shaderc, FFmpeg e dependências (110 arquivos), mais o `launcher-source.zip` com as fontes de runtime/FSR/DLSS/XeSS e geradores; nenhum binário AMD/NVIDIA. Validação na RTX 5080: página headless com 40.097 bytes, gate FSR `not-rdna4` (3.1.6 salva 200, 4.1.2 400) e boot empacotado a 1920x1080 com saída 0, 60 fps e corrida renderizada (`package2-05000.png`). Um setup MSVC/WebView2 não foi gerado neste host; 1280x720 com a árvore nova não é reivindicado (o `mk8d.ini` de resolução difere).
+
 ## FSR nativo em Windows com RTX 5080: 3.1.6/2.3.4 executam, 4.x não é oferecido — 20/11/2026
 
 As DLLs assinadas do SDK 2.4.0 (upscaler `4a7e895a…dab7`, framegeneration `d002dabf…98b4`) foram executadas nativamente em Windows 10, sem Wine, numa NVIDIA RTX 5080 (driver 621.01, Vulkan 1.4.357), com os probes de `tools/windows-fsr/` compilados por mingw-w64 `-static` (fontes compartilhadas com `tools/fg-linux-upscaler` e `tools/mlfi-capture`).
