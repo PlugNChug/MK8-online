@@ -30,6 +30,8 @@ def run():
         candidate = Path(os.environ.get('MK8_TEST_CANDIDATE', ROOT/'local/candidate.json'))  # read in place
         assert candidate.is_file(), 'Prepared game required'
         shutil.copyfile(candidate, local/'candidate.json')
+        if tools := os.environ.get('MK8_TEST_MII_TOOLS'):
+            shutil.copyfile(tools, local/'mii-native-tools.json')
         assert local.parent == Path(tempfile.gettempdir()).resolve()
         log = (local / 'test-launcher.log').open('w')
         process = subprocess.Popen([str(executable), '--headless', '--data-dir', str(local)],
@@ -62,6 +64,8 @@ def run():
                     return value.get('data') if code == 200 else value
 
                 page.locator('[data-tab="miis"]').click()
+                page.locator('#mii-name').fill('Editor A')
+                page.locator('#mii-continue').click()
                 # The parts library is chosen once; then the head is drawn on MK8's own body.
                 expect(page.locator('#mii-library')).to_be_visible()
                 page.locator('#mii-library summary').click()
@@ -69,8 +73,6 @@ def run():
                 page.locator('#mii-library-load').click()
                 expect(page.locator('#mii-library')).to_be_hidden(timeout=30000)
                 expect(page.locator('#mii-stage')).to_have_attribute('data-body', 'MaleBody', timeout=30000)
-                page.locator('#mii-name').fill('Editor A')
-                page.locator('#mii-save').click()
                 expect(page.locator('#mii-stage')).to_have_attribute('data-head', 'true', timeout=30000)
                 # Every hairstyle is a button showing this Mii with that hairstyle.
                 page.locator('#mii-tabs [data-part="hair"]').click()
@@ -81,7 +83,7 @@ def run():
                 expect(page.locator('#mii-options .mii-choice[data-offset="52"] canvas').first).to_be_visible(timeout=60000)
                 page.locator('#mii-options .mii-choice[data-offset="52"][data-value="10"]').click()
                 page.locator('#mii-options').screenshot(path=str(output/'creator-eyes.png'))
-                page.locator('#mii-tabs [data-part="body"]').click()
+                page.locator('#mii-area-body').click()
                 expect(page.locator('#mii-options .mii-swatch[data-offset="39"]')).to_have_count(12)
                 assert 'rgb' in page.locator('#mii-options .mii-swatch[data-offset="39"]').first.evaluate('b => getComputedStyle(b).backgroundColor')
                 page.locator('#mii-options .mii-choice[data-offset="40"][data-value="1"]').click()
@@ -95,10 +97,10 @@ def run():
                 expect(page.locator('#mii-status')).to_contain_text('Mii salvo')
                 # Creating the Mii (with the library chosen) prepared the game's Mii resources in the background.
                 deadline = time.monotonic()+180
-                while api('status')['mii_preparation']['resources']['state'] == 'running':
-                    assert time.monotonic() < deadline, 'Mii resources timed out'
+                while (job := api('mii/resources/job'))['state'] in ('idle','running'):
+                    assert time.monotonic() < deadline, page.locator('#mii-status').inner_text()
                     page.wait_for_timeout(500)
-                assert api('status')['mii_preparation']['resources']['state'] == 'done'
+                assert job['state'] == 'done', job['detail']
                 data = api('mii/export')['data']
                 assert (data[49], data[52], data[40], data[41], data[39]) == (24, 10, 1, 127, 5), data[39:53]
                 assert api('mii/resources')['enabled']

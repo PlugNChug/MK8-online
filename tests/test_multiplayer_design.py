@@ -49,6 +49,9 @@ class MultiplayerDesignTests(unittest.TestCase):
         self.page.goto(self.url+'/#session')
         expect(self.page.locator('#mp-friends-count')).to_have_text('4', timeout=15000)
         token = self.page.locator('meta[name="mk8-token"]').get_attribute('content')
+        created = self.page.request.post(self.url+'/api/mii/create', headers={'X-MK8-Token':token},
+                                         data={'name':'Piloto','color':0,'gender':0})
+        self.assertTrue(created.json()['ok'])
         self.status = self.page.request.get(self.url+'/api/status', headers={'X-MK8-Token':token}).json()['data']
         self.page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':self.status}))
 
