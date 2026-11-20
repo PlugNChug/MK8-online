@@ -35,7 +35,14 @@ class LauncherTests(unittest.TestCase):
                                         data=json.dumps({'key':'0'*64})).json()
             self.assertFalse(invalid['ok'])
             status.update(nextendo_supported=False, candidate=True, game_pid=None)
-            page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
+            pending_status = []
+            hold_status = False
+            def send_status(route):
+                if hold_status:
+                    pending_status.append(route)
+                else:
+                    route.fulfill(json={'ok':True,'data':status})
+            page.route('**/api/status', send_status)
             calls = []
             page.route('**/api/mii/active', lambda route: route.fulfill(json={'ok':True,'data':'Piloto'}))
             def play(route):
@@ -45,14 +52,20 @@ class LauncherTests(unittest.TestCase):
             expect(page.locator('#nextendo-rebuild')).to_be_visible()
             status['nextendo_supported'] = True
             expect(page.locator('#play-nextendo')).to_be_enabled()
+            # A background status poll may take longer than cancelling and reopening consent.
+            hold_status = True
             page.locator('#play-nextendo').click()
             expect(page.locator('#nextendo-key')).to_have_text(key)
             page.locator('#nextendo-cancel').click()
             self.assertFalse(calls)
             page.locator('#play-nextendo').click()
+            expect(page.locator('#nextendo-consent')).to_be_visible()
             with page.expect_response('**/api/play'):
                 page.locator('#nextendo-accept').click()
             self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+            hold_status = False
+            for request in pending_status:
+                send_status(request)
             actual = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
             self.assertTrue(actual['nextendo_trusted'])
             status['nextendo_trusted'] = True

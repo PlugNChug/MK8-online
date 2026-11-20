@@ -32,13 +32,14 @@ function notice(text, error = false) {
   }
 }
 $("notice-close").onclick = () => notice("");
+const viewOnly = Symbol("viewOnly");
 async function action(fn) {
   if (busy) return;
   busy = true;
   try {
     const result = await fn();
     if (result?.message) notice(result.message);
-    await refresh();
+    if (result !== viewOnly) await refresh();
   } catch (error) {
     notice(error.message, true);
   } finally {
@@ -57,6 +58,7 @@ async function withPilot(tab, start) {
   showTab("miis");
   $("mii-play-prompt").hidden = false;
   $("mii-name").focus();
+  return viewOnly;
 }
 $("mii-play-cancel").onclick = () => {
   const tab = pendingPilotPlay?.tab;
@@ -928,6 +930,7 @@ const playNextendo = () => api("play", { online: false, nextendo: true });
 $("play-nextendo").onclick = () => action(() => withPilot("play", () => {
   if ($("play-nextendo").dataset.trusted === "true") return playNextendo();
   $("nextendo-consent").showModal();
+  return viewOnly;
 }));
 $("nextendo-cancel").onclick = () => $("nextendo-consent").close();
 $("nextendo-account-links").onclick = event => {
