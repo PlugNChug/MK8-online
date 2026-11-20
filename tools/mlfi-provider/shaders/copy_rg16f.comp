@@ -1,0 +1,23 @@
+// MLFI provider copy shader: sample the application's R16G16_SFLOAT motion-vector image and store
+// it in the provider's `mv` image.  The vendor pose passes read the provider's image, so this is
+// the hand-off between the game's resource and the effect.  Component count is 2 because a storage
+// image with a known format must be written with the matching number of components.
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, rg16f) uniform writeonly image2D dst;
+
+layout(push_constant) uniform PushConstants
+{
+    uvec2 size;
+} pc;
+
+void main()
+{
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y)
+        return;
+    imageStore(dst, ivec2(p), vec4(texelFetch(src, ivec2(p), 0).rg, 0.0, 0.0));
+}

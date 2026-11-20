@@ -1,0 +1,24 @@
+// MLFI provider copy shader: sample an application colour image and store it as RGBA8 UNORM.
+//
+// This shader is part of the MK8-online MLFI provider, not AMD's effect.  It only moves the
+// application's present colour into the provider's `rgb1` history image.  The texel is copied at
+// the same integer coordinate with texelFetch, so no filtering, gamma or resampling is applied.
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D dst;
+
+layout(push_constant) uniform PushConstants
+{
+    uvec2 size;
+} pc;
+
+void main()
+{
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y)
+        return;
+    imageStore(dst, ivec2(p), texelFetch(src, ivec2(p), 0));
+}
