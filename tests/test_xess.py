@@ -10,8 +10,9 @@ is absent.
 Environment:
   MK8_XESS_TEST_DLL   explicit path to the official libxess.dll
   MK8_XESS_SDK_INC    directory containing the official xess.h/xess_vk.h
-  MK8_XESS_WINE=1     run the Wine query smoke
-  MK8_XESS_WINE_VK=1  also run the Vulkan context/init smoke
+  MK8_XESS_WINE=1          run the Wine query smoke
+  MK8_XESS_WINE_VK=1       also run the Vulkan context/init smoke
+  MK8_XESS_WINE_EXECUTE=1  run the full SR dispatch/readback harness
 """
 import hashlib
 import os
@@ -29,6 +30,7 @@ XESS_CPP = GRAPHICS / 'xess.cpp'
 COMPILER = shutil.which('clang++')
 MINGW = shutil.which('x86_64-w64-mingw32-g++')
 WINE = shutil.which('wine')
+HARNESS = ROOT / 'tools/xess_wine_harness.cpp'
 ZIP_SHA256 = '88b8a373f30e33f3558a77a93e634f11b8132fc3047ea1a8edeead32b8471990'
 DLL_SHA256 = '251659dd84a3e84de67c886a4186e01f3eca49b00641906fe38bb6b807e5d5b7'
 DLL_SIZE = 77795704
@@ -282,6 +284,23 @@ def _find_dll() -> Path | None:
     return None
 
 
+def _write_png(path: Path, rgba: bytes, width: int, height: int) -> None:
+    """Minimal RGBA8 PNG writer, so the Wine evidence is viewable without Pillow."""
+    import struct
+    import zlib
+    raw = b''.join(b'\x00' + rgba[y * width * 4:(y + 1) * width * 4] for y in range(height))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack('>I', len(data)) + kind + data + struct.pack(
+            '>I', zlib.crc32(kind + data) & 0xffffffff)
+
+    png = b'\x89PNG\r\n\x1a\n'
+    png += chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
+    png += chunk(b'IDAT', zlib.compress(raw, 6))
+    png += chunk(b'IEND', b'')
+    path.write_bytes(png)
+
+
 class XessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -511,6 +530,54 @@ class XessTests(unittest.TestCase):
         self.assertIn('vkCreateDevice=0', result.stdout)
         self.assertIn('xessVKCreateContext=0', result.stdout)
         self.assertIn('xessVKInit=0', result.stdout)
+
+    @unittest.skipUnless(os.environ.get('MK8_XESS_WINE_EXECUTE') == '1',
+                         'set MK8_XESS_WINE_EXECUTE=1 to run the SR dispatch harness')
+    def test_wine_executes_xess_sr_and_reads_back_the_output(self):
+        if WINE is None or MINGW is None:
+            self.skipTest('wine or x86_64-w64-mingw32-g++ is not available')
+        if self.dll is None:
+            self.skipTest('the official libxess.dll is not present')
+        if not HARNESS.is_file():
+            self.skipTest('tools/xess_wine_harness.cpp is missing')
+        binary = self._compile_wine(HARNESS.read_text(encoding='utf-8'), 'xess_dispatch')
+        if binary is None:
+            self.skipTest('Vulkan headers for the Windows target are not available')
+        evidence = ROOT / 'target/xess-wine-evidence'
+        evidence.mkdir(parents=True, exist_ok=True)
+        env = self.environment(MK8_XESS_LIB='Z:' + str(self.dll.resolve()).replace('/', '\\'),
+                               WINEDEBUG='-all')
+        result = subprocess.run(
+            [WINE, str(binary), 'Z:' + str(evidence.resolve()).replace('/', '\\')],
+            env=env, capture_output=True, text=True, timeout=600)
+        (evidence / 'wine-dispatch.log').write_text(result.stdout + result.stderr, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        fields = {}
+        for line in result.stdout.splitlines():
+            key, _, value = line.partition('=')
+            fields[key] = value
+        self.assertEqual(fields.get('vkCreateInstance'), '0', result.stdout)
+        self.assertEqual(fields.get('vkCreateDevice'), '0', result.stdout)
+        self.assertEqual(fields.get('xessVKCreateContext'), '0', result.stdout)
+        self.assertEqual(fields.get('xessVKInit'), '0', result.stdout)
+        self.assertEqual(fields.get('xessGetInputResolution', '').split()[0], '0', result.stdout)
+        for frame in (0, 1):
+            self.assertEqual(fields.get(f'frame{frame}_execute_rc'), '0', result.stdout)
+            self.assertEqual(fields.get(f'frame{frame}_submit_rc'), '0', result.stdout)
+            self.assertEqual(fields.get(f'frame{frame}_wait_rc'), '0', result.stdout)
+            self.assertGreater(int(fields.get(f'frame{frame}_nonzero', '0')), 0)
+            self.assertGreater(int(fields.get(f'frame{frame}_unique', '0')), 1)
+            self.assertNotEqual(int(fields.get(f'frame{frame}_checksum', '0')), 0)
+            self.assertEqual(fields.get(f'frame{frame}_bytes'), str(2560 * 1440 * 4))
+        self.assertNotEqual(fields.get('frame0_checksum'), fields.get('frame1_checksum'),
+                            'a shifted input should change the output')
+        self.assertEqual(fields.get('dispatch_ok'), '1', result.stdout)
+        raw = evidence / 'frame0.rgba'
+        self.assertTrue(raw.is_file())
+        png = evidence / 'frame0.png'
+        _write_png(png, raw.read_bytes(), 2560, 1440)
+        self.assertGreater(png.stat().st_size, 1024)
+        print(f'XeSS Wine evidence: {png} ({png.stat().st_size} bytes), log {evidence / "wine-dispatch.log"}')
 
 
 if __name__ == '__main__':

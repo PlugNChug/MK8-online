@@ -2,15 +2,18 @@
 
 Status 20/11/2026. This is the Windows half of the XeSS plan in
 [DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md). The bridge is implemented and the full
-Windows runtime links with it; the loader and the real `libxess.dll` were exercised
-under Wine. **No upscaled image was produced**: the runtime has no `fsr.cpp`
-dispatch hunk for XeSS (that file belongs to another agent) and the standalone Wine
-harness stopped after `xessVKInit`. `gameplay_verified` stays false.
+Windows runtime links with it. The standalone Wine harness now runs a complete
+**1280x720 -> 2560x1440 SR dispatch**, submits it, waits and reads back a non-trivial
+image. The runtime itself still has no `fsr.cpp` dispatch hunk for XeSS (that file
+belongs to another agent), so no in-game image exists. `gameplay_verified` stays
+false.
 
 The important result: on this AMD RX 9070 XT (RADV GFX1201, Vulkan 1.4.363) under
-Wine 11.22, the `libxess.dll` from the official XeSS 3.0.2 ZIP **loads, reports its exports,
-creates a Vulkan context and initialises SR for 2560x1440 on the DP4a path**. That
-is a stronger result than "Windows only, untested".
+Wine 11.22, the `libxess.dll` from the official XeSS 3.0.2 ZIP loads, creates a
+Vulkan context, initialises SR and **executes it on the DP4a path**. The output is
+a smooth upscaled gradient/checker, not noise: 14,710,400 of 14,745,600 bytes are
+non-zero, all 256 byte values occur, and a shifted second frame produces a different
+checksum.
 
 ## Files
 
@@ -141,6 +144,60 @@ The full-tree build is the compile proof; the new translation unit was also comp
 alone for `x86_64-w64-windows-gnu` with clang and with MinGW-w64 (probe-only), both
 clean apart from the usual `-Wmissing-field-initializers` on Vulkan structs.
 
+## Dispatch evidence (real DLL, AMD/RADV)
+
+Harness: `tools/xess_wine_harness.cpp` (source only; no vendor binary committed).
+It creates a Vulkan 1.3 device with `VK_EXT_mutable_descriptor_type` and the feature
+chain from `xessVKGetRequiredDeviceFeatures`, then:
+
+- 1280x720 RGBA8 colour, D32_FLOAT depth and R16G16_SFLOAT velocity inputs;
+- 2560x1440 RGBA8 output, `XESS_INIT_FLAG_LDR_INPUT_COLOR`;
+- `xessVKInit` with `PERFORMANCE`, then two `xessVKExecute` records: frame 0 with
+  `resetHistory=1`, frame 1 with a 64-pixel horizontal colour shift,
+  `velocity=(64,0)`, `resetHistory=0` and opposite jitter;
+- submit, `vkQueueWaitIdle`, copy the output image to a host-visible buffer and read
+  it back.
+
+Exact result (`local/qualification/xess-wine/`, Wine 11.22, `nice -n 10`):
+
+```text
+xessVKCreateContext=0
+xessGetInputResolution=0 1114x627
+xessVKInit=0
+xess_version=2.0.2
+frame0_execute_rc=0
+frame0_submit_rc=0
+frame0_wait_rc=0
+frame0_nonzero=14710400
+frame0_unique=256
+frame0_min=0
+frame0_max=255
+frame0_checksum=8901939667484331069
+frame0_bytes=14745600
+frame1_execute_rc=0
+frame1_submit_rc=0
+frame1_wait_rc=0
+frame1_nonzero=14712982
+frame1_unique=256
+frame1_min=0
+frame1_max=255
+frame1_checksum=17835196424027649762
+dispatch_ok=1
+```
+
+Artifacts: `local/qualification/xess-wine/frame0.rgba`, `frame1.rgba` and
+`frame0.png` (667,307 B, 2560x1440 RGBA, visually a smooth upscaled gradient/checker).
+No device-loss or validation error was observed (`execute_rc=0`, `submit_rc=0`,
+`wait_rc=0`).
+
+One nuance worth recording: for 2560x1440 `PERFORMANCE`, XeSS 3.0.2's
+`xessGetInputResolution` reports **1114x627**, not 1280x720 (its performance scale is
+about 2.3x, not the older 2.0x). The harness used the requested 1280x720 input and
+XeSS executed it anyway, but a production integration should use the API's returned
+optimal resolution, not assume the old scale factors. The runtime bridge currently
+passes the game's fixed render resolution; that is the next quality/perf item to
+check on real hardware.
+
 ## Wine evidence (real DLL, AMD/RADV)
 
 `libxess.dll` from `XeSS_SDK_3.0.2.zip` (`bin/libxess.dll`, 77,795,704 B,
@@ -169,22 +226,27 @@ xessDestroyContext done
 ```
 
 What this proves: the DLL loads under Wine, the export names in the ABI header are
-right, the query path works without a GPU, and the SR context/initialisation runs on
-a non-Intel DP4a device. What it does **not** prove: that `xessVKExecute` produces a
-correct image (no command buffer/images were recorded), that the runtime's actual
-device enables the required extension/features (the standalone harness added them
-itself), or that performance is acceptable.
+right, the query path works without a GPU, the SR context/initialisation runs on a
+non-Intel DP4a device, and `xessVKExecute` records a real upscale that reads back as
+a varied image. What it does **not** prove: that the runtime's actual device enables
+the required extension/features (the standalone harness added them itself), that the
+image is correct for a real MK8 frame (synthetic inputs, camera-less depth/MVs), or
+that performance is acceptable.
 
 ## Tests
 
 ```text
 $ python3 -m unittest tests.test_xess -v
-10 tests, OK (2 Wine tests skipped by default)
+12 tests, OK (the 3 Wine tests are skipped by default)
 
 $ MK8_XESS_WINE=1 MK8_XESS_WINE_VK=1 python3 -m unittest \
       tests.test_xess.XessTests.test_wine_loads_the_dll_and_calls_the_query_path \
       tests.test_xess.XessTests.test_wine_creates_a_vulkan_device_and_initialises_xess -v
 2 tests, OK
+
+$ MK8_XESS_WINE_EXECUTE=1 python3 -m unittest \
+      tests.test_xess.XessTests.test_wine_executes_xess_sr_and_reads_back_the_output -v
+1 test, OK (writes target/xess-wine-evidence/frame0.png + wine-dispatch.log)
 ```
 
 The Linux cases cover: no DLL (names the fetcher and the expected directory),
@@ -212,8 +274,11 @@ official DLL; they skip cleanly otherwise.
    `xessVKGetRequiredDeviceFeatures`, before `vkCreateDevice`. The bridge can only
    report the requirement after the device exists. This is the first thing to check
    when `xessVKCreateContext`/`xessVKInit` fail in-game.
-3. **Execute and image.** Record `xessVKExecute` in the real frame and compare the
-   output against FSR 4 on the same frame; the standalone harness stopped at init.
+3. **Execute in the real frame.** The standalone harness now proves execute and
+   readback; the runtime still needs the `fsr.cpp` dispatch above, then a same-frame
+   comparison against FSR 4 and a check that the game's device exposes the required
+   extension/features. Use `xessGetInputResolution` (or
+   `xessGetOptimalInputResolution`) instead of assuming the old quality scale.
 4. **Hardware qualification.** Real Windows GPU (NVIDIA/AMD DP4a and Intel Arc XMX)
    with screenshots, a full race, resize, and frame pacing. Intel Arc is the only
    path that gets XMX; everything else is DP4a, as the SDK documents.
@@ -223,10 +288,12 @@ official DLL; they skip cleanly otherwise.
 
 ## Unverified / limits
 
-- No in-game XeSS image or FPS measurement; the runtime dispatch is absent.
-- `xessVKExecute` was not called; correctness, ghosting and cost are unknown.
+- No in-game XeSS image or FPS measurement; the runtime dispatch is absent. The
+  dispatch evidence is a synthetic 1280x720 -> 2560x1440 image, not a game frame.
+- Correctness, ghosting and cost on a real scene are unknown; camera-less depth and
+  MVs are not a quality test.
 - Wine is not Windows: a real Windows driver/OS may accept or reject the context
-  differently. The DP4a initialisation is evidence for this host, not a qualification.
+  differently. The DP4a execution is evidence for this host, not a qualification.
 - The runtime device's current extension list was not checked against
   `VK_EXT_mutable_descriptor_type`; the standalone harness enabled it explicitly.
 - `xessGetVersion` returned 2.0.2 for the 3.0.2 SDK's `libxess.dll`; the mapping

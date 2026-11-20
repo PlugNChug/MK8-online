@@ -21,7 +21,7 @@ header, ABI or vendor statement was inspected; it does not mean an in-game run.
 | DLSS Multi Frame Generation 3x/4x | unverified — API exposes `multiFrameCount`; RTX 50 only | unverified | feasible | works on RTX 50 |
 | DLSS Dynamic MFG (6x) | **no** — D3D12 only, per NVIDIA | no | feasible | works on RTX 50 |
 | DLSS 5 Neural Rendering | **no** — no public `sl.dlss_nr` plugin | no | vendor SDK only | community only |
-| XeSS Super Resolution | **no** — SDK ships no Linux library (stub) | **implemented** — `libxess.dll` bridge; Wine init OK, execute unverified | feasible | works (DP4a; XMX needs a community patch) |
+| XeSS Super Resolution | **no** — SDK ships no Linux library (stub) | **implemented** — `libxess.dll` bridge; Wine 720p→1440p execute OK | feasible | works (DP4a; XMX needs a community patch) |
 | XeSS Frame Generation | **no** — D3D12 only | **no** — D3D12 only | feasible | community only |
 | XeSS Low Latency (XeLL) | **no** — D3D12 only | **no** — D3D12 only | feasible | no |
 
@@ -388,11 +388,16 @@ hand-written ABI header [XESS-IMPL.md](XESS-IMPL.md). The full Windows runtime l
 with it (225 Zig units, `mk8drecomp.exe`, 4,423,680 B). Under Wine 11.22 on this
 RADV RX 9070 XT, the official 3.0.2 `libxess.dll` (77,795,704 B, SHA-256
 `251659dd…e5d5b7`) loads, `xessGetVersion` reports 2.0.2, and
-`xessVKCreateContext`/`xessVKInit` return 0 for 2560x1440 on the DP4a path; the
-probe requires `VK_EXT_mutable_descriptor_type`. `xessVKExecute` was **not** run and
-the runtime still needs the one-line `MK8_XESS` dispatch in `fsr.cpp`, which is owned
-by another agent. XeSS remains Windows-only: the Linux build compiles to a stub that
-logs `XeSS is Windows-only (libxess.dll)` once and keeps the FSR/bilinear path.
+`xessVKCreateContext`/`xessVKInit` return 0 for 2560x1440 on the DP4a path, and a
+standalone 1280x720 → 2560x1440 `xessVKExecute`/submit/readback completes with 256
+distinct byte values and a changed second frame (`frame0_checksum=8901939667484331069`,
+`frame1_checksum=17835196424027649762`); see [XESS-IMPL.md](XESS-IMPL.md) and
+`local/qualification/xess-wine/frame0.png`. The probe requires
+`VK_EXT_mutable_descriptor_type`. The runtime still needs the one-line `MK8_XESS`
+dispatch in `fsr.cpp`, which is owned by another agent, and should use
+`xessGetInputResolution` (1114x627 for 1440p PERFORMANCE, not 1280x720). XeSS remains
+Windows-only: the Linux build compiles to a stub that logs
+`XeSS is Windows-only (libxess.dll)` once and keeps the FSR/bilinear path.
 
 ## Integration surface for this runtime
 
