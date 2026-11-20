@@ -202,6 +202,11 @@ executable range is still ignored by `Module.in_text()`; zero-sized markers and 
 symbols are rejected. The remaining assumption is that a sized symbol whose value lies in `.text`
 describes code, which holds for every defined symbol in these three modules.
 
+Operationally this changes the prepared `tools/gen.py` and the generated sdk table, so an existing
+build must run a full Build (regenerate and relink the guest); `--runtime-only` is not enough. The
+launcher's normal hash checks force the re-preparation. `local/config.json`, profiles, saves and
+`local/user*` are not touched.
+
 ### Test
 
 `tests/test_pipeline.py::PipelineTests::test_sized_notype_text_symbols_become_dispatch_entries`
