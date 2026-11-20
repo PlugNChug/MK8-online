@@ -1025,10 +1025,11 @@ impl App {
                 let settings = crate::fsr::read_settings(&self.local)?;
                 if cfg!(target_os = "linux")
                     && settings.upscaling != "3.1.6"
+                    && settings.upscaling != "4.1.2"
                     && settings.frame_generation != "fsr3"
                 {
                     return Err(
-                        "Nada para instalar: selecione FSR 3.1.6 ou FSR 3 nos componentes locais."
+                        "Nada para instalar: selecione FSR 3.1.6, FSR 4.1.2 ou FSR 3 nos componentes locais."
                             .into(),
                     );
                 }

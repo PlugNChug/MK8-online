@@ -36,20 +36,17 @@
     setValue(get('fsr-provider'), settings.provider_lib);
     setValue(get('fsr-fg'), settings.frame_generation);
     setValue(get('fsr-dxc'), settings.dxc);
-    get('fsr-legacy').checked = !!settings.legacy_abi;
 
     const off = settings.upscaling === 'off';
     get('fsr-provider').disabled = off || saving;
-    get('fsr-legacy').disabled = off || saving;
     get('fsr-provider').closest('.fsr-path-row').querySelector('button').disabled = off || saving;
-    get('fsr-legacy-row').hidden = off || windows || settings.upscaling !== '4.1.2';
     text('fsr-upscaling-hint', off
       ? 'A ampliação fica desligada e o jogo usa FSR 1/bilinear como antes.'
       : windows
         ? 'O launcher aponta o runtime para a DLL assinada da AMD. Instale os componentes abaixo.'
         : settings.upscaling === '3.1.6'
           ? 'FSR 3.1.6 é compilado localmente a partir do código MIT da AMD e roda nativamente; nenhum binário é incluído no launcher. O provedor é instalado abaixo.'
-          : 'FSR 4.1.2 usa um provedor externo (.so) escolhido por você; o launcher não inclui nem instala esse provedor.');
+          : 'FSR 4.1.2 é compilado localmente a partir do port GPL-3.0 do projeto e do SDK MIT da AMD; a ABI legada é ativada automaticamente e nada é incluído no launcher. O provedor, os assets e as licenças são instalados abaixo.');
 
     const dxcRow = get('fsr-dxc').closest('.fsr-path-row');
     dxcRow.hidden = windows;
@@ -57,7 +54,7 @@
     text('fsr-install-title', windows ? 'Componentes AMD FidelityFX (DLLs assinadas)' : 'Componentes AMD FidelityFX (provedor local)');
     text('fsr-install-intro', windows
       ? 'O launcher baixa somente as DLLs assinadas e oficiais do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e as guarda neste computador. Nada da AMD é distribuído com o launcher e nenhuma compilação é feita no Windows.'
-      : 'O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py e tools/build_upscaler_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.');
+      : 'O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py, tools/build_upscaler_provider.py e tools/build_fsr4_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.');
     text('fsr-install', data.state === 'ready' ? 'Atualizar componentes' : windows ? 'Baixar DLLs assinadas' : 'Baixar e compilar');
 
     const state = data.state || 'not-installed';
@@ -90,10 +87,12 @@
       ? `Texto oficial de docs/license.md (tag v2.4.0), ${license.bytes} bytes, SHA-256 ${license.sha256.slice(0, 16)}…`
       : 'Texto oficial de docs/license.md, tag v2.4.0, conferido por tamanho e SHA-256.');
 
+    const dxcNeeded = !windows && (settings.upscaling === '3.1.6' || settings.frame_generation === 'fsr3');
+    get('fsr-dxc-block').hidden = !dxcNeeded;
     const dxc = data.dxc || {};
     const pinned = dxc.pinned || {};
     text('fsr-dxc-source', 'DXC: DirectXShaderCompiler (LLVM/Apache-2.0 com exceções LLVM), baixado da release oficial da Microsoft, fora da pasta do FSR. Não é um artefato AMD/FSR e o launcher não o inclui no pacote.');
-    if (windows) text('fsr-dxc-detail', '');
+    if (windows || !dxcNeeded) text('fsr-dxc-detail', '');
     else if (dxc.found && dxc.source === 'archive')
       text('fsr-dxc-detail', `DXC ${dxc.version} em cache em ${dxc.path}; verificado por tamanho e SHA-256.`);
     else if (dxc.found)
@@ -140,7 +139,6 @@
         provider_lib: get('fsr-provider').value.trim(),
         frame_generation: get('fsr-fg').value,
         dxc: get('fsr-dxc').value.trim(),
-        legacy_abi: get('fsr-legacy').checked,
       });
       notice(message);
       await load();
@@ -159,7 +157,6 @@
 
   get('fsr-upscaling').onchange = () => save('Preferência de ampliação salva. Vale ao iniciar o jogo.');
   get('fsr-fg').onchange = () => save('Preferência de geração de quadros salva. Vale ao iniciar o jogo.');
-  get('fsr-legacy').onchange = () => save('Compatibilidade do provedor salva.');
   get('fsr-provider').onchange = () => save('Provedor FSR salvo.');
   get('fsr-dxc').onchange = () => save('Compilador DXC salvo.');
 

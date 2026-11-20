@@ -324,7 +324,6 @@
                 <label>Biblioteca do provedor FFX (.so)<input id="fsr-provider" spellcheck="false" placeholder="Opcional: biblioteca do seu provedor" /></label>
                 <button type="button" class="ghost" data-browse="fsr-provider" data-kind="fsr-library" aria-label="Escolher o provedor FFX">Escolher</button>
               </div>
-              <label class="settings-check" id="fsr-legacy-row"><input type="checkbox" id="fsr-legacy" />ABI legada (1.x)</label>
               <p id="fsr-upscaling-hint" class="hint">O runtime carrega a biblioteca escolhida. Sem uma biblioteca própria, a opção fica indisponível no jogo.</p>
             </article>
 
@@ -347,7 +346,7 @@
               <h2 id="fsr-install-title">Componentes AMD FidelityFX</h2>
               <span id="fsr-install-state" class="pill">Não instalado</span>
             </div>
-            <p id="fsr-install-intro" class="hint">O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py e tools/build_upscaler_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.</p>
+            <p id="fsr-install-intro" class="hint">O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py, tools/build_upscaler_provider.py e tools/build_fsr4_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.</p>
             <div id="fsr-progress" class="fsr-progress" hidden>
               <div class="meter-row"><span id="fsr-progress-text">Preparando…</span><b id="fsr-progress-pct">0%</b></div>
               <div class="bar"><i id="fsr-progress-bar"></i></div>
@@ -370,13 +369,15 @@
             </section>
             <p id="fsr-install-detail" class="hint fsr-install-note" role="status"></p>
             <p id="fsr-versions" class="hint"></p>
-            <div class="fsr-path-row">
-              <label>Compilador DXC<input id="fsr-dxc" spellcheck="false" placeholder="Automático: MK8_DXC, pasta de ferramentas ou PATH" /></label>
-              <button type="button" class="ghost" data-browse="fsr-dxc" data-kind="dxc" aria-label="Escolher o compilador DXC">Escolher</button>
+            <div id="fsr-dxc-block">
+              <div class="fsr-path-row">
+                <label>Compilador DXC<input id="fsr-dxc" spellcheck="false" placeholder="Automático: MK8_DXC, pasta de ferramentas ou PATH" /></label>
+                <button type="button" class="ghost" data-browse="fsr-dxc" data-kind="dxc" aria-label="Escolher o compilador DXC">Escolher</button>
+              </div>
+              <p id="fsr-dxc-detail" class="hint"></p>
+              <p id="fsr-dxc-source" class="fine"></p>
+              <a class="fine" href="https://github.com/microsoft/DirectXShaderCompiler" target="_blank" rel="noopener noreferrer">github.com/microsoft/DirectXShaderCompiler</a>
             </div>
-            <p id="fsr-dxc-detail" class="hint"></p>
-            <p id="fsr-dxc-source" class="fine"></p>
-            <a class="fine" href="https://github.com/microsoft/DirectXShaderCompiler" target="_blank" rel="noopener noreferrer">github.com/microsoft/DirectXShaderCompiler</a>
             <pre id="fsr-log" class="log" aria-label="Log da instalação FSR" hidden>Nenhuma instalação do FSR iniciada.</pre>
             <p class="fine">O download usa a URL oficial fixada no código. Se o arquivo não tiver o tamanho ou o SHA-256 esperados, nada é instalado e a página mostra o valor recebido. FSR 4 MLFI permanece desativado até os modelos serem fornecidos.</p>
           </article>

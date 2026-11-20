@@ -4,11 +4,12 @@
 //! The launcher stores only user choices and never ships, embeds or mirrors AMD
 //! binaries or SPIR-V. On Linux the FSR 3.1.6 upscaler and the FSR 3
 //! frame-generation provider are built locally by
-//! `tools/build_upscaler_provider.py` / `tools/build_fg_provider.py` from the
-//! pinned, hash-verified SDK source archive (see `install.rs` for the exact
-//! interface contract). On Windows the same terms-gated step downloads AMD's
-//! signed Vulkan DLLs from the same pinned tag, verifies each pinned size and
-//! SHA-256, and points the runtime at them; nothing is compiled there.
+//! `tools/build_upscaler_provider.py` / `tools/build_fsr4_provider.py` /
+//! `tools/build_fg_provider.py` from the pinned, hash-verified SDK source
+//! archive (see `install.rs` for the exact interface contract). On Windows the
+//! same terms-gated step downloads AMD's signed Vulkan DLLs from the same
+//! pinned tag, verifies each pinned size and SHA-256, and points the runtime at
+//! them; nothing is compiled there.
 
 use mk8_manifest::Result;
 use serde::{Deserialize, Serialize};
@@ -263,18 +264,29 @@ pub fn provider_path(dir: &Path) -> PathBuf {
     framegeneration_lib(dir)
 }
 
-/// The runtime's upscaling library: AMD's signed DLL on Windows, or a
-/// user-supplied provider on Linux (the launcher never supplies one).
-pub fn upscaler_lib(dir: &Path) -> PathBuf {
-    upscaler_lib_for(dir, cfg!(windows))
+/// The runtime's upscaling library for the selected provider version.
+pub fn upscaler_for(dir: &Path, version: &str) -> PathBuf {
+    upscaler_for_version(dir, version, cfg!(windows))
 }
 
-fn upscaler_lib_for(dir: &Path, windows: bool) -> PathBuf {
+/// The 3.1.6 upscaler path (or AMD's signed DLL on Windows).
+pub fn upscaler_lib(dir: &Path) -> PathBuf {
+    upscaler_for_version(dir, FSR_316, cfg!(windows))
+}
+
+fn upscaler_for_version(dir: &Path, version: &str, windows: bool) -> PathBuf {
     if windows {
         dir.join("amd_fidelityfx_upscaler_vk.dll")
+    } else if version == FSR_412 {
+        dir.join(install::FSR4_UPSCALER_REL)
     } else {
         dir.join(install::UPSCALER_REL)
     }
+}
+
+/// Runtime assets extracted from AMD's signed DLL for the native 4.1.2 port.
+pub fn fsr4_assets_dir(dir: &Path) -> PathBuf {
+    dir.join(install::FSR4_ASSETS_REL)
 }
 
 /// The runtime's frame-generation library. Linux builds it locally from the
@@ -327,6 +339,7 @@ fn environment_for(settings: &Settings, dir: &Path, windows: bool) -> Environmen
             "MK8_FSR_LEGACY_ABI",
             "MK8_FSR_FG",
             "MK8_FSR_FG_LIB",
+            "FSR4_ASSET_DIR",
         ],
     };
     match settings.upscaling.as_str() {
@@ -337,21 +350,29 @@ fn environment_for(settings: &Settings, dir: &Path, windows: bool) -> Environmen
                 .push(("MK8_FSR_VERSION", settings.upscaling.clone().into()));
             let library = if !settings.provider_lib.is_empty() {
                 PathBuf::from(&settings.provider_lib)
-            } else if windows || settings.upscaling == FSR_316 {
-                // Windows uses AMD's signed DLL; on Linux the native FSR 3.1.6
-                // upscaler is built under provider/ by the install flow.
-                upscaler_lib_for(dir, windows)
+            } else if windows {
+                // Windows uses AMD's signed DLL for both versions.
+                upscaler_for_version(dir, settings.upscaling.as_str(), windows)
+            } else if settings.upscaling == FSR_316 || settings.upscaling == FSR_412 {
+                // Both native providers are built under provider/ by the
+                // install flow (3.1.6 at the top level, 4.1.2 in its own dir).
+                upscaler_for_version(dir, settings.upscaling.as_str(), false)
             } else {
-                // FSR 4.1.2 on Linux stays an external provider path.
                 PathBuf::new()
             };
             if !library.as_os_str().is_empty() {
                 result.set.push(("MK8_FSR_LIB", library.into()));
             }
-            // The deprecated 1.x descriptor belongs only to the GPL 4.1.2
-            // provider; the source-built 3.1.6 upscaler uses the current ABI.
-            if !windows && settings.upscaling == FSR_412 && settings.legacy_abi {
+            // The GPL 4.1.2 port was built against the deprecated 1.x backend
+            // descriptor; the source-built 3.1.6 upscaler uses the current ABI.
+            if !windows && settings.upscaling == FSR_412 {
                 result.set.push(("MK8_FSR_LEGACY_ABI", "1".into()));
+                // The native port loads its extracted models/shaders from here.
+                if settings.provider_lib.is_empty() {
+                    result
+                        .set
+                        .push(("FSR4_ASSET_DIR", fsr4_assets_dir(dir).into()));
+                }
             }
         }
         _ => (),
@@ -425,7 +446,12 @@ pub fn page(root: &Path, local: &Path, running: bool) -> Result<Value> {
     value["license"] = license_status(&dir);
     value["data_dir"] = json!(dir);
     value["provider_expected"] = json!(provider_path(&dir));
-    value["upscaler_expected"] = json!(upscaler_lib(&data_dir()));
+    let upscaler_expected = if settings.upscaling == FSR_412 {
+        upscaler_for(&data_dir(), FSR_412)
+    } else {
+        upscaler_lib(&data_dir())
+    };
+    value["upscaler_expected"] = json!(upscaler_expected);
     value["platform"] = json!(if cfg!(windows) { "windows" } else { "linux" });
     value["running"] = json!(running);
     Ok(value)
@@ -565,7 +591,7 @@ mod tests {
         assert_eq!(value_of(&windows, "MK8_FSR_LEGACY_ABI"), None);
 
         // Linux 3.1.6 uses the source-built upscaler; the deprecated ABI
-        // switch belongs only to the external 4.1.2 provider.
+        // switch belongs only to the GPL 4.1.2 provider.
         let native = Settings {
             upscaling: FSR_316.into(),
             provider_lib: String::new(),
@@ -579,6 +605,29 @@ mod tests {
             .unwrap()
             .ends_with("provider/libamd_fidelityfx_upscaler_vk.so"));
         assert_eq!(value_of(&env, "MK8_FSR_LEGACY_ABI"), None);
+        assert_eq!(value_of(&env, "MK8_FSR_FG").as_deref(), Some("fsr3"));
+        assert!(value_of(&env, "MK8_FSR_FG_LIB")
+            .unwrap()
+            .ends_with("provider/libamd_fidelityfx_framegeneration_vk.so"));
+
+        // Linux 4.1.2 uses the GPL port, its asset directory and the legacy
+        // backend ABI; frame generation remains independent.
+        let fsr4 = Settings {
+            upscaling: FSR_412.into(),
+            provider_lib: String::new(),
+            frame_generation: FG_FSR3.into(),
+            dxc: String::new(),
+            legacy_abi: false,
+        };
+        let env = environment_for(&fsr4, Path::new("/data/fsr"), false);
+        assert_eq!(value_of(&env, "MK8_FSR_VERSION").as_deref(), Some(FSR_412));
+        assert!(value_of(&env, "MK8_FSR_LIB")
+            .unwrap()
+            .ends_with("provider/fsr4.1.2/libamd_fidelityfx_upscaler_vk.so"));
+        assert_eq!(value_of(&env, "MK8_FSR_LEGACY_ABI").as_deref(), Some("1"));
+        assert!(value_of(&env, "FSR4_ASSET_DIR")
+            .unwrap()
+            .ends_with("provider/fsr4.1.2/fsr4-assets"));
         assert_eq!(value_of(&env, "MK8_FSR_FG").as_deref(), Some("fsr3"));
         assert!(value_of(&env, "MK8_FSR_FG_LIB")
             .unwrap()

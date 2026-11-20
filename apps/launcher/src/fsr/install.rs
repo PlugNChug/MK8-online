@@ -53,6 +53,17 @@
 //! The requirement that the archive is the SDK tag `v2.4.0` is enforced by the
 //! pinned constants below, not by a mutable remote manifest.
 //!
+//! # Contract with `tools/build_fsr4_provider.py`
+//!
+//! The FSR 4.1.2 GPL-3.0 port is built from the same pinned SDK archive with
+//! `--work-dir <fsr>/fsr4-build --install-dir <fsr>/fsr4.next --reuse-assets`.
+//! The staging install directory is deliberate: the script writes
+//! `libamd_fidelityfx_upscaler_vk.so`, `fsr4-assets/`, the GPL/AMD notices and
+//! `SOURCE-OFFER.md` there, so the 3.1.6 upscaler at `provider/` is never
+//! overwritten. The launcher verifies the reported version is exactly `4.1.2`
+//! and the licence/asset layout is present, then atomically replaces
+//! `provider/fsr4.1.2/`. DXC is not used by this provider.
+//!
 //! # Windows
 //!
 //! The same acceptance and verification gate downloads AMD's signed
@@ -128,6 +139,14 @@ pub const UPSCALER_REL: &str = "provider/libamd_fidelityfx_upscaler_vk.so";
 pub const UPSCALER_STATE_FILE: &str = "upscaler.json";
 #[cfg(target_os = "linux")]
 pub const BUILD_UPSCALER_SCRIPT: &str = "tools/build_upscaler_provider.py";
+/// Native Linux FSR 4.1.2 provider (GPL-3.0 port), in its own folder so the
+/// 3.1.6 upscaler can be installed at the same time.
+pub const FSR4_VERSION: &str = "4.1.2";
+pub const FSR4_UPSCALER_REL: &str = "provider/fsr4.1.2/libamd_fidelityfx_upscaler_vk.so";
+pub const FSR4_ASSETS_REL: &str = "provider/fsr4.1.2/fsr4-assets";
+pub const FSR4_STATE_FILE: &str = "upscaler-412.json";
+#[cfg(target_os = "linux")]
+pub const BUILD_FSR4_SCRIPT: &str = "tools/build_fsr4_provider.py";
 
 /// AMD's signed Vulkan DLLs for the Windows path, from the same pinned SDK
 /// tag. They are downloaded and verified individually; the launcher never
@@ -180,6 +199,9 @@ pub struct Request {
     /// Linux only: build the native FSR 3.1.6 upscaler.
     #[serde(default)]
     pub build_upscaler: bool,
+    /// Linux only: build the native FSR 4.1.2 GPL provider.
+    #[serde(default)]
+    pub build_fsr4: bool,
     /// Linux only: build the FSR 3 frame-generation provider.
     #[serde(default)]
     pub build_framegeneration: bool,
@@ -232,6 +254,7 @@ impl Job {
             fsr_dir: dir.clone(),
             dxc: settings.dxc.clone(),
             build_upscaler: cfg!(target_os = "linux") && settings.upscaling == "3.1.6",
+            build_fsr4: cfg!(target_os = "linux") && settings.upscaling == "4.1.2",
             build_framegeneration: settings.frame_generation == "fsr3",
         };
         let mut command = Command::new(std::env::current_exe().map_err(|error| error.to_string())?);
@@ -354,9 +377,13 @@ enum DxcInput {
 
 #[cfg(target_os = "linux")]
 fn install_linux_provider(request: &Request, dir: &Path) -> Result<()> {
-    if !request.build_upscaler && !request.build_framegeneration {
+    if request.build_upscaler && request.build_fsr4 {
+        return Err("Selecione apenas uma versão de ampliação para instalar.".into());
+    }
+    if !request.build_upscaler && !request.build_fsr4 && !request.build_framegeneration {
         return Err(
-            "Nada para instalar: selecione FSR 3.1.6 ou FSR 3 nos componentes locais.".into(),
+            "Nada para instalar: selecione FSR 3.1.6, FSR 4.1.2 ou FSR 3 nos componentes locais."
+                .into(),
         );
     }
     if request.build_framegeneration && !request.root.join(BUILD_SCRIPT).is_file() {
@@ -371,7 +398,13 @@ fn install_linux_provider(request: &Request, dir: &Path) -> Result<()> {
             request.root.join(BUILD_UPSCALER_SCRIPT).display()
         ));
     }
-    let reuse_upscaler = request.build_upscaler && upscaler_ready(dir);
+    if request.build_fsr4 && !request.root.join(BUILD_FSR4_SCRIPT).is_file() {
+        return Err(format!(
+            "O script do FSR 4.1.2 não existe: {}. Consulte o contrato na página FSR/launcher.",
+            request.root.join(BUILD_FSR4_SCRIPT).display()
+        ));
+    }
+    let reuse_upscaler = request.build_upscaler && upscaler_ready(dir, UPSCALER_VERSION);
     if reuse_upscaler {
         record_upscaler_state(dir, UPSCALER_VERSION)?;
         append_log(
@@ -379,44 +412,69 @@ fn install_linux_provider(request: &Request, dir: &Path) -> Result<()> {
             &format!("provedor FSR {UPSCALER_VERSION} já instalado; reutilizando."),
         )?;
     }
+    let reuse_fsr4 = request.build_fsr4 && upscaler_ready(dir, FSR4_VERSION);
+    if reuse_fsr4 {
+        record_upscaler_state(dir, FSR4_VERSION)?;
+        append_log(
+            dir,
+            &format!("provedor FSR {FSR4_VERSION} já instalado; reutilizando."),
+        )?;
+    }
     let build_up = request.build_upscaler && !reuse_upscaler;
-    if !build_up && !request.build_framegeneration {
+    let build_four = request.build_fsr4 && !reuse_fsr4;
+    if !build_up && !build_four && !request.build_framegeneration {
         set_progress(
             dir,
             "done",
             100,
-            &format!("Provedor FSR {UPSCALER_VERSION} já está instalado."),
+            "Os componentes FSR selecionados já estão instalados.",
         )?;
         return Ok(());
     }
 
     set_progress(dir, "download", 1, "Preparando o SDK da AMD…")?;
     ensure_sdk(dir)?;
-    let dxc = resolve_dxc(&request.root, dir, &request.dxc);
-    let dxc_input = if dxc.found && !dxc.archive {
-        DxcInput::Binary(dxc.path)
-    } else if !request.dxc.is_empty() && !dxc.found {
-        return Err(format!("DXC não encontrado em {}.", request.dxc));
+    let needs_dxc = request.build_upscaler || request.build_framegeneration;
+    let dxc_input = if needs_dxc {
+        let dxc = resolve_dxc(&request.root, dir, &request.dxc);
+        Some(if dxc.found && !dxc.archive {
+            DxcInput::Binary(dxc.path)
+        } else if !request.dxc.is_empty() && !dxc.found {
+            return Err(format!("DXC não encontrado em {}.", request.dxc));
+        } else {
+            set_progress(
+                dir,
+                "dxc",
+                12,
+                "Preparando o compilador DXC (fonte oficial fixada)…",
+            )?;
+            DxcInput::Archive(ensure_dxc(dir)?)
+        })
     } else {
-        set_progress(
-            dir,
-            "dxc",
-            12,
-            "Preparando o compilador DXC (fonte oficial fixada)…",
-        )?;
-        DxcInput::Archive(ensure_dxc(dir)?)
+        None
     };
     if request.build_framegeneration {
         build_provider(
             request,
             dir,
             &request.root.join(BUILD_SCRIPT),
-            &dxc_input,
-            build_up,
+            dxc_input
+                .as_ref()
+                .ok_or("Compilador DXC ausente para a geração de quadros.")?,
+            build_up || build_four,
         )?;
     }
     if build_up {
-        build_upscaler(request, dir, &dxc_input)?;
+        build_upscaler(
+            request,
+            dir,
+            dxc_input
+                .as_ref()
+                .ok_or("Compilador DXC ausente para o upscaler.")?,
+        )?;
+    }
+    if build_four {
+        build_fsr4(request, dir)?;
     }
     Ok(())
 }
@@ -665,7 +723,7 @@ fn build_provider(
             dir,
             "build",
             70,
-            "Provedor de frame generation pronto; compilando o upscaler FSR 3.1.6…",
+            "Provedor de frame generation pronto; continuando a instalação…",
         )?;
     } else {
         set_progress(
@@ -686,13 +744,13 @@ fn build_provider(
 }
 
 #[cfg(target_os = "linux")]
-fn installed_upscaler_version(dir: &Path) -> Option<String> {
-    let path = crate::fsr::upscaler_lib(dir);
+fn installed_upscaler_version(dir: &Path, version: &str) -> Option<String> {
+    let path = crate::fsr::upscaler_for(dir, version);
     if !path.is_file() {
         return None;
     }
     match provider_version_for(&path, FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE) {
-        Ok(version) => Some(version),
+        Ok(reported) => Some(reported),
         Err(error) => {
             let _ = append_log(
                 dir,
@@ -704,18 +762,35 @@ fn installed_upscaler_version(dir: &Path) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn upscaler_version_ok(version: &str) -> bool {
-    version == UPSCALER_VERSION
+fn upscaler_version_ok(version: &str, expected: &str) -> bool {
+    version == expected
 }
 
 #[cfg(target_os = "linux")]
-fn upscaler_ready(dir: &Path) -> bool {
-    installed_upscaler_version(dir).is_some_and(|version| upscaler_version_ok(&version))
+fn upscaler_ready(dir: &Path, version: &str) -> bool {
+    if !installed_upscaler_version(dir, version)
+        .is_some_and(|reported| upscaler_version_ok(&reported, version))
+    {
+        return false;
+    }
+    if version == FSR4_VERSION {
+        let provider = crate::fsr::upscaler_for(dir, version);
+        return provider.parent().is_some_and(fsr4_licenses_present);
+    }
+    true
+}
+
+fn upscaler_state_file(version: &str) -> &'static str {
+    if version == FSR4_VERSION {
+        FSR4_STATE_FILE
+    } else {
+        UPSCALER_STATE_FILE
+    }
 }
 
 #[cfg(target_os = "linux")]
 fn record_upscaler_state(dir: &Path, version: &str) -> Result<UpscalerState> {
-    let path = crate::fsr::upscaler_lib(dir);
+    let path = crate::fsr::upscaler_for(dir, version);
     let bytes = fs::metadata(&path)
         .map(|meta| meta.len())
         .map_err(|error| format!("{}: {error}", path.display()))?;
@@ -726,14 +801,14 @@ fn record_upscaler_state(dir: &Path, version: &str) -> Result<UpscalerState> {
         built_at: unix_now(),
     };
     crate::fsr::write_atomic(
-        &dir.join(UPSCALER_STATE_FILE),
+        &dir.join(upscaler_state_file(version)),
         &serde_json::to_vec_pretty(&state).map_err(|error| error.to_string())?,
     )?;
     Ok(state)
 }
 
-pub fn read_upscaler_state(dir: &Path) -> Option<UpscalerState> {
-    fs::read_to_string(dir.join(UPSCALER_STATE_FILE))
+pub fn read_upscaler_state(dir: &Path, version: &str) -> Option<UpscalerState> {
+    fs::read_to_string(dir.join(upscaler_state_file(version)))
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
 }
@@ -755,8 +830,8 @@ fn publish_upscaler(dir: &Path, next: &Path) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 fn build_upscaler(request: &Request, dir: &Path, dxc: &DxcInput) -> Result<()> {
-    if let Some(version) = installed_upscaler_version(dir) {
-        if upscaler_version_ok(&version) {
+    if let Some(version) = installed_upscaler_version(dir, UPSCALER_VERSION) {
+        if upscaler_version_ok(&version, UPSCALER_VERSION) {
             record_upscaler_state(dir, &version)?;
             set_progress(
                 dir,
@@ -895,7 +970,7 @@ fn build_upscaler(request: &Request, dir: &Path, dxc: &DxcInput) -> Result<()> {
     }
     set_progress(dir, "verify", 96, "Lendo a versão do upscaler compilado…")?;
     let version = provider_version_for(&produced, FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE)?;
-    if !upscaler_version_ok(&version) {
+    if !upscaler_version_ok(&version, UPSCALER_VERSION) {
         return Err(format!(
             "O upscaler compilado reporta a versão {version}; esperado {UPSCALER_VERSION}. O provedor não foi instalado."
         ));
@@ -948,6 +1023,262 @@ fn upscaler_progress_marker(line: &str, current: u8) -> Option<(u8, String)> {
         })
     } else if line.starts_with("installed ") {
         Some((98, "Upscaler compilado; verificando a versão…".into()))
+    } else if line.starts_with("error:") {
+        Some((current, line.into()))
+    } else {
+        None
+    }
+}
+
+fn fsr4_licenses_present(dir: &Path) -> bool {
+    let has_gpl = dir.join("LICENSE-GPL-3.0.txt").is_file();
+    let has_amd = fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("LICENSE-AMD-")
+        })
+    });
+    has_gpl
+        && has_amd
+        && dir.join("SOURCE-OFFER.md").is_file()
+        && dir.join("fsr4-assets/models").is_dir()
+        && dir.join("fsr4-assets/shaders").is_dir()
+}
+
+#[cfg(target_os = "linux")]
+fn publish_fsr4(dir: &Path, next: &Path) -> Result<()> {
+    if !fsr4_licenses_present(next) {
+        return Err(
+            "A build do FSR 4.1.2 não instalou as licenças GPL/AMD, a nota de oferta de fonte e os assets esperados."
+                .into(),
+        );
+    }
+    let target = crate::fsr::upscaler_for(dir, FSR4_VERSION)
+        .parent()
+        .ok_or("Caminho do provedor FSR 4.1.2 inválido.")?
+        .to_path_buf();
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    let old = target.with_file_name("fsr4.1.2.old");
+    if old.exists() {
+        fs::remove_dir_all(&old).map_err(|error| format!("{}: {error}", old.display()))?;
+    }
+    if target.exists() {
+        fs::rename(&target, &old).map_err(|error| format!("{}: {error}", target.display()))?;
+    }
+    if let Err(error) = fs::rename(next, &target) {
+        if old.exists() {
+            let _ = fs::rename(&old, &target);
+        }
+        return Err(format!("{}: {error}", target.display()));
+    }
+    if old.exists() {
+        let _ = fs::remove_dir_all(&old);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn build_fsr4(request: &Request, dir: &Path) -> Result<()> {
+    if let Some(version) = installed_upscaler_version(dir, FSR4_VERSION) {
+        if upscaler_version_ok(&version, FSR4_VERSION) {
+            record_upscaler_state(dir, FSR4_VERSION)?;
+            set_progress(
+                dir,
+                "done",
+                100,
+                &format!("Provedor FSR {FSR4_VERSION} já está instalado."),
+            )?;
+            return Ok(());
+        }
+        append_log(
+            dir,
+            &format!(
+                "O provedor FSR 4.1.2 instalado reporta {version}; esperado {FSR4_VERSION}. Recompilando."
+            ),
+        )?;
+    }
+    let script = request.root.join(BUILD_FSR4_SCRIPT);
+    if !script.is_file() {
+        return Err(format!(
+            "O script do FSR 4.1.2 não existe: {}.",
+            script.display()
+        ));
+    }
+    let next = dir.join("fsr4.next");
+    if next.exists() {
+        fs::remove_dir_all(&next).map_err(|error| format!("{}: {error}", next.display()))?;
+    }
+    set_progress(
+        dir,
+        "build",
+        72,
+        "Compilando o provedor FSR 4.1.2 (GPL-3.0, pode levar vários minutos)…",
+    )?;
+    let mut command = Command::new(python(&request.root));
+    command
+        .arg("-u")
+        .arg(&script)
+        .arg("--sdk-archive")
+        .arg(dir.join(SDK_ARCHIVE_FILE))
+        .arg("--sdk-size")
+        .arg(SDK_BYTES.to_string())
+        .arg("--sdk-sha256")
+        .arg(SDK_SHA256)
+        .arg("--work-dir")
+        .arg(dir.join("fsr4-build"))
+        .arg("--install-dir")
+        .arg(&next)
+        .arg("--reuse-assets")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
+    append_log(
+        dir,
+        &format!(
+            "$ {} {:?}",
+            python(&request.root).display(),
+            command.get_args().collect::<Vec<_>>()
+        ),
+    )?;
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "Não foi possível executar {}: {error}",
+            python(&request.root).display()
+        )
+    })?;
+    let stdout = child.stdout.take().ok_or("Build sem saída padrão.")?;
+    let stderr = child.stderr.take().ok_or("Build sem saída de erro.")?;
+    let log = dir.join(BUILD_LOG);
+    let stderr_log = log.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stderr_log)
+            .ok();
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            if let Some(file) = file.as_mut() {
+                let _ = file.write_all(line.as_bytes());
+            }
+            line.clear();
+        }
+    });
+    let mut current = 72u8;
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    while reader.read_line(&mut line).unwrap_or(0) > 0 {
+        append_log(dir, line.trim_end_matches(['\n', '\r']))?;
+        if let Some((percent, detail)) = fsr4_progress_marker(&line, current) {
+            if percent > current || detail != progress(dir).detail {
+                current = percent;
+                set_progress(dir, "build", current, &detail)?;
+            }
+        }
+        line.clear();
+    }
+    let _ = stderr_thread.join();
+    let status = child.wait().map_err(|error| error.to_string())?;
+    if !status.success() {
+        let tail = log_tail(dir, 8);
+        return Err(format!(
+            "A build do FSR 4.1.2 falhou ({status}).{}",
+            if tail.is_empty() {
+                String::new()
+            } else {
+                format!("\n{tail}")
+            }
+        ));
+    }
+    let produced = next.join(UPSCALER_FILE);
+    let meta = fs::metadata(&produced)
+        .map_err(|_| format!("A build do FSR 4.1.2 não criou {}.", produced.display()))?;
+    if !meta.is_file() || meta.len() == 0 {
+        return Err(format!(
+            "A build do FSR 4.1.2 criou um arquivo vazio ou inválido: {}.",
+            produced.display()
+        ));
+    }
+    set_progress(dir, "verify", 96, "Lendo a versão do provedor FSR 4.1.2…")?;
+    let version = provider_version_for(&produced, FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE)?;
+    if !upscaler_version_ok(&version, FSR4_VERSION) {
+        return Err(format!(
+            "O provedor compilado reporta a versão {version}; esperado {FSR4_VERSION}. O provedor não foi instalado."
+        ));
+    }
+    publish_fsr4(dir, &next)?;
+    let state = record_upscaler_state(dir, FSR4_VERSION)?;
+    set_progress(
+        dir,
+        "done",
+        100,
+        &format!(
+            "Provedor FSR {FSR4_VERSION} pronto em {}.",
+            crate::fsr::upscaler_for(dir, FSR4_VERSION).display()
+        ),
+    )?;
+    append_log(
+        dir,
+        &format!(
+            "== Provedor FSR {FSR4_VERSION} pronto ({} bytes, sha256={}) ==",
+            state.bytes, state.sha256
+        ),
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn fsr4_progress_marker(line: &str, current: u8) -> Option<(u8, String)> {
+    let line = line.trim();
+    if line.starts_with("sdk tree:") {
+        Some((
+            74,
+            "Fontes do SDK preparadas; extraindo o DLL assinado…".into(),
+        ))
+    } else if line.contains("upscaler DLL ok:") {
+        Some((
+            76,
+            "DLL assinada da AMD verificada; extraindo shaders e modelos…".into(),
+        ))
+    } else if line.starts_with("assets ok:") || line.starts_with("reusing extracted assets") {
+        Some((
+            80,
+            "Assets do FSR 4.1.2 extraídos; compilando o provedor…".into(),
+        ))
+    } else if line.starts_with("+ cmake -S") {
+        Some((82, "Configurando a build do FSR 4.1.2…".into()))
+    } else if line.starts_with("+ cmake --build") {
+        Some((85, "Compilando o provedor FSR 4.1.2…".into()))
+    } else if let Some(rest) = line.strip_prefix('[') {
+        let (done, rest) = rest.split_once('/')?;
+        let (total, _) = rest.split_once(']')?;
+        let done: u32 = done.trim().parse().ok()?;
+        let total: u32 = total.trim().parse().ok()?;
+        (total > 0).then(|| {
+            (
+                (85 + (done.saturating_mul(10) / total) as u8).min(95),
+                format!("Compilando o provedor FSR 4.1.2… {done}/{total}"),
+            )
+        })
+    } else if line.starts_with("installed runtime assets:") {
+        Some((
+            96,
+            "Assets de execução instalados; verificando a versão…".into(),
+        ))
+    } else if line.starts_with("installed ") {
+        Some((
+            98,
+            "Provedor FSR 4.1.2 instalado; conferindo licenças…".into(),
+        ))
+    } else if line == "done" {
+        Some((99, "Provedor FSR 4.1.2 compilado; publicando…".into()))
     } else if line.starts_with("error:") {
         Some((current, line.into()))
     } else {
@@ -1647,10 +1978,16 @@ pub fn provider_version_for(path: &Path, create_desc_type: u64) -> Result<String
 pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running: bool) -> Value {
     let installed = read_installed(dir);
     let progress = read_progress(dir);
-    let upscaler = crate::fsr::upscaler_lib(dir);
+    let windows = cfg!(windows);
+    let selected_upscaler = if settings.upscaling == FSR4_VERSION {
+        FSR4_VERSION
+    } else {
+        UPSCALER_VERSION
+    };
+    let upscaler = crate::fsr::upscaler_for(dir, selected_upscaler);
     let framegeneration = crate::fsr::framegeneration_lib(dir);
     let provider = framegeneration.clone();
-    let needed: &[&Path] = if cfg!(windows) {
+    let needed: &[&Path] = if windows {
         &[&upscaler, &framegeneration]
     } else {
         &[&provider]
@@ -1669,10 +2006,9 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
     let terms = crate::fsr::terms_accepted(dir);
     let cached = sdk_cached(dir);
     let license = crate::fsr::license_status(dir);
-    let windows = cfg!(windows);
-    let up_requested = !windows && settings.upscaling == "3.1.6";
+    let up_requested = !windows && matches!(settings.upscaling.as_str(), "3.1.6" | "4.1.2");
     let fg_requested = settings.frame_generation == "fsr3";
-    let upscaler_state = read_upscaler_state(dir);
+    let upscaler_state = read_upscaler_state(dir, selected_upscaler);
     let upscaler_bytes = fs::metadata(&upscaler)
         .map(|meta| meta.len())
         .unwrap_or_default();
@@ -1682,7 +2018,7 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
         upscaler_state
             .as_ref()
             .filter(|state| {
-                state.version == UPSCALER_VERSION
+                state.version == selected_upscaler
                     && (state.bytes == 0 || state.bytes == upscaler_bytes)
                     && crate::fsr::sha256_file(&upscaler)
                         .is_ok_and(|hash| state.sha256.is_empty() || hash == state.sha256)
@@ -1692,7 +2028,11 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
     let upscaler_ready = if windows {
         upscaler.is_file()
     } else {
-        upscaler.is_file() && upscaler_version.as_deref() == Some(UPSCALER_VERSION)
+        let fsr4_files_ok = selected_upscaler != FSR4_VERSION
+            || upscaler.parent().is_some_and(fsr4_licenses_present);
+        upscaler.is_file()
+            && upscaler_version.as_deref() == Some(selected_upscaler)
+            && fsr4_files_ok
     };
     let mut state = "not-installed";
     let mut detail = String::from("Nada instalado. Leia e aceite a licença da AMD para começar.");
@@ -1726,18 +2066,18 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
                 } else if up_requested && !upscaler_ready {
                     state = "failed";
                     detail = format!(
-                        "O provedor FSR {UPSCALER_VERSION} não está instalado; execute a instalação novamente."
+                        "O provedor FSR {selected_upscaler} não está instalado; execute a instalação novamente."
                     );
                 } else if up_requested {
                     state = "ready";
                     detail = if fg_requested {
                         format!(
-                            "Provedores FSR {UPSCALER_VERSION} (upscaling) e frame generation {} prontos.",
+                            "Provedores FSR {selected_upscaler} (upscaling) e frame generation {} prontos.",
                             installed.version.as_deref().unwrap_or("3.1.7")
                         )
                     } else {
                         format!(
-                            "Provedor FSR {UPSCALER_VERSION} pronto ({}).",
+                            "Provedor FSR {selected_upscaler} pronto ({}).",
                             upscaler.display()
                         )
                     };
@@ -1767,7 +2107,7 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
     if state == "not-installed" && up_requested && upscaler_ready && !fg_requested {
         state = "ready";
         detail = format!(
-            "Provedor FSR {UPSCALER_VERSION} pronto ({}).",
+            "Provedor FSR {selected_upscaler} pronto ({}).",
             upscaler.display()
         );
     }
@@ -1807,7 +2147,7 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
         "version": installed
             .as_ref()
             .and_then(|i| i.version.clone())
-            .or_else(|| upscaler_ready.then(|| UPSCALER_VERSION.to_string())),
+            .or_else(|| upscaler_ready.then(|| selected_upscaler.to_string())),
         "provider": {
             "path": provider,
             "present": provider_present,
@@ -2206,6 +2546,83 @@ uint32_t ffxQuery(void* context, Header* header) {{
 
     #[test]
     #[cfg(target_os = "linux")]
+    fn fsr4_reuse_requires_4_1_2_and_rejects_3_1_6() {
+        let dir = temp("fsr4-version");
+        let provider = crate::fsr::upscaler_for(&dir, FSR4_VERSION);
+        fs::create_dir_all(provider.parent().unwrap()).unwrap();
+        let Some(library) = fake_ffx_library(&dir, "3.1.6") else {
+            fs::remove_dir_all(dir).unwrap();
+            return;
+        };
+        fs::copy(&library, &provider).unwrap();
+        assert_eq!(
+            installed_upscaler_version(&dir, FSR4_VERSION).as_deref(),
+            Some("3.1.6")
+        );
+        assert!(!upscaler_ready(&dir, FSR4_VERSION));
+        assert!(!upscaler_version_ok("3.1.6", FSR4_VERSION));
+
+        let Some(library) = fake_ffx_library(&dir, "4.1.2") else {
+            fs::remove_dir_all(dir).unwrap();
+            return;
+        };
+        fs::copy(&library, &provider).unwrap();
+        let provider_dir = provider.parent().unwrap();
+        fs::write(provider_dir.join("LICENSE-GPL-3.0.txt"), b"GPL").unwrap();
+        fs::write(provider_dir.join("LICENSE-AMD-FidelityFX-SDK.md"), b"AMD").unwrap();
+        fs::write(provider_dir.join("SOURCE-OFFER.md"), b"offer").unwrap();
+        fs::create_dir_all(provider_dir.join("fsr4-assets/models")).unwrap();
+        fs::create_dir_all(provider_dir.join("fsr4-assets/shaders")).unwrap();
+        assert_eq!(
+            installed_upscaler_version(&dir, FSR4_VERSION).as_deref(),
+            Some(FSR4_VERSION)
+        );
+        assert!(upscaler_ready(&dir, FSR4_VERSION));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn fsr4_publication_keeps_gpl_amd_licenses_assets_and_the_316_provider() {
+        let dir = temp("fsr4-publish");
+        let provider = dir.join(PROVIDER_DIR);
+        fs::create_dir_all(&provider).unwrap();
+        let upscaler_316 = crate::fsr::upscaler_lib(&dir);
+        fs::write(&upscaler_316, b"3.1.6 provider").unwrap();
+
+        let next = dir.join("fsr4.next");
+        fs::create_dir_all(next.join("fsr4-assets/models")).unwrap();
+        fs::create_dir_all(next.join("fsr4-assets/shaders")).unwrap();
+        fs::write(next.join(UPSCALER_FILE), b"4.1.2 provider").unwrap();
+        fs::write(next.join("LICENSE-GPL-3.0.txt"), b"GPL text").unwrap();
+        fs::write(next.join("LICENSE-AMD-FidelityFX-SDK.md"), b"AMD text").unwrap();
+        fs::write(next.join("SOURCE-OFFER.md"), b"source offer").unwrap();
+        fs::write(next.join("fsr4-assets/models/FP8_standard.bin"), b"model").unwrap();
+        fs::write(next.join("fsr4-assets/shaders/pass.spv"), b"shader").unwrap();
+        publish_fsr4(&dir, &next).unwrap();
+
+        let fsr4_dir = provider.join("fsr4.1.2");
+        assert_eq!(
+            fs::read(crate::fsr::upscaler_for(&dir, FSR4_VERSION)).unwrap(),
+            b"4.1.2 provider".to_vec()
+        );
+        assert_eq!(
+            fs::read(crate::fsr::upscaler_lib(&dir)).unwrap(),
+            b"3.1.6 provider".to_vec()
+        );
+        assert!(fsr4_dir.join("LICENSE-GPL-3.0.txt").is_file());
+        assert!(fsr4_dir.join("LICENSE-AMD-FidelityFX-SDK.md").is_file());
+        assert!(fsr4_dir.join("SOURCE-OFFER.md").is_file());
+        assert!(fsr4_dir
+            .join("fsr4-assets/models/FP8_standard.bin")
+            .is_file());
+        assert!(fsr4_dir.join("fsr4-assets/shaders/pass.spv").is_file());
+        assert!(fsr4_licenses_present(&fsr4_dir));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
     fn installed_upscaler_is_reused_only_with_the_expected_version() {
         let dir = temp("upscaler-version");
         let provider = crate::fsr::upscaler_lib(&dir);
@@ -2216,19 +2633,22 @@ uint32_t ffxQuery(void* context, Header* header) {{
         };
         fs::copy(&library, &provider).unwrap();
         assert_eq!(
-            installed_upscaler_version(&dir).as_deref(),
+            installed_upscaler_version(&dir, UPSCALER_VERSION).as_deref(),
             Some(UPSCALER_VERSION)
         );
-        assert!(upscaler_ready(&dir));
+        assert!(upscaler_ready(&dir, UPSCALER_VERSION));
 
         let Some(library) = fake_ffx_library(&dir, "9.9.9") else {
             fs::remove_dir_all(dir).unwrap();
             return;
         };
         fs::copy(&library, &provider).unwrap();
-        assert_eq!(installed_upscaler_version(&dir).as_deref(), Some("9.9.9"));
-        assert!(!upscaler_ready(&dir));
-        assert!(!upscaler_version_ok("9.9.9"));
+        assert_eq!(
+            installed_upscaler_version(&dir, UPSCALER_VERSION).as_deref(),
+            Some("9.9.9")
+        );
+        assert!(!upscaler_ready(&dir, UPSCALER_VERSION));
+        assert!(!upscaler_version_ok("9.9.9", UPSCALER_VERSION));
         fs::remove_dir_all(dir).unwrap();
     }
 
