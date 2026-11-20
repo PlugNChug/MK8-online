@@ -108,10 +108,17 @@ fn main() {
         mk8_session::steam::configure_process();
     }
     let args: Vec<String> = std::env::args().collect();
+    let headless = args
+        .iter()
+        .any(|v| v == "--headless" || v == "--no-browser" || v == "--play");
     #[cfg(target_os = "linux")]
     if update::is_handoff(&args) {
         if let Err(error) = update::run_handoff(&args) {
-            fatal(&error);
+            if headless {
+                eprintln!("MK8-online: {error}");
+            } else {
+                fatal(&error);
+            }
             std::process::exit(1);
         }
         return;
@@ -200,9 +207,6 @@ fn main() {
         }
         return;
     }
-    let headless = args
-        .iter()
-        .any(|v| v == "--headless" || v == "--no-browser" || v == "--play");
     #[cfg(all(target_os = "linux", mk8_portable))]
     if !headless && installer::should_setup(&args) {
         if let Err(error) = installer_ui::window(None) {

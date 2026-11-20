@@ -11,7 +11,11 @@ permissions:
   contents: read
 
 jobs:
+  windows-ffmpeg:
+    uses: ./.github/workflows/windows-ffmpeg.yml
+
   windows:
+    needs: windows-ffmpeg
     runs-on: windows-latest
     env:
       MK8_UPDATE_REPO: ${{ github.repository }}
@@ -37,11 +41,20 @@ jobs:
         run: >-
           python -m pip --isolated install --only-binary=:all: --require-hashes
           -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-ffmpeg
+      - name: Prepare Windows compiler and headers
+        run: |
+          python scripts/setup-native.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/setup-runtime-deps.py
       - name: Build setup
         shell: pwsh
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           if ($tag) { python scripts/release.py --tag $tag } else { python scripts/release.py }
+      - run: python scripts/smoke-windows-portable.py
       - uses: actions/upload-artifact@v4
         with:
           name: windows-packages

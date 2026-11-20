@@ -497,6 +497,9 @@ fn spawn_handoff(package: &Package, journal: &Journal, lock: File) -> io::Result
         .arg(fds[1].to_string())
         .current_dir(&journal.data)
         .stdin(Stdio::null());
+    if journal.headless {
+        command.arg("--headless");
+    }
     // The helper needs the original process handle and the already held lock.
     unsafe {
         command.pre_exec(move || {
@@ -521,6 +524,11 @@ pub fn run_handoff(args: &[String]) -> Result<()> {
 }
 
 fn handoff(args: &[String]) -> io::Result<()> {
+    let args = if args.last().is_some_and(|arg| arg == "--headless") {
+        &args[..args.len() - 1]
+    } else {
+        args
+    };
     let [_, _, target, wait, lock] = args else {
         return Err(invalid("Argumentos de atualização inválidos."));
     };

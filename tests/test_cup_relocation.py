@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
-from native import DEFAULT_COMPILER, compiler_env
+from native import DEFAULT_COMPILER, TARGET_FLAGS, cc, compiler_env
 import cup_relocation as C
 
 BUILDS = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'builds'
@@ -421,7 +421,7 @@ class CupRuntimeTests(unittest.TestCase):
             (out/'inc/rt.h').write_text(RT_H, encoding='utf-8')
             (out/'harness.c').write_text(HARNESS, encoding='utf-8')
             exe = out/'harness.exe'
-            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-I', str(out/'inc'),
+            subprocess.run([*cc(), *TARGET_FLAGS, '-O1', '-I', str(out/'inc'),
                             str(out/'harness.c'), str(ROOT/'runtime/mk8/support/cups.c'), '-o', str(exe)],
                            env=compiler_env(), check=True, capture_output=True)
             self.assertEqual(subprocess.run([str(exe)], timeout=60).returncode, 0)

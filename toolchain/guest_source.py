@@ -4,10 +4,12 @@ import hashlib
 
 def verified_bytes(path, expected, error):
     raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() == expected:
+        return raw
     lf = raw.replace(b'\r\n', b'\n')
     if b'\r' in lf or (raw != lf and raw != lf.replace(b'\n', b'\r\n')):
         raise ValueError(error)
-    for candidate in (raw, lf if raw != lf else lf.replace(b'\n', b'\r\n')):
-        if hashlib.sha256(candidate).hexdigest() == expected:
-            return candidate
+    candidate = lf if raw != lf else lf.replace(b'\n', b'\r\n')
+    if hashlib.sha256(candidate).hexdigest() == expected:
+        return candidate
     raise ValueError(error)

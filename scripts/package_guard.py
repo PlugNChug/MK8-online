@@ -28,7 +28,7 @@ FORBIDDEN = (
      "frame-generation SPIR-V blobs"),
     (re.compile(r"(^|/)libmk8_mlfi_[^/]*\.so(?:\..*)?$", re.I),
      "AMD FidelityFX provider library"),
-    (re.compile(r"(^|/)(?:models/[^/]+\.(?:bin|dat|weights)|[^/]+\.(?:onnx|weights))$", re.I),
+    (re.compile(r"(^|/)(?:models?/[^/]+\.(?:bin|dat|weights)|[^/]+\.(?:onnx|weights))$", re.I),
      "generated model"),
     (re.compile(r"(^|/)(?:[^/]+\.spv|(?:fg|upscaler)_blobs\.(?:h|hpp|inc)|mlfi_shaders\.h)$", re.I),
      "generated shader"),
