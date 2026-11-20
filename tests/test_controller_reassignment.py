@@ -106,8 +106,9 @@ int main(void) {
             start = full.index('static void mk8_open_gamepad(SDL_JoystickID id) {')
             discovery = full[start:full.index('\n}', start)+2]
             start = full.index('typedef struct {', full.index('// Vibration devices:'))
-            lifecycle = full[start:full.index('static struct Mk8RumblePad *mk8_rumble_pad(', start)]
+            lifecycle = full[start:full.index('static struct Mk8GuestPad *mk8_guest_rumble_pad(', start)]
             (root/'test.c').write_text(r'''
+#include <pthread.h>
 #include <SDL3/SDL.h>
 #include <assert.h>
 #include <math.h>

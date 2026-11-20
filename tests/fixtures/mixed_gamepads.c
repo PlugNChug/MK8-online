@@ -210,6 +210,7 @@ static void pulse(unsigned player, unsigned side, float amplitude) {
     IpcReq req = {.cmd=201, .data=(const uint8_t *)&payload, .data_size=sizeof payload};
     IpcResp resp = {0};
     mk8_hid_rumble(&req, &resp);
+    mk8_rumble_pump();
     assert(!resp.result);
 }
 static void expect_buzz(enum Device device) {
@@ -233,6 +234,7 @@ static void check_batched_pair(void) {
     batch.x[1] = (IpcBuf){(uintptr_t)(guest + 16), sizeof values};
     IpcResp resp = {0};
     mk8_hid_rumble(&batch, &resp);
+    mk8_rumble_pump();
     assert(!resp.result && buzzing[PAIR_L] && buzzing[PAIR_R]);
     assert(!buzzing[PRO] && !buzzing[SOLO_L] && !buzzing[SOLO_R]);
     for (unsigned side = 0; side < 2; ++side) {
