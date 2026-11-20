@@ -8,6 +8,9 @@
 | FSR 3.1.6 (AMD signed DLL) | **PASS** | `present 1920x1080 -> 2560x1440`, `provider 3.1.6`, `upscale active`; exit 0; `fsr-05000.png` |
 | DLSS Super Resolution (`nvngx_dlss.dll` 58 MB set) | **PASS (captured depth/motion)** | `SuperSampling.Available = 1`, `depth source: captured scene depth`, `motion vectors: camera-derived`; exit 0; `dlssmove-05000.png` |
 | DLSS Frame Generation (`MK8_DLSS_FG=1`) | **PASS with workaround** | latency chain skipped; `[dlss_fg] active`, `EvaluateFeature` success, `pair present` real+interpolated; exit 0; `dlssfgalone-05000.png` |
+| XeSS Super Resolution (`MK8_XESS=1`) | **PARTIAL** | device extension/feature enabled and `upscale active`, then `xessVKExecute failed -4 (invalid-argument)`; exit 0; `xess2560-05000.png` |
+| FSR 3.1.6 frame generation (`MK8_FSR_FG=fsr3`) | **PASS** | swapchain provider 3.1.7, effect provider 3.1.6, first interpolated frame; exit 0; `fsrfg316-05000.png` |
+| DLSS-G at 2560x1440 with depth resample | **PASS** | `depth resampled 1152x648 -> 2560x1440`; `pair present` real+interpolated; exit 0; `dlssfg1152-05000.png` |
 | Interactive session required | **No** | SSH session 0 created the Vulkan window and swapchain normally |
 
 This is an in-engine render, not a full qualification. `gameplay_verified` stays false; audio,
@@ -17,7 +20,9 @@ controls, a complete race, restart/save and clock speed were not measured.
 
 - Windows 11 `10.0.26300.10066`, SSH session 0 (`Ronny@192.168.8.197`).
 - NVIDIA GeForce RTX 5080, driver `32.0.16.2101`, Vulkan `1.4.357`.
-- Code under test: `8eeb6ef` plus the documentation commits, HEAD `4fdd9f8`.
+- Code under test: `8eeb6ef` plus the documentation commits; this round starts at
+  `1fa7ca3` with `1a78c6d` (XeSS device hook) and `5014ed7` (hash/package
+  refresh), plus the DLSS-G depth-resample change described below.
 - Data root: `C:/Users/Ronny/mk8-rtx/game/extracted`, 12,149,826,670 bytes,
   6,597 files (`exefs`, `romfs`, `control.nacp`).
 - Runtime directory: `C:/Users/Ronny/mk8-rtx/game/run-rtx`.
@@ -288,25 +293,137 @@ interpolated image, so visible interpolation is not independently proven by the
 still. Setting `MK8_DLSS_FG_LATENCY_CHAIN=1` reproduces the original crash with
 the same `-1073740791` exit, confirming the workaround is the chain.
 
-At 2560x1440 without `LARECOMP_SCALE=1.0`, the game renders the 3D scene at
-1152x648 while the display is 2560x1440; the DLSS-G input path requires
-matching depth/display sizes, so it falls back to real frames only. The FSR
-upscaler resamples depth in its own pass; the DLSS-G prepare does not, and a
-safe resample was not added here. **2560x1440 DLSS-G remains unverified**;
-1920x1080 with `LARECOMP_SCALE=1.0` is the verified two-image configuration.
+At 2560x1440 without `LARECOMP_SCALE=1.0`, the game renders below the display;
+the original DLSS-G prepare required matching depth/display sizes and fell back
+to real frames. The depth-resample section below removes that limitation.
+
+## XeSS Super Resolution
+
+The official `libxess.dll` (77,795,704 bytes, SHA-256
+`251659dd84a3e84de67c886a4186e01f3eca49b00641906fe38bb6b807e5d5b7`) was
+copied next to `mk8drecomp.exe` in `run-rtx`. At 1920x1080 with
+`LARECOMP_SCALE=1.0`, `output_scale` forces a 1920x1080 render, so the output is
+1:1 and the XeSS upscale call is not reached; that run only exercises the device
+hook. The real upscale run therefore uses `2560x1440` with
+`LARECOMP_SCALE=1.0` (render 1920x1080):
+
+```powershell
+$env:LARECOMP_WINDOW = '2560x1440'
+$env:LARECOMP_SCALE = '1.0'
+$env:MK8_XESS = '1'
+$env:MK8_XESS_LIB = "$run\libxess.dll"
+$env:MK8_FSR4 = '1'
+$env:MK8_FSR4_CAPTURE = '1'
+# same race input and 4600/4800/5000 captures
+```
+
+The device hook (commit `1a78c6d`) now runs before `vkCreateDevice` and enables
+what XeSS asks for:
+
+```text
+[xess] VK_EXT_mutable_descriptor_type enabled
+[xess] mutableDescriptorType feature enabled
+[xess] shaderStorageImageWriteWithoutFormat: 1
+[xess] provider 2.0.2 from C:\Users\Ronny\mk8-rtx\game\run-rtx\libxess.dll
+[xess] required instance API 0x403000, 0 extension(s)
+[xess] 1 required device extension(s)
+[xess]   device extension: VK_EXT_mutable_descriptor_type
+[xess] SR context 1920x1080 -> 2560x1440, quality ultra-quality, flags 0x40
+[xess] depth source: neutral (no captured scene depth) 1920x1080 fmt 100
+[xess] upscale active 1920x1080 -> 2560x1440 (ultra-quality)
+[xess] depth source: captured scene depth 1920x1080 fmt 100
+[xess] motion vectors: camera-derived
+[xess] xessVKExecute failed -4 (invalid-argument)
+[xess] XeSS unavailable: xessVKExecute failed -4 (invalid-argument)
+```
+
+The process exits 0 and the screenshot `xess2560-05000.png` (9,208,022 bytes)
+is a valid race frame; the runtime falls back after the rejected execute. The
+DLL's own diagnostic string for this rejection is
+`xessVKExecute(): xess_vk_execute_params_t::velocityTexture is invalid.` A
+gated diagnostic build printed the rejected descriptor as a non-null view and
+image, `aspect=1`, `level=1`, `layer=1`, `1920x1080`, `fmt=83`
+(`VK_FORMAT_R16G16_SFLOAT`), so this is not a missing/null descriptor. XeSS
+does not complete the upscale on this NVIDIA driver; the remaining work is to
+find which additional condition the 2.0.2 provider applies to the velocity
+image.
+
+## FSR 3.1.6 frame generation
+
+The AMD signed frame-generation provider
+(`amd_fidelityfx_framegeneration_vk.dll`, 36,806,928 bytes, SHA-256
+`d002dabff8c5e71eaa715fc99438cd4dc81230262a7897b16bc402efec3498b4`) was
+selected explicitly. At 1920x1080 with `LARECOMP_SCALE=1.0`:
+
+```powershell
+$env:MK8_FSR_FG = 'fsr3'
+$env:MK8_FSR_FG_LIB = 'C:\Users\Ronny\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll'
+$env:MK8_FSR4 = '1'
+$env:MK8_FSR4_CAPTURE = '1'
+```
+
+Exit **0**. The swapchain and effect versions are distinct:
+
+```text
+[fsr_fg] provider loaded: C:\Users\Ronny\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll
+[fsr_fg] swapchain provider offers 3.1.7
+[fsr_fg] swapchain provider 3.1.7 (version 0xc01007)
+[fsr_fg] frame-generation effect provider 3.1.6
+[fsr_fg] active: FFX frame-interpolation swapchain 1920x1080 format 44 (present family 2)
+[fsr_fg] depth source: captured scene depth 1920x1080 fmt 100
+[fsr_fg] motion vectors: camera-derived
+[fsr_fg] first interpolated frame recorded (frameID 0, 1920x1080)
+```
+
+The FSR FG path names its two-image result `first interpolated frame recorded`;
+there is no separate `pair present` line on this path (that string belongs to
+the DLSS-G bridge). There was no `GPUVM`, `DEVICE_LOST` or `FATAL`.
+`fsrfg316-05000.png` (4,256,111 bytes) is a correct race frame. The same
+run was repeated with a depth-resample host and kept the same providers and
+exit 0.
+
+## DLSS-G at 2560x1440 with depth resample
+
+`runtime/mk8/graphics/fsr.cpp` now resamples the captured colour-R32F depth to
+the display size when the captured scene is smaller but has the same aspect
+ratio. The resample is a `vkCmdBlitImage` with nearest filtering, a display-sized
+`VK_FORMAT_R32_SFLOAT` image, and is used only by the frame-generation inputs;
+the equal-size 1920x1080 path is unchanged. The host built from this source is
+`99c88afdf8740af7bed9404d1c68bcf8cc3274d3328eeabff8f07e688bdfcfe0`
+(4,529,152 bytes).
+
+At 2560x1440, with `LARECOMP_SCALE=0.6` to force the 1152x648 render,
+`MK8_DLSS_FG=1`, `MK8_FSR4=1` and `MK8_FSR4_CAPTURE=1`:
+
+```text
+[dlss_fg] active: NGX DLSS-G 2x 2560x1440 (render 2560x1440, format 44), VK_NV_low_latency2 pacing
+[fsr_fg] depth resampled 1152x648 -> 2560x1440
+[fsr_fg] depth source: captured scene depth 2560x1440 fmt 100
+[fsr_fg] motion vectors: camera-derived
+[dlss_fg] NVSDK_NGX_VULKAN_EvaluateFeature(FrameGeneration): 0x00000001 (success)
+[dlss_fg] first evaluated frame 28: 2560x1440 backbuffer, second image 1
+[dlss_fg] pair present: real image 0 + interpolated image 1
+```
+
+Exit **0**; `dlssfg1152-05000.png` (8,833,972 bytes) is the 2560x1440 race
+frame. A second run without `LARECOMP_SCALE` (1920x1080 capture) also logged
+`depth resampled 1920x1080 -> 2560x1440` and `pair present`. This removes the
+previous `2560x1440 DLSS-G remains unverified` limit.
 
 ## What remains
 
 - Verify the latency-chain workaround on other NVIDIA driver versions; the
   `MK8_DLSS_FG_LATENCY_CHAIN=1` opt-in currently reproduces the driver bug.
-- Resample depth to the display size for DLSS-G when the game renders below
-  the window (2560x1440 with a 1152x648 scene), as the FSR upscaler does.
+- Find the remaining XeSS 2.0.2 velocity-image condition behind
+  `xessVKExecute -4`; the descriptor fields are valid and the device hook is
+  already enabled.
 - Capture a moving-camera DLSS SR A/B to quantify the remaining ghosting with
   real motion vectors; the start-grid frame is nearly static.
 - Qualify the race with audio, controls, clock speed, a full lap/cup and a
   clean restart/save.
-- Re-enable the optional ultrawide/native-settings guest hooks after their
-  pinned hashes are updated for the `4318c07` generation.
+- Rebuild the portable package with the depth-resample host (`99c88afd…`) if
+  the package should carry the 2560x1440 DLSS-G fix; the validated package
+  still has host `37af7b74…`.
 - A real Windows package (`package-launcher.py`/`release.py`) and WebView2
   window were not part of this run.
 
@@ -314,8 +431,14 @@ safe resample was not added here. **2560x1440 DLSS-G remains unverified**;
 
 Local (ignored, not committed): `local/rtx-ingame/race-05000.png`,
 `fsr-05000.png`, `dlssmove-05000.png`, `dlssfgalone-05000.png`,
-`local/rtx-ingame/logs/{race,fsr,dlss,dlsscap,dlssfg}.err` and the matching
-`.exit` files. The harness source is `local/rtx-harness/swapchain_probe.c` with
-`probe-*.out` logs. Remote originals remain under `C:/Users/Ronny/mk8-rtx/game/`
-and `C:/Users/Ronny/mk8-rtx/game/run-rtx/`. No binaries, screenshots or game
+`local/windows-rtx-check/xess2560-05000.png`,
+`local/windows-rtx-check/fsrfg316-05000.png`,
+`local/windows-rtx-check/dlssfg1152-05000.png`,
+`local/windows-rtx-check/dlssfg2560-05000.png`,
+`local/rtx-ingame/logs/{race,fsr,dlss,dlsscap,dlssfg}.err`
+and the matching `.exit` files. The new logs are remote
+`run-rtx/{xess2560,fsrfg316,dlssfg1152}.err`/`.exit`. The harness source is
+`local/rtx-harness/swapchain_probe.c` with `probe-*.out` logs. Remote originals
+remain under `C:/Users/Ronny/mk8-rtx/game/` and
+`C:/Users/Ronny/mk8-rtx/game/run-rtx/`. No binaries, screenshots or game
 data are committed.

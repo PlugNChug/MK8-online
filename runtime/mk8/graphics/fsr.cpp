@@ -81,6 +81,11 @@ typedef struct {
     VkImageView neutral_depth_view;
     uint32_t neutral_w, neutral_h;
     bool neutral_primed;
+    VkImage resampled_depth;
+    VmaAllocation resampled_depth_mem;
+    VkImageView resampled_depth_view;
+    VkFormat resampled_format;
+    uint32_t resampled_w, resampled_h;
     uint32_t motion_w, motion_h;
     bool motion_primed;
 } Fsr4;
@@ -353,6 +358,60 @@ static bool ensure_motion(VkCommandBuffer cb, uint32_t w, uint32_t h) {
     return true;
 }
 
+// DLSS-G asks for depth at the display size. At a 2560x1440 window the game's captured
+// scene depth is 1152x648 (LARECOMP_SCALE unset), so resample the colour R32F copy before
+// the DLSS-G prepare. Same aspect only; an unsupported shape falls back to the neutral image.
+static bool same_aspect(uint32_t aw, uint32_t ah, uint32_t bw, uint32_t bh) {
+    return aw && ah && bw && bh && (uint64_t)aw * bh == (uint64_t)bw * ah;
+}
+
+static bool ensure_resampled_depth(VkCommandBuffer cb, TexBackend *cap, uint32_t w, uint32_t h) {
+    if (fsr.resampled_depth && fsr.resampled_w == w && fsr.resampled_h == h)
+        return fsr.resampled_depth_view != VK_NULL_HANDLE;
+    if (fsr.resampled_depth_view) vkDestroyImageView(g_vk.dev, fsr.resampled_depth_view, NULL);
+    if (fsr.resampled_depth) {
+        vkDestroyImage(g_vk.dev, fsr.resampled_depth, NULL);
+        vmaFreeMemory(g_vk.vma, fsr.resampled_depth_mem);
+    }
+    fsr.resampled_depth = make_image(cap->format, w, h,
+                                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                     VK_IMAGE_ASPECT_COLOR_BIT, &fsr.resampled_depth_mem);
+    fsr.resampled_depth_view = fsr.resampled_depth
+        ? image_view(fsr.resampled_depth, cap->format, VK_IMAGE_ASPECT_COLOR_BIT) : VK_NULL_HANDLE;
+    if (!fsr.resampled_depth || !fsr.resampled_depth_view) return false;
+    fsr.resampled_format = cap->format;
+    fsr.resampled_w = w;
+    fsr.resampled_h = h;
+    barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    barrier(cb, fsr.resampled_depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkImageBlit region = {0};
+    region.srcSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.srcOffsets[1] = (VkOffset3D){(int32_t)cap->width, (int32_t)cap->height, 1};
+    region.dstSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstOffsets[1] = (VkOffset3D){(int32_t)w, (int32_t)h, 1};
+    vkCmdBlitImage(cb, cap->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, fsr.resampled_depth,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
+    barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    barrier(cb, fsr.resampled_depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    static uint32_t logged_w, logged_h;
+    if (logged_w != cap->width || logged_h != cap->height) {
+        logged_w = cap->width;
+        logged_h = cap->height;
+        fprintf(stderr, "[fsr_fg] depth resampled %ux%u -> %ux%u\n", cap->width, cap->height, w, h);
+    }
+    return true;
+}
+
 // Frame-generation inputs. The captured scene depth is the copy exec.c makes at the pass end
 // (MK8_FSR_FG enables that capture); the motion vectors are the camera-derived ones the upscaler
 // uses. A missing view/projection leaves the zero motion image and says so loudly.
@@ -363,17 +422,24 @@ extern "C" bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t w, uint32_t h,
     memset(motion, 0, sizeof *motion);
     TexBackend *cap = g_fsr_captured;
     bool real = cap && cap->image && cap->width == w && cap->height == h;
+    bool resampled = false;
+    if (!real && cap && cap->image && same_aspect(cap->width, cap->height, w, h)) {
+        real = ensure_resampled_depth(cb, cap, w, h);
+        resampled = real;
+    }
     if (real) {
-        VkImageView view = fsr_vk_image_view(cap, VK_IMAGE_VIEW_TYPE_2D, cap->format, 0, 1, 0, 1,
-                                             VkComponentMapping{}, VK_IMAGE_ASPECT_COLOR_BIT);
+        VkImageView view = resampled ? fsr.resampled_depth_view
+            : fsr_vk_image_view(cap, VK_IMAGE_VIEW_TYPE_2D, cap->format, 0, 1, 0, 1,
+                                VkComponentMapping{}, VK_IMAGE_ASPECT_COLOR_BIT);
         if (!view) return false;
-        barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-        depth->image = cap->image;
+        if (!resampled)
+            barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        depth->image = resampled ? fsr.resampled_depth : cap->image;
         depth->view = view;
-        depth->format = cap->format;
+        depth->format = resampled ? fsr.resampled_format : cap->format;
         depth->real = true;
     } else {
         if (!ensure_neutral_depth(cb, w, h)) return false;
@@ -427,12 +493,17 @@ static void destroy_images(void) {
     if (fsr.depth) { vkDestroyImage(g_vk.dev, fsr.depth, NULL); vmaFreeMemory(g_vk.vma, fsr.depth_mem); }
     if (fsr.motion_view) vkDestroyImageView(g_vk.dev, fsr.motion_view, NULL);
     if (fsr.motion) { vkDestroyImage(g_vk.dev, fsr.motion, NULL); vmaFreeMemory(g_vk.vma, fsr.motion_mem); }
+    if (fsr.resampled_depth_view) vkDestroyImageView(g_vk.dev, fsr.resampled_depth_view, NULL);
+    if (fsr.resampled_depth) { vkDestroyImage(g_vk.dev, fsr.resampled_depth, NULL); vmaFreeMemory(g_vk.vma, fsr.resampled_depth_mem); }
     fsr.output = VK_NULL_HANDLE;
     fsr.output_view = VK_NULL_HANDLE;
     fsr.depth = VK_NULL_HANDLE;
     fsr.depth_view = VK_NULL_HANDLE;
     fsr.motion = VK_NULL_HANDLE;
     fsr.motion_view = VK_NULL_HANDLE;
+    fsr.resampled_depth = VK_NULL_HANDLE;
+    fsr.resampled_depth_view = VK_NULL_HANDLE;
+    fsr.resampled_w = fsr.resampled_h = 0;
     fsr.primed = false;
 }
 

@@ -290,14 +290,47 @@ normally, and the existing `run-rtx` tree rendered at 1280x720 with its
 `mk8d.ini` (`resolution = 75%`, `upscaler = fsr1`). The validated packaged boot
 is therefore 1920x1080; 1280x720 is not claimed.
 
+## Post-package in-engine checks
+
+These checks used the existing `run-rtx` data/runtime and did not change the
+package zip, `Launcher.exe` or the hashes above. Full logs and screenshots are
+under `local/windows-rtx-check/` and the remote `run-rtx/` directory.
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| FSR 3.1.6 frame generation | **PASS** | `MK8_FSR_FG=fsr3` + signed `amd_fidelityfx_framegeneration_vk.dll`; swapchain 3.1.7, effect 3.1.6, first interpolated frame; exit 0; `fsrfg316-05000.png` |
+| XeSS Super Resolution | **PARTIAL** | device extension/feature enabled, `SR context 1920x1080 -> 2560x1440`, `upscale active`, then `xessVKExecute -4`; exit 0; fallback; `xess2560-05000.png` |
+| DLSS-G at 2560x1440 | **PASS** | depth resample 1152x648 to 2560x1440, `pair present`; exit 0; `dlssfg1152-05000.png` |
+
+The XeSS run used the package host
+`37af7b744a09e36dc5e55025e3cdd0a508afa0ea91517f28817fec14a6cc8479`;
+FSR FG passed on that host and was repeated successfully on a depth-resample
+host. At
+1920x1080 with `LARECOMP_SCALE=1.0` the render is 1:1, so the actual XeSS
+upscale was run at 2560x1440 with the same scale. The provider's exact failure
+is `xessVKExecute failed -4 (invalid-argument)`; its diagnostic string names
+`velocityTexture`, and a gated diagnostic build showed valid non-null
+view/image, aspect 1, level 1, layer 1, 1920x1080, format 83.
+
+The 2560x1440 DLSS-G pass uses `LARECOMP_SCALE=0.6` (1152x648 render) and the host built from
+`runtime/mk8/graphics/fsr.cpp` with the display-size depth resample:
+`99c88afdf8740af7bed9404d1c68bcf8cc3274d3328eeabff8f07e688bdfcfe0`
+(4,529,152 bytes). **That host is not in the package zip above**; the package
+still carries `37af7b74…`. To include the fix, rebuild the tree with
+`--host-dir local/windows-rtx2/host-depth` (and regenerate the launcher payload)
+and repeat the launcher/gate and boot checks. The source change is committed;
+the shipped package hash must not be quoted for the 2560x1440 result.
+
 ## Files added or changed
 
 - `toolchain/ultrawide.py`, `toolchain/ultrawide_hud.py`,
   `toolchain/settings_menu.py`: refreshed pinned hashes.
 - `toolchain/host.py`, `toolchain/xess.py`: gated XeSS device-extension hook
   registered after the DLSS preparation; inert without `MK8_XESS`.
+- `runtime/mk8/graphics/fsr.cpp`: display-size depth resample for the
+  frame-generation inputs (2560x1440 DLSS-G).
 - `tests/test_optional_guest_patches.py`: hash and anchor checks.
 - `scripts/package-windows-portable.py`: cross-built portable tree and zip.
-- `docs/WINDOWS-PACKAGING.md`: this document.
+- `docs/WINDOWS-PACKAGING.md`, `docs/WINDOWS-INGAME-RTX.md`: this record.
 
 `docs/STATUS.md` was not edited for this package.
