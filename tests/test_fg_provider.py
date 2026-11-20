@@ -93,8 +93,18 @@ class FrameGenerationProviderTests(unittest.TestCase):
         proc = subprocess.run([str(binary), str(self.library)], capture_output=True, text=True, timeout=300)
         output = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, output)
-        self.assertIn("ffxCreateContext(FG 1920x1080) rc=0 (OK)", output, output)
+        self.assertIn("ffxCreateContext(FG 1920x1080 flags=0x2) rc=0 (OK)", output, output)
         self.assertIn("ffxDestroyContext rc=0 (OK)", output, output)
+
+    def test_inverted_depth_permutation_is_created(self):
+        # Flags bit 3 is FFX_FRAMEGENERATION_ENABLE_DEPTH_INVERTED; this selects the separately compiled d1 blobs.
+        binary = self._build("test_context.cpp", "test_context_inverted")
+        proc = subprocess.run([str(binary), str(self.library), "1920", "1080", "8"],
+                              capture_output=True, text=True, timeout=300)
+        output = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, output)
+        self.assertIn("flags=0xa", output, output)
+        self.assertIn("rc=0 (OK)", output, output)
 
 
 if __name__ == "__main__":

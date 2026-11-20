@@ -20,6 +20,7 @@ Usage:
 import argparse
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -150,12 +151,6 @@ PATCHES = [
     ),
 ]
 
-BACKSLASH_INCLUDE_FILES = [
-    "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK_DebugPacing.h",
-    "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK_UiComposition.h",
-]
-
-
 def fail(message):
     print(f"error: {message}", file=sys.stderr)
     raise SystemExit(1)
@@ -211,13 +206,15 @@ def apply_patches(sdk_root: Path):
             fail(f"ambiguous Linux portability edit in {rel}: {count} matches")
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-    for rel in BACKSLASH_INCLUDE_FILES:
-        path = sdk_root / rel
-        if not path.is_file():
-            fail(f"missing SDK file: {rel}")
-        text = path.read_text(encoding="utf-8")
-        fixed = text.replace("#include \"..\\..\\..\\backend\\vk\\ffx_vk.h\"",
-                             "#include \"../../../backend/vk/ffx_vk.h\"")
+    # Normalise Windows-style include paths anywhere in the SDK (some Vulkan headers use ..\\..\\..\\backend\\...).
+    for path in sdk_root.rglob("*"):
+        if path.suffix.lower() not in (".h", ".hpp", ".cpp", ".c"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        fixed = re.sub(r'#include\s+"([^"]*)"', lambda m: '#include "%s"' % m.group(1).replace("\\", "/"), text)
         if fixed != text:
             path.write_text(fixed, encoding="utf-8")
 
