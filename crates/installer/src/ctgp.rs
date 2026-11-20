@@ -276,6 +276,7 @@ mod tests {
             pack_supported: supported,
             cups_supported: supported,
             nextendo_supported: false,
+            temporal_upscaling_supported: false,
             files: BTreeMap::new(),
         }
     }

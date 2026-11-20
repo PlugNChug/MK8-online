@@ -8,6 +8,7 @@ mod debug_web;
 mod fonts;
 mod game_session;
 mod game_settings;
+mod graphics;
 mod installer;
 mod language;
 mod managed;
@@ -81,6 +82,13 @@ fn main() {
             fatal(&error.to_string());
             std::process::exit(1);
         }
+        return;
+    }
+    if args.get(1).is_some_and(|arg| arg == "--graphics-gpu") {
+        let Some(local) = args.get(2) else {
+            std::process::exit(1)
+        };
+        println!("{}", serde_json::json!(graphics::probe(Path::new(local))));
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--setup-python") {

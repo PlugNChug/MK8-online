@@ -1,5 +1,17 @@
 # Estado técnico — 20/11/2026
 
+## Ampliação experimental na 0.4.1 local
+
+A tela **Configurações → Vídeo e controles → Imagem** oferece FSR 3.1.6 e, conforme a GPU detectada, FSR 4.1.2 ou DLSS Super Resolution. A instalação é opcional e verifica tamanho e SHA-256 da licença e da DLL do fabricante. A seleção persiste no INI. O launcher mostra o método e as dimensões registrados pelo runtime. FSR 1 e bilinear continuam integrados. A geração de quadros nativa continua separada da ampliação.
+
+Na RX 580 2048SP, o provedor Vulkan da AMD anunciou 3.1.6 e 2.3.4. O launcher bloqueou FSR 4 e DLSS nessa placa. Em execuções locais isoladas de Mario Kart Stadium, o provedor 3.1.6 processou 1920×1080 para 2560×1440 e 1152×648 para 1920×1080. A captura em 1080p mostrou a primeira volta e o contador em cerca de 60 FPS do jogo e de saída, com interpolação desligada. O arredondamento do renderizador explica a entrada de 648 linhas ao escolher 75% em 1080p. Quando solicitada uma versão ausente do provedor, o mesmo runtime usou FSR 1.
+
+O acesso pelo atalho **Jogar → Gráficos** abre a seleção de ampliação nas configurações normais. Solo, Steam e Nextendo usam a preferência salva pelo mesmo supervisor. As builds completas e as atualizações de runtime registram o suporte gráfico no manifesto. O launcher reconhece o runtime do teste anterior pelo SHA-256 e oferece uma atualização quando uma build mais antiga usa o mesmo número de versão.
+
+O primeiro instalador de teste gráfico tem SHA-256 `455ec548c09924cd988e14455d84beac7b472c9be051e7cceab13b6948c3197e`. O runtime extraído desse pacote coincide por SHA-256 com o executável que produziu a captura de 1080p.
+
+As capturas cobrem trechos da corrida. A qualidade temporal de karts em movimento, o desempenho com pistas e GPUs diferentes, DLSS em RTX e FSR 4 em RDNA 4 ainda exigem testes físicos. Os vetores de movimento são derivados da câmera quando há profundidade e projeção disponíveis. A integração de geração de quadros dos fabricantes e XeSS permanece em avaliação.
+
 **Instalador local para reteste de votação e preparação.** O setup 0.4.1 tem SHA-256 `f617c78f7093a2444b15feb2aa06376d0bbab15f0f582d3c230819343d3e296d`. O launcher extraído desse executável informou 0.4.1 e verificou os seis arquivos de modelos Mii na pasta isolada de teste.
 
 **Votação online na 0.4.1 de teste.** Os ZIPs da 0.4.0 contêm os mesmos logs. Em três sessões, com a preparação de modelos Mii desativada, a votação tentou escrever em `0x4ac` a partir de uma lista vazia em `f_7000428838`. As duas rotinas de notificação que usam essa lista verificam agora se ela contém modelos e dispõe de armazenamento. A unidade verificada de MK8 4.0.1 foi recompilada. As duas rotinas preparadas passaram em 72 combinações de disponibilidade, tamanho, índice e estado da notificação, incluindo a seleção do primeiro modelo como alternativa quando há modelos disponíveis.
@@ -30,7 +42,7 @@ Na revisão `93b817d` da PR #83, a preparação recusou três unidades válidas 
 
 O backend Linux da #83 não fornecia duas funções de GameInput chamadas pela `fix-chore` e seu inicializador retornava sucesso sem inicializar o SDL. As chamadas a GameInput agora ficam no Windows. No Linux, o código preparado inicializou vídeo e gamepad por SDL3, recebeu um botão de um controle virtual e propagou o erro de um driver de vídeo indisponível. Os 13 testes selecionados de entrada e apresentação no Windows passaram.
 
-O runtime Windows isolado da #83 compilou as 233 unidades e abriu o MK8 com a biblioteca do jogo da build local na RX 580 2048SP. O porte Linux completo, FSR e DLSS continuam em revisão. A consulta de versões FSR no launcher ainda precisa revalidar as bibliotecas instaladas ao carregá-las. Passaram 16 dos 17 testes gráficos selecionados e 11 dos 18 testes do carregador DLSS. Na PR #81, quatro dos 12 testes de XeSS passaram no WSL. Os demais nesses grupos dependem de ferramentas, SDKs ou provedores opcionais. A falha de execução XeSS na RTX 5080 é um relato do autor da PR.
+O runtime Windows isolado da #83 compilou as 233 unidades e abriu o MK8 com a biblioteca do jogo da build local na RX 580 2048SP. Naquela revisão, o porte Linux completo, FSR e DLSS estavam em análise e a consulta de versões ainda precisava revalidar as bibliotecas. A integração Windows posterior está descrita na seção de ampliação da 0.4.1. Passaram 16 dos 17 testes gráficos selecionados e 11 dos 18 testes do carregador DLSS. Na PR #81, quatro dos 12 testes de XeSS passaram no WSL. Os demais nesses grupos dependem de ferramentas, SDKs ou provedores opcionais. A falha de execução XeSS na RTX 5080 é um relato do autor da PR.
 
 ## Atribuição de controles na integração da PR #75
 

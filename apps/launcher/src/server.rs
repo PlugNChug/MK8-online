@@ -71,6 +71,7 @@ pub struct App {
     resources_state: &'static str,
     resources_detail: String,
     mii_download: crate::mii_download::Download,
+    graphics: crate::graphics::Components,
     /// Steam lobby invites received from friends (lobby, friend), until accepted or the room is gone.
     steam_invites: Vec<(u64, u64)>,
     /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
@@ -201,6 +202,7 @@ impl App {
             resources_state: "idle",
             resources_detail: String::new(),
             mii_download: Default::default(),
+            graphics: Default::default(),
             steam_invites: Vec::new(),
             pending_play: None,
             steam_auto_join,
@@ -776,8 +778,20 @@ impl App {
             .as_ref()
             .or(candidate.as_ref())
             .is_some_and(|game| game.nextendo_supported);
+        let graphics_upgrade = candidate.as_ref().is_some_and(|game| {
+            // The first 0.4.1 graphics installer predates the capability field.
+            !game.temporal_upscaling_supported
+                && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
+                    |host| {
+                        host["files"]["mk8drecomp.exe"].as_str()
+                            == Some(game.executable.sha256.as_str())
+                    },
+                )
+        });
         let candidate_stale = candidate_exists
-            && (candidate_version.as_deref() != Some(update::CURRENT) || !nextendo_supported);
+            && (candidate_version.as_deref() != Some(update::CURRENT)
+                || !nextendo_supported
+                || graphics_upgrade);
         let dlc =
             mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
         let ctgp = mk8_installer::ctgp::status(
@@ -835,6 +849,15 @@ impl App {
                     value["keys"].as_str().unwrap_or(""),
                 ))
             }
+            ("GET", "/api/graphics") => self.graphics.status(&self.local),
+            ("POST", "/api/graphics/license") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                crate::graphics::license(&self.local, value["vendor"].as_str().unwrap_or(""))
+            }
+            ("POST", "/api/graphics/install") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                self.graphics.start(&self.local, &value)
+            }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
             ("POST", "/api/debug-options") => {
@@ -887,6 +910,9 @@ impl App {
                 }
                 if path == "/api/settings" {
                     let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    if let Some(mode) = value["upscaler"].as_str() {
+                        crate::graphics::validate(&self.local, mode)?;
+                    }
                     crate::game_settings::write(&self.local, &value)?;
                     return Ok(
                         json!({"message":"Configurações salvas. As alterações valem ao iniciar o jogo."}),
@@ -2391,6 +2417,7 @@ mod tests {
             pack_supported: false,
             cups_supported: false,
             nextendo_supported: false,
+            temporal_upscaling_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

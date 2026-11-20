@@ -16,13 +16,14 @@ OUTPUT = TARGET / "portable"
 # (its own target folder: the packaged build embeds the payload, unlike target/release used in development)
 BUILD = TARGET / "package"
 MANIFEST = ROOT / "upstream/manifests/smm2recomp.json"
-SOURCE_EXTENSIONS = {".c", ".h", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
+SOURCE_EXTENSIONS = {".c", ".cpp", ".h", ".inc", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
 
 
 def payload_files():
     yield ROOT / "LICENSE"
     yield MANIFEST
     yield ROOT / "toolchain/mii_assembly.html"
+    yield ROOT / "runtime/mk8/graphics/ffx/LICENSE"
     yield ROOT / "runtime/mk8/windows.manifest"
     yield ROOT / "runtime/mk8/windows.rc"
     importer = ROOT / "tools/mk8-import"

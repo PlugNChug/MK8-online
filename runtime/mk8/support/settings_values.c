@@ -153,6 +153,7 @@ static void apply(Request r) {
         return;
     }
     if(r.id==RESET) { if(r.operation==SETTINGS_ACTIVATE) { bind_reset(mapping_device); dirty=true; } return; }
+    if(r.id==5 && g_settings.upscaler>=UPSCALE_FSR3) return;
     if(r.id==SHADERS || (r.id==5 && g_settings.res_mode==RES_MATCH)) return;
     if(r.id==VOLUME) {
         int pct=(int)lroundf(g_settings.volume*100);
@@ -221,6 +222,11 @@ void mk8_settings_values_sync(void) {
             v->maximum=o->count-1; bool found=false;
             for(int i=0;i<o->count;i++) if(*o->choice==(o->values ? o->values[i] : i)) { v->current=i; snprintf(v->value,sizeof v->value,"%s",o->names[i]); found=true; }
             if(!found) snprintf(v->value,sizeof v->value,"Custom (%d)",*o->choice);
+            if(v->id==5 && g_settings.upscaler>=UPSCALE_FSR3) {
+                v->enabled=false;
+                snprintf(v->value,sizeof v->value,"%s",g_settings.upscaler==UPSCALE_DLSS ? "DLSS SR" : g_settings.upscaler==UPSCALE_FSR4 ? "FSR 4.1.2" : "FSR 3.1.6");
+                snprintf(v->help,sizeof v->help,"Select the provider in the launcher.");
+            }
             if(v->id==5 && g_settings.res_mode==RES_MATCH) { v->enabled=false; snprintf(v->value,sizeof v->value,"Not used at Match"); }
         }
         if(needs_main_menu(v->id) && !main_menu) {

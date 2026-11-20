@@ -115,6 +115,59 @@ class SettingsModulesTests(unittest.TestCase):
         expect(switch).to_be_enabled()
         self.assertTrue(json.loads((self.local/'debug-options.json').read_text())['native_settings'])
 
+    def test_optional_graphics_component_requires_reading_and_acceptance(self):
+        page = self.page
+        caps = {'gpu':'Radeon test GPU', 'rdna4':False, 'rtx':False, 'amd':False,
+                'nvidia':False, 'versions':[]}
+        installs = []
+        def install(route):
+            installs.append(route.request.post_data_json)
+            caps.update(amd=True, versions=['3.1.6'])
+            route.fulfill(json={'ok':True, 'data':{'running':True}})
+        page.route('**/api/graphics', lambda route: route.fulfill(json={'ok':True, 'data':{'caps':caps, 'running':False}}))
+        page.route('**/api/graphics/license', lambda route: route.fulfill(json={'ok':True, 'data':{'text':'Test component license'}}))
+        page.route('**/api/graphics/install', install)
+        page.locator('#config-tab-content').click()
+        page.locator('button[data-tab="play"]').click()
+        page.locator('#play-graphics').click()
+        expect(page.locator('#config-field-upscaler')).to_be_focused()
+        expect(page.locator('#graphics-gpu')).to_contain_text(caps['gpu'])
+        scaler = page.locator('#config-field-upscaler')
+        expect(scaler.locator('option[value="dlss"]')).to_have_js_property('disabled', True)
+        expect(scaler.locator('option[value="fsr4"]')).to_have_js_property('disabled', True)
+        scaler.select_option('fsr3')
+        expect(page.locator('#settings-save')).to_be_disabled()
+        expect(page.locator('#graphics-install')).to_be_disabled()
+        page.locator('#graphics-license').click()
+        expect(page.locator('#graphics-license-text')).to_have_text('Test component license')
+        self.assertEqual(installs, [])
+        page.locator('#graphics-consent').check()
+        page.locator('#graphics-install').click()
+        expect(page.locator('#settings-save')).to_be_enabled()
+        self.assertEqual(installs, [{'vendor':'amd', 'accept_terms':True}])
+
+    def test_upgrade_from_earlier_runtime_with_same_launcher_version(self):
+        page = self.page
+        status = page.evaluate("api('status')")
+        version = status['version']
+        (self.local/'built-with.json').write_text(json.dumps({'version':version}))
+        host = Path(status['root'])/'prebuilt/host/manifest.json'
+        candidate = {'schema':2, 'identity':'test', 'profile':'mk8d-smm2-experimental',
+                     'executable':{'path':'old.exe', 'sha256':'0'*64, 'bytes':1},
+                     'files':{}, 'data_root':'.', 'shader_root':'.', 'gameplay_verified':False,
+                     'dlc_supported':True, 'nextendo_supported':True}
+        path = self.local/'candidate.json'
+        path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        if host.is_file():
+            candidate['executable']['sha256'] = json.loads(host.read_text())['files']['mk8drecomp.exe']
+            path.write_text(json.dumps(candidate))
+            self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+        candidate['executable']['sha256'] = '1'*64
+        candidate['temporal_upscaling_supported'] = True
+        path.write_text(json.dumps(candidate))
+        self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page
         expect(page.locator('#config-tab-fonts')).to_be_enabled()

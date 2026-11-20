@@ -31,6 +31,12 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 > [!NOTE]
 > **Já usa a primeira 0.4.0?** Baixe manualmente o novo instalador ou ZIP portátil. O atualizador compara os números de versão. Mantenha sua pasta de dados, abra **Instalação → Ferramentas** e atualize a build do jogo.
 
+## Opções gráficas na 0.4.1 de teste
+
+No launcher 0.4.1, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao trocar uma edição de teste anterior da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
+
+FSR 1 e bilinear já vêm disponíveis. Se o provedor recusar o recurso, o jogo usa a ampliação integrada. A opção separada de geração de quadros usa a interpolação própria do runtime. Ative o contador para comparar os FPS do jogo, os FPS de saída e os milissegundos por quadro do jogo.
+
 ## Novidades da 0.4.0
 
 **Multijogador online nativo com o Nextendo.** Selecione **Jogar → Jogar no Nextendo** no launcher, entre na sua conta pelo navegador e abra **Online Play → Mundial → Corrida** no Mario Kart para jogar com outras pessoas. Pressione **F1** dentro do jogo para consultar salas e amigos. As sessões Nextendo usam as pistas originais.

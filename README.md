@@ -31,6 +31,12 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 > [!NOTE]
 > **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
 
+## Testing graphics options in 0.4.1
+
+In the 0.4.1 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from an earlier 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
+
+FSR 1 and bilinear filtering work out of the box. A rejected provider falls back to built-in scaling. The separate frame generation setting uses the runtime's own interpolation. Enable the FPS counter to compare game FPS, output FPS and milliseconds per game frame.
+
 ## What's new in 0.4.0
 
 **Native online multiplayer with Nextendo.** Select **Play → Play on Nextendo** in the launcher, sign in through your browser, then open **Online Play → Worldwide → Race** in Mario Kart to race other players. Open **F1** in the game to see rooms and friends. Nextendo sessions use the original courses.

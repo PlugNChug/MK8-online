@@ -443,6 +443,7 @@ mod tests {
             pack_supported: false,
             cups_supported: false,
             nextendo_supported: false,
+            temporal_upscaling_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());

@@ -19,6 +19,7 @@ mk8-session = { path = "../../crates/session" }
 mk8-transport = { path = "../../crates/transport" }
 serde.workspace = true
 serde_json.workspace = true
+libloading = "0.8"
 tiny_http = "0.12"
 tauri = { version = "2", features = [] }
 rfd = "0.17"

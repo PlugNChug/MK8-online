@@ -136,9 +136,9 @@
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',
     resolution: 'Define a resolução usada para desenhar o jogo. Valores menores reduzem o detalhe; a opção Dinâmica adapta a resolução. A imagem aqui é apenas uma comparação conceitual.',
-    upscaler: 'Escolhe como ampliar a imagem renderizada. Fica disponível quando a resolução interna é diferente de Igual à tela. O exemplo não reproduz o algoritmo FSR.',
+    upscaler: 'Para testar a ampliação, escolha uma resolução interna menor que a da tela e salve. O jogo informa as dimensões e o método que usou.',
     antialias: 'Suavização de bordas: SMAA trata o serrilhado. Esta ilustração não reproduz o resultado final do filtro.',
-    frame_gen: 'A opção 120 FPS ativa a geração de quadros intermediários. Isso não representa uma garantia de desempenho ou uma medição neste computador.',
+    frame_gen: 'A interpolação nativa pode apresentar até 120 FPS com a simulação a 60 Hz. Ative o contador para ver os FPS do jogo, os FPS de saída e o tempo por quadro do jogo.',
     skip_intro: 'Ao iniciar o jogo, pula a introdução. Não altera a imagem das corridas.',
     ahead_fast: 'Prioriza a preparação dos shaders na velocidade máxima. O efeito real depende do computador e da preparação do jogo.',
     volume: 'Ajuste o volume de 0% a 200%. O indicador visual não reproduz áudio; valores acima de 100% amplificam o sinal.',
@@ -146,13 +146,13 @@
     movie_audio: 'Controla o áudio das sequências em vídeo.',
     mute_in_background: 'Silencia o jogo enquanto outra janela estiver em foco.',
     prompts: 'Escolhe os símbolos exibidos nos comandos. Isso não altera o mapeamento dos botões físicos.',
-    pads_from_p2: 'Reserva o primeiro jogador para outra entrada e começa a atribuição dos controles no jogador 2.',
+    pads_from_p2: 'Na tela inicial, pressione um botão com o controle ou teclado que será o jogador 1. Na seleção local de personagens, use + ou o botão −/+ para reorganizar os jogadores.',
     language: 'Escolhe o idioma dentro do jogo. O idioma do launcher é configurado separadamente no topo da janela.',
   };
   const hints = {
     theme: 'Aparência do menu F1, dentro do jogo.', aspect: 'Como a imagem ocupa o monitor.', fullscreen: 'Também pode alternar com F11 ou Alt+Enter.',
     show_fps: 'Contador sobre a imagem do jogo.', show_memory: 'Acompanhe o uso de memória durante a execução.',
-    resolution: 'Equilíbrio entre detalhe e custo de renderização.', upscaler: 'Disponível ao alterar a resolução interna.', antialias: 'Tratamento das bordas dos objetos.',
+    resolution: 'Equilíbrio entre detalhe e custo de renderização.', upscaler: 'FSR 3, FSR 4 e DLSS são experimentais.', antialias: 'Tratamento das bordas dos objetos.',
     frame_gen: 'Quadros intermediários para a apresentação.', skip_intro: 'Vá mais rapidamente para o menu inicial.', ahead_fast: 'Priorize a preparação antecipada dos shaders.',
     reverb: 'Efeito de reverberação no áudio.', movie_audio: 'Som das sequências em vídeo.', mute_in_background: 'Silencie ao trocar de janela.',
     language: 'Idioma do jogo, independente do launcher.', prompts: 'Símbolos Nintendo, Xbox ou PlayStation.', pads_from_p2: 'Comece a atribuição dos controles no jogador 2.',
@@ -300,7 +300,11 @@
   byId('ctgp-layout').addEventListener('change', () => { exploredLayout = null; updateContent(); });
   document.addEventListener('click', event => {
     const shortcut = event.target.closest('[data-goto="settings"]');
-    if (shortcut) selectModule('content', shortcut.dataset.anchor === 'ctgp-title' ? 'ctgp' : 'dlc');
+    if (shortcut?.id === 'play-graphics') {
+      selectModule('video'); selectSub('image');
+    } else if (shortcut) {
+      selectModule('content', shortcut.dataset.anchor === 'ctgp-title' ? 'ctgp' : 'dlc');
+    }
     const legacy = event.target.closest('.settings-index a');
     if (legacy) { event.preventDefault(); selectModule(legacy.hash === '#font-title' ? 'fonts' : legacy.hash === '#settings-groups' ? 'video' : 'content', legacy.hash === '#ctgp-title' ? 'ctgp' : 'dlc'); }
   }, true);

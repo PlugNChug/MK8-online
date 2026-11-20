@@ -11,7 +11,7 @@ pub struct Options {
     pub native_settings: bool,
 }
 
-fn plain(path: &Path) -> Result<()> {
+pub(crate) fn plain(path: &Path) -> Result<()> {
     for parent in path.ancestors() {
         let meta = match fs::symlink_metadata(parent) {
             Ok(meta) => meta,
@@ -26,7 +26,7 @@ fn plain(path: &Path) -> Result<()> {
         #[cfg(not(windows))]
         let linked = meta.file_type().is_symlink();
         if linked {
-            return Err("Depuração: caminho com link recusado.".into());
+            return Err("Caminho com link recusado.".into());
         }
     }
     Ok(())

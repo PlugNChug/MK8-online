@@ -42,6 +42,7 @@ pub fn run() -> Result<i32> {
         "MK8_UI_LANGUAGE",
         crate::language::effective(&request.local),
     );
+    crate::graphics::configure(&request.local)?;
     crate::fonts::configure(&request.local)?;
     crate::debug_options::configure(&request.local)?;
     std::env::remove_var("MK8_SETTINGS_ROMFS");

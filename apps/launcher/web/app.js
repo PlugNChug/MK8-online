@@ -65,7 +65,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
-  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadDebugOptions()])
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadDebugOptions(), loadGraphics()])
     .catch((error) => notice(error.message, true));
 }
 document
@@ -77,10 +77,64 @@ document
   .querySelectorAll("[data-goto]")
   .forEach((el) => (el.onclick = async () => {
     await showTab(el.dataset.goto);
-    if (el.dataset.anchor) $(el.dataset.anchor)?.scrollIntoView({ block: "start" });
+    if (el.dataset.anchor) {
+      const target = $(el.dataset.anchor);
+      target?.scrollIntoView({ block: "center" });
+      if (target?.matches("select")) target.focus({ preventScroll: true });
+    }
   }));
 
 /* ---------- Instalação: três passos ---------- */
+let graphicsCaps, graphicsBusy = false, graphicsTimer = 0, graphicsRequest = 0;
+let graphicsTermsVendor = "", graphicsReadVendor = "", graphicsResult = "";
+const vendorModes = {fsr3: "amd", fsr4: "amd", dlss: "nvidia"};
+function graphicsReady(mode) {
+  const caps = graphicsCaps;
+  if (!vendorModes[mode]) return true;
+  if (!caps) return false;
+  if (mode === "dlss") return caps.rtx && caps.nvidia;
+  return caps.amd && (mode !== "fsr4" || caps.rdna4) && caps.versions.includes(mode === "fsr3" ? "3.1.6" : "4.1.2");
+}
+async function loadGraphics() {
+  clearTimeout(graphicsTimer);
+  const request = ++graphicsRequest;
+  const data = await api("graphics");
+  if (request !== graphicsRequest) return;
+  graphicsBusy = data.running;
+  if (data.caps) graphicsCaps = data.caps;
+  if (data.error) notice(data.error, true);
+  updateGraphics();
+  updateSettingsLock();
+  if (graphicsBusy) graphicsTimer = setTimeout(() => loadGraphics().catch(e => notice(e.message, true)), 1200);
+}
+function updateGraphics() {
+  const scaler = document.querySelector('[data-key="upscaler"]'), panel = $("graphics-components");
+  if (!panel || !scaler) return;
+  const mode = scaler.value, vendor = vendorModes[mode], caps = graphicsCaps;
+  for (const option of scaler.options) {
+    if (!vendorModes[option.value]) continue;
+    option.disabled = !caps?.gpu || (option.value === "fsr4" && !caps.rdna4) || (option.value === "dlss" && !caps.rtx);
+  }
+  const unsupported = scaler.selectedOptions[0]?.disabled;
+  const missingVersion = vendor === "amd" && caps?.amd && !graphicsReady(mode);
+  const needed = !!vendor && !graphicsReady(mode) && !unsupported && !missingVersion;
+  $("graphics-install-row").hidden = !needed;
+  if (graphicsTermsVendor !== vendor) {
+    graphicsTermsVendor = vendor; graphicsReadVendor = "";
+    $("graphics-consent").checked = false; $("graphics-license-text").hidden = true;
+  }
+  const described = mode === "fsr4" && !caps?.rdna4 ? "FSR 4 requer uma GPU AMD RDNA 4 compatível." :
+    mode === "dlss" && !caps?.rtx ? "DLSS requer uma GPU RTX compatível." :
+    missingVersion ? "A biblioteca AMD não oferece esta versão." :
+    needed ? "Instale o componente opcional para usar esta ampliação." : "";
+  const info = [caps?.gpu, i18n.t(described)];
+  if (caps?.gpu && !caps.rdna4 && !caps.rtx && !described) info.push(i18n.t("FSR 4 requer RDNA 4. DLSS requer RTX."));
+  $("graphics-gpu").textContent = info.filter(Boolean).join(" · ");
+  $("graphics-consent").disabled = graphicsBusy || !vendor || graphicsReadVendor !== vendor;
+  $("graphics-install").disabled = graphicsBusy || !$("graphics-consent").checked || graphicsReadVendor !== vendor;
+  i18n.text($("graphics-install"), graphicsBusy ? "Instalando…" : "Instalar componente");
+  $("graphics-active").textContent = graphicsResult;
+}
 let settingsLoaded = false;
 let debugSaving = false;
 let debugRequest = 0;
@@ -145,7 +199,9 @@ function updateSettingsLock() {
   $("font-fields").disabled = settingsBlocked || fontsSaving || !fontsLoaded;
   const locked = settingsBlocked || settingsSaving;
   $("settings-fields").disabled = locked || !settingsLoaded;
-  $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty;
+  const mode = document.querySelector('[data-key="upscaler"]')?.value;
+  const pendingProvider = mode && mode !== settingsBaseline.upscaler && !graphicsReady(mode);
+  $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty || pendingProvider;
   $("settings-reload").disabled = locked;
 }
 function markSettingsDirty() {
@@ -218,12 +274,39 @@ async function loadGameSettings(force = false) {
             }
           }
           input.dataset.previous = input.value;
-          updateSettingsDependencies();
+          updateGraphics();
           markSettingsDirty();
         };
         label.prepend(caption);
         label.append(input);
         grid.append(label);
+        if (field.key === "upscaler") {
+          const panel = document.createElement("div");
+          panel.id = "graphics-components"; panel.className = "graphics-components";
+          i18n.html(panel, `<small id="graphics-gpu"></small><small id="graphics-active" role="status"></small>
+            <div id="graphics-install-row" hidden>
+              <button id="graphics-license" type="button" class="link">Ler a licença</button>
+              <pre id="graphics-license-text" hidden tabindex="0"></pre>
+              <label><input id="graphics-consent" type="checkbox" disabled> Aceito a licença do componente</label>
+              <button id="graphics-install" type="button" disabled>Instalar componente</button>
+            </div>`);
+          grid.append(panel);
+          panel.querySelector("#graphics-license").onclick = async () => {
+            const vendor = vendorModes[input.value];
+            try {
+              const result = await api("graphics/license", {vendor});
+              if (vendor !== vendorModes[input.value]) return;
+              $("graphics-license-text").textContent = result.text;
+              $("graphics-license-text").hidden = false;
+              graphicsReadVendor = vendor; updateGraphics();
+            } catch (e) { notice(e.message, true); }
+          };
+          panel.querySelector("#graphics-consent").onchange = updateGraphics;
+          panel.querySelector("#graphics-install").onclick = () => action(async () => {
+            await api("graphics/install", {vendor: vendorModes[input.value], accept_terms: $("graphics-consent").checked});
+            await loadGraphics();
+          });
+        }
       }
       card.append(grid);
       $("settings-groups").append(card);
@@ -245,14 +328,9 @@ async function loadGameSettings(force = false) {
     }
   }
   settingsDirty = false;
-  updateSettingsDependencies();
+  updateGraphics();
   updateSettingsLock();
   i18n.text($("settings-pending"), "");
-}
-function updateSettingsDependencies() {
-  const scaler = document.querySelector('[data-key="upscaler"]');
-  const resolution = document.querySelector('[data-key="resolution"]');
-  if (scaler && resolution) scaler.disabled = resolution.value === "match";
 }
 $("game-settings").onsubmit = (event) => {
   event.preventDefault();
@@ -650,7 +728,9 @@ function renderInstall(status) {
   const done = !stale && !dlcRunning && (build.state === "candidate" || (status.candidate && !["running", "failed", "cancelled"].includes(build.state)));
   $("build-stale").hidden = !stale;
   if (stale)
-    i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." : "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
+    i18n.text($("build-stale"), dlcUpgrade ? "Atualize a build para usar DLC." :
+      status.candidate_version === status.version ? "Atualize a build do jogo para usar os recursos desta edição do launcher." :
+      "O jogo deste computador foi preparado por " + (status.candidate_version ? "a versão " + status.candidate_version : "uma versão anterior") +
       " do launcher. Atualize a build para aplicar as correções da versão " + status.version +
       ": o que já foi feito é reaproveitado e leva poucos minutos.");
   $("build-idle").hidden = buildRunning || done;
@@ -941,6 +1021,10 @@ async function refresh() {
   previousSession = { connected: session.connected, guests, hosting: session.hosting };
   const gameLog = await api("game/log");
   $("game-log").textContent = gameLog.text || i18n.t("Nenhum teste iniciado.");
+  const applied = [...(gameLog.text || "").matchAll(/^\[graphics\] (fsr1|3\.1\.6|4\.1\.2|dlss|native) (\d+x\d+) -> (\d+x\d+)\s*$/gm)].at(-1);
+  const methods = {fsr1: "FSR 1", "3.1.6": "FSR 3.1.6", "4.1.2": "FSR 4.1.2", dlss: "DLSS SR", native: i18n.t("Imagem do jogo")};
+  graphicsResult = applied ? i18n.t(status.game_pid ? "Em uso" : "Última sessão") + " · " + methods[applied[1]] + " · " + applied[2] + " → " + applied[3] : "";
+  if ($("graphics-active")) $("graphics-active").textContent = graphicsResult;
   const log = await api("log");
   const buildLog = $("build-log");
   const atEnd = buildLog.scrollTop + buildLog.clientHeight >= buildLog.scrollHeight - 30;
