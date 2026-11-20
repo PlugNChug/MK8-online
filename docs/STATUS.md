@@ -1,4 +1,12 @@
-# Estado técnico — 19/11/2026
+# Estado técnico — 20/11/2026
+
+## Frame generation FSR 3 nativa em Linux: provider construído e validado — 20/11/2026
+
+O SDK 2.4.0 da AMD (MIT) traz o *kit* Vulkan de frame generation (FSR 3.1.7) mas não publica as tabelas de shaders geradas (`*_permutations.h`). `tools/gen_fg_blobs.py` compila os 11 passes de frame interpolation (duas convenções de profundidade) e os 7 passes de optical flow do HLSL do SDK com DXC, reflete os descritores do SPIR-V, reescreve os bindings para o esquema do backend Vulkan (samplers 320/321, CBVs 128+, SRV 0+, UAV 64+, buffers 192+/224+) e emite `fg_blobs.cpp`. O provider é construído por `tools/build_fg_provider.py` a partir do SDK do próprio usuário, com patches explícitos de portabilidade (shims Win32, GCC 16, `wchar_t` de 4 bytes no contexto privado, miniz sobre zlib) e sem nenhum binário ou SPIR-V pré-compilado no repositório.
+
+**Evidência em hardware real (RADV GFX1201, RX 9070 XT):** `ffxQuery` para `FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK` devolve **3.1.7**; `ffxCreateContext(FRAMEGENERATION, 1920x1080)` devolve `FFX_API_RETURN_OK`, criando todos os pipelines de optical flow/frame interpolation e recursos internos a partir dos blobs gerados; `ffxDestroyContext` devolve OK. `tools/fg-linux/` guarda os shims e os testes headless (`test_query`, `test_context`).
+
+O caminho de frame generation no jogo (`toolchain/fsr_fg.py` + ponte host), a página FSR do launcher com aceite de licença/download/patch, e a validação em corrida ainda estão em andamento; nada disso está qualificado até haver corrida completa, imagem, áudio e controle verificados. O host segue carregado (load 80+), então medições de desempenho continuam bloqueadas.
 
 ## Pausas de vários segundos: importação do heap guest — 19/11/2026
 
