@@ -103,9 +103,23 @@ Sonda D3D12 via `DXGIFactory1 → adapter 0 → NVSDK_NGX_D3D12_GetFeatureRequir
 
 `supported=0x0` é o valor de “suportado” no enum (`NVSDK_NGX_Feature_Support_Result`); `0xBAD00005` é parâmetro inválido (a feature não pertence àquele plugin) e `0xBAD00002` é erro de plataforma. Como DLSS-G/NR foram consultados antes de `Init`, esse erro é **inconclusivo** para eles. `NVSDK_NGX_GetAPIVersion` retornou `0x13` nos três; `GetGPUArchitecture` retornou `0x160` (Turing), `0x190` (Ada) e `0x1b0` (Blackwell2) para SR, FG e NR respectivamente.
 
-A mesma consulta por Vulkan (`VkInstance` + `VkPhysicalDevice`, sem device) deu resultados idênticos: SR suportado com `minArch=0x160`, e os demais plugins em `0xBAD00002` antes de init. O `nvngx_dlssnr.dll` exporta `NVSDK_NGX_VULKAN_*`, mas não existe enum público de Feature 18 no cabeçalho NGX e não foi executada criação de feature 18 por Vulkan. **Feature 18 só foi executada em D3D12**, pela ponte `te_nr_*`.
+O harness Vulkan existente (`tools/dlss_rtx_harness.cpp` do worktree MK8-online-current, compilado como `.exe` com mingw) foi executado e **funcionou** para SR e FG. O `.exe` antigo em cache tinha detecção do Windows Defender (ThreatID `2147731250`) e foi substituído por um rebuild com hash diferente, que executou. A primeira cópia do rebuild para o Windows foi feita enquanto o build ainda gravava o arquivo; o `.exe` chegou truncado e o carregamento falhou com `WinError 193`. Depois que o build terminou, a cópia teve SHA-256 idêntico ao local (`a7364a6a…`) e executou.
 
-O harness Vulkan existente (`tools/dlss_rtx_harness.cpp` do worktree MK8-online-current, compilado como `.exe`) **não pôde ser executado**: o Windows Defender bloqueou o binário não assinado (ThreatID `2147731250`; o arquivo foi zerado no destino e o carregamento falhou com `WinError 193`, tanto para o `.exe` quanto para uma DLL construída do mesmo código). A política do antivírus **não foi alterada**. Por isso o parâmetro `SuperSampling.Available` pós-`Init` não foi lido; `GetFeatureRequirements` foi a alternativa disponível e é o que a tabela acima registra.
+| Item | Resultado |
+| --- | --- |
+| `SuperSampling.Available` | **1** |
+| `CreateFeature1(SuperSampling)` 1280×720 → 2560×1440 (PERFORMANCE) | `0x00000001` (success) |
+| `SuperSampling.FeatureInitResult` | `0x00000001` (success) |
+| `ModelPreset` reportado pelo NGX | 13, `Is Latest: Yes` |
+| avaliações SR | 10 quadros, todas `success`; `sentinel_pixels=0` |
+| saída SR | `sr_2560x1440.png` (checksum de pixels do frame 0: `0x1435e4ee0ad663b8`) |
+| `FrameGeneration.Available` | **1** |
+| criação/avaliação FG | `success`; 3 quadros avaliados; `fg_2560x1440.png` |
+| telemetria NGX | `ngxCoreVersion=1.4.0.0`, `ngxFeatureVersion=310.9.16`, driver `621.1` |
+
+O processo termina com `0xC0000005` (exit `-1073741819`) dentro do shutdown do NGX, depois de liberar as features; por isso a linha final `RESULT:` não aparece. SR e FG já haviam sido avaliados com sucesso antes disso — o defeito é de teardown, não da feature. O `nvngx_dlss.dll` tem `FileVersion 310.8.0.0`, mas a telemetria reporta feature `310.9.16`; não há rótulo “DLSS 5” e o `ModelPreset 13` é apenas o preset mais recente que o NGX aplicou, não um preset DLSS 5 documentado. A entrada do harness é sintética (cor, profundidade e motion vectors gerados por ele), então isso prova execução/API do SR, não qualidade em quadro do jogo.
+
+A consulta pré-init por Vulkan (`VkInstance` + `VkPhysicalDevice`, sem device) já havia dado SR suportado com `minArch=0x160`. O `nvngx_dlssnr.dll` exporta `NVSDK_NGX_VULKAN_*`, mas não existe enum público de Feature 18 no cabeçalho NGX e a criação de Feature 18 por Vulkan não foi executada. Como o caminho Vulkan do NGX funciona para SR/FG, o bloqueio de Feature 18 é a API da feature, não o Vulkan em si. **Feature 18 só foi executada em D3D12**, pela ponte `te_nr_*`.
 
 ## 4. Avaliação de integração para o MK8-online (Vulkan)
 
@@ -113,7 +127,7 @@ O harness Vulkan existente (`tools/dlss_rtx_harness.cpp` do worktree MK8-online-
 2. **Binário modificado e não redistribuível.** O `nvngx_dlssnr.dll` é um binário NVIDIA alterado pela comunidade, com termos de uso próprios e sem garantia. Não pode entrar no repositório, no instalador nem no download do launcher. Um download opcional pelo launcher continuaria dependente dos termos da NVIDIA/comunidade e de um hash fixado; isso não resolve a licença.
 3. **Custo por quadro.** 25–76 ms por quadro em 720p/1080p na RTX 5080 para um passe 2D (aprox. 13–40 fps), sem movimento/profundidade reais. Não cabe no orçamento de 60 Hz do jogo, muito menos em cima do render atual.
 4. **Qualidade não demonstrada.** A entrada foi um menu, sem motion vectors, profundidade ou jitter. O resultado é uma reconstrução sutil de bordas; não há evidência de corrida, de estabilidade temporal em movimento ou de ganho visual que justifique o custo.
-5. **Feature 18 não é DLSS 5 “de jogo” aqui.** O fluxo da extensão ComfyUI é off-line (imagem/vídeo), com guias temporais próprios. O conjunto também não traz um SR DLSS 5: o `nvngx_dlss.dll` é o SR 310.8 clássico.
+5. **Feature 18 não é DLSS 5 “de jogo” aqui.** O fluxo da extensão ComfyUI é off-line (imagem/vídeo), com guias temporais próprios. O conjunto também não traz um SR DLSS 5: o `nvngx_dlss.dll` é o runtime SuperSampling 310.8 (`310.9.16` na telemetria), com `ModelPreset 13`, não um preset DLSS 5.
 
 **Decisão:** manter como experimento local e documentação. Não integrar ao runtime, ao launcher ou ao pipeline. Reavaliar somente se a NVIDIA expuser Feature 18 por Vulkan de forma redistribuível, houver um caminho D3D12/interop sustentável e houver medição em corrida real com movimento e profundidade dentro do orçamento de quadro.
 
