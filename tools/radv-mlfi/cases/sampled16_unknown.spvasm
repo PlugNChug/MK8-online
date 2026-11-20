@@ -1,0 +1,52 @@
+; Minimal: 16-bit sampled image, unknown format, v4half sample result stored to an SSBO.
+               OpCapability Shader
+               OpCapability Float16
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %outbuf %img %smp
+               OpExecutionMode %main LocalSize 1 1 1
+               OpDecorate %outbuf DescriptorSet 0
+               OpDecorate %outbuf Binding 0
+               OpDecorate %img DescriptorSet 0
+               OpDecorate %img Binding 1
+               OpDecorate %smp DescriptorSet 0
+               OpDecorate %smp Binding 2
+               OpDecorate %buf Block
+               OpMemberDecorate %buf 0 Offset 0
+               OpDecorate %rt ArrayStride 4
+       %void = OpTypeVoid
+         %fn = OpTypeFunction %void
+       %half = OpTypeFloat 16
+      %float = OpTypeFloat 32
+    %float_0 = OpConstant %float 0
+     %v2float = OpTypeVector %float 2
+  %float_0_v = OpConstantComposite %v2float %float_0 %float_0
+     %v4float = OpTypeVector %float 4
+     %v4half = OpTypeVector %half 4
+%img_t = OpTypeImage %half 2D 0 0 0 1 Unknown
+%ptr_img = OpTypePointer UniformConstant %img_t
+%smp_t = OpTypeSampler
+%si_t = OpTypeSampledImage %img_t
+        %img = OpVariable %ptr_img UniformConstant
+        %ptr_smp = OpTypePointer UniformConstant %smp_t
+        %smp = OpVariable %ptr_smp UniformConstant
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+      %uint = OpTypeInt 32 0
+       %rt = OpTypeRuntimeArray %uint
+      %buf = OpTypeStruct %rt
+%ptr_buf = OpTypePointer StorageBuffer %buf
+     %outbuf = OpVariable %ptr_buf StorageBuffer
+%ptr_uint = OpTypePointer StorageBuffer %uint
+       %main = OpFunction %void None %fn
+       %lbl = OpLabel
+          %h = OpLoad %img_t %img
+          %s = OpLoad %smp_t %smp
+         %si = OpSampledImage %si_t %h %s
+          %v = OpImageSampleExplicitLod %v4half %si %float_0_v Lod %float_0
+         %bc = OpFConvert %v4float %v
+        %e0 = OpCompositeExtract %float %bc 0
+        %b0 = OpBitcast %uint %e0
+         %p = OpAccessChain %ptr_uint %outbuf %int_0 %int_0
+               OpStore %p %b0
+               OpReturn
+               OpFunctionEnd

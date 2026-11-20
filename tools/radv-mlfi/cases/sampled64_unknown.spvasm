@@ -1,0 +1,39 @@
+; Minimal: 64-bit integer sampled image, unknown format, v4ulong fetch stored to an SSBO.
+               OpCapability Shader
+               OpCapability Int64
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %outbuf %img
+               OpExecutionMode %main LocalSize 1 1 1
+               OpDecorate %outbuf DescriptorSet 0
+               OpDecorate %outbuf Binding 0
+               OpDecorate %img DescriptorSet 0
+               OpDecorate %img Binding 1
+               OpDecorate %buf Block
+               OpMemberDecorate %buf 0 Offset 0
+               OpDecorate %rt ArrayStride 8
+       %void = OpTypeVoid
+         %fn = OpTypeFunction %void
+      %ulong = OpTypeInt 64 0
+     %v4ulong = OpTypeVector %ulong 4
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+      %uint = OpTypeInt 32 0
+      %v2int = OpTypeVector %int 2
+%img_t = OpTypeImage %ulong 2D 0 0 0 1 Unknown
+%ptr_img = OpTypePointer UniformConstant %img_t
+        %img = OpVariable %ptr_img UniformConstant
+       %rt = OpTypeRuntimeArray %ulong
+      %buf = OpTypeStruct %rt
+%ptr_buf = OpTypePointer StorageBuffer %buf
+     %outbuf = OpVariable %ptr_buf StorageBuffer
+%ptr_ulong = OpTypePointer StorageBuffer %ulong
+       %main = OpFunction %void None %fn
+       %lbl = OpLabel
+          %h = OpLoad %img_t %img
+          %c = OpCompositeConstruct %v2int %int_0 %int_0
+          %v = OpImageFetch %v4ulong %h %c Lod %int_0
+         %e0 = OpCompositeExtract %ulong %v 0
+          %p = OpAccessChain %ptr_ulong %outbuf %int_0 %int_0
+               OpStore %p %e0
+               OpReturn
+               OpFunctionEnd

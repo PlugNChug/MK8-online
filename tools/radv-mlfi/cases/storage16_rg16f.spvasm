@@ -1,0 +1,28 @@
+; Control: 16-bit storage image with explicit Rg16f format, float texel type.
+               OpCapability Shader
+               OpCapability StorageImageWriteWithoutFormat
+               OpCapability StorageImageExtendedFormats
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %img
+               OpExecutionMode %main LocalSize 1 1 1
+               OpDecorate %img DescriptorSet 0
+               OpDecorate %img Binding 0
+       %void = OpTypeVoid
+         %fn = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v2float = OpTypeVector %float 2
+  %float_1 = OpConstant %float 1
+%v2float_1 = OpConstantComposite %v2float %float_1 %float_1
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+      %v2int = OpTypeVector %int 2
+%img_t = OpTypeImage %float 2D 2 0 0 2 Rg16f
+%ptr_img = OpTypePointer UniformConstant %img_t
+        %img = OpVariable %ptr_img UniformConstant
+       %main = OpFunction %void None %fn
+       %lbl = OpLabel
+          %h = OpLoad %img_t %img
+          %c = OpCompositeConstruct %v2int %int_0 %int_0
+               OpImageWrite %h %c %v2float_1 None
+               OpReturn
+               OpFunctionEnd
