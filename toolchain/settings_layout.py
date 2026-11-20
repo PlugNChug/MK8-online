@@ -3,12 +3,14 @@ import hashlib
 from pathlib import Path
 import shutil
 import struct
+import tempfile
 
 MENU_SHA256 = '88333fb16dc2a43e758b3aefca3e455b13a666b46f8229033ac2d111b9ec3b13'
 COMMON_SHA256 = '8d371bdfe7235d5652857b4450437aef4b1661d79eb1d1210db7806f2b584902'
 LAYOUT_HASH = 0x6ec7bb3c
 RELATIVE = Path('settings-menu/romfs/UI/cmn/menu.sarc')
 COMMON_RELATIVE = RELATIVE.with_name('common.sarc')
+CONTROLLER_RELATIVE = Path('controller-menu/romfs/UI/cmn/common.sarc')
 SETTINGS_PAGE = 'cm_Page_SetUI'
 LIMIT = 32 * 1024 * 1024
 
@@ -534,6 +536,16 @@ def prepare(romfs, output):
     temp = common_target.with_suffix('.tmp')
     temp.write_bytes(common)
     temp.replace(common_target)
+    # Missing-player enrollment uses the shared panes without enabling the Settings wrench.
+    controller = Path(output)/CONTROLLER_RELATIVE
+    controller.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=controller.parent) as folder:
+        pending = Path(folder)/controller.name
+        try:
+            pending.hardlink_to(common_target)
+        except OSError:
+            pending.write_bytes(common)
+        pending.replace(controller)
     return target
 
 

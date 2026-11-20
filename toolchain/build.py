@@ -294,7 +294,7 @@ def finish(config, local, executable=None):
         write_archive(DEFAULT_COMPILER, native['archive'], [obj['path'] for obj in native['object_files']])
         native['sha256'] = sha(native['archive'])
         atomic_json(local/'native.json', native)
-    from settings_layout import prepare as prepare_settings_layout
+    from settings_layout import CONTROLLER_RELATIVE, prepare as prepare_settings_layout
     settings_layout = prepare_settings_layout(romfs, output)
     exe = executable if executable is not None else build_host(source, output)
     dll = link_game(native['archive'], output, source, native['modules'])
@@ -315,6 +315,7 @@ def finish(config, local, executable=None):
     files['nacp'] = file_record(nacp)
     files['settings-layout'] = file_record(settings_layout)
     files['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))
+    files['controller-layout'] = file_record(output/CONTROLLER_RELATIVE)
     for name in ('main', 'sdk', 'subsdk0', 'main.npdm'):
         files['npdm' if name == 'main.npdm' else name] = file_record(job/'inputs/exefs'/name)
     executable = file_record(exe)
@@ -341,10 +342,11 @@ def refresh_runtime(local):
         if sha(source/rel) != expected:
             raise ValueError('Runtime preparado alterado; use uma preparação completa: '+rel)
     output = Path(candidate['executable']['path']).parent
-    from settings_layout import prepare as prepare_settings_layout
+    from settings_layout import CONTROLLER_RELATIVE, prepare as prepare_settings_layout
     # Derived layouts are private build data; old candidates can predate this entry.
     candidate['files'].pop('settings-layout', None)
     candidate['files'].pop('settings-common-layout', None)
+    candidate['files'].pop('controller-layout', None)
     settings_layout = prepare_settings_layout(Path(candidate['data_root'])/'extracted/romfs', output)
     exe = build_host(source, output)
     for file in candidate['files'].values():
@@ -358,6 +360,7 @@ def refresh_runtime(local):
     candidate['executable'] = {'path': str(exe), 'sha256': sha(exe), 'bytes': exe.stat().st_size}
     candidate['files']['settings-layout'] = file_record(settings_layout)
     candidate['files']['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))
+    candidate['files']['controller-layout'] = file_record(output/CONTROLLER_RELATIVE)
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': candidate['files'], 'exe': candidate['executable']}, sort_keys=True).encode()).hexdigest()

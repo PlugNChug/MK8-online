@@ -4,6 +4,7 @@
 #include "controller_tips.h"
 #include <assert.h>
 #include <string.h>
+#include <wchar.h>
 unsigned char memory[32768] __attribute__((aligned(16)));
 static Cpu cpu;
 static int returns, text_calls, save_state, resets, restart_choice=-1;
@@ -22,6 +23,11 @@ void mk8_controller_names(uint16_t out[4][80]) { memcpy(out,popup_names,sizeof p
 static enum Mk8EditCommand last_edit;
 static enum Mk8EditState editor_state;
 static int edit_row,edit_other;
+static unsigned join_players;
+static bool join_keyboard;
+unsigned mk8_controller_join_players(void) { return join_players; }
+bool mk8_controller_join_keyboard(void) { return join_keyboard; }
+bool mk8_controller_layout_available(void) { return true; }
 static bool wait_apply,bad_apply;
 bool mk8_edit_command(enum Mk8EditCommand cmd,int row,int other) {
     last_edit=cmd; edit_row=row; edit_other=other;
@@ -42,6 +48,7 @@ bool mk8_edit_has_combined(void) { return false; }
 static uint16_t last_name[80];
 static char last_hint[41];
 static uint16_t shown_tips[2][41];
+static wchar_t shown_title[41], shown_cancel[41];
 static char key_strings[4][41],action_strings[4][41];
 #define TEST_KEYCAP(i) (HEAP_BASE+16400+(i)*400)
 static struct Mk8ControlTips fixed_tips={MK8_TIP_KEYBOARD,{"Enter","Esc","","","","Up","Down","Left","Right"}},
@@ -194,6 +201,11 @@ void guest_call(Cpu *c,uint64_t address) {
     else if(address==0x700044ed20ull || address==0x700044ee50ull) {}
     else if(address==0x70008adc54ull) {
         text_calls++;
+        if(c->x[0]==HEAP_BASE+3600 || c->x[0]==HEAP_BASE+3700) {
+            const wchar_t *label=(void *)(uintptr_t)c->x[1];
+            assert(wcslen(label)<sizeof shown_title/sizeof *shown_title);
+            wcscpy(c->x[0]==HEAP_BASE+3600 ? shown_title : shown_cancel,label);
+        }
         for(unsigned i=0;i<4;i++) if(c->x[0]==TEST_KEYCAP(i)+128 || c->x[0]==TEST_KEYCAP(i)+256) {
             const uint16_t *s=(void *)(uintptr_t)c->x[1];
             char *out=c->x[0]==TEST_KEYCAP(i)+128 ? key_strings[i] : action_strings[i];
@@ -531,11 +543,11 @@ static void check_controller_footer(uint64_t manager) {
     popup_key(manager,1);
     assert(last_edit==MK8_EDIT_ASSIGN && edit_row==2);
     editor_state=MK8_EDIT_AMBIGUOUS; mk8_settings_page_frame(manager);
-    assert(!strcmp(last_hint,"Release all. One player holds L + R."));
+    assert(!wcscmp((const wchar_t *)shown_tips[0],L"Release all. One player holds \ue0a4 + \ue0a5."));
     editor_state=MK8_EDIT_NEED_LEFT; mk8_settings_page_frame(manager);
-    assert(!strcmp(last_hint,"Hold R. Press L on the left Joy-Con."));
+    assert(!wcscmp((const wchar_t *)shown_tips[0],L"Hold \ue0a5. Press \ue0a4 on the left Joy-Con."));
     editor_state=MK8_EDIT_NEED_RIGHT; mk8_settings_page_frame(manager);
-    assert(!strcmp(last_hint,"Hold L. Press R on the right Joy-Con."));
+    assert(!wcscmp((const wchar_t *)shown_tips[0],L"Hold \ue0a4. Press \ue0a5 on the right Joy-Con."));
     editor_state=MK8_EDIT_PAIR_HELD; mk8_settings_page_frame(manager);
     assert(!strcmp(last_hint,"Release both shoulder buttons to join."));
     popup_key(manager,1ull<<14); popup_key(manager,1);
@@ -555,9 +567,51 @@ static void check_controller_footer(uint64_t manager) {
     mk8_settings_page_frame(manager); assert(controller_visible);
     editor_state=MK8_EDIT_FAILED; wait_apply=false;
     mk8_settings_page_frame(manager); assert(controller_visible);
+    assert(mk8_controller_pointer(440,606,0)); // Hover Cancel in the old editor.
     popup_key(manager,2); assert(!controller_visible && last_edit==MK8_EDIT_CANCEL && cursor_mask==6);
     mk8_controller_applet_result(3,3,2); mk8_settings_page_frame(manager);
     assert(!controller_entry_players && mk8_settings_page_input(plus,st,0)==plus);
+
+    // The mandatory join opens before character select, even with the optional F1 menu disabled.
+    ST32(manager+0xb50,1);
+    native_style=false;
+    opens=open_sounds;
+    join_players=4; join_keyboard=true; editor_state=MK8_EDIT_LISTEN; edit_row=1;
+    mk8_settings_page_frame(manager);
+    assert(controller_visible && controller_rows==4 && controller_focus==1);
+    assert(!wcscmp(shown_title,L"Player 2: \ue0a4 + \ue0a5 to join"));
+    assert(!wcscmp(shown_cancel,L"\ue001 Cancel"));
+    check_keycap(0,"SL","+"); check_keycap(1,"SR","Join sideways");
+    check_keycap(2,"Enter","Join keyboard");
+    assert((LD8(HEAP_BASE+12200+0x58)&1) && open_sounds==opens+1);
+    assert(!strcmp(rendered[1],"Pro") && (LD8(HEAP_BASE+12400+4*128+0x58)&1));
+    assert(LD8(HEAP_BASE+14600+0x58)&1); // Use keyboard.
+    edit_row=3; join_keyboard=false;
+    mk8_settings_page_frame(manager);
+    assert(controller_focus==3 && open_sounds==opens+1);
+    assert(!(LD8(HEAP_BASE+14600+0x58)&1));
+    check_keycap(0,"SL","+"); check_keycap(1,"SR","Join sideways");
+    assert(!(LD8(keycaps[2]+0x58)&1));
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
+    mk8_settings_page_frame(manager);
+    check_keycap(0,"SL","+"); check_keycap(1,"SR","Join sideways"); check_keycap(2,"J","Cancel");
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y","Minus"}};
+    editor_state=MK8_EDIT_READY; edit_row=-1;
+    mk8_settings_page_frame(manager);
+    assert(controller_focus==5 && (LD8(HEAP_BASE+14600+0x58)&1)); // Continue.
+    assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 Continue  \ue001 Cancel"));
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
+    mk8_settings_page_frame(manager);
+    check_keycap(0,"Return","Continue"); check_keycap(1,"J","Cancel");
+    // A menu transition can temporarily remove the shared owner while the SDL applet still runs.
+    ST32(manager+0xb50,0);
+    mk8_settings_page_frame(manager);
+    assert(!mk8_controller_join_visible() && !mk8_controller_layout_active());
+    editor_state=MK8_EDIT_CLOSED; join_players=0;
+    ST32(manager+0xb50,1);
+    mk8_settings_page_frame(manager);
+    assert(!controller_visible && !(LD8(HEAP_BASE+12200+0x58)&1) && cursor_mask==6);
+    native_style=true;
 }
 int main(void) {
     uint64_t title_manager=HEAP_BASE+20000,title_page=HEAP_BASE+25000;

@@ -1,5 +1,13 @@
 # Estado técnico — 19/11/2026
 
+## Entrada dos jogadores na seleção de personagens
+
+Quando faltavam controles no multiplayer local, o jogo exibia um aviso de texto. A tela de atribuição agora mostra os nomes dos dispositivos já registrados e destaca a primeira vaga. Com apenas o jogador 1, começa no jogador 2. Cada entrada avança para a próxima posição livre. O jogador 1 confirma quando todos estiverem prontos. Cancelar descarta as alterações e restaura os cursores da seleção. Em builds preparadas, a tela funciona mesmo com a opção de configurações nativas desligada. Nesse caso, a preparação fornece apenas o arquivo compartilhado da interface. Mods com um `common.sarc` próprio mantêm o arquivo e o aviso de texto.
+
+O título usa os ícones de L e R do jogo. A fonte do título desenhou interrogações no lugar de SL e SR no primeiro teste. A instrução do Joy-Con na horizontal usa duas teclas desenhadas pela própria interface, rotuladas **SL** e **SR**. A tecla **Enter** aparece como opção de entrada quando o teclado está livre. As dicas de confirmação e cancelamento seguem as atribuições do jogador 1.
+
+A compilação com `--runtime-only` gerou o executável `da73f897…`. Com a opção de configurações nativas desligada, o ensaio no jogo começou com o teclado na primeira posição. A captura mostrou o cursor em P2 e os quatro botões de ombro legíveis. Três controles SDL virtuais entraram em sequência, o teclado confirmou e o jogo abriu a seleção de personagens para quatro jogadores. Passaram 32 testes de entrada, interface, preparação e sobreposição do CTGP. A qualificação da corrida de quatro jogadores a 60 FPS continua pendente.
+
 ## Controles na base do relançamento da 0.4.0
 
 A integração local em `7e26bcf`, sobre `fix-chore` em `6e100ee`, preserva o painel do Nextendo, o tema escolhido no launcher e a página privada de configurações. A reconexão de um Pro Controller virtual abria três vezes o driver da SDL para identificar o dispositivo e recuperar sua posição. Com a referência mantida durante as duas operações, o teste registrou uma abertura. A apresentação de quadros também passou a dispensar a trava de joysticks enquanto a vibração está ociosa. Ainda é preciso medir o efeito nas pausas e no atraso do Pro Controller por Bluetooth em uma corrida física.

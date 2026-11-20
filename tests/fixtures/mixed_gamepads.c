@@ -24,6 +24,9 @@ void kernel_signal(KObject *event) {
 volatile int g_rt_unwind;
 static SDL_AtomicInt core_released;
 static char applet_notice[192];
+static bool assignment_layout=true;
+bool mk8_controller_layout_available(void) { return assignment_layout; }
+bool mk8_controller_join_visible(void) { return assignment_layout; }
 void kernel_host_wait_begin(void) { SDL_SetAtomicInt(&core_released,1); }
 void kernel_host_wait_end(void) { SDL_SetAtomicInt(&core_released,0); }
 void menu_notice(const char *text,double seconds) { SDL_strlcpy(applet_notice,text,sizeof applet_notice); }
@@ -624,6 +627,9 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(argv[2],"prerace-applet")) {
         check_prerace_applet(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"prerace-p1-only")) {
+        check_prerace_p1_only(); SDL_Quit(); return 0;
     }
     if (!strcmp(argv[2],"keyboard-prerace-applet")) {
         check_keyboard_prerace(); SDL_Quit(); return 0;

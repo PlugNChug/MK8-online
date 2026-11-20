@@ -111,6 +111,9 @@ class SettingsLayoutTests(unittest.TestCase):
                             again = layout.prepare(root/'romfs', output).read_bytes()
             self.assertEqual(path.read_bytes(), source)
             self.assertEqual(common_path.read_bytes(), common)
+            controller = output/'controller-menu/romfs/UI/cmn/common.sarc'
+            self.assertEqual(controller.read_bytes(), (output/layout.COMMON_RELATIVE).read_bytes())
+            self.assertFalse(controller.with_name('menu.sarc').exists())
             derived={k:v for k,_,v in layout.entries((output/layout.COMMON_RELATIVE).read_bytes())}
             self.assertEqual(derived['other'], b'common-keep')
             self.assertEqual(derived['cm_L_WinBtn_00.szs'],b'base-button')

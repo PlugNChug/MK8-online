@@ -374,9 +374,11 @@ static void mk8_edit_process(void) {
     } else if (action == MK8_EDIT_STOP_LISTEN) mk8_edit_listen(-1, false);
     else if (row < 0 || row >= mk8_editor.rows) state = MK8_EDIT_FAILED;
     else if (action == MK8_EDIT_ASSIGN) {
-        mk8_edit_listen(row, false);
+        mk8_edit_listen(row, other != 0);
         state = MK8_EDIT_LISTEN;
-    } else if (action == MK8_EDIT_KEYBOARD && mk8_editor.keyboard >= mk8_editor.rows) state = MK8_EDIT_FAILED;
+    } else if (action == MK8_EDIT_KEYBOARD && other &&
+               (mk8_editor.keyboard >= 0 || row != mk8_editor.listening)) state = mk8_listen_state();
+    else if (action == MK8_EDIT_KEYBOARD && mk8_editor.keyboard >= mk8_editor.rows) state = MK8_EDIT_FAILED;
     else if (action == MK8_EDIT_KEYBOARD || action == MK8_EDIT_CLEAR) {
         mk8_editor.slots[row][0] = mk8_editor.slots[row][1] = 0;
         if (action == MK8_EDIT_KEYBOARD) {

@@ -5,12 +5,21 @@ static _Atomic Uint64 mk8_applet_heartbeat;
 static _Atomic Uint64 mk8_applet_suppressed;
 static bool mk8_applet_editing;
 static bool mk8_applet_resync;
+static _Atomic bool mk8_applet_keyboard_free;
+static _Atomic unsigned mk8_applet_roster;
 static int mk8_applet_row;
 static Uint64 mk8_applet_notice_at, mk8_applet_held;
 
 void menu_notice(const char *, double);
 void kernel_host_wait_begin(void);
 void kernel_host_wait_end(void);
+
+unsigned mk8_controller_join_players(void) {
+    int players = atomic_load(&mk8_applet_request);
+    return players > 0 ? atomic_load(&mk8_applet_roster) : 0;
+}
+
+bool mk8_controller_join_keyboard(void) { return atomic_load(&mk8_applet_keyboard_free); }
 
 int mk8_controller_applet_wait(int min, int max, int live) {
     if (min != max || min < 2 || min > 4 || mk8_settings_shared_race() || input_user_blocked(NULL)) return live;
@@ -55,7 +64,7 @@ static bool mk8_applet_key(const SDL_Event *e) {
     if (mk8_applet_editing && mk8_title_focused && mk8_editor.focused && !mk8_applet_resync &&
         e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
         if (key == SDL_SCANCODE_ESCAPE) mk8_edit_command(MK8_EDIT_CANCEL, 0, 0);
-        if (key == SDL_SCANCODE_RETURN) mk8_edit_command(MK8_EDIT_KEYBOARD, mk8_editor.listening, 0);
+        if (key == SDL_SCANCODE_RETURN) mk8_edit_command(MK8_EDIT_KEYBOARD, mk8_editor.listening, 1);
     }
     return true;
 }
@@ -86,7 +95,8 @@ void mk8_edit_pump(void) {
     }
     if (players == MK8_APPLET_ABANDONED) {
         mk8_applet_editing = false;
-        menu_notice("",0);
+        mk8_applet_roster = 0;
+        if (mk8_applet_row>=0) menu_notice("",0);
         atomic_store(&mk8_applet_request,0);
         return;
     }
@@ -96,6 +106,7 @@ void mk8_edit_pump(void) {
         if (mk8_edit_command(MK8_EDIT_BEGIN,players,0)) {
             mk8_applet_editing = true;
             mk8_applet_row = -2;
+            mk8_applet_notice_at = SDL_GetTicks()+400;
             mk8_applet_resync = true;
             return;
         }
@@ -107,12 +118,14 @@ void mk8_edit_pump(void) {
         atomic_fetch_or(&mk8_applet_suppressed,mk8_controller_p1_navigation() | mk8_applet_held);
         mk8_controller_hold_extra_inputs();
         mk8_applet_editing = false;
-        menu_notice("",0);
+        mk8_applet_roster = 0;
+        if (mk8_applet_row>=0) menu_notice("",0);
         atomic_compare_exchange_strong(&mk8_applet_request,&players,
             state == MK8_EDIT_APPLIED ? MK8_APPLET_APPLIED : MK8_APPLET_CANCELLED);
         return;
     }
     if (state == MK8_EDIT_PENDING) return;
+    mk8_applet_keyboard_free = mk8_editor.keyboard < 0;
     int row = 0;
     while (row < players && (mk8_editor.slots[row][0] || row == mk8_editor.keyboard)) ++row;
     Uint64 held = mk8_applet_p1_buttons();
@@ -121,8 +134,15 @@ void mk8_edit_pump(void) {
     mk8_applet_resync = false;
     if (edge & (1ull << BIND_B)) { mk8_edit_command(MK8_EDIT_CANCEL,0,0); return; }
     if (row == players && (edge & (1ull << BIND_A))) { mk8_edit_command(MK8_EDIT_APPLY,0,0); return; }
-    if (row < players && mk8_editor.listening != row) mk8_edit_command(MK8_EDIT_ASSIGN,row,0);
+    if (row < players && mk8_editor.listening != row) mk8_edit_command(MK8_EDIT_ASSIGN,row,1);
+    else mk8_applet_roster = players;
     Uint64 now = SDL_GetTicks();
+    if (mk8_controller_join_visible()) {
+        if (mk8_applet_row>=0) menu_notice("",0);
+        mk8_applet_row=-2;
+        return;
+    }
+    if (mk8_controller_layout_available() && mk8_applet_row<0 && now<mk8_applet_notice_at) return;
     if (row != mk8_applet_row || now >= mk8_applet_notice_at) {
         char prompt[168];
         if (row < players) SDL_snprintf(prompt,sizeof prompt,"Player %d of %d: press L + R or SL + SR to join.\n%sEsc or P1 Back: cancel.",

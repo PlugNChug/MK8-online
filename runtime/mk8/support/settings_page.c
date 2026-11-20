@@ -32,6 +32,8 @@ static unsigned cursor_visibility;
 static _Atomic bool controller_preview, controller_visible;
 static _Atomic unsigned controller_applet_players, controller_entry_players;
 static unsigned controller_rows;
+static _Atomic bool controller_required;
+static _Atomic bool controller_detached;
 static _Atomic bool controller_focused=true, controller_resync;
 static _Atomic bool controller_mouse_down;
 static _Atomic int controller_hover=-2, controller_click=-1, controller_armed=-1;
@@ -183,6 +185,25 @@ static void text(Cpu *c, uint64_t pane, const char *value) {
     call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
 }
 
+// The title font supplies the outline shoulders but has no sideways rail glyphs.
+static size_t instruction_line(uint16_t *out,size_t limit,const char *s) {
+    size_t n=0;
+    while(*s && n<limit) {
+        uint16_t ch=(unsigned char)*s++;
+        if(ch=='[' && (*s=='L' || *s=='R') && s[1]==']') {
+            ch=*s=='L' ? 0xe0a4 : 0xe0a5; s+=2;
+        }
+        out[n++]=ch;
+    }
+    out[n]=0;
+    return n;
+}
+
+static void instruction(Cpu *c,uint64_t pane,size_t limit,const char *s) {
+    instruction_line((uint16_t *)(uintptr_t)(c->sp+128),limit,s);
+    call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
+}
+
 static bool read_tips(bool settings) {
     struct Mk8ControlTips current;
     mk8_control_tips(settings,&current);
@@ -239,31 +260,25 @@ static void keycap_visible(Cpu *c,unsigned i,bool show) {
     call(c,0x70008ade74ull,action_labels[i],show,0,0,0);
 }
 
-static bool keyboard_tips(Cpu *c,const char *description,const struct TipAction *actions,unsigned count,const char *fallback) {
+static bool keycap_tips(Cpu *c,const char *description,const char *const keys_text[],const char *const verbs_text[],
+                        unsigned n,const char *mouse_hint) {
     if(!keycaps[0]) return false; // Previously prepared archives retain their stock text-only hints.
     float keys[4], verbs[4], widths[4], columns[4]={0}, total=0;
-    const struct TipAction *bound[4];
-    unsigned n=0;
-    if(tips.source==MK8_TIP_KEYBOARD) for(unsigned i=0;i<count;i++) {
-        const char *label=tips.label[actions[i].action];
-        if(*label && strcmp(label,"(none)")) bound[n++]=actions+i;
-    }
     for(unsigned i=0;i<4;i++) keycap_visible(c,i,i<n);
     if(!n) return false;
-    bool mouse_hint=n<count && !description && *fallback;
     unsigned per_row=n==4 ? 2 : n;
     bool two_lines=description || mouse_hint || n>per_row;
     for(unsigned i=0;i<n;i++) {
-        keys[i]=22+17*strlen(tips.label[bound[i]->action]);
-        verbs[i]=12+17*strlen(bound[i]->verb);
+        keys[i]=22+17*strlen(keys_text[i]);
+        verbs[i]=12+17*strlen(verbs_text[i]);
         widths[i]=keys[i]+8+verbs[i];
         if(widths[i]>columns[i%per_row]) columns[i%per_row]=widths[i];
     }
     for(unsigned i=0;i<per_row;i++) total+=columns[i]+(i ? 40 : 0);
     hint_background(c,two_lines,total+44>880 ? total+44 : 880);
-    text(c,hint,description ? description : "");
-    call(c,0x70008ade74ull,hint_second,mouse_hint,0,0,0);
-    if(mouse_hint) text(c,hint_second,fallback);
+    instruction(c,hint,79,description ? description : "");
+    call(c,0x70008ade74ull,hint_second,mouse_hint!=NULL,0,0,0);
+    if(mouse_hint) text(c,hint_second,mouse_hint);
     float x=0;
     for(unsigned i=0;i<n;i++) {
         if(i%per_row==0) x=-total/2;
@@ -274,8 +289,8 @@ static bool keyboard_tips(Cpu *c,const char *description,const struct TipAction 
         hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
         hint_box(c,key_labels[i],key_center,y,keys[i],50);
         hint_box(c,action_labels[i],start+keys[i]+8+verbs[i]/2,y,verbs[i],50);
-        text(c,key_labels[i],tips.label[bound[i]->action]);
-        text(c,action_labels[i],bound[i]->verb);
+        text(c,key_labels[i],keys_text[i]);
+        text(c,action_labels[i],verbs_text[i]);
         x+=columns[i%per_row]+40;
     }
     return true;
@@ -283,12 +298,18 @@ static bool keyboard_tips(Cpu *c,const char *description,const struct TipAction 
 
 static void action_tips(Cpu *c,const char *description,const struct TipAction *actions,unsigned count,const char *fallback) {
     if(!hint) return;
-    if(keyboard_tips(c,description,actions,count,fallback)) return;
+    const char *key[4],*verb[4];
+    unsigned n=0;
+    if(tips.source==MK8_TIP_KEYBOARD) for(unsigned i=0;i<count;i++) {
+        const char *label=tips.label[actions[i].action];
+        if(*label && strcmp(label,"(none)")) { key[n]=label; verb[n++]=actions[i].verb; }
+    }
+    if(keycap_tips(c,description,key,verb,n,n<count && !description && *fallback ? fallback : NULL)) return;
     uint16_t lines[2][41]={{0}};
     size_t used[2]={0};
     unsigned line=0;
     if(description && *description) {
-        for(;description[used[0]] && used[0]<40;used[0]++) lines[0][used[0]]=(unsigned char)description[used[0]];
+        used[0]=instruction_line(lines[0],40,description);
         line=1;
     }
     bool overflow=false, missing=false;
@@ -441,7 +462,8 @@ void mk8_controller_applet_result(int min,int max,int players) {
     controller_applet_players=min>=2 && min<=4 && min==max && min==players ? (unsigned)min : 0;
 }
 
-bool mk8_controller_layout_active(void) { return controller_preview || controller_visible; }
+bool mk8_controller_layout_active(void) { return !controller_detached && (controller_preview || controller_visible); }
+bool mk8_controller_join_visible(void) { return controller_required && controller_visible && !controller_detached; }
 
 bool mk8_controller_pointer(int x,int y,int action) {
     if (action==3 || action==4) {
@@ -576,12 +598,13 @@ static bool controller_step(Cpu *c,enum Mk8EditState state,int listening) {
 
 static void controller_release(void) {
     enum Mk8EditState state=mk8_edit_view(NULL,NULL);
-    if(state!=MK8_EDIT_CLOSED && state!=MK8_EDIT_APPLIED) mk8_edit_command(MK8_EDIT_CANCEL,0,0);
+    if(!controller_required && state!=MK8_EDIT_CLOSED && state!=MK8_EDIT_APPLIED) mk8_edit_command(MK8_EDIT_CANCEL,0,0);
     uint64_t held=mk8_controller_p1_navigation();
     suppressed|=raw_buttons|held|((held&0xf000u)<<4);
     mk8_controller_hold_extra_inputs();
     controller_armed=controller_click=-1;
     controller_preview=controller_visible=false;
+    controller_required=controller_detached=false;
 }
 
 static void controller_labels(Cpu *c, const uint16_t names[4][80],bool refresh) {
@@ -599,10 +622,12 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
     static enum Mk8EditState last_state;
     static int previous_player;
     bool enrolling=controller_listening(state), combined=enrolling && mk8_edit_has_combined();
-    static bool last_combined;
+    bool keyboard=controller_required && mk8_controller_join_keyboard();
+    static bool last_combined,last_keyboard;
     int player=enrolling ? listening : controller_panel==PLAYERS ? -1 : action_player;
     bool source_changed=read_tips(false);
-    bool changed=refresh || source_changed || last_panel!=controller_panel || last_state!=state || previous_player!=player || combined!=last_combined;
+    bool changed=refresh || source_changed || last_panel!=controller_panel || last_state!=state || previous_player!=player ||
+        combined!=last_combined || keyboard!=last_keyboard;
     if(changed) {
         const char *heading="Controller assignment", *help=NULL;
         const char *left="Cancel", *right="Apply";
@@ -614,30 +639,59 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
             snprintf(title,sizeof title,"Swap Player %d with...",action_player+1);
             heading=title; help="Select another player to swap inputs."; left="Back";
         } else if(enrolling) {
-            snprintf(title,sizeof title,"Player %d: L + R or SL + SR",listening+1);
+            snprintf(title,sizeof title,keycaps[0] ? "Player %d: [L] + [R] to join" :
+                "Player %d: [L] + [R] or SL + SR",listening+1);
             heading=title; left="Back"; right="Use keyboard";
             switch(state) {
             case MK8_EDIT_AMBIGUOUS:
                 snprintf(title,sizeof title,"Player %d: multiple Joy-Cons",listening+1);
-                help="Release all. One player holds L + R."; break;
+                help="Release all. One player holds [L] + [R]."; break;
             case MK8_EDIT_PAIR_HELD:
                 snprintf(title,sizeof title,"Player %d: Joy-Con pair ready",listening+1);
                 help="Release both shoulder buttons to join."; break;
-            case MK8_EDIT_NEED_LEFT: help="Hold R. Press L on the left Joy-Con."; break;
-            case MK8_EDIT_NEED_RIGHT: help="Hold L. Press R on the right Joy-Con."; break;
-            default: help=combined ? "For separate halves, use F1: Individual." : "Pair: press L and R on opposite halves."; break;
+            case MK8_EDIT_NEED_LEFT: help="Hold [R]. Press [L] on the left Joy-Con."; break;
+            case MK8_EDIT_NEED_RIGHT: help="Hold [L]. Press [R] on the right Joy-Con."; break;
+            default: help=combined ? "For separate halves, use F1: Individual." : "Pair: press [L] and [R] on opposite halves."; break;
             }
         } else if(state==MK8_EDIT_FAILED) help="Assign every player a connected input.";
         else if(state==MK8_EDIT_PENDING) help="Updating controller assignments...";
-        text(c,title_label,heading);
+        if(controller_required) {
+            left="Cancel";
+            right=enrolling ? "Use keyboard" : "Continue";
+            if(state==MK8_EDIT_LISTEN)
+                help="Pair: hold [L] and [R] on opposite halves.";
+            else if(state==MK8_EDIT_READY) help="All players are ready.";
+        }
+        instruction(c,title_label,40,heading);
         const struct TipAction roster[]={{MK8_TIP_CONFIRM,"Assign"},{MK8_TIP_SWAP,"Swap"},
             {MK8_TIP_CLEAR,tips.source==MK8_TIP_KEYBOARD ? "Clear row" : "Clear"},{MK8_TIP_CLEAR_ALL,"Clear all"}};
         static const struct TipAction submenu[]={{MK8_TIP_CONFIRM,"Select"},{MK8_TIP_BACK,"Back"}};
+        static const struct TipAction ready[]={{MK8_TIP_CONFIRM,"Continue"},{MK8_TIP_BACK,"Cancel"}};
+        const struct TipAction back_tip={MK8_TIP_BACK,controller_required ? "Cancel" : "Back"};
         if(!help) action_tips(c,NULL,roster,4,"Click a player for assignment options.");
         else if(controller_panel!=PLAYERS) action_tips(c,help,submenu,2,"Click an action or Back.");
+        else if(controller_required && state==MK8_EDIT_READY) action_tips(c,help,ready,2,"Click Continue or Cancel.");
+        else if(state==MK8_EDIT_LISTEN && keycaps[0]) {
+            const char *key[]={"SL","SR",keyboard ? "Enter" : tips.label[MK8_TIP_BACK]};
+            const char *verb[]={"+","Join sideways",keyboard ? "Join keyboard" : back_tip.verb};
+            bool third=keyboard || (tips.source==MK8_TIP_KEYBOARD && *key[2] && strcmp(key[2],"(none)"));
+            keycap_tips(c,help,key,verb,third ? 3 : 2,NULL);
+        }
+        else if(enrolling && keyboard) {
+            const char *key[]={"Enter"}, *verb[]={"Join keyboard"};
+            if(!keycap_tips(c,help,key,verb,1,NULL))
+                action_tips(c,"Enter joins with the keyboard.",&back_tip,1,"Esc cancels.");
+        }
+        else if(enrolling) action_tips(c,help,&back_tip,1,"Click Back.");
         else action_tips(c,help,NULL,0,"");
-        text(c,dialog_labels[1],left); text(c,dialog_labels[2],right);
-        visible(c,root,"L_SettingsNo",controller_panel!=SWAP_TARGET);
+        uint16_t back_icon=enrolling ? button_glyph(tips.label[MK8_TIP_BACK]) : 0;
+        if(back_icon) {
+            uint16_t *line=(uint16_t *)(uintptr_t)(c->sp+128);
+            line[0]=back_icon; line[1]=' '; instruction_line(line+2,38,left);
+            call(c,0x70008adc54ull,dialog_labels[1],c->sp+128,0,0,0);
+        } else text(c,dialog_labels[1],left);
+        text(c,dialog_labels[2],right);
+        visible(c,root,"L_SettingsNo",controller_required ? state==MK8_EDIT_READY || (enrolling && keyboard) : controller_panel!=SWAP_TARGET);
         static const char *actions[]={"Assign controller","Use keyboard","Swap with player","Clear player"};
         for(unsigned i=0;i<4;i++) {
             char pane[20],label[16];
@@ -649,21 +703,38 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
             text(c,labels[i+1],controller_panel==ROW_ACTIONS ? actions[i] : label);
             if(controller_panel==ROW_ACTIONS) text(c,values[i+1],"");
         }
-        last_panel=controller_panel; last_state=state; previous_player=player; last_combined=combined;
+        last_panel=controller_panel; last_state=state; previous_player=player; last_combined=combined; last_keyboard=keyboard;
         controller_highlight(c);
     }
     if(controller_panel!=ROW_ACTIONS) controller_labels(c,names,changed);
 }
 
-static void controller_layout(Cpu *c) {
-    bool show=controller_preview;
+static void controller_layout(Cpu *c,bool required) {
+    bool show=controller_preview || required;
     if(show && !controller_visible) {
         controller_focus=action_player=0; controller_panel=PLAYERS; controller_cancelled=false;
-        if(!mk8_edit_command(MK8_EDIT_BEGIN,(int)controller_rows,0)) { controller_release(); return; }
+        controller_required=required;
+        if(required) { controller_armed=controller_click=-1; controller_hover=-2; }
+        if(!required && !mk8_edit_command(MK8_EDIT_BEGIN,(int)controller_rows,0)) { controller_release(); return; }
     }
     uint16_t names[4][80]; int listening=-1;
     enum Mk8EditState state=mk8_edit_view(names,&listening);
-    if(show && controller_visible && !controller_step(c,state,listening)) show=controller_preview=false;
+    if(show && required) {
+        // SDL owns enrollment, Apply and Back while the applet's guest worker waits.
+        int target=listening>=0 ? listening : 5;
+        int hover=atomic_load(&controller_hover), click=atomic_exchange(&controller_click,-1);
+        bool ready=state==MK8_EDIT_READY, keyboard=controller_listening(state) && mk8_controller_join_keyboard();
+        if(hover==4 || (hover==5 && (ready || keyboard))) target=hover;
+        if(controller_visible && controller_focused && state!=MK8_EDIT_PENDING) {
+            if(click==4) mk8_edit_command(MK8_EDIT_CANCEL,0,0);
+            if(click==5 && ready) mk8_edit_command(MK8_EDIT_APPLY,0,0);
+            if(click==5 && keyboard) mk8_edit_command(MK8_EDIT_KEYBOARD,listening,1);
+        }
+        if(target!=controller_focus) {
+            controller_focus=target;
+            if(controller_visible) { controller_highlight(c); menu_sound(c,0x7000ed87a1ull); }
+        }
+    } else if(show && controller_visible && !controller_step(c,state,listening)) show=controller_preview=false;
     if(show==controller_visible) {
         if(show) controller_draw(c,state,listening,names,false);
         return;
@@ -697,6 +768,8 @@ static void controller_layout(Cpu *c) {
         float speed=1; memcpy(&c->v[0],&speed,sizeof speed);
         call(c,0x70008ad300ull,cursor_animation,1,0,0,0);
     } else {
+        if(controller_required && (state==MK8_EDIT_APPLIED || state==MK8_EDIT_CLOSED))
+            menu_sound(c,state==MK8_EDIT_APPLIED ? 0x7000ed87bfull : 0x7000ed87cfull);
         controller_release();
         visible(c,root,"L_SettingsNo",true);
         controller_cursor_scale(c,1.f);
@@ -753,7 +826,7 @@ static void start_exit(Cpu *c) {
 void mk8_settings_page_build(uint64_t page) { top=page; }
 
 void mk8_settings_shared_build(uint64_t page) {
-    if(!mk8_settings_style_active()) return;
+    if(!mk8_controller_layout_available() && !mk8_settings_style_active()) return;
     heap(page,0x1f8);
     if(controller_visible) controller_release();
     if(active) (void)post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
@@ -1109,7 +1182,9 @@ void mk8_settings_page_frame(uint64_t manager) {
         shared_race=players;
     }
     if(shared_race) requested=false;
-    if(!mk8_settings_style_active()) {
+    bool style=mk8_settings_style_active();
+    unsigned joining=mk8_controller_join_players();
+    if(!style && (!mk8_controller_layout_available() || (!joining && !controller_required))) {
         controller_entry_players=0;
         if(mk8_controller_layout_active()) controller_release();
         return;
@@ -1132,8 +1207,11 @@ void mk8_settings_page_frame(uint64_t manager) {
     }
     mk8_settings_values_context(main_menu);
     available=present && mk8_settings_values_count(0)>0;
-    controller_entry_players=present && local_parts && drivers ? atomic_load(&controller_applet_players) : 0;
+    controller_entry_players=style && present && local_parts && drivers ? atomic_load(&controller_applet_players) : 0;
     if(!present) {
+        // This same page can return after the worker has finished in another scene.
+        // Keep its saved cursors until we can safely close the roster on the owner.
+        if(controller_visible && controller_required) { controller_detached=true; return; }
         if(!active && !hide_on_return) cursor_owner=0;
         if(mk8_controller_layout_active()) controller_release();
         if(active) {
@@ -1147,6 +1225,7 @@ void mk8_settings_page_frame(uint64_t manager) {
         active=requested=false;
         return;
     }
+    controller_detached=false;
     if(hide_on_return) {
         // The same page is live again; a rebuilt page clears this flag in its constructor.
         Cpu *c=kernel_current_cpu();
@@ -1170,15 +1249,15 @@ void mk8_settings_page_frame(uint64_t manager) {
         *c=saved;
         return;
     }
-    if(controller_preview || controller_visible) {
-        unsigned players=controller_entry_players;
+    if(joining || controller_preview || controller_visible) {
+        unsigned players=joining ? joining : controller_entry_players;
         if(!players && !controller_visible) controller_release();
         if(!players) controller_preview=false;
         else if(!controller_visible) controller_rows=players;
         Cpu *c=kernel_current_cpu();
         if(!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:controllers] invalid popup context\n");
         Cpu saved=*c; c->sp-=512;
-        controller_layout(c);
+        controller_layout(c,joining!=0);
         *c=saved;
         if(controller_visible) return;
     }
