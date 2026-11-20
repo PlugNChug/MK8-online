@@ -51,6 +51,12 @@ submit concluído em vez de esperar o relatório pendente; `tests/test_occlusion
 compilado nativamente neste host; o controle negativo com o gate desativado falha). Não validado em execução — falta
 host ocioso. `gameplay_verified` continua falso.
 
+## Upscaler FSR 3.1.6 nativo e MLFI (FSR 4) — 20/11/2026
+
+O upscaler **FSR 3.1.6** também é construído localmente a partir do SDK MIT: `tools/gen_upscaler_blobs.py` compila os 11 passes com DXC, reflete os descritores (incluindo `Uniform`/`StorageBuffer`), reescreve os formatos das storage images e `tools/build_upscaler_provider.py` produz `libamd_fidelityfx_upscaler_vk.so` (573.136 bytes, sha256 `4c3a75cf…fde709`). Duas builds independentes são idênticas; `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`); a saída 1920x1080→2560x1440 é **byte-idêntica** à do DLL assinado da AMD no Windows para as entradas capturadas (SHA-256 `df8c4cf2…49ae`, MAE 0). No jogo: `[fsr] provider 3.1.6`, `upscale active 1920x1080 -> 2560x1440`, `depth now game`, `motion now camera`, título e largada renderizados. 7/7 testes.
+
+Do lado do **FSR 4 (MLFI)**, o DLL assinado foi executado sob Wine contra RADV: o layout do host foi recuperado (5 preprocess + `pass0…pass190`, geometria por resolução, `CsTensorSizes uint4[92]`, bindings, upload do modelo `[72 : 72+10.657.152]`, 195 pipelines). Quatro módulos derrubavam o RADV: o front-end do Mesa os rejeita e `radv_shader.c:549` desreferencia `NULL` — é um defeito de tratamento de erro do RADV, não limitação de shader. Um legalizador de SPIR-V (`tools/radv-mlfi/fix_image_types.py`) faz **195/195** pipelines compilarem e executarem. A reprodução nativa do MLFI está em andamento; nenhum frame MLFI válido foi produzido ainda e `gameplay_verified` continua falso.
+
 ## Verificação Windows — 20/11/2026
 
 O launcher Windows e o runtime host foram compilados da árvore `f5949f1` com o
