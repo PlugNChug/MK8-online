@@ -112,10 +112,8 @@ Status 20/11/2026. Extends `docs/FSR.md`.
 
 ## Runtime integration: native frame generation (20/11/2026)
 
-- **Toggle:** `MK8_FSR_FG=fsr3` (default off). Any other non-empty value is ignored with one log line. Because the
-  current source-built provider is not dispatch-ready (see the blocker below), enabling also requires
-  `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1`; without it the bridge logs the exact precondition failure and leaves
-  the normal swapchain/present path. The provider is loaded from `MK8_FSR_FG_LIB`, else
+- **Toggle:** `MK8_FSR_FG=fsr3` (default off). Any other non-empty value is ignored with one log line. The
+  provider is loaded from `MK8_FSR_FG_LIB`, else
   `$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so`, else
   `$HOME/.local/share/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so`.
 - **Patch:** `toolchain/fsr_fg.py` runs last in `toolchain/host.py` (after the WSI profiling patches it wraps). It
@@ -130,10 +128,12 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   `ffxQueryDescSwapchainReplacementFunctionsVK`. Any failure disables the bridge, restores the original swapchain
   and logs one reason; it never returns a fake success.
 - **Inputs:** `runtime/mk8/graphics/fsr.cpp` shares the captured scene depth and the camera motion-vector compute
-  with the prepare dispatch. Without a captured view/projection it uses a neutral depth and zero motion vectors,
-  and logs `[fsr_fg] WARNING: motion vectors are zeros ...`; without a depth copy it logs the neutral source.
-  When both `MK8_FSR4` and `MK8_FSR_FG` are set, the upscaler stays off: combining is a TODO and FG runs on the
-  game's native window image.
+  with the prepare dispatch. For FG the captured depth is resampled to the presented size (the game's depth pass
+  runs at 2304x1296 for a 2560x1440 window), and the view/projection captured in the main draw drives a per-frame
+  motion-vector compute at that size. Without a captured view/projection it uses a neutral depth and zero motion
+  vectors, and logs `[fsr_fg] WARNING: motion vectors are zeros ...`; without a depth copy it logs the neutral
+  source. When both `MK8_FSR4` and `MK8_FSR_FG` are set, the upscaler stays off: combining is a TODO and FG runs on
+  the game's native window image.
 - **Provider build fix:** `tools/fg-linux/CMakeLists.txt` now defines `FFX_FRAMEGENERATION=1`. Without it the
   Vulkan backend leaves `fpSwapChainConfigureFrameGeneration` null and `ffxConfigure` on the frame-generation
   context dereferences null; a provider built before this fix cannot use the swapchain path.
@@ -165,10 +165,9 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   semaphores at `vkDestroyDevice`), and the UI-composition/debug-pacing pipelines used `lineWidth = 0.0`; the
   global UI composition objects are now released when the swapchain context is destroyed. With these changes the
   headless swapchain fixture and the 120-frame harness run with `VK_LAYER_KHRONOS_validation` report zero errors
-  and no GPU fault. The bridge still requires `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1`: the provider is
-  dispatch-validated headlessly, but the in-game path has not been re-run with this build, and image quality,
-  pacing/latency, 120 Hz and combination with the upscaler remain unverified. Removing the gate is a separate
-  one-line change after that run.
+  and no GPU fault. With this provider the in-game path was validated too (see below), so `MK8_FSR_FG=fsr3` is
+  sufficient; the acknowledgement gate was removed in `54613fa`. Image quality, pacing/latency, 120 Hz, combining
+  with the upscaler and the full race/restart/save remain unverified.
 - **Tests:** `tests/test_fsr_fg.py` applies the real patch chain (`fsr` → `submit_profile` → `acquire_bound` →
   `fsr_fg`) to the pinned runtime and runs `tests/fixtures/fsr_fg_swapchain.cpp`: a headless 1920x1080 device that
   checks 3.1.7, creates both contexts, queries the replacement functions, records six prepare dispatches with
@@ -196,12 +195,97 @@ MK8_FSR_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk
 MK8_FG_HARNESS_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so \
   MK8_FG_HARNESS_REQUIRE_PROVIDER=1 python3 -m unittest tests.test_fg_harness -v
 
-# runtime: normal path (FG off), the safe gate, and provider development
+# runtime: normal path (FG off) and frame generation with a provider
 ./mk8drecomp <game-root>
-MK8_FSR_FG=fsr3 ./mk8drecomp <game-root>                     # logs the unvalidated-provider gate
-MK8_FSR_FG=fsr3 MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1 \
+MK8_FSR_FG=fsr3 \
   MK8_FSR_FG_LIB=/path/to/libamd_fidelityfx_framegeneration_vk.so ./mk8drecomp <game-root>
 ```
+
+## In-game validation (20/11/2026)
+
+The provider at `/home/mitchell/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so`
+(852,280 bytes, sha256 `786a32c4bd66128c3b8c09c998ed888a2b856d02234c359cd4892e8ed37a7432`) was run in the game with a
+runtime rebuilt from this tree. Build: `local/python/bin/python toolchain/build.py --config
+local/qualification/fsr-fg-2026-11-20/config.json --local local/qualification/fsr-fg-2026-11-20` into a new local
+root (imports and the object cache hard-linked; exit 0, 221/221 host units). The built
+`host-optimized/runtime/nvn/vulkan/device.c` contains the FG-gated feature enables
+(`shaderStorageImageWriteWithoutFormat`, `shaderStorageImageReadWithoutFormat`,
+`VK_KHR_compute_shader_derivatives` + `computeDerivativeGroupLinear`). The gate-removal run used exe sha256
+`c798ea6d04896e04e34d14012d890185cdd073d9974b6ce5432e8903bec72934`; the input fix below rebuilt the host to
+`5b44287bef213245ac6078c639f92cd6a7e19432c343fa947434843b0bb5c9c1`.
+
+### Gate-removal run (neutral inputs)
+
+Run `fgin1`: RADV 26.2.6 (stable RADV JSON), 2560x1440, private data copy, `MK8_FSR_FG=fsr3` with the provider path
+and the then-required acknowledgement; the harness navigated title → menu → kart select → "Start Grand Prix?" and
+drove at Mario Kart Stadium, 3,400 frames, exit 0. The FG log:
+
+```
+[fsr_fg] present/acquire queue family 1 (4 queues)
+[fsr_fg] formatless storage images: write 1 read 1
+[fsr_fg] provider loaded: .../libamd_fidelityfx_framegeneration_vk.so
+[fsr_fg] swapchain provider offers 3.1.7
+[fsr_fg] swapchain provider 3.1.7 (version 0xc01007)
+[fsr_fg] present mode 1 replaced by FIFO so the frame-interpolation swapchain paces itself
+[fsr_fg] frame-generation effect provider 3.1.6
+[fsr_fg] active: FFX frame-interpolation swapchain 2560x1440 format 44 (present family 1)
+[fsr_fg] depth source: neutral (no captured scene depth) 2560x1440 fmt 126
+[fsr_fg] WARNING: motion vectors are zeros (no captured view/projection); interpolation relies on optical flow only
+[fsr_fg] camera default (no captured view matrix): position 0.0 0.0 0.0 forward 0.0 0.0 -1.0
+[fsr_fg] first interpolated frame recorded (frameID 0, 2560x1440)
+```
+
+There is no `GPUVM fault`, `VK_ERROR_DEVICE_LOST`, `SyncWait`, `FATAL` or validation-error line in the log, and the
+bridge never logged `[fsr_fg] disabled:` after activation, so the acknowledgement gate was removed in `54613fa`.
+
+### Real scene depth and camera (fix `b04c36f`)
+
+The neutral-input log above did not mean the capture was disabled. The same log contains
+`[fsr] view/proj captured in main draw` and `[fsr] capture scene depth 2304x1296 fmt 126` a few frames later.
+The capture and the main-draw matrix scan both fire under `MK8_FSR_FG`; the defects were elsewhere:
+
+- the capture is at the game's depth-pass size (2304x1296) while `mk8_fsr_fg_inputs` requires the swapchain size
+  (2560x1440), so it rejected the capture and, because the motion-vector compute is gated on `depth.real`, skipped
+  the MVs too;
+- `depth_copy.frag` mapped destination pixels with `textureSize(source)` instead of the destination size, so a
+  resample of a different size was a crop (this also affected the upscaler's 2304x1296 → 1920x1080 depth copy);
+- the camera line was logged once, on the first prepare, before the first qualifying draw, so it printed the
+  default and never showed the later captured state.
+
+`b04c36f` captures the depth at the presented size for FG (same aspect; FG off keeps the render-size capture),
+maps `depth_copy.frag` with the destination size from a push constant, adds `COLOR_ATTACHMENT_WRITE` to the FG
+depth barrier, and logs the camera when `g_fsr_vp_valid` changes. Before (`fgin1`) and after (`fgin3`, same path,
+`MK8_FSR_FG=fsr3` alone, no acknowledgement):
+
+```
+before: [fsr_fg] depth source: neutral (no captured scene depth) 2560x1440 fmt 126
+        [fsr_fg] WARNING: motion vectors are zeros (no captured view/projection) ...
+        [fsr_fg] camera default (no captured view matrix): position 0.0 0.0 0.0 forward 0.0 0.0 -1.0
+
+after:  [fsr] capture scene depth 2304x1296 fmt 126 (resampled to the presented size)
+        [fsr] view/proj captured in main draw
+        [fsr_fg] depth source: captured scene depth 2560x1440 fmt 100
+        [fsr_fg] motion vectors: camera-derived
+        [fsr_fg] camera from the captured view matrix: position -0.0 0.0 -0.0 forward -0.0 -0.0 1.0
+```
+
+The `fgin3` run navigated the same path, 3,400 frames, exit 0, with no `GPUVM`, device-lost, `SyncWait`, `FATAL`
+or validation-error line. Screenshots: `fgin3-00200.png` (title), `-00840.png` (menu), `-01480.png` (kart
+select), `-02120.png` ("Start Grand Prix?"), `-02760.png` (race start) and `-03400.png` (in-race, lap 1/3, 2nd,
+5 coins). A first attempt at the resample (`fgin2`, before the UV/barrier fixes) aborted once at frame 2579 with
+`[vk] GPU did not finish submission 6084 within 10 s (device lost?)` and
+`FATAL: [mk8] conditional occlusion report did not resolve` (exit -6, no GPUVM line); the fixed run passed the same
+point. It is not established whether that abort was caused by the wrong depth mapping/missing barrier or by host
+contention, and one clean run is not a stability guarantee.
+
+### What this does and does not show
+
+The screenshots are the game's real render images (the provider's replacement buffers), not the provider's
+interpolated output. The camera line proves the scan matched and `run_mv` executed against the real depth; it does
+not prove the matrix heuristic picked the gameplay camera on every draw (the first captured matrix logged is
+near-identity and later draws overwrite it), nor that the vectors are correct everywhere. Generated-frame image
+quality, pacing/latency, a real 120 Hz presentation, combining with the FSR upscaler and a full race/restart/save
+remain unverified; `gameplay_verified` stays false.
 
 ## Reproducing the provider and the checks
 
