@@ -50,16 +50,19 @@ static Mk8KeyState mk8_player_keys(int player) {
     if (player != mk8_assigned_keyboard()) return (Mk8KeyState){0};
     return (Mk8KeyState){key_buttons, key_lx, key_ly, key_rx, key_ry};
 }
-static _Atomic unsigned mk8_connected_mask;
 static _Atomic unsigned mk8_race_seats;
+static _Atomic unsigned mk8_live_seat_mask = 1;  // Keyboard starts at P1.
+static unsigned mk8_live_seats(void) { return atomic_load(&mk8_live_seat_mask); }
 static void mk8_publish_connections(void) {
-    unsigned mask = 0;
+    unsigned mask = pad ? 1u : 0u;
+    int keyboard = mk8_assigned_keyboard();
+    if (keyboard >= 0) mask |= 1u << keyboard;
     for (int i = 0; i < EXTRA_PADS; i++)
-        if (extra_pad[i] || mk8_assigned_keyboard() == i+1) mask |= 1u << i;
-    atomic_store(&mk8_connected_mask, mask);
+        if (extra_pad[i]) mask |= 1u << (i + 1);
+    atomic_store(&mk8_live_seat_mask, mask);
 }
 static bool extra_connected(int i) {
-    return ((atomic_load(&mk8_connected_mask) | atomic_load(&mk8_race_seats)) & (1u << i)) || (i == 0 && script2_on());
+    return ((mk8_live_seats() | atomic_load(&mk8_race_seats)) & (1u << (i+1))) || (i == 0 && script2_on());
 }''')
     text = replace(text, 'static void style_changed(void) {\n    mk8_sync_sensors();'
                    '  // (UI thread: a controller came or went) every bound style set event', '''static void mk8_signal_styles(void);
@@ -73,10 +76,10 @@ static void style_changed(void) {
 
 void mk8_input_race_players(unsigned players) {
     // Preserve only seats that had a controller when this local race began.
-    unsigned participating = players ? (1u << (players - 1)) - 1u : 0;
-    unsigned seats = atomic_load(&mk8_connected_mask) & participating;
+    unsigned participating = ((1u << players) - 1u) & ~1u;
+    unsigned seats = mk8_live_seats() & participating;
     unsigned previous = atomic_exchange(&mk8_race_seats, seats);
-    if ((previous ^ seats) & ~atomic_load(&mk8_connected_mask)) mk8_signal_styles();
+    if ((previous ^ seats) & ~mk8_live_seats()) mk8_signal_styles();
 }
 
 static void mk8_signal_styles(void) {''')

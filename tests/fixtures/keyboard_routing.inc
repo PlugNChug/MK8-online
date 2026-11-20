@@ -35,6 +35,7 @@ static void check_keyboard_routing(void) {
         int owner = owners[i];
         mk8_set_assigned_keyboard(owner);
         mk8_publish_connections();
+        assert(mk8_live_seats() == (owner >= 0 ? 1u << owner : 0));
         for (int player = 0; player < 4; ++player) {
             uint64_t state[5];
             fill_state(&cpu, (uint8_t *)state, player, false);

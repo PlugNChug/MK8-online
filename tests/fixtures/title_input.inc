@@ -177,6 +177,7 @@ static void check_title_hotplug(void) {
     title_ready(true);
     button(sticks[PRO],SDL_GAMEPAD_BUTTON_WEST,true); button(sticks[PRO],SDL_GAMEPAD_BUTTON_WEST,false);
     assert(SDL_GetGamepadID(pad)==ids[PRO] && mk8_assigned_keyboard()==1); title_accepted();
+    assert(mk8_live_seats()==3);  // The keyboard and Pro occupy distinct seats.
     SDL_Event enter={.type=SDL_EVENT_KEY_DOWN}; enter.key.scancode=SDL_SCANCODE_RETURN;
     assert(SDL_PushEvent(&enter)); pump();
     assert(!(guest_buttons(0)&(1ull<<BIND_PLUS)) && (guest_buttons(1)&(1ull<<BIND_PLUS)));
