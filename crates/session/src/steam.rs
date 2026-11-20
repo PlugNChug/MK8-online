@@ -742,15 +742,16 @@ static STEAM_API: Mutex<Option<Arc<Api>>> = Mutex::new(None);
 
 fn compatible_api<T>(
     paths: impl IntoIterator<Item = PathBuf>,
-    mut load: impl FnMut(&Path) -> Result<T>,
+    mut initialize: impl FnMut(&Path) -> Result<Option<T>>,
 ) -> Result<T> {
     let mut failures = Vec::new();
     for path in paths {
         if !path.is_file() {
             continue;
         }
-        match load(&path) {
-            Ok(api) => return Ok(api),
+        match initialize(&path) {
+            Ok(Some(api)) => return Ok(api),
+            Ok(None) => return Err("O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.".into()),
             Err(error) => failures.push(format!("{}: {error}", path.display())),
         }
     }
@@ -758,21 +759,17 @@ fn compatible_api<T>(
         return Err("steam_api64.dll não encontrada. Instalar ou abrir apenas a Steam não fornece essa biblioteca. Coloque a DLL Steamworks de 64 bits ao lado do Launcher.exe e reabra o Launcher. Não é necessário refazer a build do jogo.".into());
     }
     Err(format!(
-        "Nenhuma DLL Steam candidata é compatível ({} verificadas). {}",
+        "Não foi possível inicializar a Steam com as DLLs encontradas ({} verificadas). {}",
         failures.len(),
         failures.into_iter().take(4).collect::<Vec<_>>().join("\n")
     ))
 }
 
-fn ensure_api(local: &Path) -> Result<Arc<Api>> {
-    let mut guard = STEAM_API.lock().unwrap();
-    if let Some(api) = guard.as_ref() {
-        return Ok(api.clone());
-    }
-    // Resolve exports before initialization; a rejected library is released by Api::load.
-    let api = compatible_api(candidate_dll_paths(local), |path| Api::load(path, local))?;
+// Ok(None) means the Steam client itself is offline. Only retry candidate-specific failures.
+fn initialize_candidate(path: &Path, local: &Path) -> Result<Option<Api>> {
+    let api = Api::load(path, local)?;
     if !unsafe { (api.is_steam_running)() } {
-        return Err("O cliente Steam não está aberto. Abra a Steam e faça login antes de criar ou entrar na sala.".into());
+        return Ok(None);
     }
     if !unsafe { (api.init)() } {
         return Err("Não foi possível conectar ao cliente Steam. Verifique se você está logado na Steam (AppID 480) e tente novamente.".into());
@@ -791,6 +788,17 @@ fn ensure_api(local: &Path) -> Result<Arc<Api>> {
             ));
         }
     }
+    Ok(Some(api))
+}
+
+fn ensure_api(local: &Path) -> Result<Arc<Api>> {
+    let mut guard = STEAM_API.lock().unwrap();
+    if let Some(api) = guard.as_ref() {
+        return Ok(api.clone());
+    }
+    let api = compatible_api(candidate_dll_paths(local), |path| {
+        initialize_candidate(path, local)
+    })?;
     let net = unsafe { (api.steam_networking)() };
     if !net.is_null() {
         unsafe { (api.allow_p2p_relay)(net, true) };
@@ -1455,7 +1463,7 @@ mod tests {
             if path == old {
                 Err("required export absent".into())
             } else {
-                Ok(path.to_owned())
+                Ok(Some(path.to_owned()))
             }
         })
         .unwrap();
@@ -1468,6 +1476,12 @@ mod tests {
             compatible_api::<()>([root.join("missing.dll")], |_| panic!("missing DLL loaded"))
                 .is_err()
         );
+        let offline = compatible_api::<()>([old.clone(), good.clone()], |path| {
+            assert_eq!(path, old);
+            Ok(None)
+        })
+        .unwrap_err();
+        assert!(offline.contains("cliente Steam não está aberto"));
         fs::remove_file(old).unwrap();
         fs::remove_file(good).unwrap();
         fs::remove_dir(root).unwrap();
