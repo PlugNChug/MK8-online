@@ -92,6 +92,16 @@ class FsrFgPatchTests(unittest.TestCase):
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
         self.assertIn('if ((getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) && g_pass_depth', exec_c)
         self.assertIn('if (getenv("MK8_FSR4") || getenv("MK8_FSR_FG")) {', exec_c)
+        # The FG bridge prepares at the swapchain extent, while the game's depth pass is at its own
+        # render size; the capture is resampled to the presented size only for FG.
+        self.assertIn('if (getenv("MK8_FSR_FG") && g_vk.sc_extent.width && g_vk.sc_extent.height &&\n'
+                      '                db->width * g_vk.sc_extent.height == db->height * g_vk.sc_extent.width)', exec_c)
+        self.assertIn('cw = g_vk.sc_extent.width, ch = g_vk.sc_extent.height;', exec_c)
+        self.assertIn('post_image(21, cw, ch, VK_FORMAT_R32_SFLOAT)', exec_c)
+        self.assertIn('float pc[8] = {(float)cw, (float)ch', exec_c)
+        shaders = (runtime / 'nvn/vulkan/shaders.c').read_text(encoding='utf-8')
+        self.assertIn('gl_FragCoord.xy / pc.a.xy', shaders)
+        self.assertIn('resampled to the presented size', exec_c)
 
     def test_is_idempotent(self):
         runtime = self.patched()

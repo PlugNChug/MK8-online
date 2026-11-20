@@ -18,7 +18,7 @@ CALL = ANCHOR + """    { extern VkImageView mk8_fsr4_upscale(VkCommandBuffer, Te
           TexBackend *copy = post_image(22, b->width, b->height, VK_FORMAT_R32_SFLOAT);
           VkImageView dv = vk_image_view(fsr_depth, VK_IMAGE_VIEW_TYPE_2D, fsr_depth->format, 0, 1, 0, 1,
                                          (VkComponentMapping){0}, VK_IMAGE_ASPECT_COLOR_BIT);
-          float dpc[8] = {0};
+          float dpc[8] = {(float)copy->width, (float)copy->height, 0, 0, 0, 0, 0, 0};
           post_pass(cb, "depth_copy.frag", &dv, 1, copy, dpc, false);
           fsr_depth = copy;
       }
@@ -26,17 +26,27 @@ CALL = ANCHOR + """    { extern VkImageView mk8_fsr4_upscale(VkCommandBuffer, Te
       if (fsr4) { vk_full_barrier(cb); vk_frame_resume(); return fsr4; } }
 """
 
-CAPTURE = """    if (getenv("MK8_FSR4_CAPTURE") && g_pass_depth && g_pass_depth->backend) {
+CAPTURE = """    if ((getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) && g_pass_depth && g_pass_depth->backend) {
         TexBackend *db = (TexBackend *)g_pass_depth->backend;
         if (db->image && db->width >= 640 && db->height >= 360 && db->width * 9 == db->height * 16) {
+            // Frame generation consumes the depth at the presented size: its FFX context is created
+            // for the swapchain extent (displaySize == maxRenderSize). The game's depth pass uses its
+            // own render size (2304x1296 for a 2560x1440 window), so resample it here with the same
+            // depth_copy pass the upscaler uses. Only for FG, and only when the aspects match;
+            // FG off keeps the render-size capture unchanged.
+            uint32_t cw = db->width, ch = db->height;
+            if (getenv("MK8_FSR_FG") && g_vk.sc_extent.width && g_vk.sc_extent.height &&
+                db->width * g_vk.sc_extent.height == db->height * g_vk.sc_extent.width)
+                cw = g_vk.sc_extent.width, ch = g_vk.sc_extent.height;
             static int cap_log;
-            if (cap_log++ < 3) LOG("[fsr] capture scene depth %ux%u fmt %d\\n", db->width, db->height, db->format);
-            TexBackend *cap = post_image(21, db->width, db->height, VK_FORMAT_R32_SFLOAT);
+            if (cap_log++ < 3) LOG("[fsr] capture scene depth %ux%u fmt %d%s\\n", db->width, db->height, db->format,
+                                   cw != db->width || ch != db->height ? " (resampled to the presented size)" : "");
+            TexBackend *cap = post_image(21, cw, ch, VK_FORMAT_R32_SFLOAT);
             VkImageAspectFlags da = (db->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                                              : VK_IMAGE_ASPECT_COLOR_BIT;
             VkImageView dv = vk_image_view(db, VK_IMAGE_VIEW_TYPE_2D, db->format, 0, 1, 0, 1,
                                            (VkComponentMapping){0}, da);
-            float pc[8] = {0};
+            float pc[8] = {(float)cw, (float)ch, 0, 0, 0, 0, 0, 0};
             post_pass(vk_cmd(), "depth_copy.frag", &dv, 1, cap, pc, false);
             g_fsr_captured = cap;
         }
@@ -79,8 +89,11 @@ DEPTH_SHADER = '''    if (!strcmp(name, "depth_copy.frag")) {
         *stage = STAGE_FRAGMENT;
         return "#version 450\\n"
                "layout(set = 0, binding = 0) uniform sampler2D t;\\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\\n"
                "layout(location = 0) out vec4 o;\\n"
-               "void main() { o = vec4(texture(t, gl_FragCoord.xy / vec2(textureSize(t, 0))).r, 0.0, 0.0, 1.0); }\\n";
+               // pc.a.xy is the destination size: the source may be the game's render size while the
+               // destination is the window or the upscaler's render size.
+               "void main() { o = vec4(texture(t, gl_FragCoord.xy / pc.a.xy).r, 0.0, 0.0, 1.0); }\\n";
     }
 '''
 

@@ -366,7 +366,8 @@ extern "C" bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t w, uint32_t h,
                                              VkComponentMapping{}, VK_IMAGE_ASPECT_COLOR_BIT);
         if (!view) return false;
         barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                 VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
         depth->image = cap->image;
         depth->view = view;

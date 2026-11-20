@@ -603,9 +603,9 @@ extern "C" void mk8_fsr_fg_prepare(VkCommandBuffer cb, uint32_t width, uint32_t 
         ffxApiGetImageResourceDescriptionVK(motion.image, motion_ci, VK_IMAGE_USAGE_SAMPLED_BIT),
         FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     camera_vectors(prepare.cameraPosition, prepare.cameraUp, prepare.cameraRight, prepare.cameraForward);
-    static bool said_camera;
-    if (!said_camera) {
-        said_camera = true;
+    static int camera_state = -1;
+    if ((int)g_fsr_vp_valid != camera_state) {
+        camera_state = (int)g_fsr_vp_valid;
         fprintf(stderr, "[fsr_fg] camera %s: position %.1f %.1f %.1f forward %.1f %.1f %.1f\n",
                 g_fsr_vp_valid ? "from the captured view matrix" : "default (no captured view matrix)",
                 prepare.cameraPosition[0], prepare.cameraPosition[1], prepare.cameraPosition[2],
