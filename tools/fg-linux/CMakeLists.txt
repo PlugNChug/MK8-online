@@ -22,6 +22,7 @@ set(SRC
   ${FG_DIR}/fg_blobs.cpp
   ${FG_BLOB_SOURCES}
   ${FG_DIR}/fg_provider_list.cpp
+  ${SDK}/Kits/FidelityFX/api/internal/ffx_api.cpp
   ${SDK}/Kits/FidelityFX/api/internal/ffx_assert.cpp
   ${SDK}/Kits/FidelityFX/api/internal/ffx_message.cpp
   ${SDK}/Kits/FidelityFX/api/internal/ffx_object_management.cpp
@@ -55,7 +56,7 @@ target_include_directories(amd_fidelityfx_framegeneration_vk PRIVATE
   ${SDK}/Kits/FidelityFX/framegeneration/fsr3/vk
 )
 
-target_compile_definitions(amd_fidelityfx_framegeneration_vk PRIVATE FFX_VK=1 FFX_BACKEND_VK=1)
+target_compile_definitions(amd_fidelityfx_framegeneration_vk PRIVATE FFX_VK=1 FFX_BACKEND_VK=1 FFX_FRAMEGENERATION=1)
 target_compile_options(amd_fidelityfx_framegeneration_vk PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:-include${FG_DIR}/fg_compat.h>)
 
