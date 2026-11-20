@@ -44,6 +44,15 @@ def payload_files():
         yield ROOT / "runtime/mk8/graphics/ffx/LICENSE"
         for path in sorted((ROOT / "runtime/mk8/graphics/ffx").rglob("*.h")):
             yield path
+        # The launcher builds the optional FSR providers locally from the user's own MIT-licensed SDK download, so
+        # the build scripts and their C/C++ scaffolding must ship in the payload (they contain no AMD binaries).
+        for name in ("build_fg_provider.py", "gen_fg_blobs.py", "build_upscaler_provider.py",
+                     "gen_upscaler_blobs.py", "fetch_vendor_sdk.py"):
+            yield ROOT / "tools" / name
+        for folder in ("fg-linux", "fg-linux-upscaler"):
+            for path in sorted((ROOT / "tools" / folder).rglob("*")):
+                if path.is_file() and "__pycache__" not in path.parts:
+                    yield path
     if WINDOWS:
         # The runtime executable built from these same sources (scripts/prebuild-host.py); a build checks its key.
         for name in ("mk8drecomp.exe", "mk8drecomp.dll.a", "manifest.json"):
