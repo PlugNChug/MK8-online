@@ -346,6 +346,9 @@ def prepare_host_sources(source, output):
     prepare_texture_readback(runtime)
     from entry_trace import prepare as prepare_entry_trace  # (read-only tracing for reverse engineering)
     prepare_entry_trace(runtime)
+    # Runs last: it wraps the acquire/present calls that the WSI profiling patches above instrument.
+    from fsr_fg import prepare as prepare_fsr_fg
+    prepare_fsr_fg(runtime)
     device = runtime/'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     boundary = '    VK_CHECK(vmaCreateAllocator(&ai, &g_vk.vma));'

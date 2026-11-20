@@ -32,6 +32,7 @@
 #include "ffx/vk/ffx_api_vk.h"
 
 #include "vulkan/vk.h"
+#include "fsr_fg.h"
 
 extern "C" {
 VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
@@ -72,6 +73,14 @@ typedef struct {
     void *mv_ubo_ptr;
     bool have_prev;
     float prev_vp[16];
+    // Frame-generation inputs (fsr_fg.cpp): independent of the upscaler's set.
+    VkImage neutral_depth;
+    VmaAllocation neutral_depth_mem;
+    VkImageView neutral_depth_view;
+    uint32_t neutral_w, neutral_h;
+    bool neutral_primed;
+    uint32_t motion_w, motion_h;
+    bool motion_primed;
 } Fsr4;
 
 static Fsr4 fsr;
@@ -82,6 +91,7 @@ extern float g_fsr_proj[16];
 extern int g_fsr_vp_valid;
 extern float g_fsr_jitter_x;
 extern float g_fsr_jitter_y;
+extern TexBackend *g_fsr_captured;  // exec.c: the scene-depth copy at the pass boundary
 }
 
 static void *load_library(const char *path) {
@@ -287,6 +297,126 @@ static bool run_mv(VkCommandBuffer cb, TexBackend *depth, uint32_t rw, uint32_t 
     return true;
 }
 
+static void destroy_neutral_depth(void) {
+    if (fsr.neutral_depth_view) vkDestroyImageView(g_vk.dev, fsr.neutral_depth_view, NULL);
+    if (fsr.neutral_depth) { vkDestroyImage(g_vk.dev, fsr.neutral_depth, NULL); vmaFreeMemory(g_vk.vma, fsr.neutral_depth_mem); }
+    fsr.neutral_depth = VK_NULL_HANDLE;
+    fsr.neutral_depth_mem = VK_NULL_HANDLE;
+    fsr.neutral_depth_view = VK_NULL_HANDLE;
+    fsr.neutral_primed = false;
+}
+
+// A depth image of the presented size, cleared to 1.0 once. It is the fallback when the
+// scene depth copy is not available; leaving it SHADER_READ_ONLY suits every consumer.
+static bool ensure_neutral_depth(VkCommandBuffer cb, uint32_t w, uint32_t h) {
+    if (fsr.neutral_depth && fsr.neutral_w == w && fsr.neutral_h == h) return fsr.neutral_depth_view != VK_NULL_HANDLE;
+    destroy_neutral_depth();
+    fsr.neutral_depth = make_image(VK_FORMAT_D32_SFLOAT, w, h,
+                                   VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                   VK_IMAGE_ASPECT_DEPTH_BIT, &fsr.neutral_depth_mem);
+    if (!fsr.neutral_depth) return false;
+    fsr.neutral_depth_view = image_view(fsr.neutral_depth, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    if (!fsr.neutral_depth_view) return false;
+    fsr.neutral_w = w;
+    fsr.neutral_h = h;
+    return true;
+}
+
+static bool ensure_motion(VkCommandBuffer cb, uint32_t w, uint32_t h) {
+    if (!fsr.motion || fsr.motion_w != w || fsr.motion_h != h) {
+        if (fsr.motion_view) vkDestroyImageView(g_vk.dev, fsr.motion_view, NULL);
+        if (fsr.motion) { vkDestroyImage(g_vk.dev, fsr.motion, NULL); vmaFreeMemory(g_vk.vma, fsr.motion_mem); }
+        fsr.motion = make_image(VK_FORMAT_R16G16_SFLOAT, w, h,
+                                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+                                VK_IMAGE_ASPECT_COLOR_BIT, &fsr.motion_mem);
+        fsr.motion_view = fsr.motion ? image_view(fsr.motion, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT) : VK_NULL_HANDLE;
+        fsr.motion_w = w;
+        fsr.motion_h = h;
+        fsr.motion_primed = false;
+    }
+    if (!fsr.motion || !fsr.motion_view) return false;
+    if (!create_mv_resources()) return false;
+    if (!fsr.motion_primed) {
+        barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkClearColorValue zero = {{0, 0, 0, 0}};
+        VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, fsr.motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+        barrier(cb, fsr.motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        fsr.motion_primed = true;
+    }
+    return true;
+}
+
+// Frame-generation inputs. The captured scene depth is the copy exec.c makes at the pass end
+// (MK8_FSR_FG enables that capture); the motion vectors are the camera-derived ones the upscaler
+// uses. A missing view/projection leaves the zero motion image and says so loudly.
+extern "C" bool mk8_fsr_fg_inputs(VkCommandBuffer cb, uint32_t w, uint32_t h,
+                                  Mk8FsrFgInput *depth, Mk8FsrFgInput *motion) {
+    if (!cb || !depth || !motion || !w || !h) return false;
+    memset(depth, 0, sizeof *depth);
+    memset(motion, 0, sizeof *motion);
+    TexBackend *cap = g_fsr_captured;
+    bool real = cap && cap->image && cap->width == w && cap->height == h;
+    if (real) {
+        VkImageView view = fsr_vk_image_view(cap, VK_IMAGE_VIEW_TYPE_2D, cap->format, 0, 1, 0, 1,
+                                             VkComponentMapping{}, VK_IMAGE_ASPECT_COLOR_BIT);
+        if (!view) return false;
+        barrier(cb, cap->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        depth->image = cap->image;
+        depth->view = view;
+        depth->format = cap->format;
+        depth->real = true;
+    } else {
+        if (!ensure_neutral_depth(cb, w, h)) return false;
+        if (!fsr.neutral_primed) {
+            barrier(cb, fsr.neutral_depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            VkClearDepthStencilValue one = {1.0f, 0};
+            VkImageSubresourceRange range = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            vkCmdClearDepthStencilImage(cb, fsr.neutral_depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &one, 1, &range);
+            barrier(cb, fsr.neutral_depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+            fsr.neutral_primed = true;
+        }
+        depth->image = fsr.neutral_depth;
+        depth->view = fsr.neutral_depth_view;
+        depth->format = VK_FORMAT_D32_SFLOAT;
+        depth->real = false;
+    }
+    depth->width = w;
+    depth->height = h;
+    static int depth_state = -1;
+    if ((int)depth->real != depth_state) {
+        depth_state = (int)depth->real;
+        fprintf(stderr, "[fsr_fg] depth source: %s %ux%u fmt %d\n",
+                depth->real ? "captured scene depth" : "neutral (no captured scene depth)", w, h, depth->format);
+    }
+    if (!ensure_motion(cb, w, h)) return false;
+    bool camera = depth->real && run_mv(cb, cap, w, h);
+    motion->image = fsr.motion;
+    motion->view = fsr.motion_view;
+    motion->format = VK_FORMAT_R16G16_SFLOAT;
+    motion->width = w;
+    motion->height = h;
+    motion->real = camera;
+    static int motion_state = -1;
+    if ((int)camera != motion_state) {
+        motion_state = (int)camera;
+        if (camera) fprintf(stderr, "[fsr_fg] motion vectors: camera-derived\n");
+        else fprintf(stderr, "[fsr_fg] WARNING: motion vectors are zeros (no captured view/projection); "
+                             "interpolation relies on optical flow only\n");
+    }
+    return true;
+}
+
 static void destroy_images(void) {
     if (fsr.output_view) vkDestroyImageView(g_vk.dev, fsr.output_view, NULL);
     if (fsr.output) { vkDestroyImage(g_vk.dev, fsr.output, NULL); vmaFreeMemory(g_vk.vma, fsr.output_mem); }
@@ -423,6 +553,11 @@ static bool init(void) {
 extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, TexBackend *depth, uint32_t rw, uint32_t rh,
                              uint32_t ow, uint32_t oh, float frame_ms) {
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
+    if (getenv("MK8_FSR_FG")) {  // native frame generation takes the final image; combining is not finished
+        static int once;
+        if (!once++) fprintf(stderr, "[fsr] MK8_FSR_FG is set: the FSR upscaler stays off (the frame-generation path uses the native image)\n");
+        return VK_NULL_HANDLE;
+    }
     static int seen;
     if (!seen++) fprintf(stderr, "[fsr] present %ux%u -> %ux%u color %dx%d\n", rw, rh, ow, oh,
                          color ? (int)color->width : -1, color ? (int)color->height : -1);
