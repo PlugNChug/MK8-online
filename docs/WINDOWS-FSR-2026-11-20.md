@@ -32,7 +32,7 @@ frame was produced on this host.
 | --- | --- |
 | Verified code commit | `72c5e5babad7f75245042becab83a6e7752a8e2e` (`feature/fsr`, the HEAD named for this task) |
 | Repository state after the session | a concurrent upstream merge moved the worktree from `72c5e5b` to `fc9efb2`; `git diff 72c5e5b..fc9efb2` over `runtime/mk8/graphics/fsr*`, `runtime/mk8/graphics/ffx`, `toolchain/fsr*.py` and `apps/launcher/src/fsr` is empty |
-| Report/script commit | `2441ffcfb15c837c1140727aa9283ee0d1c18e68` (adds this file and `scripts/verify-windows-fsr.sh` on top of `fc9efb2`) |
+| Report/script commit | `2441ffcfb15c837c1140727aa9283ee0d1c18e68` (adds this file and `scripts/verify-windows-fsr.sh`) |
 | Host | Linux x86-64, kernel `7.4.0-rc1-2-cachyos-rc` |
 | GPU / driver | AMD Radeon RX 9070 XT (RADV GFX1201), Vulkan 1.4.363, Mesa `27.0.0-devel` (git `f7dd61f78f`) |
 | Wine | `wine-11.22` |
