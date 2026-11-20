@@ -8,7 +8,8 @@
 //
 // It writes frame0.rgba / frame1.rgba (tightly packed RGBA8) into argv[1] and
 // prints machine-readable stats. A negative execute result is reported verbatim;
-// no output is treated as success.
+// no output is treated as success. It also prints xessGetIntelXeFXVersion, which is
+// 0.0.0 when the Intel XMX library is not loaded (the DP4a-class path).
 //
 // Build (Linux cross-compile):
 //   x86_64-w64-mingw32-g++ -std=c++17 -O2 -static -DMK8_XESS_PROBE_ONLY \
@@ -36,6 +37,7 @@ typedef int (*ReqDevFn)(VkInstance, VkPhysicalDevice, uint32_t *, const char *co
 typedef int (*ReqFeatFn)(VkInstance, VkPhysicalDevice, void **);
 typedef int (*GetVersionFn)(Mk8XessVersion *);
 typedef int (*GetInputResFn)(Mk8XessContextHandle, const Mk8Xess2D *, int, Mk8Xess2D *);
+typedef int (*IntelVerFn)(Mk8XessContextHandle, Mk8XessVersion *);
 
 static PFN_vkCreateInstance pCreateInstance;
 static PFN_vkGetInstanceProcAddr pGIPA;
@@ -442,6 +444,7 @@ int main(int argc, char **argv) {
     ReqFeatFn xfeat = (ReqFeatFn)sym(xess, "xessVKGetRequiredDeviceFeatures");
     GetVersionFn xversion = (GetVersionFn)sym(xess, "xessGetVersion");
     GetInputResFn xinput = (GetInputResFn)sym(xess, "xessGetInputResolution");
+    IntelVerFn xintel = (IntelVerFn)sym(xess, "xessGetIntelXeFXVersion");
     if (!xcreate || !xinit || !xexecute || !xdestroy || !xdev || !xfeat) {
         printf("missing_xess_entry=1\n");
         return 2;
@@ -545,6 +548,13 @@ int main(int argc, char **argv) {
         Mk8XessVersion version = {0, 0, 0, 0};
         if (xversion(&version) >= 0)
             printf("xess_version=%u.%u.%u\n", version.major, version.minor, version.patch);
+    }
+    // XMX is Intel-only: the SDK returns 0.0.0 when the Intel XeFX library is not
+    // loaded, which is the non-XMX (DP4a-class) path on NVIDIA/AMD.
+    if (xintel) {
+        Mk8XessVersion xeFX = {0, 0, 0, 0};
+        int intel_rc = xintel(context, &xeFX);
+        printf("xess_intel_xefx_rc=%d version=%u.%u.%u\n", intel_rc, xeFX.major, xeFX.minor, xeFX.patch);
     }
 
     VkImage color = VK_NULL_HANDLE, depth = VK_NULL_HANDLE, velocity = VK_NULL_HANDLE, output = VK_NULL_HANDLE;

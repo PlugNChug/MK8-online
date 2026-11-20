@@ -2,18 +2,19 @@
 
 Status 20/11/2026. This is the Windows half of the XeSS plan in
 [DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md). The bridge is implemented and the full
-Windows runtime links with it. The standalone Wine harness now runs a complete
+Windows runtime links with it. The standalone harness runs a complete
 **1280x720 -> 2560x1440 SR dispatch**, submits it, waits and reads back a non-trivial
-image. The runtime itself still has no `fsr.cpp` dispatch hunk for XeSS (that file
-belongs to another agent), so no in-game image exists. `gameplay_verified` stays
-false.
+image under Wine **and natively on Windows on an NVIDIA RTX 5080**. The runtime
+itself still has no `fsr.cpp` dispatch hunk for XeSS (that file belongs to another
+agent), so no in-game image exists. `gameplay_verified` stays false.
 
-The important result: on this AMD RX 9070 XT (RADV GFX1201, Vulkan 1.4.363) under
-Wine 11.22, the `libxess.dll` from the official XeSS 3.0.2 ZIP loads, creates a
-Vulkan context, initialises SR and **executes it on the DP4a path**. The output is
-a smooth upscaled gradient/checker, not noise: 14,710,400 of 14,745,600 bytes are
-non-zero, all 256 byte values occur, and a shifted second frame produces a different
-checksum.
+The important result: the `libxess.dll` from the official XeSS 3.0.2 ZIP loads on
+this AMD RX 9070 XT (RADV GFX1201, Vulkan 1.4.363) under Wine 11.22 **and on real
+Windows with a GeForce RTX 5080 (driver 621.01, Vulkan 1.4.357)**, creates a Vulkan
+context, initialises SR and **executes it on the non-XMX (DP4a-class) path**. The
+output is a smooth upscaled gradient/checker, not noise: 14,710,400 of 14,745,600
+bytes are non-zero, all 256 byte values occur, and a shifted second frame produces a
+different checksum.
 
 ## Files
 
@@ -198,6 +199,121 @@ optimal resolution, not assume the old scale factors. The runtime bridge current
 passes the game's fixed render resolution; that is the next quality/perf item to
 check on real hardware.
 
+## Native Windows evidence (real DLL, NVIDIA RTX 5080)
+
+A real Windows machine was reached over OpenSSH (Windows OpenSSH, command through
+`cmd.exe`): **NVIDIA GeForce RTX 5080** (deviceID `0x2c02`, vendorID `0x10de`),
+driver **621.01**, Vulkan **1.4.357** (instance and device), 16,303 MiB,
+`vulkaninfo --summary` reports one discrete GPU. The machine has the NVIDIA Vulkan
+runtime only; no Intel component is installed. The DLL is the same official 3.0.2
+binary used under Wine (77,795,704 B, SHA-256
+`251659dd84a3e84de67c886a4186e01f3eca49b00641906fe38bb6b807e5d5b7`, confirmed again
+on the Windows side with `certutil -hashfile ... SHA256`), copied to
+`C:/Users/Ronny/mk8-rtx/xess/libxess.dll`. It is not committed.
+
+The harness was cross-built on Linux with **mingw-w64 16.2.0** and the Khronos
+Vulkan 1.4.363 headers, copied to an isolated include root so the Windows build
+never sees the host libc headers:
+
+```sh
+VK_INC=$HOME/.cache/xess-win/include
+mkdir -p "$VK_INC"
+cp -r /usr/include/vulkan "$VK_INC/vulkan"
+cp -r /usr/include/vk_video "$VK_INC/vk_video"
+x86_64-w64-mingw32-g++ -std=c++17 -O2 -static -DMK8_XESS_PROBE_ONLY \
+    -I "$VK_INC" -I runtime/mk8/graphics \
+    tools/xess_wine_harness.cpp runtime/mk8/graphics/xess.cpp \
+    -o "$HOME/.cache/xess-win/xess_harness.exe"
+```
+
+The EXE (299,724 B, PE32+ x86-64, SHA-256
+`6df8f838dd0abbeadd33a0fc862409211c5fadb9bccfe36212c98c4cccafd66e`) and the DLL were
+copied with `scp` to `C:/Users/Ronny/mk8-rtx/xess/`, then run natively:
+
+```bat
+set MK8_XESS_LIB=C:\Users\Ronny\mk8-rtx\xess\libxess.dll && ^
+C:\Users\Ronny\mk8-rtx\xess\xess_harness.exe C:\Users\Ronny\mk8-rtx\xess\out
+```
+
+Exit code `0`, exact output:
+
+```text
+vkCreateInstance=0
+device=NVIDIA GeForce RTX 5080
+required_extensions_rc=0
+count=1
+ext=VK_EXT_mutable_descriptor_type
+required_features_rc=0
+vkCreateDevice=0
+xessVKCreateContext=0
+xessGetInputResolution=0 1114x627
+xessVKInit=0
+xess_version=2.0.2
+xess_intel_xefx_rc=0 version=0.0.0
+frame0_execute_rc=0
+frame0_submit_rc=0
+frame0_wait_rc=0
+frame0_nonzero=14710400
+frame0_unique=256
+frame0_min=0
+frame0_max=255
+frame0_checksum=16097837884742765276
+frame0_bytes=14745600
+frame1_execute_rc=0
+frame1_submit_rc=0
+frame1_wait_rc=0
+frame1_nonzero=14712610
+frame1_unique=256
+frame1_min=0
+frame1_max=255
+frame1_checksum=13467285208402489168
+frame1_bytes=14745600
+dispatch_ok=1
+```
+
+The run was repeated four times (before and after adding the XeFX diagnostic) with
+identical checksums, so the dispatch is deterministic on this GPU. Artifacts:
+`local/qualification/xess-windows-rtx/{dispatch.log,frame0.rgba,frame1.rgba,frame0.png,frame1.png}`.
+`frame0.png` is 2560x1440, 287,008 B, and shows the expected smooth gradient with a
+checker; `frame1.png` shows the 64-pixel checker shift at the top edge. No
+`VK_ERROR_DEVICE_LOST` and no failing `VkResult` was observed on instance, device,
+context, init, execute, submit or wait. The harness does not enable validation
+layers, so this is a clean-result observation, not a validation-layer report.
+
+### Wine/RADV vs native Windows/RTX (same harness)
+
+| Quantity | Wine 11.22, RX 9070 XT (RADV GFX1201) | Windows, RTX 5080 (621.01) |
+| --- | --- | --- |
+| `xessGetVersion` | 2.0.2 | 2.0.2 |
+| `xessGetIntelXeFXVersion` | 0.0.0 | 0.0.0 |
+| `xessGetInputResolution` (1440p PERFORMANCE) | **1114x627** | **1114x627** |
+| `xessVKCreateContext` / `xessVKInit` | 0 / 0 | 0 / 0 |
+| frame0 non-zero / unique / checksum | 14,710,400 / 256 / 8901939667484331069 | 14,710,400 / 256 / 16097837884742765276 |
+| frame1 non-zero / unique / checksum | 14,712,982 / 256 / 17835196424027649762 | 14,712,610 / 256 / 13467285208402489168 |
+| execute/submit/wait rc, both frames | 0/0/0 | 0/0/0 |
+
+`xessGetInputResolution` returns the same **1114x627** for a 2560x1440
+`PERFORMANCE` request on both vendors, so the 2.3x scale is a property of the XeSS
+3.0.2 quality preset, not of the AMD driver or Wine. The harness still feeds the
+requested 1280x720 image, and XeSS accepts it (the API result is advisory, not a
+hard constraint).
+
+The two vendors do not produce bit-identical pixels, which is expected for
+per-architecture kernels: frame 0 differs in 49,961 of 14,745,600 bytes (0.34%),
+mean absolute difference 0.0035/255, maximum 16, RGB PSNR 70.6 dB, and the zero-byte
+mask is identical. That is the same SR network with different rounding, not a
+different algorithm. On one GPU the output does track the input: frame 1 differs
+from frame 0 in 4,533,158 bytes (30.7%), mean absolute difference 7.21, max 243.
+
+**XMX or DP4a?** On the RTX 5080 XeSS does **not** use XMX. `xessGetIntelXeFXVersion`
+returns `0.0.0`, which the SDK header documents as the value for non-Intel platforms
+(the Intel XeFX/XMX library is not loaded), and XMX is an Intel Xe-core instruction
+that does not exist on NVIDIA. The DLL therefore runs its vendor-neutral
+non-XMX path, which Intel documents as the DP4a-class fallback for other vendors.
+The DLL's DEBUG logging callback (`xessSetLoggingCallback` returned 0) emitted no
+messages, so the exact kernel name is not observable through the public API and is
+not claimed here.
+
 ## Wine evidence (real DLL, AMD/RADV)
 
 `libxess.dll` from `XeSS_SDK_3.0.2.zip` (`bin/libxess.dll`, 77,795,704 B,
@@ -274,14 +390,17 @@ official DLL; they skip cleanly otherwise.
    `xessVKGetRequiredDeviceFeatures`, before `vkCreateDevice`. The bridge can only
    report the requirement after the device exists. This is the first thing to check
    when `xessVKCreateContext`/`xessVKInit` fail in-game.
-3. **Execute in the real frame.** The standalone harness now proves execute and
-   readback; the runtime still needs the `fsr.cpp` dispatch above, then a same-frame
-   comparison against FSR 4 and a check that the game's device exposes the required
-   extension/features. Use `xessGetInputResolution` (or
-   `xessGetOptimalInputResolution`) instead of assuming the old quality scale.
-4. **Hardware qualification.** Real Windows GPU (NVIDIA/AMD DP4a and Intel Arc XMX)
-   with screenshots, a full race, resize, and frame pacing. Intel Arc is the only
-   path that gets XMX; everything else is DP4a, as the SDK documents.
+3. **Execute in the real frame.** The standalone harness proves execute and
+   readback under Wine and natively on Windows; the runtime still needs the `fsr.cpp`
+   dispatch above, then a same-frame comparison against FSR 4 and a check that the
+   game's device exposes the required extension/features. Use
+   `xessGetInputResolution` (or `xessGetOptimalInputResolution`) instead of assuming
+   the old quality scale.
+4. **Hardware qualification.** NVIDIA DP4a on native Windows is now proven by the
+   harness (RTX 5080, driver 621.01). Still missing: a full race with screenshots,
+   resize and frame pacing in-game, AMD on native Windows (only Wine/RADV so far),
+   and Intel Arc for the XMX path. Intel Arc is the only path that gets XMX;
+   everything else is DP4a, as the SDK documents.
 5. **FG/XeLL are not applicable.** XeSS Frame Generation and XeLL are D3D12-only
    (`xefg_swapchain_d3d12.h`, `xell_d3d12.h`); this runtime is Vulkan on both OSes.
    Do not plan them.
@@ -292,8 +411,9 @@ official DLL; they skip cleanly otherwise.
   dispatch evidence is a synthetic 1280x720 -> 2560x1440 image, not a game frame.
 - Correctness, ghosting and cost on a real scene are unknown; camera-less depth and
   MVs are not a quality test.
-- Wine is not Windows: a real Windows driver/OS may accept or reject the context
-  differently. The DP4a execution is evidence for this host, not a qualification.
+- Platform coverage is partial: native Windows on an NVIDIA RTX 5080 now accepts the
+  context, initialises and executes, but AMD on native Windows is still untested
+  (only Wine/RADV), and no Intel Arc XMX hardware has run this bridge.
 - The runtime device's current extension list was not checked against
   `VK_EXT_mutable_descriptor_type`; the standalone harness enabled it explicitly.
 - `xessGetVersion` returned 2.0.2 for the 3.0.2 SDK's `libxess.dll`; the mapping
