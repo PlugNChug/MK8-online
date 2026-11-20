@@ -24,9 +24,10 @@ static enum Mk8EditCommand last_edit;
 static enum Mk8EditState editor_state;
 static int edit_row,edit_other;
 static unsigned join_players;
-static bool join_keyboard;
+static bool join_keyboard,join_pad_back;
 unsigned mk8_controller_join_players(void) { return join_players; }
 bool mk8_controller_join_keyboard(void) { return join_keyboard; }
+bool mk8_controller_join_back_pressed(void) { return join_pad_back; }
 bool mk8_controller_layout_available(void) { return true; }
 static bool wait_apply,bad_apply;
 bool mk8_edit_command(enum Mk8EditCommand cmd,int row,int other) {
@@ -137,7 +138,7 @@ void guest_call(Cpu *c,uint64_t address) {
                (c->x[0]>=HEAP_BASE+26000 && c->x[0]<HEAP_BASE+27000));
         ST8(c->x[0]+0x58,(LD8(c->x[0]+0x58)&~1)|c->x[1]);
     } else if(address==0x70008ade34ull) {
-        assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+3700 ||
+        assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+15100 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+3700 ||
                (c->x[0]>=HEAP_BASE+26000 && c->x[0]<HEAP_BASE+27000) || c->x[0]==HEAP_BASE+14680 ||
                (c->x[0]>=HEAP_BASE+1256 && c->x[0]<=HEAP_BASE+2280 && (c->x[0]-HEAP_BASE-1000)%256==0) ||
                (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+19100) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
@@ -292,6 +293,10 @@ static void apply_number(const char *s) { for(;*s;s++) assert(mk8_settings_page_
 static void popup_key(uint64_t manager,uint64_t key) {
     popup_buttons=key; mk8_settings_page_frame(manager);
     popup_buttons=0; mk8_settings_page_frame(manager);
+    if(controller_press>=0) {
+        mk8_settings_page_frame(manager);
+        now+=160000000; mk8_settings_page_frame(manager);
+    }
 }
 static void check_shared_race(uint64_t manager) {
     const uint64_t node=HEAP_BASE+29000, scene=HEAP_BASE+29120, context=HEAP_BASE+29760;
@@ -447,6 +452,11 @@ static void check_controller_footer(uint64_t manager) {
     strcpy(popup_tips.label[MK8_TIP_SWAP],"Keypad Hexadecimal");
     mk8_settings_page_frame(manager);
     check_keycap(0,"MediaTrackPrevious","Assign"); check_keycap(1,"Keypad Hexadecimal","Swap");
+    for(unsigned i=0;i<2;i++) {
+        assert(pane_float(keycaps[i],0x30)==pane_float(keycaps[i+2],0x30));
+        assert(pane_float(action_labels[i],0x30)-pane_float(action_labels[i],0x50)/2==
+               pane_float(action_labels[i+2],0x30)-pane_float(action_labels[i+2],0x50)/2);
+    }
     assert(pane_float(keycaps[0],0x34)==pane_float(keycaps[1],0x34));
     assert(pane_float(keycaps[2],0x34)==pane_float(keycaps[3],0x34));
     assert(pane_float(keycaps[0],0x34)>pane_float(keycaps[2],0x34));
@@ -524,6 +534,11 @@ static void check_controller_footer(uint64_t manager) {
     assert(mk8_controller_pointer(840,606,2)); mk8_settings_page_frame(manager);
     assert(controller_visible && last_edit==MK8_EDIT_APPLY);
     mk8_settings_page_frame(manager); // Wait for the host's acknowledgement.
+    assert(controller_visible && controller_press==1);
+    mk8_settings_page_frame(manager);
+    now+=80000000; mk8_settings_page_frame(manager);
+    assert(controller_visible && reveal>.45f && reveal<.55f && !cursor_mask);
+    now+=80000000; mk8_settings_page_frame(manager);
     assert(!controller_visible && !controller_preview && controller_focus==5);
     assert(extra_holds==3);
     popup_open(manager);
@@ -597,7 +612,10 @@ static void check_controller_footer(uint64_t manager) {
     check_keycap(2,"Enter","Join keyboard");
     assert((LD8(HEAP_BASE+12200+0x58)&1) && open_sounds==opens+1);
     assert(!strcmp(rendered[1],"Pro") && (LD8(HEAP_BASE+12400+4*128+0x58)&1));
-    assert(LD8(HEAP_BASE+14600+0x58)&1); // Use keyboard.
+    assert(!(LD8(HEAP_BASE+14600+0x58)&1)); // Enter joins the keyboard; there is only one footer.
+    assert(pane_float(HEAP_BASE+14500,0x30)==0);
+    assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
+    assert(controller_focus==1); // P1 is a pad. Hovering cannot highlight Cancel.
     for(unsigned i=0;i<4;i++) join_buttons[i]=HEAP_BASE+18304+128*i;
     for(unsigned i=0;i<2;i++) join_plus[i]=HEAP_BASE+18816+128*i;
     edit_row=3; join_keyboard=false;
@@ -621,19 +639,28 @@ static void check_controller_footer(uint64_t manager) {
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(2,"J","Cancel");
+    assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
+    assert(controller_focus==4 && cursor_x==0 && cursor_y==-246);
+    assert(mk8_controller_pointer(440,606,0)); mk8_settings_page_frame(manager);
+    assert(controller_focus==3); // Previous left button position.
+    assert(mk8_controller_pointer(640,606,1));
     join_keyboard=true;
     mk8_settings_page_frame(manager);
     check_keycap(2,"Enter","Join keyboard");
     popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y","Minus"}};
     editor_state=MK8_EDIT_READY; edit_row=-1;
     mk8_settings_page_frame(manager);
-    assert(controller_focus==5 && (LD8(HEAP_BASE+14600+0x58)&1)); // Continue.
+    assert(controller_focus==4 && !(LD8(HEAP_BASE+14600+0x58)&1) && cursor_x==0 && cursor_y==-246);
+    assert(!wcscmp(shown_cancel,L"\ue000 OK"));
+    assert(mk8_controller_pointer(640,606,2)); mk8_settings_page_frame(manager);
+    assert(editor_state==MK8_EDIT_READY); // Releasing the earlier Cancel press cannot click OK.
     for(unsigned i=0;i<4;i++) assert(!(LD8(join_buttons[i]+0x58)&1));
     for(unsigned i=0;i<2;i++) assert(!(LD8(join_plus[i]+0x58)&1));
-    assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 Continue  \ue001 Cancel"));
+    assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 OK"));
     symbol_help=symbol_dialog=HEAP_BASE+14400;
     symbol_parts[0][0]=HEAP_BASE+26000; symbol_parts[1][1]=HEAP_BASE+26128;
     symbol_parts[2][1]=HEAP_BASE+26256; symbol_parts[4][1]=HEAP_BASE+26384;
+    symbol_parts[4][0]=HEAP_BASE+26896;
     symbol_parts[3][4]=HEAP_BASE+26512; symbol_parts[3][5]=HEAP_BASE+26640;
     symbol_parts[0][1]=HEAP_BASE+26768;
     editor_state=MK8_EDIT_LISTEN; edit_row=2; join_keyboard=false;
@@ -660,13 +687,13 @@ static void check_controller_footer(uint64_t manager) {
     }
     editor_state=MK8_EDIT_READY; edit_row=-1;
     mk8_settings_page_frame(manager);
-    assert(shown_symbols[0]==symbol_parts[0][0] && shown_symbols[1]==symbol_parts[1][1]);
-    assert(!shown_symbols[2] && !shown_symbols[3] && !shown_symbols[4]);
+    assert(shown_symbols[0]==symbol_parts[0][0] && shown_symbols[4]==symbol_parts[4][0]);
+    assert(!shown_symbols[1] && !shown_symbols[2] && !shown_symbols[3]);
     assert(!shown_tips[0][0] || !strcmp(last_hint,"All players are ready."));
     symbol_help=symbol_dialog=0;
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
-    check_keycap(0,"Return","Continue"); check_keycap(1,"J","Cancel");
+    check_keycap(0,"Return","OK"); assert(!(LD8(keycaps[1]+0x58)&1));
     // A menu transition can temporarily remove the shared owner while the SDL applet still runs.
     ST32(manager+0xb50,0);
     mk8_settings_page_frame(manager);
@@ -799,24 +826,24 @@ int main(void) {
     assert(cancel_sounds==cancels_before+1 && back_pulses==pulses_before+1);
     back_done=true; sample(0); now+=160000000; sample(0);
     assert(restart_prompt && !restart_yes && active && !exiting && cursor_x==200);
-    press(1); sample(0); assert(restart_choice==0 && !active && returns==5); // No saves without rebooting.
+    press(1); now+=160000000; sample(0); sample(0); assert(restart_choice==0 && !active && returns==5); // No saves without rebooting.
     assert(decide_sounds==1 && button_pulses==1 && cursor_pulses==1);
     open_page(); press(2); save_state=3; now+=160000000; sample(0);
     press(1ull<<12); assert(restart_yes && cursor_x==-200 && cursor_y==-195 && select_sounds==1);
     press(1ull<<12); assert(select_sounds==1); // No extra sound at the same selection.
-    cancels_before=cancel_sounds; press(2); sample(0);
+    cancels_before=cancel_sounds; press(2); now+=160000000; sample(0); sample(0);
     assert(!active && restart_choice==0 && cancel_sounds==cancels_before+1 && decide_sounds==1);
     assert(button_pulses==2 && cursor_pulses==2 && cursor_x==200 && cursor_y==-195 && returns==6);
     open_page(); press(2); save_state=3; now+=160000000; sample(0);
     button_done=cursor_done=false; press(1);
     assert(restart_choice==0 && restart_pressed && !restart_wait && active && !restart_yes);
-    button_done=cursor_done=true; sample(0); sample(0); assert(!active && restart_choice==0 && returns==7);
+    button_done=cursor_done=true; sample(0); now+=160000000; sample(0); sample(0); assert(!active && restart_choice==0 && returns==7);
     open_page(); press(2); save_state=3; now+=160000000; sample(0);
     button_done=cursor_done=false; finger=true; tx=440; ty=555; sample(0); sample(0); finger=false; sample(0);
     assert(restart_choice==0 && restart_pressed && !restart_wait && active && restart_yes);
     sample(1); sample(1ull<<14); assert(restart_yes && decide_sounds==3 && button_pulses==4);
     button_done=true; sample(0); assert(!restart_wait); // The cursor also has a native Decide pulse.
-    cursor_done=true; sample(0); assert(restart_choice==1 && restart_wait && active);
+    cursor_done=true; sample(0); assert(!restart_wait); now+=160000000; sample(0); assert(restart_choice==1 && restart_wait && active);
     sample(1); assert(decide_sounds==3 && cursor_pulses==4); // Wait for the real reboot.
     settings_page_reset(); assert(!owner && !active && !suppressed); check_capture_state(false);
     owner=root=HEAP_BASE; top=HEAP_BASE+21000; available=in_main=true;
@@ -836,7 +863,7 @@ int main(void) {
         save_state=prompt ? 3 : 2; now+=160000000; sample(0);
         if(prompt) {
             assert(restart_prompt && !restart_yes);
-            press(1); sample(0); assert(restart_choice==0);
+            press(1); now+=160000000; sample(0); sample(0); assert(restart_choice==0);
         }
         assert(!active && cancel_sounds==cancels+1 && decide_sounds==decides+(int)prompt); check_capture_state(false);
         assert(returns==restored+(int)icon && LD8(HEAP_BASE+14000+0x3ca)==1);

@@ -57,6 +57,14 @@ static uint32_t mk8_tip_capabilities(SDL_Gamepad *pad) {
     return mask;
 }
 
+static Mk8TipDevice mk8_tip_player(SDL_Gamepad *primary, bool keyboard, bool pair) {
+    Mk8TipDevice device=mk8_tip_device(primary,keyboard,pair);
+    // The software pair supplies its upright d-pad, buttons and axes through mk8_pair_buttons.
+    device.buttons=pair ? ((1u<<(SDL_GAMEPAD_BUTTON_DPAD_RIGHT+1))-1) | (1u<<PADB_LTRIGGER) |
+                          (1u<<PADB_RTRIGGER) | (3u<<PADB_HOST_COUNT) : mk8_tip_capabilities(primary);
+    return device;
+}
+
 void mk8_tip_sync(void) {
     SDL_JoystickID primary = pad ? SDL_GetGamepadID(pad) : 0;
     bool has_keyboard = mk8_assigned_keyboard()==0;
@@ -65,8 +73,7 @@ void mk8_tip_sync(void) {
         mk8_tip_p1=primary;
     mk8_tip_owner=primary;
     Mk8TipSnapshot snap = {0};
-    snap.p1=mk8_tip_device(mk8_tip_p1 ? pad : NULL,has_keyboard,mk8_partner[0]!=NULL);
-    snap.p1.buttons=mk8_tip_capabilities(mk8_tip_p1 ? pad : NULL);
+    snap.p1=mk8_tip_player(mk8_tip_p1 ? pad : NULL,has_keyboard,mk8_tip_p1 && mk8_partner[0]);
     snap.settings=snap.p1;
     if(snap.settings.source==MK8_TIP_NONE) snap.settings.source=MK8_TIP_KEYBOARD;
     // Settings polls the individual SDL handles directly, even for a software-paired P1.
@@ -75,10 +82,26 @@ void mk8_tip_sync(void) {
         snap.settings=mk8_tip_device(grip,false,false);
         snap.settings.buttons=mk8_tip_capabilities(grip);
         snap.settings.raw_pair=true;
-        // The software pair supplies its own upright d-pad, buttons and axes through mk8_pair_buttons.
-        snap.p1.buttons=((1u<<(SDL_GAMEPAD_BUTTON_DPAD_RIGHT+1))-1) | (1u<<PADB_LTRIGGER) |
-                        (1u<<PADB_RTRIGGER) | (3u<<PADB_HOST_COUNT);
     }
+    uint64_t navigation=UINT64_MAX;
+    static SDL_JoystickID draft_left,draft_right;
+    static uint64_t held_at_handoff;
+    if (mk8_editor.rows && !mk8_title_observing) {
+        Mk8JoinDevice *left=mk8_edit_device(mk8_editor.slots[0][0]), *right=mk8_edit_device(mk8_editor.slots[0][1]);
+        bool keyboard=mk8_editor.keyboard==0;
+        SDL_Gamepad *first=left ? left->pad : NULL, *second=right ? right->pad : NULL;
+        // Keep the current P1 available to cancel when its draft row is empty.
+        if ((left || keyboard) && (first!=pad || second!=mk8_partner[0] || keyboard!=has_keyboard)) {
+            snap.p1=mk8_tip_player(first,keyboard,right!=NULL);
+            navigation=left ? mk8_edit_pad_navigation(left,right) : mk8_navigation_axes(key_buttons,key_lx,key_ly);
+            if (atomic_load(&mk8_draft_navigation)==UINT64_MAX || draft_left!=mk8_editor.slots[0][0] || draft_right!=mk8_editor.slots[0][1])
+                held_at_handoff=navigation;
+            held_at_handoff &= navigation;
+            navigation &= ~held_at_handoff;
+            draft_left=mk8_editor.slots[0][0]; draft_right=mk8_editor.slots[0][1];
+        }
+    }
+    atomic_store(&mk8_draft_navigation,navigation);
     mk8_tip_bindings(snap.keys,snap.buttons);
     SDL_LockSpinlock(&mk8_tip_lock);
     mk8_tip_snapshot=snap;

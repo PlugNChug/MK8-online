@@ -6,9 +6,10 @@ static _Atomic Uint64 mk8_applet_suppressed;
 static bool mk8_applet_editing;
 static bool mk8_applet_resync;
 static _Atomic bool mk8_applet_keyboard_free;
+static _Atomic bool mk8_applet_pad_back;
 static _Atomic unsigned mk8_applet_roster;
 static int mk8_applet_row;
-static Uint64 mk8_applet_notice_at, mk8_applet_held;
+static Uint64 mk8_applet_notice_at, mk8_applet_held, mk8_applet_exit_deadline;
 
 void menu_notice(const char *, double);
 void kernel_host_wait_begin(void);
@@ -20,6 +21,7 @@ unsigned mk8_controller_join_players(void) {
 }
 
 bool mk8_controller_join_keyboard(void) { return atomic_load(&mk8_applet_keyboard_free); }
+bool mk8_controller_join_back_pressed(void) { return atomic_load(&mk8_applet_pad_back); }
 
 int mk8_controller_applet_wait(int min, int max, int live) {
     if (min != max || min < 2 || min > 4 || mk8_settings_shared_race() || input_user_blocked(NULL)) return live;
@@ -63,7 +65,7 @@ static bool mk8_applet_key(const SDL_Event *e) {
     if (key == SDL_SCANCODE_RETURN && (!mk8_applet_editing || mk8_editor.keyboard >= 0 || mk8_editor.listening < 0)) return false;
     if (mk8_applet_editing && mk8_title_focused && mk8_editor.focused && !mk8_applet_resync &&
         e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
-        if (key == SDL_SCANCODE_ESCAPE) mk8_edit_command(MK8_EDIT_CANCEL, 0, 0);
+        if (key == SDL_SCANCODE_ESCAPE && mk8_editor.listening >= 0) mk8_edit_command(MK8_EDIT_CANCEL, 0, 0);
         if (key == SDL_SCANCODE_RETURN) mk8_edit_command(MK8_EDIT_KEYBOARD, mk8_editor.listening, 1);
     }
     return true;
@@ -74,14 +76,7 @@ static Uint64 mk8_applet_p1_buttons(void) {
     Mk8JoinDevice *left = mk8_edit_device(mk8_editor.slots[0][0]);
     if (!left) return buttons;
     Mk8JoinDevice *right = mk8_edit_device(mk8_editor.slots[0][1]);
-    Uint32 host = right ? mk8_pair_buttons(left->pad,right->pad) : left->buttons;
-    if (!right) {
-        if (SDL_GetGamepadAxis(left->pad,SDL_GAMEPAD_AXIS_LEFT_TRIGGER)>16000) host |= 1u<<PADB_LTRIGGER;
-        if (SDL_GetGamepadAxis(left->pad,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)>16000) host |= 1u<<PADB_RTRIGGER;
-    }
-    for (int i=BIND_A; i<=BIND_B; ++i)
-        if (g_bind_pad[i]>=0 && g_bind_pad[i]<PADB_HOST_COUNT && (host & (1u<<g_bind_pad[i]))) buttons |= 1ull<<i;
-    return buttons;
+    return buttons | mk8_edit_pad_navigation(left,right);
 }
 
 void mk8_edit_pump(void) {
@@ -104,7 +99,9 @@ void mk8_edit_pump(void) {
     atomic_store(&mk8_applet_heartbeat, SDL_GetTicks());
     if (!mk8_applet_editing) {
         if (mk8_edit_command(MK8_EDIT_BEGIN,players,0)) {
+            mk8_applet_pad_back = false;
             mk8_applet_editing = true;
+            mk8_applet_exit_deadline = 0;
             mk8_applet_row = -2;
             mk8_applet_notice_at = SDL_GetTicks()+400;
             mk8_applet_resync = true;
@@ -115,10 +112,16 @@ void mk8_edit_pump(void) {
     }
     enum Mk8EditState state = mk8_edit_view(NULL,NULL);
     if (state == MK8_EDIT_APPLIED || state == MK8_EDIT_CLOSED || (!mk8_editor.rows && state == MK8_EDIT_FAILED)) {
+        mk8_applet_roster = 0;
+        // Keep the character screen alive for the footer pulse and fade. A suspended renderer must still release the guest.
+        if (state != MK8_EDIT_FAILED && mk8_controller_join_visible()) {
+            Uint64 now=SDL_GetTicks();
+            if (!mk8_applet_exit_deadline) mk8_applet_exit_deadline=now+750;
+            if (now<mk8_applet_exit_deadline) return;
+        }
         atomic_fetch_or(&mk8_applet_suppressed,mk8_controller_p1_navigation() | mk8_applet_held);
         mk8_controller_hold_extra_inputs();
         mk8_applet_editing = false;
-        mk8_applet_roster = 0;
         if (mk8_applet_row>=0) menu_notice("",0);
         atomic_compare_exchange_strong(&mk8_applet_request,&players,
             state == MK8_EDIT_APPLIED ? MK8_APPLET_APPLIED : MK8_APPLET_CANCELLED);
@@ -132,7 +135,10 @@ void mk8_edit_pump(void) {
     Uint64 edge = mk8_title_focused && mk8_editor.focused && !mk8_applet_resync ? held & ~mk8_applet_held : 0;
     mk8_applet_held = held;
     mk8_applet_resync = false;
-    if (edge & (1ull << BIND_B)) { mk8_edit_command(MK8_EDIT_CANCEL,0,0); return; }
+    if (row < players && (edge & (1ull << BIND_B))) {
+        if (mk8_edit_command(MK8_EDIT_CANCEL,0,0)) mk8_applet_pad_back = mk8_editor.keyboard != 0;
+        return;
+    }
     if (row == players && (edge & (1ull << BIND_A))) { mk8_edit_command(MK8_EDIT_APPLY,0,0); return; }
     if (row < players && mk8_editor.listening != row) mk8_edit_command(MK8_EDIT_ASSIGN,row,1);
     else mk8_applet_roster = players;
@@ -147,7 +153,7 @@ void mk8_edit_pump(void) {
         char prompt[168];
         if (row < players) SDL_snprintf(prompt,sizeof prompt,"Player %d of %d: press L + R or SL + SR to join.\n%sEsc or P1 Back: cancel.",
             row+1, players, mk8_editor.keyboard < 0 ? "Enter: use keyboard.   " : "");
-        else SDL_snprintf(prompt,sizeof prompt,"%d players ready. P1 Confirm: continue. Esc or P1 Back: cancel.",players);
+        else SDL_snprintf(prompt,sizeof prompt,"%d players ready. P1 Confirm: OK.",players);
         menu_notice(prompt,2);
         mk8_applet_row = row;
         mk8_applet_notice_at = now+1000;

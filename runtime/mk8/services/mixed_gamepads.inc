@@ -146,15 +146,21 @@ void mk8_controller_names(uint16_t out[4][80]) {
         if (!out[i][0]) memcpy(out[i], u"Unassigned", sizeof(u"Unassigned"));
 }
 
-uint64_t mk8_controller_p1_navigation(void) {
-    Mk8KeyState keys = mk8_player_keys(0);
-    uint64_t b = keys.buttons | pad_buttons;
-    int x = keys.lx + pad_lx, y = keys.ly + pad_ly;
+static uint64_t mk8_navigation_axes(uint64_t b, int x, int y) {
     if (x < -16000) b |= 1ull << BTN_LEFT;
     if (x > 16000) b |= 1ull << BTN_RIGHT;
     if (y > 16000) b |= 1ull << BTN_UP;
     if (y < -16000) b |= 1ull << BTN_DOWN;
     return b;
+}
+
+// SDL publishes the draft owner's buttons only while the assignment popup owns navigation.
+static _Atomic uint64_t mk8_draft_navigation = UINT64_MAX;
+uint64_t mk8_controller_p1_navigation(void) {
+    uint64_t draft = atomic_load(&mk8_draft_navigation);
+    if (draft != UINT64_MAX) return draft;
+    Mk8KeyState keys = mk8_player_keys(0);
+    return mk8_navigation_axes(keys.buttons | pad_buttons,keys.lx + pad_lx,keys.ly + pad_ly);
 }
 
 // A held control must be released before a newly uncovered character-select screen sees it.

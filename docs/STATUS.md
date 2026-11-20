@@ -2,6 +2,8 @@
 
 ## Entrada dos jogadores na seleção de personagens
 
+Na tela de entrada obrigatória, um único botão central muda de **Cancel** para **OK** quando a última vaga é preenchida. Ao trocar a atribuição do jogador 1 no editor, as dicas e a navegação acompanham o novo dispositivo antes de aplicar. Os ícones das duas linhas de ações compartilham as mesmas colunas. A confirmação e o cancelamento pulsam antes do fechamento gradual. A compilação `d34f399a…` passou nos 29 testes conjuntos de controles e interface. A verificação visual com controles físicos está em andamento.
+
 Na seleção de personagens para dois a quatro jogadores, clicar ou tocar em **−/+** abre a mesma tela de atribuição que o botão **+** do jogador 1. As ações de cada jogador ficam centralizadas. Quando os nomes dos dois Joy-Con são longos, o par aparece como **Paired Joy-Cons**. Se outro jogador tentar registrar um controle em uso, um aviso identifica o dono por três segundos e as posições são preservadas.
 
 No rodapé, os sinais de mais das duas combinações ficam na mesma coluna. Ao segurar um dos ombros, aparece o ícone do botão que falta no outro Joy-Con. A arte vem das texturas do menu comum da própria instalação. As teclas mantêm sua aparência de teclado e os botões sem imagem correspondente exibem o nome da atribuição.

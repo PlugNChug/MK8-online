@@ -71,6 +71,20 @@ static Mk8JoinDevice *mk8_edit_device(SDL_JoystickID id) {
     return NULL;
 }
 
+static uint64_t mk8_edit_pad_navigation(Mk8JoinDevice *left, Mk8JoinDevice *right) {
+    SDL_Gamepad *partner = right ? right->pad : NULL;
+    uint32_t host = partner ? mk8_pair_buttons(left->pad,partner) : left->buttons;
+    if (!partner) {
+        if (SDL_GetGamepadAxis(left->pad,SDL_GAMEPAD_AXIS_LEFT_TRIGGER)>16000) host |= 1u<<PADB_LTRIGGER;
+        if (SDL_GetGamepadAxis(left->pad,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)>16000) host |= 1u<<PADB_RTRIGGER;
+    }
+    uint64_t buttons = 0;
+    for (int i=0; i<BIND_PAD_COUNT; ++i)
+        if (g_bind_pad[i]>=0 && g_bind_pad[i]<PADB_HOST_COUNT && (host & (1u<<g_bind_pad[i]))) buttons |= 1ull<<i;
+    return mk8_navigation_axes(buttons,mk8_gamepad_axis(left->pad,partner,SDL_GAMEPAD_AXIS_LEFTX),
+                               -mk8_gamepad_axis(left->pad,partner,SDL_GAMEPAD_AXIS_LEFTY));
+}
+
 static void mk8_edit_publish(enum Mk8EditState state) {
     if (mk8_title_observing) return;
     uint16_t names[4][80] = {0};

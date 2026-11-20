@@ -25,8 +25,9 @@ volatile int g_rt_unwind;
 static SDL_AtomicInt core_released;
 static char applet_notice[192];
 static bool assignment_layout=true;
+unsigned mk8_controller_join_players(void);
 bool mk8_controller_layout_available(void) { return assignment_layout; }
-bool mk8_controller_join_visible(void) { return assignment_layout; }
+bool mk8_controller_join_visible(void) { return assignment_layout && mk8_controller_join_players()!=0; }
 void kernel_host_wait_begin(void) { SDL_SetAtomicInt(&core_released,1); }
 void kernel_host_wait_end(void) { SDL_SetAtomicInt(&core_released,0); }
 void menu_notice(const char *text,double seconds) { SDL_strlcpy(applet_notice,text,sizeof applet_notice); }
@@ -572,7 +573,13 @@ static void check_live_editor(void) {
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY);
     assert(SDL_GetGamepadID(pad)==ids[PRO]);
     struct Mk8ControlTips tips;
-    mk8_control_tips(false,&tips); assert(tips.source==MK8_TIP_NINTENDO);
+    mk8_control_tips(false,&tips); assert(tips.source==MK8_TIP_GENERIC && !strcmp(tips.label[MK8_TIP_CONFIRM],"East"));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    assert(!(mk8_controller_p1_navigation()&1));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    button(usb,SDL_GAMEPAD_BUTTON_EAST,true);
+    assert(mk8_controller_p1_navigation()&1);
+    button(usb,SDL_GAMEPAD_BUTTON_EAST,false);
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
     assert(SDL_GetGamepadID(pad)==spare && mk8_assigned_keyboard()==-1);
     mk8_tip_sync(); mk8_control_tips(false,&tips); assert(tips.source==MK8_TIP_GENERIC);
@@ -592,6 +599,21 @@ static void check_live_editor(void) {
     shoulders(usb); // The current row can select its own controller again.
     assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY && assignment_tips==tips_before+1);
     assert(edit(MK8_EDIT_KEYBOARD,1,0)==MK8_EDIT_READY && mk8_assigned_keyboard()==-1);
+    assert(edit(MK8_EDIT_SWAP,0,1)==MK8_EDIT_READY);
+    mk8_tip_sync(); mk8_control_tips(false,&tips);
+    assert(tips.source==MK8_TIP_KEYBOARD && !strcmp(tips.label[MK8_TIP_CONFIRM],"K"));
+    button(usb,SDL_GAMEPAD_BUTTON_EAST,true);
+    assert(!(mk8_controller_p1_navigation()&1));
+    button(usb,SDL_GAMEPAD_BUTTON_EAST,false);
+    SDL_Event key={0}; key.type=SDL_EVENT_KEY_DOWN; key.key.scancode=SDL_SCANCODE_K;
+    input_handle_event(&key); mk8_tip_sync();
+    assert((mk8_controller_p1_navigation()&1) && mk8_assigned_keyboard()==-1);
+    key.type=SDL_EVENT_KEY_UP; input_handle_event(&key); mk8_tip_sync();
+    assert(edit(MK8_EDIT_CANCEL,0,0)==MK8_EDIT_CLOSED);
+    mk8_tip_sync(); mk8_control_tips(false,&tips);
+    assert(tips.source==MK8_TIP_GENERIC && pad==SDL_GetGamepadFromID(spare));
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_KEYBOARD,1,0)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_SWAP,0,1)==MK8_EDIT_READY);
     assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
     assert(!pad && mk8_assigned_keyboard()==0 && SDL_GetGamepadID(extra_pad[0])==spare);
