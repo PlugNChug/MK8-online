@@ -197,6 +197,7 @@ bool mk8_controller_layout_active(void) { return false; }
 bool mk8_title_event(const SDL_Event *event, bool captured) { return false; }
 void mk8_tip_event(const SDL_Event *event, bool settings) {}
 void mk8_poll_steam_gamepads(void) {}
+void mk8_rumble_pump(void) {}
 void mk8_edit_pump(void) {}
 void mk8_tip_sync(void) {}
 static bool menu_handle_event(const SDL_Event *event) { (void)event; return event_step==3; }
