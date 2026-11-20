@@ -101,6 +101,20 @@ impl Settings {
         }
         Ok(())
     }
+
+    /// A path saved on Linux is not a usable Windows provider. Keep the file
+    /// readable so the page can show the problem and the user can fix it, but
+    /// reject it when saving and before starting the game.
+    pub fn compatibility_error(&self) -> Option<String> {
+        provider_platform_error(&self.provider_lib, cfg!(windows))
+    }
+}
+
+fn provider_platform_error(provider_lib: &str, windows: bool) -> Option<String> {
+    (windows && provider_lib.to_ascii_lowercase().ends_with(".so")).then(|| {
+        "O provedor FSR salvo é um arquivo .so de Linux; no Windows escolha uma DLL (.dll) ou deixe o campo vazio para usar a DLL assinada da AMD."
+            .into()
+    })
 }
 
 pub fn settings_path(local: &Path) -> PathBuf {
@@ -129,6 +143,9 @@ pub fn read_settings(local: &Path) -> Result<Settings> {
 /// may have stored in the same file.
 pub fn write_settings(local: &Path, settings: &Settings) -> Result<()> {
     settings.validate()?;
+    if let Some(error) = settings.compatibility_error() {
+        return Err(error);
+    }
     let path = settings_path(local);
     let mut root: Value = match fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
@@ -352,6 +369,9 @@ fn environment_for(settings: &Settings, dir: &Path, windows: bool) -> Environmen
 /// launch.
 pub fn configure(local: &Path) -> Result<()> {
     let settings = read_settings(local)?;
+    if let Some(error) = settings.compatibility_error() {
+        return Err(error);
+    }
     environment(&settings).apply();
     Ok(())
 }
@@ -399,6 +419,7 @@ pub fn page(root: &Path, local: &Path, running: bool) -> Result<Value> {
     let dir = data_dir();
     let mut value = install::status(&dir, &settings, root, running);
     value["settings"] = serde_json::to_value(&settings).map_err(|error| error.to_string())?;
+    value["settings_error"] = json!(settings.compatibility_error());
     value["license"] = license_status(&dir);
     value["data_dir"] = json!(dir);
     value["provider_expected"] = json!(provider_path(&dir));
@@ -420,6 +441,14 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn windows_rejects_a_saved_linux_provider_path() {
+        assert!(provider_platform_error("/home/u/libfsr.so", true).is_some());
+        assert!(provider_platform_error("C:\\fsr\\amd_fidelityfx_upscaler_vk.dll", true).is_none());
+        assert!(provider_platform_error("", true).is_none());
+        assert!(provider_platform_error("/home/u/libfsr.so", false).is_none());
     }
 
     #[test]

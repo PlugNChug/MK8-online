@@ -59,7 +59,7 @@ use serde_json::{json, Value};
 use std::{
     ffi::{c_char, c_void, CStr},
     fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
@@ -794,6 +794,7 @@ fn ensure_dxc(progress_dir: &Path) -> Result<PathBuf> {
 #[cfg(target_os = "linux")]
 fn extract_dxc_licenses(archive: &Path, dir: &Path) -> Result<()> {
     use flate2::read::GzDecoder;
+    use std::io::Read;
     use tar::Archive;
     let file =
         fs::File::open(archive).map_err(|error| format!("{}: {error}", archive.display()))?;
@@ -985,6 +986,7 @@ pub fn read_progress(dir: &Path) -> Progress {
         })
 }
 
+#[cfg(target_os = "linux")]
 fn progress(dir: &Path) -> Progress {
     read_progress(dir)
 }
@@ -1219,6 +1221,7 @@ type FfxQuery = unsafe extern "C" fn(*mut *mut c_void, *mut FfxHeader) -> u32;
 
 /// Reads the version the built library reports through
 /// `ffxQuery(FFX_API_QUERY_DESC_TYPE_GET_VERSIONS)`, not a sidecar file.
+#[cfg(target_os = "linux")]
 pub fn provider_version(path: &Path) -> Result<String> {
     provider_version_for(path, FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK)
 }

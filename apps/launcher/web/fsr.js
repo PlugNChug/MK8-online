@@ -29,6 +29,9 @@
     if (!data) return;
     const settings = data.settings || {};
     const windows = data.platform === 'windows';
+    const settingsError = data.settings_error || '';
+    get('fsr-settings-error').hidden = !settingsError;
+    text('fsr-settings-error', settingsError);
     setValue(get('fsr-upscaling'), settings.upscaling);
     setValue(get('fsr-provider'), settings.provider_lib);
     setValue(get('fsr-fg'), settings.frame_generation);

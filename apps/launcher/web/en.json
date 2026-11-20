@@ -1293,5 +1293,6 @@
   "DXC: DirectXShaderCompiler (LLVM/Apache-2.0 com exceções LLVM), baixado da release oficial da Microsoft, fora da pasta do FSR. Não é um artefato AMD/FSR e o launcher não o inclui no pacote.": "DXC: DirectXShaderCompiler (LLVM/Apache-2.0 with LLVM exceptions), downloaded from Microsoft's official release, outside the FSR folder. It is not an AMD/FSR artifact and the launcher does not bundle it.",
   "Preparando o compilador DXC (fonte oficial fixada)…": "Preparing the DXC compiler (pinned official source)…",
   "Baixando o compilador DXC (13 MB, fonte oficial fixada)…": "Downloading the DXC compiler (13 MB, pinned official source)…",
-  "DXC {0} verificado e pronto.": "DXC {0} verified and ready."
+  "DXC {0} verificado e pronto.": "DXC {0} verified and ready.",
+  "O provedor FSR salvo é um arquivo .so de Linux; no Windows escolha uma DLL (.dll) ou deixe o campo vazio para usar a DLL assinada da AMD.": "The saved FSR provider is a Linux .so file; on Windows choose a DLL (.dll) or leave the field empty to use AMD's signed DLL."
 }
