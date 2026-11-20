@@ -52,7 +52,7 @@ def payload_files():
         'build_fg_provider.py', 'gen_fg_blobs.py', 'build_upscaler_provider.py',
         'gen_upscaler_blobs.py', 'build_fsr4_provider.py', 'fetch_vendor_sdk.py',
         'extract_fg_spv.py', 'extract_mlfi.py', 'dlss_rtx_harness.cpp',
-        'dlss_bridge_harness.cpp', 'xess_wine_harness.cpp', 'mlfi_probe.c',
+        'dlss_bridge_harness.cpp', 'mlfi_probe.c',
     ):
         path = ROOT / 'tools' / name
         if path.is_file():

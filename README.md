@@ -43,8 +43,6 @@ it locally from the vendor's or this project's sources:
   Vulkan DLLs are downloaded and verified. No AMD binary, shader or model is redistributed.
 - **NVIDIA DLSS** — Super Resolution and Frame Generation load NVIDIA's official NGX Linux plugins at runtime (an
   RTX GPU and driver are required). DLSS 5 Neural Rendering has no public plugin and is not available.
-- **Intel XeSS** — Windows only, because Intel ships no Linux library. Super Resolution is implemented and verified
-  under Wine; XeSS Frame Generation and XeLL are D3D12-only.
 
 A release guard fails the build if any provider library, model bank or generated shader blob ends up in the packages.
 
