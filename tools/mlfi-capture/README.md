@@ -52,6 +52,8 @@ Options:
 | --- | --- |
 | `--width N --height N` | display/render size; `<= 3840x2160` selects the `mlfi_4k` module set, above that `mlfi_8k` (tested at 5120x2880 and 7680x4320) |
 | `--frames N` | frames to record (default 2) |
+| `--version-name NAME` | advertised provider to select (default `4.0.2`; use `3.1.6` for the analytic FSR 3 FG provider) |
+| `--version-id HEX` | force a provider id that was not advertised (diagnostic; on a non-AMD GPU the 4.0.2 id returns `NO_PROVIDER`) |
 | `--readback` | copy the generated output image back and hash it; the value is not meaningful while composite passes are substituted |
 | `--no-substitute` | do not replace the modules that crash RADV; reproduces the driver crash |
 

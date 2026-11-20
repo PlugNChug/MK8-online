@@ -1,5 +1,14 @@
 # Estado técnico — 20/11/2026
 
+## FSR nativo em Windows com RTX 5080: 3.1.6/2.3.4 executam, 4.x não é oferecido — 20/11/2026
+
+As DLLs assinadas do SDK 2.4.0 (upscaler `4a7e895a…dab7`, framegeneration `d002dabf…98b4`) foram executadas nativamente em Windows 10, sem Wine, numa NVIDIA RTX 5080 (driver 621.01, Vulkan 1.4.357), com os probes de `tools/windows-fsr/` compilados por mingw-w64 `-static` (fontes compartilhadas com `tools/fg-linux-upscaler` e `tools/mlfi-capture`).
+
+- Upscaler: `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`) e **2.3.4** (`0xf5a5ca1e00803004`); **4.1.2 não é oferecido nessa GPU**. Os dois listados criam, disparam e destroem contexto em 1280x720→2560x1440 e 1920x1080→2560x1440 (`rc=0`; 14.712.960 e 14.711.840 de 14.745.600 bytes não nulos, saída variada). Forçar o id 4.1.2 `0xf5a5ca1e01001002`, presente na DLL, devolve `NO_PROVIDER` (rc 4), sem mensagem nem com `ffxConfigure(GLOBALDEBUG)` verbose.
+- Frame generation: a DLL só anuncia **3.1.6** (`0xf600000000c01006`); **4.0.2 (MLFI) não é oferecido**. O FSR 3.1.6 cria e roda 3 quadros em 1280x720: 18 pipelines, 97 despachos (3 prepare + 94 framegen), 0 substituídos, todos os `configure/prepare/framegen/submit=0`, sem device lost. Forçar o id MLFI `0xf600000001000002` devolve `ffxCreateContext=4` (`NO_PROVIDER`), contexto nulo, 0 pipelines e 0 despachos.
+- A documentação de amostras do SDK diz que a lista é preenchida por uma query e que "the entries available depend on the installed driver", e o MLFI exige RX 9000 ou superior; a ausência em NVIDIA é o gate documentado de dispositivo/driver, não falha do probe. Nenhum `GPUVM fault`, `VK_ERROR_DEVICE_LOST` ou erro de validação foi registrado (a máquina não tem a camada de validação Khronos instalada).
+- Comandos, códigos de saída e hashes em `tools/windows-fsr/README.md`; PNGs e logs em `$HOME/.cache/mk8online/win-rtx/evidence/` (fora do repositório). Nenhum binário ou asset da AMD foi commitado. `gameplay_verified` continua falso.
+
 ## Frame generation FSR 3 no jogo: caminho validado e gate removido — 20/11/2026
 
 O provider construído a partir do SDK (`~/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so`, 852.280 bytes, SHA-256 `786a32c4bd66128c3b8c09c998ed888a2b856d02234c359cd4892e8ed37a7432`) passou o fixture headless (6 presents, 0 erros de validação) e o harness de 120 quadros (240 presents, 120 gerados, `validation=clean warnings=0`) e foi executado no jogo com um runtime recompilado desta árvore em `local/qualification/fsr-fg-2026-11-20/` (raiz nova, imports e cache de objetos por hard link; exe SHA-256 `c798ea6d04896e04e34d14012d890185cdd073d9974b6ce5432e8903bec72934`). O `device.c` construído contém as features ligadas por `toolchain/fsr_fg.py` quando FG está ativo: `shaderStorageImageWriteWithoutFormat`, `shaderStorageImageReadWithoutFormat` e `VK_KHR_compute_shader_derivatives`/`computeDerivativeGroupLinear`.

@@ -1139,12 +1139,16 @@ static void usage(void) {
         "  --width N --height N     display/render size (default 1280x720; <=4K class)\n"
         "  --frames N               frames to record (default 2)\n"
         "  --no-substitute          do not replace the modules that crash RADV (reproduces the crash)\n"
-        "  --readback               read the generated output image back and hash it\n");
+        "  --readback               read the generated output image back and hash it\n"
+        "  --version-id HEX         force a provider version id that was not advertised (diagnostic)\n"
+        "  --version-name NAME      advertised provider to select (default 4.0.2)\n");
 }
 
 int main(int argc, char **argv) {
     char dll_path[MAX_PATH] = "amd_fidelityfx_framegeneration_vk.dll";
     char out[MAX_PATH] = "";
+    char want_name[32] = "4.0.2";
+    uint64_t forced_version = 0;
     int width = 1280, height = 720, frames = 2, substitute = 1, readback = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -1153,6 +1157,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--width") && i + 1 < argc) width = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--height") && i + 1 < argc) height = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--version-id") && i + 1 < argc) forced_version = strtoull(argv[++i], NULL, 0);
+        else if (!strcmp(argv[i], "--version-name") && i + 1 < argc) { strncpy(want_name, argv[++i], sizeof(want_name) - 1); want_name[sizeof(want_name) - 1] = 0; }
         else if (!strcmp(argv[i], "--no-substitute")) substitute = 0;
         else if (!strcmp(argv[i], "--readback")) readback = 1;
         else if (!strcmp(argv[i], "--help")) { usage(); return 0; }
@@ -1293,12 +1299,16 @@ int main(int argc, char **argv) {
         qr = ffx_query(NULL, (ffxQueryDescHeader *)&vq);
         for (uint64_t i = 0; i < count; i++) {
             log_msg("[ffx] version[%llu] id=%016llx name=%s", (unsigned long long)i, (unsigned long long)ids[i], names[i] ? names[i] : "(null)");
-            if (!strcmp(names[i] ? names[i] : "", "4.0.2")) ml_id = ids[i];
+            if (!strcmp(names[i] ? names[i] : "", want_name)) ml_id = ids[i];
         }
         free(ids); free(names);
     }
-    if (!ml_id) { log_msg("[error] no 4.0.2 (MLFI) provider version reported"); return 3; }
-    log_msg("[ffx] selecting MLFI provider id=%016llx", (unsigned long long)ml_id);
+    if (!ml_id && forced_version) {
+        ml_id = forced_version;
+        log_msg("[ffx] forcing unadvertised version id=%016llx", (unsigned long long)ml_id);
+    }
+    if (!ml_id) { log_msg("[error] no %s provider version reported", want_name); return 3; }
+    log_msg("[ffx] selecting provider %s id=%016llx", want_name, (unsigned long long)ml_id);
 
     struct ffxCreateContextDescFrameGeneration cd = { 0 };
     cd.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION;

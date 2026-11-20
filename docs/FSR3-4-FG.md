@@ -110,6 +110,31 @@ Status 20/11/2026. Extends `docs/FSR.md`.
   its model banks exist only in AMD's signed DLL. The source-built provider is therefore **FSR 3.1.7 frame
   generation**; FSR 4 MLFI delivery is tracked in `docs/FSR4-MLFI.md`.
 
+## Windows/NVIDIA check of AMD's signed Vulkan DLL (20/11/2026)
+
+The signed `amd_fidelityfx_framegeneration_vk.dll` was run natively on Windows 10 (not Wine) with an NVIDIA
+RTX 5080, driver 621.01, Vulkan 1.4.357, using `tools/mlfi-capture/mlfi_capture.c` cross-compiled by
+`tools/windows-fsr/build.sh`. The device enables `VK_KHR_cooperative_matrix`, `VK_NV_cooperative_matrix2`
+(the renamed maintenance1), `VK_EXT_shader_float8`, `VK_EXT_shader_image_atomic_int64`, the memory model and
+variable pointers; all of `cooperativeMatrix`, conversions, per-element operations, reductions, `shaderFloat8`
+and `shaderFloat8CooperativeMatrix` report true.
+
+- `ffxQuery(FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION)` returns **one** version: `3.1.6`
+  (`0xf600000000c01006`). **`4.0.2` (MLFI) is not offered on this GPU**, although its id
+  `0xf600000001000002` is present in the DLL.
+- FSR 3.1.6 frame generation creates and runs at 1280x720 for three frames: `ffxCreateContext=0`,
+  18 modules / 18 pipelines, 97 dispatches (3 prepare + 94 framegen), 0 substituted, every
+  `configure/prepare/framegen/submit=0`, `ffxDestroyContext=0`, no device loss.
+- Forcing the unadvertised MLFI id `0xf600000001000002` returns `ffxCreateContext=4` (`NO_PROVIDER`) with a
+  null context, so there are 0 pipelines and 0 dispatches. No diagnostic is emitted even with the global
+  debug callback at verbose level.
+
+This is the same device/driver gate seen for the 4.1.2 upscaler in `docs/FSR.md`: AMD's sample documentation
+says "the entries available depend on the installed driver", and MLFI requires RX 9000 or later. It means the
+signed-DLL path cannot produce MLFI frames on a non-RDNA4 GPU even on Windows; the FSR 3.1.6 analytic path
+remains vendor-agnostic. Reproduction and the raw log/capture live outside the repository
+(`$HOME/.cache/mk8online/win-rtx/`), since it contains AMD shader bytes.
+
 ## Runtime integration: native frame generation (20/11/2026)
 
 - **Toggle:** `MK8_FSR_FG=fsr3` (default off). Any other non-empty value is ignored with one log line. The

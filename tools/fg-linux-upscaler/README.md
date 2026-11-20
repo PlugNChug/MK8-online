@@ -20,7 +20,9 @@ MIT-licensed FidelityFX SDK 2.4.0 download; the SPIR-V is produced from the SDK'
 - `miniz/miniz.h` — maps the single `mz_uncompress` call onto zlib.
 - `test_query.cpp` — `ffxQuery` version check (expects only `3.1.6`).
 - `test_context.cpp` — headless 1920x1080 -> 2560x1440 context creation, one dispatch, readback and
-  destroy. `--no-device-features` creates the device like the unpatched game (diagnostic).
+  destroy. `--provider NAME` selects a version through `ffxQuery`/`ffxOverrideVersion` exactly like the
+  runtime, `--out PREFIX` writes the output as raw RGBA and PPM, and `--no-device-features` creates the
+  device like the unpatched game (diagnostic). `platform.h` loads the provider on Linux or Windows.
 
 ## Build
 

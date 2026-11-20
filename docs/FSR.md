@@ -72,9 +72,10 @@ FPS runs on an otherwise idle desktop.
   `[fsr] depth now game (1920x1080 fmt 100)`, `[fsr] motion now camera`; frame
   `fsr4-jitter2400-02400.png` uses all three inputs. Object motion (karts) is
   not in the vectors yet.
-- **FSR 3.1.6 (Windows provider, verified via Wine):** AMD's signed 2.4
-  `amd_fidelityfx_upscaler_vk.dll` advertises `4.1.2`, `3.1.6` and `2.3.4`
-  through `ffxQuery`. The 32-bit `ffxCreateContextDescUpscaleVersion` field is
+- **FSR 3.1.6 (Windows provider, verified via Wine):** on the RX 9070 XT,
+  AMD's signed 2.4 `amd_fidelityfx_upscaler_vk.dll` advertises `4.1.2`,
+  `3.1.6` and `2.3.4` through `ffxQuery`. The 32-bit
+  `ffxCreateContextDescUpscaleVersion` field is
   the API version the application was built against and must stay
   `FFX_UPSCALER_VERSION`; selecting another provider version requires the
   64-bit `ffxOverrideVersion` id returned by the query. A standalone Wine
@@ -84,6 +85,25 @@ FPS runs on an otherwise idle desktop.
   (0x...)`. Requesting `0xc01006` through the old 32-bit field was the cause of
   the earlier `create failed 0x1`, not a shader-permutation defect in the
   signed provider.
+- **FSR 3.1.6 / 2.3.4 on native Windows, NVIDIA RTX 5080 (20/11/2026):** the
+  same signed DLL was run natively (not Wine) through
+  `tools/windows-fsr/build.sh` (mingw-w64, `-static`) on a Windows 10 host
+  with an RTX 5080, driver 621.01, Vulkan 1.4.357. `ffxQuery` lists only
+  `3.1.6` (`0xf5a5ca1e00c01006`) and `2.3.4` (`0xf5a5ca1e00803004`); `4.1.2`
+  is **not offered on this GPU**. Both listed providers create, dispatch and
+  destroy at 1280x720 -> 2560x1440 and 1920x1080 -> 2560x1440 (`rc=0`; 14,712,960
+  and 14,711,840 of 14,745,600 bytes non-zero, all varied; output corners
+  match the input gradient). Forcing the FSR 4.1.2 id
+  `0xf5a5ca1e01001002`, which is present in the DLL, returns `NO_PROVIDER`
+  (rc 4) with no message even with `ffxConfigure(GLOBALDEBUG)` verbose. AMD's
+  SDK sample documentation says the version list is populated by a query, so
+  "the entries available depend on the installed driver"; FSR 4 upscaling
+  requires RDNA 4, so the omission is the documented device/driver gate, not a
+  probe failure. Commands and exit codes are in
+  `tools/windows-fsr/README.md`; PNGs are under
+  `$HOME/.cache/mk8online/win-rtx/evidence/` (never committed). No GPUVM
+  fault, `VK_ERROR_DEVICE_LOST` or validation error was reported; the host
+  has no Khronos validation layer installed.
 - **FSR 3.1.6 (native Linux):** built and verified. The private provider is the
   SDK 2.4 Vulkan host compiled with the 3.1.6 pass shaders extracted from
   AMD's signed DLL; it advertises only `3.1.6` (`0xf5a5ca1e00c01006`). On the
@@ -110,9 +130,10 @@ FPS runs on an otherwise idle desktop.
   is a research spike (the signed DLL contains 487 SPIR-V candidates, 359 of
   which validate, but the pass/model ABI is not reconstructed).
 - **Windows/Proton:** the FFX loader/upscaler DLL path is verified at the FFX
-  API level under Wine (context, provider name, dispatch and output), but this
-  checkout has no Windows game build/data pair for an in-game Proton run. No
-  signed binaries or extracted assets are committed.
+  API level under Wine (context, provider name, dispatch and output) and now
+  natively on Windows with an NVIDIA RTX 5080 (same API checks; see above),
+  but this checkout has no Windows game build/data pair for an in-game run on
+  that host. No signed binaries or extracted assets are committed.
 
 ## Licensing
 

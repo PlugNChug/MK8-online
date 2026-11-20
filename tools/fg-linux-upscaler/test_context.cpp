@@ -1,11 +1,16 @@
-// Headless Vulkan validation for the native FSR 3.1.6 upscaler provider.
+// Headless Vulkan validation for the FSR upscaler provider.
 //
 // Creates a compute-capable Vulkan device, asks the provider for a 1920x1080 -> 2560x1440 upscale context (the
 // size and flags the game bridge uses), dispatches one frame from a procedural input, and reads the output back.
 // Context creation builds every upscaler pipeline from the generated shader blobs; a blob/layout mismatch fails
 // here. The readback proves the dispatch actually wrote an image.
 //
-// Usage: test_context <lib.so> [render_w] [render_h] [upscale_w] [upscale_h] [--no-device-features]
+// Usage: test_context <lib> [render_w] [render_h] [upscale_w] [upscale_h] [flags]
+//        [--provider NAME] [--override-id HEX] [--out PATH] [--debug] [--no-device-features]
+//
+// --provider selects a version through ffxQuery + ffxOverrideVersion exactly like runtime/mk8/graphics/fsr.cpp.
+// --override-id forces an unadvertised provider id (diagnostic) and --out writes <PATH>.rgba (raw RGBA8) and
+// <PATH>.ppm for inspection. --debug enables the provider message callback at verbose level.
 //
 // The generated storage images declare format Unknown (the SDK creates R8/R16 images), and two SPD shaders use
 // VK_KHR_compute_shader_derivatives. A real device must enable those features; --no-device-features creates the
@@ -14,16 +19,24 @@
 #include "vk/ffx_api_vk.h"
 #include "ffx_upscale.h"
 #include <vulkan/vulkan.h>
-#include <dlfcn.h>
+#include "platform.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cwchar>
 #include <vector>
 
 typedef ffxReturnCode_t (*PfnCreate)(ffxContext*, ffxCreateContextDescHeader*, const ffxAllocationCallbacks*);
 typedef ffxReturnCode_t (*PfnDestroy)(ffxContext*, const ffxAllocationCallbacks*);
 typedef ffxReturnCode_t (*PfnQuery)(ffxContext*, ffxQueryDescHeader*);
 typedef ffxReturnCode_t (*PfnDispatch)(ffxContext*, const ffxDispatchDescHeader*);
+typedef ffxReturnCode_t (*PfnConfigure)(ffxContext*, const ffxConfigureDescHeader*);
+
+static void ffx_debug_message(uint32_t type, const wchar_t* text)
+{
+    fwprintf(stdout, L"[ffx %u] %ls\n", type, text ? text : L"(null)");
+    fflush(stdout);
+}
 
 static const char* rc_name(ffxReturnCode_t rc)
 {
@@ -109,13 +122,21 @@ static void barrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkIma
 int main(int argc, char** argv)
 {
     const char* lib = "build/libamd_fidelityfx_upscaler_vk.so";
+    const char* provider_name = nullptr;
+    const char* out_path = nullptr;
+    uint64_t forced_id = 0;
     uint32_t rw = 1920, rh = 1080, ow = 2560, oh = 1440;
     uint32_t flags = FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;  // what runtime/mk8/graphics/fsr.cpp passes
     bool device_features = true;
+    bool debug_messages = false;
     int positional = 0;
     for (int i = 1; i < argc; ++i)
     {
         if (strcmp(argv[i], "--no-device-features") == 0) { device_features = false; continue; }
+        if (strcmp(argv[i], "--debug") == 0) { debug_messages = true; continue; }
+        if (strcmp(argv[i], "--provider") == 0 && i + 1 < argc) { provider_name = argv[++i]; continue; }
+        if (strcmp(argv[i], "--override-id") == 0 && i + 1 < argc) { forced_id = strtoull(argv[++i], nullptr, 0); continue; }
+        if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) { out_path = argv[++i]; continue; }
         switch (positional++)
         {
         case 0: lib = argv[i]; break;
@@ -128,13 +149,27 @@ int main(int argc, char** argv)
         }
     }
 
-    void* h = dlopen(lib, RTLD_NOW | RTLD_LOCAL);
-    if (!h) { printf("dlopen: %s\n", dlerror()); return 1; }
-    PfnCreate create = (PfnCreate)dlsym(h, "ffxCreateContext");
-    PfnDestroy destroy = (PfnDestroy)dlsym(h, "ffxDestroyContext");
-    PfnQuery query = (PfnQuery)dlsym(h, "ffxQuery");
-    PfnDispatch dispatch = (PfnDispatch)dlsym(h, "ffxDispatch");
+    void* h = mk8_lib_open(lib);
+    if (!h) { printf("load: %s\n", mk8_lib_error()); return 1; }
+    PfnCreate create = (PfnCreate)mk8_lib_symbol(h, "ffxCreateContext");
+    PfnDestroy destroy = (PfnDestroy)mk8_lib_symbol(h, "ffxDestroyContext");
+    PfnQuery query = (PfnQuery)mk8_lib_symbol(h, "ffxQuery");
+    PfnDispatch dispatch = (PfnDispatch)mk8_lib_symbol(h, "ffxDispatch");
     if (!create || !destroy || !query || !dispatch) { printf("missing exports\n"); return 1; }
+    if (debug_messages)
+    {
+        PfnConfigure configure = (PfnConfigure)mk8_lib_symbol(h, "ffxConfigure");
+        if (configure)
+        {
+            ffxConfigureDescGlobalDebug gd{};
+            gd.header.type = FFX_API_CONFIGURE_DESC_TYPE_GLOBALDEBUG;
+            gd.effectId = FFX_API_EFFECT_ID_UPSCALE;
+            gd.fpMessage = ffx_debug_message;
+            gd.debugLevel = FFX_API_CONFIGURE_GLOBALDEBUG_LEVEL_VERBOSE;
+            ffxReturnCode_t crc = configure(nullptr, &gd.header);
+            printf("ffxConfigure(GLOBALDEBUG) rc=%d (%s)\n", (int)crc, rc_name(crc));
+        }
+    }
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.apiVersion = VK_API_VERSION_1_3;  // the game creates a Vulkan 1.3 device
@@ -157,8 +192,9 @@ int main(int argc, char** argv)
     }
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(gpu, &props);
-    printf("device: %s (api %u.%u.%u)\n", props.deviceName,
-           VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion));
+    printf("device: %s (vendor=0x%04x device=0x%04x api %u.%u.%u)\n", props.deviceName, props.vendorID,
+           props.deviceID, VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
+           VK_VERSION_PATCH(props.apiVersion));
 
     uint32_t family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(gpu, &family_count, nullptr);
@@ -227,10 +263,68 @@ int main(int argc, char** argv)
 
     ffxCreateContextDescUpscale upscale{};
     upscale.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
-    upscale.header.pNext = &backend.header;
     upscale.flags = flags;
     upscale.maxRenderSize = {rw, rh};
     upscale.maxUpscaleSize = {ow, oh};
+
+    // Mirror runtime/mk8/graphics/fsr.cpp: the version descriptor carries the API version this call site was
+    // built against, and a named provider version is selected with the 64-bit ffxOverrideVersion id from
+    // ffxQuery. AMD's signed Windows DLL lists 4.1.2, 3.1.6 and 2.3.4 on RDNA 4, but only 3.1.6 and 2.3.4 on
+    // other GPUs; the Linux provider only 3.1.6.
+    ffxCreateContextDescUpscaleVersion version{};
+    version.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE_VERSION;
+    version.version = FFX_UPSCALER_VERSION;
+    ffxOverrideVersion override_version{};
+    override_version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
+    upscale.header.pNext = &version.header;
+    version.header.pNext = &backend.header;
+    if (provider_name || forced_id)
+    {
+        if (forced_id)
+        {
+            // A version the provider did not advertise. Used to capture the exact rejection on hardware the
+            // provider filters out (for example FSR 4.1.2 on a non-AMD GPU).
+            override_version.versionId = forced_id;
+            printf("forcing unadvertised version id 0x%llx\n", (unsigned long long)forced_id);
+        }
+        else
+        {
+            uint64_t count = 0;
+            ffxQueryDescGetVersions versions{};
+            versions.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
+            versions.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+            versions.device = &backend.deviceContext;
+            versions.outputCount = &count;
+            ffxReturnCode_t vrc = query(nullptr, &versions.header);
+            printf("version query rc=%d count=%llu\n", (int)vrc, (unsigned long long)count);
+            if (vrc == FFX_API_RETURN_OK && count > 0 && count <= 16)
+            {
+                uint64_t ids[16] = {0};
+                const char* names[16] = {nullptr};
+                uint64_t cap = count;
+                versions.outputCount = &cap;
+                versions.versionIds = ids;
+                versions.versionNames = names;
+                vrc = query(nullptr, &versions.header);
+                for (uint64_t i = 0; i < cap; ++i)
+                {
+                    printf("version[%llu] id=0x%016llx name=%s\n", (unsigned long long)i,
+                           (unsigned long long)ids[i], names[i] ? names[i] : "(null)");
+                    if (names[i] && strcmp(names[i], provider_name) == 0) override_version.versionId = ids[i];
+                }
+            }
+            if (!override_version.versionId)
+            {
+                printf("provider does not offer version %s\n", provider_name);
+                mk8_lib_close(h);
+                return 2;
+            }
+        }
+        printf("selecting version %s (0x%llx)\n", provider_name ? provider_name : "forced",
+               (unsigned long long)override_version.versionId);
+        version.header.pNext = &override_version.header;
+        override_version.header.pNext = &backend.header;
+    }
 
     ffxContext ctx = nullptr;
     ffxReturnCode_t rc = create(&ctx, &upscale.header, nullptr);
@@ -243,7 +337,8 @@ int main(int argc, char** argv)
     rc = query(&ctx, &provider.header);
     printf("ffxQuery(provider) rc=%d id=0x%llx name=%s\n", (int)rc,
            (unsigned long long)provider.versionId, provider.versionName ? provider.versionName : "(null)");
-    bool provider_ok = rc == FFX_API_RETURN_OK && provider.versionName && strcmp(provider.versionName, "3.1.6") == 0;
+    bool provider_ok = rc == FFX_API_RETURN_OK && provider.versionName &&
+                       (provider_name ? strcmp(provider.versionName, provider_name) == 0 : true);
 
     // Inputs at render size, output at display size.
     Image color = make_image(device, gpu, VK_FORMAT_R8G8B8A8_UNORM, rw, rh,
@@ -428,6 +523,35 @@ int main(int argc, char** argv)
         if (v != first) varied = true;
     }
     printf("output: %zu/%llu non-zero, sum=%llu, varied=%d\n", nonzero, (unsigned long long)out_size, sum, (int)varied);
+
+    // Write the upscaled image for visual inspection: raw RGBA8 plus a P6 PPM the caller can convert to PNG.
+    if (out_path)
+    {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s.rgba", out_path);
+        if (FILE* f = fopen(path, "wb"))
+        {
+            fwrite(out_ptr, 1, (size_t)out_size, f);
+            fclose(f);
+            printf("wrote %s (%llu bytes)\n", path, (unsigned long long)out_size);
+        }
+        else printf("cannot write %s\n", path);
+        snprintf(path, sizeof(path), "%s.ppm", out_path);
+        if (FILE* f = fopen(path, "wb"))
+        {
+            fprintf(f, "P6\n%u %u\n255\n", ow, oh);
+            const uint8_t* p = (const uint8_t*)out_ptr;
+            for (uint32_t y = 0; y < oh; ++y)
+                for (uint32_t x = 0; x < ow; ++x)
+                {
+                    const uint8_t* px = p + ((size_t)y * ow + x) * 4;
+                    fwrite(px, 1, 3, f);
+                }
+            fclose(f);
+            printf("wrote %s\n", path);
+        }
+        else printf("cannot write %s\n", path);
+    }
     vkUnmapMemory(device, staging_mem);
 
     ffxReturnCode_t drc = destroy(&ctx, nullptr);
@@ -448,7 +572,7 @@ int main(int argc, char** argv)
     vkDestroyCommandPool(device, pool, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
-    dlclose(h);
+    mk8_lib_close(h);
 
     bool ok = provider_ok && drc == FFX_API_RETURN_OK && nonzero > out_size / 2 && varied;
     printf("RESULT: %s\n", ok ? "OK" : "FAIL");
