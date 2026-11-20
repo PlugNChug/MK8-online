@@ -1,5 +1,7 @@
 # Estado técnico — 20/11/2026
 
+**Instalador local de teste 0.4.1 (`fix-chore`).** O assistente e o launcher executado em pasta isolada exibiram 0.4.1. O pacote embute o runtime da mesma chave de compilação usada no teste de tela dividida abaixo. SHA-256 do `MK8-online-0.4.1-setup.exe`: `6393372c7fe74fe8ac582aeb507c83f1d63670f37203873898385d306c7579c8`.
+
 ## Falhas de inicialização, Steam e DLC na fix-chore após a 0.4.0
 
 - **Jogo fecha ao abrir (#84 e #78).** No Windows, o runtime antigo lia uma pasta gravável chamada `João 東京` com caracteres substituídos e acusava falta de permissão. O manifesto UTF-8 agora acompanha o executável e entra na chave do runtime pré-compilado. Na mesma pasta de teste, a build nova chegou a Mario Kart Stadium em tela dividida a 1920×1080, gravou o quadro 5100 na primeira volta e saiu com código 0. A #84 não tem log para identificar a causa naquele PC. Na #78, o log aponta para a criação da superfície Vulkan. O teste com dois loaders criou uma superfície Win32 real e comprovou que a ausência da DLL selecionada pelo launcher é informada mesmo quando outra cópia já está carregada.

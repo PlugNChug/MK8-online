@@ -105,7 +105,7 @@ The [0.3.0 release notes](docs/releases/0.3.0.md) cover the original CTGP integr
 
 ## Where it stands
 
-**Local changes on `fix-chore` after 0.4.0.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
+**Local 0.4.1 test build on `fix-chore`.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
 
 The runtime compensates slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 
