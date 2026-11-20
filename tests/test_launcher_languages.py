@@ -46,7 +46,7 @@ class LanguageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="mk8-language-ui-") as temporary:
             folder = Path(temporary)
             process, url = self.start_launcher(folder)
-            page = self.browser.new_page(locale="en-US", viewport={"width": 1365, "height": 1024})
+            page = self.browser.new_page(locale="pt-BR", viewport={"width": 1365, "height": 1024})
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             try:
@@ -270,7 +270,7 @@ class LanguageTests(unittest.TestCase):
             expect(page.locator("#done")).to_be_visible()
             self.assertEqual(submissions[-1], {"purge": purge, "confirmed": purge})
 
-    def test_installer_defaults_to_spanish_for_other_locales(self):
+    def test_installer_defaults_to_english_with_spanish_browser_locale(self):
         page = self.browser.new_page(locale="es-MX", viewport={"width": 880, "height": 620})
 
         def route(request):
@@ -285,9 +285,9 @@ class LanguageTests(unittest.TestCase):
         try:
             page.route("http://mk8.test/**", route)
             page.goto("http://mk8.test/")
-            expect(page.get_by_role("heading", name="Bienvenido a MK8-online")).to_be_visible()
-            expect(page.locator("html")).to_have_attribute("lang", "es")
-            expect(page.locator("#language")).to_have_value("es")
+            expect(page.get_by_role("heading", name="Welcome to MK8-online")).to_be_visible()
+            expect(page.locator("html")).to_have_attribute("lang", "en")
+            expect(page.locator("#language")).to_have_value("en")
         finally:
             page.close()
 
@@ -320,8 +320,8 @@ class LanguageTests(unittest.TestCase):
         try:
             page.route("http://mk8.test/**", route)
             page.goto("http://mk8.test/")
-            expect(page.get_by_role("heading", name="Bem-vindo ao MK8-online")).to_be_visible()
-            page.get_by_label("Idioma", exact=True).select_option("es")
+            expect(page.get_by_role("heading", name="Welcome to MK8-online")).to_be_visible()
+            page.get_by_label("Language", exact=True).select_option("es")
             expect(page.get_by_role("heading", name="Bienvenido a MK8-online")).to_be_visible()
             page.get_by_label("Idioma", exact=True).select_option("en")
             expect(page.get_by_role("heading", name="Welcome to MK8-online")).to_be_visible()

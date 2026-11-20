@@ -1760,7 +1760,7 @@ fn binary_response(req: Request, code: u16, bytes: Vec<u8>, mime: &str) {
 /// answering status requests while the dialog is open.
 fn browse(req: Request, body: &str, parent: &DialogParent) {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
-    let language = value["language"].as_str().unwrap_or("pt-BR").to_string();
+    let language = value["language"].as_str().unwrap_or("en").to_string();
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
         Some("dlc") => Some((
@@ -1799,13 +1799,12 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
             &["dat"][..],
         )),
         Some("fsr-library") => Some((
-            crate::language::pick(
-                &language,
-                "Provedor FFX (.so)",
-                "FFX provider (.so)",
-                "Proveedor FFX (.so)",
-            ),
-            &["so"][..],
+            crate::language::pick(&language, "Provedor FFX", "FFX provider", "Proveedor FFX"),
+            if cfg!(windows) {
+                &["dll"][..]
+            } else {
+                &["so"][..]
+            },
         )),
         Some("dxc") => Some((
             crate::language::pick(

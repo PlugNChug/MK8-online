@@ -3,7 +3,7 @@
   const get = id => document.getElementById(id);
   const section = get('fsr');
   let data = null;
-  let loading = false;
+  let loading = null;
   let saving = false;
   let acceptChecked = false;
 
@@ -113,10 +113,15 @@
     get('fsr-license-accept').disabled = accepted;
     get('fsr-license-save').hidden = accepted;
     get('fsr-license-save').disabled = accepted || !get('fsr-license-accept').checked || !license.verified;
-    get('fsr-install').disabled = !accepted || state === 'building' || saving
-      || fsr4SelectedBlocked;
+    get('fsr-install').hidden = !accepted;
+    get('fsr-install').disabled = !accepted || state === 'building' || saving || fsr4SelectedBlocked
+      || (!windows && off && settings.frame_generation !== 'fsr3');
     get('fsr-cancel').hidden = state !== 'building';
-    text('fsr-license-load', license.present ? 'Ver licença da AMD' : 'Ler licença da AMD');
+    const licenseButton = get('fsr-license-load');
+    licenseButton.classList.toggle('ghost', accepted);
+    licenseButton.classList.toggle('primary', !accepted);
+    text('fsr-license-load', !get('fsr-license-box').hidden ? 'Ocultar licença'
+      : accepted ? 'Ver licença da AMD' : 'Ler e aceitar os termos da AMD');
     text('fsr-license-source', license.verified
       ? `Texto oficial de docs/license.md (tag v2.4.0), ${license.bytes} bytes, SHA-256 ${license.sha256.slice(0, 16)}…`
       : 'Texto oficial de docs/license.md, tag v2.4.0, conferido por tamanho e SHA-256.');
@@ -152,15 +157,15 @@
     get('fsr-fg-state').classList.toggle('error', fg === 'fsr3' && !data.framegeneration?.present);
   }
 
-  async function load() {
-    if (loading) return;
-    loading = true;
-    try {
-      data = await api('fsr');
-      render();
-    } finally {
-      loading = false;
+  async function load(fresh = false) {
+    if (fresh && loading) await loading.catch(() => {});
+    if (!loading) {
+      loading = api('fsr').then(result => {
+        data = result;
+        render();
+      }).finally(() => { loading = null; });
     }
+    return loading;
   }
 
   let pendingSave = Promise.resolve();
@@ -172,13 +177,14 @@
       dxc: get('fsr-dxc').value.trim(),
     };
     saving = true;
+    render();
     const operation = pendingSave.catch(() => {}).then(async () => {
       try {
         await api('fsr/settings', snapshot);
-        await load();
+        await load(true);
         return { message };
       } catch (error) {
-        await load().catch(() => {});
+        await load(true).catch(() => {});
         throw error;
       } finally {
         if (pendingSave === operation) {
@@ -206,25 +212,26 @@
 
   get('fsr-license-load').onclick = async () => {
     const button = get('fsr-license-load');
+    const box = get('fsr-license-box');
+    if (!box.hidden) {
+      box.hidden = true;
+      button.setAttribute('aria-expanded', 'false');
+      render();
+      return;
+    }
     button.disabled = true;
     try {
       const result = await api('fsr/license', {});
       get('fsr-license-text').textContent = result.text;
-      get('fsr-license-box').hidden = false;
-      get('fsr-license-toggle').hidden = false;
-      i18n.text(button, 'Ver licença da AMD');
-      notice('Licença da AMD carregada da fonte oficial.');
-      await load();
+      box.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      get('fsr-license-text').focus();
+      await load(true);
     } catch (error) {
       notice(error.message, true);
     } finally {
       button.disabled = false;
     }
-  };
-  get('fsr-license-toggle').onclick = () => {
-    const box = get('fsr-license-box');
-    box.hidden = !box.hidden;
-    i18n.text(get('fsr-license-toggle'), box.hidden ? 'Ver licença' : 'Ocultar licença');
   };
   get('fsr-license-accept').onchange = () => {
     acceptChecked = get('fsr-license-accept').checked;
@@ -235,8 +242,8 @@
     get('fsr-license-save').disabled = true;
     try {
       await api('fsr/accept', {});
+      await load(true);
       notice('Termos da AMD aceitos. O download só começa quando você pedir.');
-      await load();
     } catch (error) {
       notice(error.message, true);
       get('fsr-license-save').disabled = false;

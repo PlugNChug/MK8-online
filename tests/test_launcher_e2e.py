@@ -477,6 +477,90 @@ class LauncherTests(unittest.TestCase):
         finally:
             page.close()
 
+    def test_fsr_terms_precede_the_managed_install(self):
+        page = self.page(index=1)
+        page.evaluate("() => api('fsr/settings', {upscaling: '3.1.6', provider_lib: '', frame_generation: 'off', dxc: ''})")
+        page.locator('[data-tab="fsr"]').click()
+        expect(page.locator('#fsr-upscaling')).to_have_value('3.1.6')
+        expect(page.locator('#fsr-provider')).to_be_hidden()
+        expect(page.locator('#fsr-install')).to_be_hidden()
+        error = page.evaluate("() => api('fsr/install', {}).catch(error => error.message)")
+        self.assertIn('aceite a licença da AMD', error)
+
+        terms = page.locator('#fsr-license-load')
+        expect(terms).to_have_text('Ler e aceitar os termos da AMD')
+        # Synthetic consent response exercises the browser without accepting the vendor's terms.
+        license_info = {"verified": True, "present": True, "accepted": False, "bytes": 13, "sha256": "a" * 64}
+        def status_with_terms(route):
+            response = route.fetch()
+            status = response.json()
+            status['data']['license'] = license_info
+            route.fulfill(response=response, json=status)
+        def accept_fixture(route):
+            license_info['accepted'] = True
+            route.fulfill(json={"ok": True, "data": {"license": license_info}})
+        page.route('**/api/fsr', status_with_terms)
+        page.route('**/api/fsr/license', lambda route: route.fulfill(json={
+            'ok': True, 'data': {'text': 'Fixture terms', 'license': license_info}}))
+        page.route('**/api/fsr/accept', accept_fixture)
+        terms.click()
+        expect(page.locator('#fsr-license-text')).to_have_text('Fixture terms')
+        expect(page.locator('#fsr-license-save')).to_be_disabled()
+        page.locator('#fsr-license-accept').check()
+        expect(page.locator('#fsr-install')).to_be_hidden()
+        page.locator('#fsr-license-save').click()
+        expect(page.locator('#fsr-install')).to_be_visible()
+        expect(page.locator('#fsr-install')).to_be_enabled()
+        expect(page.locator('#fsr-provider')).to_be_hidden()
+
+    def test_fsr_picker_save_survives_an_overlapping_status_refresh(self):
+        page = self.page()
+        page.evaluate("() => api('fsr/settings', {upscaling: '3.1.6', provider_lib: '', frame_generation: 'off', dxc: ''})")
+        def show_picker(route):
+            response = route.fetch()
+            body = response.json()
+            body['data']['native_dialogs'] = True
+            route.fulfill(response=response, json=body)
+        page.route('**/api/status', show_picker)
+        page.evaluate('() => refresh()')
+        page.locator('[data-tab="fsr"]').click()
+        provider = page.locator('#fsr-provider')
+        picker = page.locator('[data-browse="fsr-provider"]')
+        expect(provider).to_be_hidden()
+        page.locator('#fsr-advanced summary').click()
+        expect(picker).to_be_visible()
+        expect(provider).to_be_enabled()
+
+        stale = []
+
+        def hold_status(route):
+            if stale:
+                route.continue_()
+            else:
+                stale.append((route, route.fetch()))
+
+        path = str(Path(self.temporary.name) / 'custom provider.so')
+        page.route('**/api/fsr', hold_status)
+        # Headless launchers have no native dialog. The settings and status requests use the real API.
+        page.route('**/api/browse', lambda route: route.fulfill(json={'ok': True, 'data': {'path': path}}))
+        page.evaluate('() => { void window.mk8Fsr.load(); }')
+        deadline = time.monotonic() + 5
+        while not stale and time.monotonic() < deadline:
+            page.wait_for_timeout(50)
+        self.assertTrue(stale, 'the pre-save FSR status request did not start')
+        with page.expect_response('**/api/fsr/settings') as saved:
+            picker.click()
+        self.assertEqual(saved.value.json()['data']['settings']['provider_lib'], path)
+        expect(provider).to_be_disabled()
+        expect(page.locator('#notice')).not_to_have_attribute('data-message', 'Provedor FSR salvo.', timeout=500)
+        route, response = stale[0]
+        route.fulfill(response=response)
+        expect(picker).to_be_enabled()
+        expect(provider).to_have_value(path, timeout=1500)
+        expect(page.locator('#notice')).to_have_attribute('data-message', 'Provedor FSR salvo.')
+        settings = json.loads((Path(self.temporary.name) / '0/launcher-settings.json').read_text('utf-8'))
+        self.assertEqual(settings['fsr']['provider_lib'], path)
+
     def test_settings_save_failure_unlocks_form_and_keeps_edits_for_retry(self):
         folder = Path(self.temporary.name) / "0/user-no-mii"
         folder.mkdir(exist_ok=True)
