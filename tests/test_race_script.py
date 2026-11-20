@@ -17,6 +17,18 @@ profile_environment = script['profile_environment']
 
 
 class RaceScriptTests(unittest.TestCase):
+    def test_final_capture_identifies_the_loaded_track(self):
+        tracks = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'scripts/test-tracks.py'))
+        captures = tracks['capture_courses'](
+            '[fs] read Course/Gu_FirstCircuit/course_model.szs\n'
+            '[vk] saved D:\\test\\frame-03400.png (1920x1080)\n'
+            '[fs] read Course/Du_Animal_Winter/course_model.szs\n'
+            '[vk] saved /test/frame-04400.png (1920x1080)')
+        self.assertTrue(tracks['matches_course']('mushroom', 0, captures['frame-03400.png']))
+        self.assertTrue(tracks['matches_course']('crossing', 3, captures['frame-04400.png']))
+        self.assertFalse(tracks['matches_course']('mushroom', 0, captures['frame-04400.png']))
+        self.assertFalse(tracks['matches_course']('egg', 0, None))
+
     def test_interactive_session_uses_live_input_and_preserves_source_save(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
