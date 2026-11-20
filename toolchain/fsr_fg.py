@@ -1,9 +1,13 @@
-"""Native FSR 3 frame generation hooks (runtime/mk8/graphics/fsr_fg.cpp).
+"""Native FSR 3 / FSR 4 frame generation hooks (runtime/mk8/graphics/fsr_fg.cpp).
 
 MK8_FSR_FG=fsr3 replaces the window swapchain with the FFX frame-interpolation swapchain. The
 provider is optional and loaded at runtime; these hooks add the extra present/acquire queues, route
 the swapchain calls through the bridge, and record the prepare dispatch at the end of each frame.
-No guest code or ABI changes.
+MK8_FSR_FG=fsr4 uses the same swapchain but the MLFI 4.0.2 effect provider, whose captured modules
+need cooperative matrices (maintenance1), float8 cooperative matrices, 64-bit image atomics, the
+Vulkan memory model and subgroup-size control. Cooperative matrix/float8 are already enabled by
+toolchain/fsr.py; the remaining device extensions/features are enabled only in fsr4. No guest code
+or ABI changes.
 
 The depth capture and the main-draw matrix scan already exist for the upscaler (toolchain/fsr.py);
 this script extends both to MK8_FSR_FG so the frame-generation prepare has real inputs when the game
@@ -90,6 +94,59 @@ def prepare_device(runtime):
                     '                             .enabledExtensionCount = n_ext, .ppEnabledExtensionNames = ext};',
                     'Device queue creation')
 
+    # The generated frame-interpolation blobs and the MLFI captured modules declare storage images
+    # with format Unknown and (for MLFI) storage features that need device extensions.
+    text = _replace(text,
+                    '    VkExtensionProperties *ep = calloc(ne, sizeof *ep);\n'
+                    '    vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, ep);\n'
+                    '    const char *ext[8];',
+                    '    VkExtensionProperties *ep = calloc(ne, sizeof *ep);\n'
+                    '    vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, ep);\n'
+                    '    // room for the swapchain/WSI extensions plus the fsr4 MLFI set\n'
+                    '    const char *ext[16];',
+                    'Device extension array')
+
+    # Query and enable the matching feature structs. These are only chained into the device when the
+    # extensions above were enabled; the provider refuses creation with its own log line if a
+    # feature it needs is false. Inserted before VkPhysicalDeviceFeatures2 f so the pNext chain
+    # built below can reference them.
+    text = _replace(text,
+                    '    VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,\n'
+                    '                                   .pNext = rob2 ? (void *)&r2 : fault ? (void *)&ff : (void *)&f11};',
+                    '    // fsr4 (MK8_FSR_FG=fsr4): the MLFI feature set, enabled on top of the backend\'s own\n'
+                    '    // features. Subgroup-size control and the memory-model/variable-pointer features are\n'
+                    '    // taken from the Vulkan 1.1/1.2/1.3 queries; the maintenance1 and image-atomic\n'
+                    '    // structs are queried separately (cooperative matrix/float8 are already queried by\n'
+                    '    // toolchain/fsr.py).\n'
+                    '    VkPhysicalDeviceCooperativeMatrixMaintenance1FeaturesEXT mlfi_cm2 = {\n'
+                    '        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_MAINTENANCE_1_FEATURES_EXT};\n'
+                    '    VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT mlfi_img64 = {\n'
+                    '        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT};\n'
+                    '    VkPhysicalDeviceVariablePointersFeatures mlfi_varptr = {\n'
+                    '        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES};\n'
+                    '    if (mlfi) {\n'
+                    '        VkPhysicalDeviceFeatures2 mlfi_query = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};\n'
+                    '        mlfi_cm2.pNext = &mlfi_img64;\n'
+                    '        mlfi_img64.pNext = &mlfi_varptr;\n'
+                    '        mlfi_query.pNext = &mlfi_cm2;\n'
+                    '        vkGetPhysicalDeviceFeatures2(g_vk.phys, &mlfi_query);\n'
+                    '        f13.subgroupSizeControl = have13.subgroupSizeControl;\n'
+                    '        f12.shaderFloat16 = have12.shaderFloat16;\n'
+                    '        f12.vulkanMemoryModel = have12.vulkanMemoryModel;\n'
+                    '        f11.variablePointersStorageBuffer = mlfi_varptr.variablePointersStorageBuffer;\n'
+                    '        f11.variablePointers = mlfi_varptr.variablePointers;\n'
+                    '        if (!have_cm.cooperativeMatrix || !mlfi_cm2.cooperativeMatrixConversions ||\n'
+                    '            !mlfi_cm2.cooperativeMatrixPerElementOperations || !mlfi_cm2.cooperativeMatrixReductions ||\n'
+                    '            !have_f8.shaderFloat8CooperativeMatrix || !mlfi_img64.shaderImageInt64Atomics ||\n'
+                    '            !have12.shaderFloat16 || !have12.vulkanMemoryModel || !have13.subgroupSizeControl ||\n'
+                    '            !mlfi_varptr.variablePointersStorageBuffer)\n'
+                    '            LOG("[fsr_fg] warning: the device lacks part of the MLFI feature set; the fsr4 "\n'
+                    '                "context creation will be refused\\n");\n'
+                    '    }\n'
+                    '    VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,\n'
+                    '                                   .pNext = rob2 ? (void *)&r2 : fault ? (void *)&ff : (void *)&f11};',
+                    'MLFI device features')
+
     # The generated shader blobs declare their storage images with format Unknown
     # (tools/gen_fg_blobs.py): the SDK creates each image with a format chosen for the effect
     # (R16G16_SFLOAT, R8_UINT, R16G16_SINT, the swapchain format, ...), so the format must come
@@ -141,6 +198,65 @@ def prepare_device(runtime):
                     '        }\n'
                     '    }',
                     'Compute shader derivatives feature')
+
+    # fsr4: the MLFI 4.0.2 provider's captured modules additionally need cooperative matrix
+    # maintenance1 and 64-bit image atomics (cooperative matrix/float8 are already enabled by
+    # toolchain/fsr.py for the upscaler). Only MK8_FSR_FG=fsr4 requests them; fsr3 and the FG-off
+    # device are unchanged, and a missing extension disables fsr4 with one warning instead of
+    # creating a device the provider refuses.
+    # (Anchored on the tail of the derivatives block: both insert after the same writer.)
+    text = _replace(text,
+                    '    if ((getenv("MK8_FSR_FG") || getenv("MK8_FSR4")) &&\n'
+                    '        has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
+                    '        fsr_derivatives = true;\n'
+                    '        ext[n_ext++] = VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME;\n'
+                    '    }',
+                    '    if ((getenv("MK8_FSR_FG") || getenv("MK8_FSR4")) &&\n'
+                    '        has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
+                    '        fsr_derivatives = true;\n'
+                    '        ext[n_ext++] = VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME;\n'
+                    '    }\n'
+                    '    bool mlfi = getenv("MK8_FSR_FG") && !strcmp(getenv("MK8_FSR_FG"), "fsr4");\n'
+                    '    if (mlfi) {\n'
+                    '        if (has_ext(ep, ne, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) &&\n'
+                    '            has_ext(ep, ne, VK_EXT_SHADER_FLOAT8_EXTENSION_NAME) &&\n'
+                    '            has_ext(ep, ne, VK_EXT_COOPERATIVE_MATRIX_MAINTENANCE_1_EXTENSION_NAME) &&\n'
+                    '            has_ext(ep, ne, VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME)) {\n'
+                    '            ext[n_ext++] = VK_EXT_COOPERATIVE_MATRIX_MAINTENANCE_1_EXTENSION_NAME;\n'
+                    '            ext[n_ext++] = VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME;\n'
+                    '            LOG("[fsr_fg] MLFI device extensions enabled (cooperative_matrix_maintenance1, image_int64_atomics)\\n");\n'
+                    '        } else {\n'
+                    '            mlfi = false;\n'
+                    '            LOG("[fsr_fg] warning: the MLFI extensions are unavailable (cooperative_matrix, "\n'
+                    '                "cooperative_matrix_maintenance1, shader_float8, shader_image_atomic_int64)\\n");\n'
+                    '        }\n'
+                    '    }',
+                    'MLFI device extensions')
+
+    text = _replace(text,
+                    '        if (fsr_deriv_feat.computeDerivativeGroupLinear) {\n'
+                    '            fsr_deriv_feat.pNext = f.pNext;\n'
+                    '            f.pNext = &fsr_deriv_feat;\n'
+                    '        } else {\n'
+                    '            LOG("[fsr_fg] warning: no computeDerivativeGroupLinear; FSR upscaling/frame generation cannot run\\n");\n'
+                    '        }\n'
+                    '    }',
+                    '        if (fsr_deriv_feat.computeDerivativeGroupLinear) {\n'
+                    '            fsr_deriv_feat.pNext = f.pNext;\n'
+                    '            f.pNext = &fsr_deriv_feat;\n'
+                    '        } else {\n'
+                    '            LOG("[fsr_fg] warning: no computeDerivativeGroupLinear; FSR upscaling/frame generation cannot run\\n");\n'
+                    '        }\n'
+                    '    }\n'
+                    '    if (mlfi) {\n'
+                    '        // maintenance1 learns about FrameGeneration, image atomics about the splat module.\n'
+                    '        // The cooperative-matrix/float8 structs are already in the chain (toolchain/fsr.py).\n'
+                    '        mlfi_img64.pNext = f13.pNext;\n'
+                    '        f13.pNext = &mlfi_img64;\n'
+                    '        mlfi_cm2.pNext = f13.pNext;\n'
+                    '        f13.pNext = &mlfi_cm2;\n'
+                    '    }',
+                    'MLFI feature chain')
 
     text = _replace(text,
                     'void vk_queue_lock(void) { pthread_mutex_lock(&queue_lock); }\n'

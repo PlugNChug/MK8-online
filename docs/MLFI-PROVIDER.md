@@ -385,7 +385,7 @@ MLFI-PROVIDER RESULT: OK
    `main` (watermark/UI composition, 8,980 B) was never dispatched in the capture. A future Wine
    run with a swapchain can capture it; until then the composition stage is not AMD's.
 3. **No swapchain provider.** This library answers the effect id only; the 3.1.7 swapchain
-   provider remains the other module. §9 describes the hand-off.
+   provider remains the other module and the runtime drives both (§9.2).
 4. **One resolution.** Only the captured 1280×720 layout is implemented. The 4K/8K threshold and
    per-resolution tensor families are untouched; other sizes are refused at creation.
 5. **8-bit UNORM only.** sRGB/HDR present colour and outputs are refused; the runtime's window is
@@ -399,13 +399,11 @@ MLFI-PROVIDER RESULT: OK
 
 ## 9. Integration with `MK8_FSR_FG=fsr4`
 
-The runtime bridge (`runtime/mk8/graphics/fsr_fg.cpp`) currently does one thing: it loads one
-library, checks that its **swapchain** provider reports exactly 3.1.7, creates a swapchain context
-and an effect context from that same library, and routes `mk8_fsr_fg_prepare` into
-`ffxDispatch(PrepareV2)` and the swapchain's `frameGenerationCallback` into
-`ffxDispatch(FrameGeneration)`. For fsr4 the effect context must come from this MLFI provider while
-the swapchain stays on the 3.1.7 provider. Nothing in this document has been applied to the
-runtime; the other agent owns that file.
+`MK8_FSR_FG=fsr3` loads one library, checks that its **swapchain** provider reports exactly 3.1.7,
+creates a swapchain context and an effect context from that same library, and routes
+`mk8_fsr_fg_prepare` into `ffxDispatch(PrepareV2)` and the swapchain's `frameGenerationCallback`
+into `ffxDispatch(FrameGeneration)`. `MK8_FSR_FG=fsr4` keeps that swapchain and moves the effect to
+this MLFI provider; the implemented topology is described in §9.2 and its evidence in §9.3.
 
 ### 9.1 The hand-off in one sentence
 
@@ -420,78 +418,109 @@ passes that descriptor to whichever library owns the effect context. The swapcha
 usages this provider consumes; the swapchain's own pre/post barriers remain in charge of the
 application images, and the provider's final barrier publishes its colour-attachment writes.
 
-### 9.2 Smallest runtime change (two libraries)
+### 9.2 Implemented two-library topology (20/11/2026)
 
-Line numbers below are from commit `f7bb7b0` (the MLFI replay milestone); the function names are
-the stable anchors if the runtime bridge has moved since.
+`MK8_FSR_FG=fsr4` is implemented in `runtime/mk8/graphics/fsr_fg.cpp`; `fsr3` and the FG-off path
+are unchanged. The mode loads the 3.1.7 swapchain provider exactly as fsr3 does and additionally
+loads the MLFI provider from `MK8_FSR_MLFI_LIB` (alias `MK8_FSR4_FG_LIB`), else
+`$XDG_DATA_HOME/mk8online/fsr/libmk8_mlfi_framegeneration_vk.so`, else
+`$HOME/.local/share/mk8online/fsr/…`, else `local/fg-provider/…`. An explicitly set env path is
+authoritative: a wrong value disables the mode instead of silently trying another file.
 
-Keep the 3.1.7 library for the swapchain and add the MLFI library as the effect provider:
+Version checks: the swapchain library must report exactly **3.1.7** (unchanged), and the effect
+library must answer `ffxQueryDescGetVersions` for `FRAMEGENERATION` with exactly one entry named
+**4.0.2**, id `0xf600000001000002`. Both checks log every offered version and fail closed.
 
-1. **Mode.** `enabled_by_env` (fsr_fg.cpp:128) accepts `fsr3` today. Accept `fsr4` as a second
-   mode (`mode = 2`) and leave the unknown-value message for anything else. `mk8_fsr_fg_create_swapchain`
-   and every present/acquire path stay unchanged; `fsr4` still uses the 3.1.7 swapchain.
-2. **Second handle.** Extend `Fg` (fsr_fg.cpp:55) with `void *fg_library;` and
-   `PfnFfxCreateContext fg_create; PfnFfxDestroyContext fg_destroy; PfnFfxQuery fg_query;
-   PfnFfxConfigure fg_configure; PfnFfxDispatch fg_dispatch;`. In fsr4 mode load them from
-   `MK8_FSR4_FG_LIB` (default
-   `${XDG_DATA_HOME:-$HOME/.local/share}/mk8online/fsr/libmk8_mlfi_framegeneration_vk.so`) with the
-   same `dlopen`/`dlsym` helper. Do not reuse `fg.library` for both: the swapchain version check
-   must keep hitting the 3.1.7 provider.
-3. **Version checks.** `check_swapchain_version` (fsr_fg.cpp:172) stays exactly as it is, against
-   the 3.1.7 library. Add `check_effect_version` for fsr4: query
-   `ffxQueryDescGetVersions` with `createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION`
-   on the MLFI library, require a name equal to `"4.0.2"` (and, optionally, id
-   `0xf600000001000002`), and fail otherwise. This is the exact contract the provider's
-   `ffxQuery` implements.
-4. **Effect creation.** `create_effect` (fsr_fg.cpp:279) already builds
-   `ffxCreateContextDescFrameGeneration` + `ffxCreateBackendVKDesc` +
-   `ffxCreateContextDescFrameGenerationVersion{version = FFX_FRAMEGENERATION_VERSION}` (4.0.2 in
-   the vendored headers). For fsr4, append
-   `ffxOverrideVersion{type = FFX_API_DESC_TYPE_OVERRIDE_VERSION, versionId = 0xf600000001000002}`
-   to the `pNext` chain and call `fg.fg_create` instead of `fg.create`. The override makes the
-   choice explicit when both providers are present in one library; our provider refuses any other
-   override with code 4.
-5. **Per-frame path.** `frame_generation_callback` (fsr_fg.cpp:484) calls `fg.dispatch`; use
-   `fg.fg_dispatch` in fsr4 mode. `mk8_fsr_fg_prepare` (fsr_fg.cpp:544) calls
-   `fg.configure`/`fg.dispatch` for the effect; use the `fg_*` pointers there too.
-   `destroy_effect` (fsr_fg.cpp:262) and `disable_interpolation` (fsr_fg.cpp:531) likewise use the
-   effect library's configure/destroy. The swapchain context (`fg.sc_ctx`) keeps using
-   `fg.configure`/`fg.dispatch`/`fg.destroy`.
-6. **Swapchain format.** `create_effect` receives `display_format` from `surface_format()`
-   (fsr_fg.cpp:250), which accepts RGBA8/BGRA8 UNORM **and SRGB**. This provider accepts only the
-   two UNORM values and refuses sRGB at creation with code 6. For fsr4, either force the swapchain
-   to `VK_FORMAT_B8G8R8A8_UNORM`/`R8G8B8A8_UNORM` before `create_contexts`, or implement the sRGB
-   output path first (a colour attachment stores linear→sRGB automatically if the view is sRGB;
-   the open question is the transfer function of the prediction values, which is not pinned).
-   Do not pass an sRGB swapchain to this milestone and expect it to work.
-7. **Depth.** `mk8_fsr_fg_inputs` (fsr.cpp:358) returns `cap->format` (the captured scene depth is
-   `VK_FORMAT_R32_SFLOAT`) or, when no capture exists, `VK_FORMAT_D32_SFLOAT`. Both are supported;
-   the `ffxApiGetImageResourceDescriptionVK` helper sets `FFX_API_RESOURCE_USAGE_DEPTHTARGET` for
-   the D32 case, which is how the provider picks the depth-aspect view. Do not build a depth
-   description by hand without that flag.
-8. **Motion vectors.** `mk8_fsr_fg_inputs` returns `VK_FORMAT_R16G16_SFLOAT` with
-   `motionVectorScale = 1` when camera-derived, or `(width, height)` when the vectors are in UV
-   space. The provider copies the image and writes `motionVectorScale` into `CsDilate`; both
-   conventions are accepted (the value is passed through). With no captured view/projection the
-   runtime supplies a zero image, which yields the zero-motion behaviour measured here.
-9. **Reset.** `prepare.reset = !fg.prepared_any` and `generation.reset` already match the
-   provider's reset handling; no change needed.
-10. **Queue families.** The runtime creates the 3.1.7 swapchain context without an
-    `asyncComputeQueue` (fsr_fg.cpp:357), so its interpolation command buffer runs on the game
-    queue family. The provider's own images are therefore used on one queue family and need no
-    ownership transfer. If a future setup passes a different family, the provider must gain a
-    queue-family descriptor and ownership transfers for its internal images; do not silently
-    share them across families.
-11. **Lifetime.** The provider caches `VkImageView`s of application images until
-    `ffxDestroyContext`; the FFX contract already requires the application's descriptors to
-    outlive the context. `destroy_effect` is called before the swapchain context and before the
-    window images are destroyed, which is the right order.
-12. **Failure behaviour.** Every effect return code that is not 0 is already handled by
-    `disable_interpolation`/`fail` in the runtime (present real frames only); the provider logs
-    the exact reason to stderr and through the FFX message callback. A wrong override, a
-    non-720p window or an sRGB swapchain therefore disables fsr4 without pretending to work.
+**Three contexts, not two.** The 3.1.7 swapchain does not accept
+`ffxConfigureDescFrameGeneration` directly; it learns that interpolation is enabled when the
+*3.1.7 frame-generation effect provider* forwards the config through
+`fpSwapChainConfigureFrameGeneration`. The MLFI provider's Configure only stores the fields. The
+implemented topology is therefore:
 
-### 9.3 Packaging end state (one library)
+| context | library | role |
+| --- | --- | --- |
+| `sc_ctx` | 3.1.7 | swapchain replacement, pacing, present/acquire |
+| `notify_ctx` | 3.1.7 | frame-generation context used **only** as the swapchain's configure router; it never dispatches |
+| `fg_ctx` | MLFI 4.0.2 | `PrepareV2` + `FrameGeneration`; selected with `ffxOverrideVersion{0xf600000001000002}` |
+
+Per frame, `mk8_fsr_fg_prepare` configures `notify_ctx` (3.1.7 → swapchain) and `fg_ctx` (MLFI,
+frame-ID/reset bookkeeping), then records `ffxDispatch(PrepareV2)` into the game's command buffer.
+The swapchain's `frameGenerationCallback` receives the interpolation command buffer,
+`presentColor = replacement backbuffer` (PIXEL_COMPUTE_READ) and
+`outputs[0] = interpolationOutput()` (UNORDERED_ACCESS/GENERAL), and dispatches `FrameGeneration`
+to `fg_ctx`. This is the hand-off §9.1 describes, with the router context that makes the 3.1.7
+swapchain actually call it. The router context performs no GPU work in fsr4.
+
+**One frame in flight.** The provider has one uniform arena and one descriptor set per phase, so
+the bridge serialises the MLFI command buffers itself: a `VkEvent` is set at the end of every
+recorded MLFI command buffer (prepare and frame generation) and the next recording polls it before
+touching the provider (Vulkan 1.2 timeline semaphores cannot be signalled from inside a command
+buffer). The wait is 5 s, then the mode disables interpolation with one log line and presents real
+frames. This is the only added synchronisation; the game's own pipelining is untouched.
+
+**Device features.** Only for `MK8_FSR_FG=fsr4`, `toolchain/fsr_fg.py` adds the two extensions not
+already enabled by `toolchain/fsr.py` (`VK_EXT_cooperative_matrix_maintenance1`,
+`VK_EXT_shader_image_atomic_int64`) and enables `subgroupSizeControl`, `shaderFloat16`,
+`vulkanMemoryModel`, `variablePointers`/`variablePointersStorageBuffer`. Cooperative matrix and
+float8 are already requested unconditionally by `fsr.py` for the upscaler. The swapchain keeps the
+game's 8-bit UNORM format (the runtime already prefers `B8G8R8A8_UNORM`; an sRGB swapchain is
+refused by the provider with ffx 6). On resize/recreation the effect is destroyed and recreated so
+the provider never keeps views of retired swapchain images.
+
+**Failure behaviour.** A missing library, a foreign version, a refused context (wrong size/format,
+missing feature) or a failing dispatch disables interpolation, logs the reason and lets the swapchain
+present real frames. No path returns a fictitious success.
+
+### 9.3 Runtime evidence (20/11/2026)
+
+Build: `2189534` plus this change (the FG descriptor-pool fix `db4c239` is in that base),
+`toolchain/build.py` with the private qualification config; executable SHA-256
+`48c44007d287df4ef9e33a9b8e658af9e8d76b9fd8eb942b0e6866e46449c59d`.
+Driver: Mesa 27.0.0-devel (mesa-git `f7dd61f78f8`), RADV GFX1201, Vulkan 1.4.363. Provider:
+`~/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so` (3.1.7) and
+`~/.cache/mk8online/mlfi-provider/build/libmk8_mlfi_framegeneration_vk.so` (419,176 B).
+
+A headless two-library run (the repo fixture adapted in `/tmp`, 1280×720, validation layer) created
+the swapchain, the 3.1.7 router and the MLFI effect (`rc=0` each), queried 4.0.2 and presented six
+frames through the router-installed callback. The only validation messages were shader-module
+disagreements in the same classes the provider test counts as known (linear sampler on integer
+formats, the NV cooperative-matrix2 SPIR-V capabilities) plus the memory-model device-scope message
+for the fixture's device; there were no hand-off, synchronisation or layout errors.
+
+In-game `MK8_FSR_FG=fsr4` at 1280×720:
+
+```
+[fsr_fg] MLFI device extensions enabled (cooperative_matrix_maintenance1, image_int64_atomics)
+[fsr_fg] swapchain provider 3.1.7 (version 0xc01007)
+[fsr_fg] MLFI effect provider 4.0.2 (id 0xf600000001000002)
+[mlfi-provider] context: MLFI 4.0.2 id=0xf600000001000002 display=1280x720 render=1280x720
+[fsr_fg] MLFI effect context: 1280x720 format 14, override 0xf600000001000002
+[fsr_fg] active: FFX frame-interpolation swapchain 1280x720 format 44 (present family 1)
+[fsr_fg] MLFI prepare frame 0: 5 preprocess + 2 copy dispatches (resets 1)
+[fsr_fg] first interpolated frame recorded (frameID 0, 1280x720)
+[fsr_fg] MLFI frame generation: 191 model + 1 compose dispatches, frames 1, resets 1
+[fsr_fg] MLFI progress: 1800 generated frames, 191 model + 1 compose dispatches
+```
+
+Exit 0, 2,150 frames, screenshots at frames 840 and 2040, no GPUVM/device-lost/`FATAL` line, and the
+bridge never disabled itself after activation. A separate attempt reached 2,400 frames. Both real
+frames are byte-identical between the final fsr4 and fsr3 runs at the same frames/window/driver
+(menu sha256 `617d9919291a5d02483360b20c959ae15fb13aa500f32e5923221dbee82f22ea`, kart select
+`c8dafba17ee796e399e743d5b38c81f0003531a7f1614edde4ea8966f6e7db08`): the MLFI path does not alter
+the game's real-frame output. (One earlier fsr4 run caught a different animated-menu phase under
+slower pacing; the static frame was identical in every run.)
+
+**Blocker for a race frame.** The host's Mesa 27.0.0-devel segfaults at ~frame 2100 when the game
+enters the race (`vkCmdDrawIndexed`, `libvulkan_radeon.so`), with FG off, fsr3 and fsr4 alike; it is
+the driver issue already recorded in `docs/STATUS.md` (the stable RADV 26.2.6 does not crash). The
+stable driver lacks `VK_EXT_cooperative_matrix_maintenance1`, which the MLFI 4.0.2 provider
+requires, so there is no driver on this host that is both crash-free and MLFI-capable. No race
+screenshot exists; the menu/kart-select/race-transition frames above are the end of the evidence.
+The generated frames are not separately captured either (the screenshot path reads the game's
+replacement buffer), so image quality, ghosting, pacing and the vendor comparison remain
+**unmeasured**. `gameplay_verified` stays false.
+
+### 9.4 Packaging end state (one library)
 
 The cleaner end state is one `libamd_fidelityfx_framegeneration_vk.so`-shaped module that
 registers both providers: the existing 3.1.7 swapchain provider plus this MLFI effect provider.
@@ -500,8 +529,7 @@ is exactly why the capture used `ffxOverrideVersion` — with the override the M
 selected, and without it the loader would pick by version id. The composition source is ours, so
 that combined build must keep the licence split: SDK-source-derived 3.1.7 code under AMD's SDK
 licence, the MLFI shell/shader code under this project's MIT licence, and no AMD bytes in the
-repository. Until that build exists, the two-library route above needs no new ABI and can be
-validated first.
+repository. Until that build exists, the two-library route above needs no new ABI and is validated.
 
 ## 10. Reproduction
 
@@ -551,7 +579,7 @@ TSVs. `MK8_MLFI_PROVIDER_REQUIRE=1` turns a missing prerequisite into a failure.
 | runs are deterministic across processes | **verified** (identical FNV hashes and byte-identical raw dumps) |
 | validation is clean | **verified except** the three documented validator disagreements (same 10/8/20 as the replay) |
 | no GPUVM fault / device loss | **verified** for these runs (`device=alive`, no kernel amdgpu line) |
-| `MK8_FSR_FG=fsr4` works in the runtime | **not implemented**; §9 is the precise change list |
+| `MK8_FSR_FG=fsr4` in the runtime | **implemented and exercised** through title, menus, kart select and the race transition (clean exits at 2,150 frames with 1,800 generated and at 2,400 frames); no race frame because the host driver crashes there (see §9.3). `gameplay_verified` remains false |
 | the swapchain provider is replaced | **not implemented**; the 3.1.7 provider stays |
 | the provider matches AMD's frame | **not demonstrated** — no vendor reference on Linux |
 | image quality / ghosting / haloing | **not measured** — synthetic inputs, no reference, our composition |

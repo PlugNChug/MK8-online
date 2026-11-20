@@ -1,9 +1,11 @@
-"""Native frame generation: the FFX swapchain hooks, their anchors, and a provider smoke test.
+"""Native frame generation: the FFX swapchain hooks, their anchors, and provider smoke tests.
 
 The patch tests run against the pinned upstream runtime (the real device.c/exec.c anchors), not a
 synthetic excerpt. The smoke test compiles tests/fixtures/fsr_fg_swapchain.cpp and exercises the
-provider on a headless Vulkan surface: 3.1.7 check, swapchain context, replacement functions,
-1080p frame-generation context, configure, one prepare dispatch and one present.
+3.1.7 swapchain provider on a headless Vulkan surface: version check, swapchain context, replacement
+functions, 1080p frame-generation context, configure, one prepare dispatch and one present. The
+MLFI 4.0.2 device-feature gate (MK8_FSR_FG=fsr4) is checked in the patched source; the two-library
+hand-off itself is exercised in-game (local/qualification/fsr4-fg-2026-11-20.md).
 """
 import os
 import shutil
@@ -107,6 +109,25 @@ class FsrFgPatchTests(unittest.TestCase):
         # The motion-vector compute's storage-image descriptor needs a matching pool size.
         self.assertIn('bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG");', exec_c)
         self.assertIn('sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};', exec_c)
+
+    def test_enables_the_mlfi_device_features_only_for_fsr4(self):
+        # The MLFI 4.0.2 provider's captured modules need cooperative-matrix maintenance1,
+        # 64-bit image atomics, the Vulkan memory model, subgroup-size control and variable
+        # pointers. Cooperative matrix/float8 are already requested by toolchain/fsr.py; this
+        # patch adds only the missing pieces and gates them on MK8_FSR_FG=fsr4.
+        runtime = self.patched()
+        device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
+        self.assertIn('bool mlfi = getenv("MK8_FSR_FG") && !strcmp(getenv("MK8_FSR_FG"), "fsr4");', device)
+        self.assertIn('ext[n_ext++] = VK_EXT_COOPERATIVE_MATRIX_MAINTENANCE_1_EXTENSION_NAME;', device)
+        self.assertIn('ext[n_ext++] = VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME;', device)
+        self.assertIn('mlfi_img64.pNext = f13.pNext;\n        f13.pNext = &mlfi_img64;\n'
+                      '        mlfi_cm2.pNext = f13.pNext;\n        f13.pNext = &mlfi_cm2;', device)
+        self.assertIn('f13.subgroupSizeControl = have13.subgroupSizeControl;', device)
+        self.assertIn('f12.vulkanMemoryModel = have12.vulkanMemoryModel;', device)
+        self.assertIn('f11.variablePointers = mlfi_varptr.variablePointers;', device)
+        self.assertIn('// room for the swapchain/WSI extensions plus the fsr4 MLFI set\n'
+                      '    const char *ext[16];', device)
+        self.assertIn('if (!have_cm.cooperativeMatrix || !mlfi_cm2.cooperativeMatrixConversions ||', device)
 
     def test_is_idempotent(self):
         runtime = self.patched()
