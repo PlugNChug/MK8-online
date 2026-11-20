@@ -51,7 +51,7 @@ Controller discovery now tries subsequent devices for player one if the first de
 
 **Controller assignment in development builds.** At the title screen, press a button on the controller you want as player 1. A keyboard key, mouse click or tap selects the keyboard. Press **SL** or **SR** for a sideways Joy-Con. With one left and one right Joy-Con, a face button selects the pair. When several halves are connected, hold **L** on the left half and **R** on the right half you want to pair, then release both. Return to the title to choose again.
 
-To play with a keyboard, a Pro Controller and two sideways Joy-Cons, set Joy-Con mode to **Individual (horizontal)** and press **K** on the keyboard at the title. The keyboard takes P1 and the three controllers occupy separate seats.
+To play with a keyboard, a Pro Controller and two sideways Joy-Cons, set Joy-Con mode to **Individual (horizontal)**. Press **K** on the keyboard at the title to use it as P1. To use the Pro Controller as P1, press **A** on it at the title, choose four players, then press **Enter** on the keyboard when prompted to join as P4. Confirm with **A** on the Pro Controller.
 
 In a local split-screen race, a disconnected player’s controls go neutral and the other players can keep racing. On reconnect, an identifiable controller returns to that slot even if Windows lists the devices in a different order. A combined pair resumes when both Joy-Cons are back. If matching controllers have no distinguishing identity, register them again at character selection.
 

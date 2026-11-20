@@ -43,7 +43,7 @@ Vozes de áudio novas começam com volume anterior zero e usam a rampa existente
 
 **Atribuição de controles nas builds de desenvolvimento.** Na tela de título, pressione um botão no controle que deseja usar como jogador 1. Uma tecla, um clique ou um toque na tela seleciona o teclado. Pressione **SL** ou **SR** para usar um Joy-Con na horizontal. Com apenas um Joy-Con esquerdo e um direito, um botão frontal seleciona o par. Com várias metades conectadas, segure **L** no esquerdo e **R** no direito que deseja combinar e solte os dois. Volte ao título para escolher de novo.
 
-Para jogar com teclado, Pro Controller e dois Joy-Con deitados, selecione o modo individual (horizontal) dos Joy-Con e pressione **K** no teclado na tela de título. O teclado assume o jogador 1 e cada um dos três controles ocupa uma posição própria.
+Para jogar com teclado, Pro Controller e dois Joy-Con deitados, selecione o modo individual (horizontal) dos Joy-Con. Pressione **K** no teclado na tela de título para usá-lo como jogador 1. Se preferir o Pro Controller como jogador 1, pressione **A** nele na tela de título e escolha quatro jogadores. Quando o jogo pedir o quarto participante, pressione **Enter** no teclado e confirme com **A** no Pro Controller.
 
 Em corridas locais com tela dividida, o jogador que desconecta fica sem comandos e os demais podem continuar correndo. Ao reconectar, um controle identificável volta ao mesmo jogador, mesmo que o Windows liste os dispositivos em outra ordem. Um par de Joy-Con volta a responder quando as duas metades estão conectadas. Se não for possível distinguir dois controles iguais, registre-os de novo na seleção de personagens.
 
