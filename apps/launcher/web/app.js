@@ -369,8 +369,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
       if (input.id === "prepare-dlc-package") return { message: "Arquivo selecionado." };
       if (input.id === "fsr-provider" || input.id === "fsr-dxc") {
-        window.mk8Fsr?.afterBrowse(input.id);
-        return { message: "Arquivo selecionado." };
+        return await window.mk8Fsr.afterBrowse(input.id);
       }
       await saveGameFileConfig();
       return { message: "Arquivo selecionado." };

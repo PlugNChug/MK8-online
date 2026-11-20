@@ -170,7 +170,6 @@ pub fn windows_fsr4_gate(
     let vendor = gpu.map(|gpu| gpu.vendor().to_owned());
     let gpu_label = gpu.map(gpu_label);
     let rdna4 = gpu.is_some_and(crate::vulkan::GpuInfo::is_amd_rdna4);
-    let offers_412 = upscaler_versions.iter().any(|version| version == FSR_412);
     let (blocked, reason_code, reason) = if gpu.is_none() {
         (
             true,
@@ -186,15 +185,8 @@ pub fn windows_fsr4_gate(
                 gpu_label.as_deref().unwrap_or("GPU desconhecida")
             ),
         )
-    } else if !upscaler_versions.is_empty() && !offers_412 {
-        (
-            true,
-            "dll-no-412",
-            format!(
-                "As DLLs assinadas da AMD instaladas expõem apenas {}; FSR 4.1.2 exige AMD RDNA 4.",
-                upscaler_versions.join(", ")
-            ),
-        )
+    // The installed DLL's null-device list is informational. The runtime
+    // queries the selected live Vulkan device before creating the FFX context.
     } else {
         (false, "ok", String::new())
     };
@@ -882,8 +874,8 @@ mod tests {
             &["3.1.6".into(), "2.3.4".into()],
             &["3.1.7".into()],
         );
-        assert!(gate.blocked);
-        assert_eq!(gate.reason_code, "dll-no-412");
+        assert!(gate.allowed());
+        assert_eq!(gate.reason_code, "ok");
         assert!(!fsr4_selection_blocked(&fsr3, &gate));
 
         let gate = windows_fsr4_gate(

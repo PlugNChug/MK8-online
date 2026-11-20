@@ -214,16 +214,21 @@ impl Package {
         )?)?)
     }
 
-    fn launch(&self, data: &Path, health: Option<&str>) -> io::Result<Child> {
+    fn launch(&self, journal: &Journal, health: Option<&str>) -> io::Result<Child> {
         let program = match self.format {
             Format::AppImage => self.target.clone(),
             Format::Tar => self.target.join("AppRun"),
         };
         let mut cmd = Command::new(program);
-        cmd.current_dir(data)
+        cmd.current_dir(&journal.data)
             .arg("--data-dir")
-            .arg(data)
+            .arg(&journal.data)
+            .arg("--port")
+            .arg(journal.port.to_string())
             .stdin(Stdio::null());
+        if journal.headless {
+            cmd.arg("--headless");
+        }
         for key in [
             "APPIMAGE",
             "APPDIR",
@@ -333,6 +338,10 @@ struct Journal {
     nonce: String,
     data: PathBuf,
     format: Format,
+    #[serde(default)]
+    headless: bool,
+    #[serde(default)]
+    port: u16,
 }
 
 fn available(path: &Path) -> io::Result<u64> {
@@ -443,7 +452,14 @@ fn start(local: &Path, release: &Release, expected: &str) -> io::Result<PathBuf>
         }
         let version = release.tag.trim_start_matches(['v', 'V']);
         package.format.validate(&payload, Some(version))?;
+        let args: Vec<_> = std::env::args().collect();
         let journal = Journal {
+            headless: args
+                .iter()
+                .any(|arg| matches!(arg.as_str(), "--headless" | "--no-browser")),
+            port: crate::argument(&args, "--port")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
             before: Identity::read(&package.target)?,
             after: Identity::read(&payload)?,
             version: version.into(),
@@ -561,14 +577,14 @@ fn activate(package: &Package, journal: &Journal) -> io::Result<()> {
     })();
     if let Err(error) = swap {
         fs::remove_dir_all(&package.stage)?;
-        package.launch(&journal.data, None)?;
+        package.launch(journal, None)?;
         return Err(io::Error::other(format!(
             "Não foi possível trocar o pacote neste sistema de arquivos: {error}"
         )));
     }
 
     let result = package.sync().and_then(|()| {
-        let mut child = package.launch(&journal.data, Some(&journal.nonce))?;
+        let mut child = package.launch(journal, Some(&journal.nonce))?;
         let deadline = Instant::now() + Duration::from_secs(45);
         let failure = loop {
             if package.healthy(journal) {
@@ -595,7 +611,7 @@ fn activate(package: &Package, journal: &Journal) -> io::Result<()> {
         }
         package.exchange()?;
         package.sync()?;
-        package.launch(&journal.data, None)?;
+        package.launch(journal, None)?;
     }
     package.clear_stage()?;
     result
@@ -665,7 +681,7 @@ fn reconcile(package: &Package) -> io::Result<bool> {
     if rollback {
         package.exchange()?;
         package.sync()?;
-        package.launch(&journal.data, None)?;
+        package.launch(&journal, None)?;
     }
     package.clear_stage()?;
     Ok(rollback)
@@ -700,7 +716,7 @@ mod tests {
         fn journal(&self, script: &str) -> Journal {
             let old = &self.package.target;
             let new = self.package.payload();
-            for (path, script) in [(old, "printf old > restarted"), (&new, script)] {
+            for (path, script) in [(old, r#"printf '%s' "$*" > restarted"#), (&new, script)] {
                 fs::create_dir(path).unwrap();
                 let app_run = path.join("AppRun");
                 fs::write(&app_run, format!("#!/bin/sh\n{script}\n")).unwrap();
@@ -714,6 +730,8 @@ mod tests {
                 nonce: "test-marker".into(),
                 data: self.root.clone(),
                 format: Format::Tar,
+                headless: true,
+                port: 31742,
             };
             let file = File::create(self.package.stage.join("journal.json")).unwrap();
             serde_json::to_writer(file, &journal).unwrap();
@@ -725,7 +743,8 @@ mod tests {
             assert!(!self.package.stage.exists());
             let restarted = self.root.join("restarted");
             let deadline = Instant::now() + Duration::from_secs(3);
-            while fs::read_to_string(&restarted).ok().as_deref() != Some("old") {
+            let expected = format!("--data-dir {} --port 31742 --headless", self.root.display());
+            while fs::read_to_string(&restarted).ok().as_deref() != Some(expected.as_str()) {
                 assert!(Instant::now() < deadline, "old launcher did not restart");
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -742,7 +761,7 @@ mod tests {
     fn verified_update_keeps_new_package_after_ready_signal() {
         let fixture = Fixture::new();
         let journal =
-            fixture.journal(r#"printf '%s' "$MK8_UPDATE_HEALTH" > '.app folder.mk8-update/ready'"#);
+            fixture.journal(r#"[ "$3 $4 $5" = "--port 31742 --headless" ] || exit 9; printf '%s' "$MK8_UPDATE_HEALTH" > '.app folder.mk8-update/ready'"#);
         fs::write(fixture.root.join("save"), "private").unwrap();
         activate(&fixture.package, &journal).unwrap();
         assert!(Identity::read(&fixture.package.target).unwrap() == journal.after);
@@ -751,6 +770,18 @@ mod tests {
             fs::read_to_string(fixture.root.join("save")).unwrap(),
             "private"
         );
+    }
+
+    #[test]
+    fn legacy_journals_default_to_gui_with_an_automatic_port() {
+        let fixture = Fixture::new();
+        let mut journal = serde_json::to_value(fixture.journal("exit 0")).unwrap();
+        let fields = journal.as_object_mut().unwrap();
+        fields.remove("headless");
+        fields.remove("port");
+        let restored: Journal = serde_json::from_value(journal).unwrap();
+        assert!(!restored.headless);
+        assert_eq!(restored.port, 0);
     }
 
     #[test]

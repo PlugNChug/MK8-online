@@ -26,7 +26,7 @@ impl Step {
     }
 }
 
-fn local_python(root: &Path) -> PathBuf {
+pub(crate) fn local_python(root: &Path) -> PathBuf {
     root.join(if cfg!(windows) {
         "local/python/Scripts/python.exe"
     } else {
@@ -95,7 +95,7 @@ pub struct Setup {
     clean_after_setup: bool,
     current: usize,
     child: Option<Child>,
-    guards: Vec<File>,
+    guards: Vec<mk8_build_manager::ResourceGuard>,
     supervised: Option<(PathBuf, PathBuf)>,
     state: State,
     detail: String,

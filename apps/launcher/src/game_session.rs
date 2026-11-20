@@ -49,8 +49,7 @@ pub fn run() -> Result<i32> {
                 .get("settings-layout")
                 .ok_or("Rebuild the game to combine CTGP with native Settings.")?;
             let output = request.local.join("derived/settings-ctgp");
-            let mut command =
-                std::process::Command::new(request.root.join("local/python/Scripts/python.exe"));
+            let mut command = std::process::Command::new(crate::setup::local_python(&request.root));
             command
                 .arg(request.root.join("toolchain/settings_layout.py"))
                 .arg(&menu.path)

@@ -571,29 +571,19 @@ impl App {
         match job.poll() {
             Ok(None) => (),
             Ok(Some(exit)) => {
-                let log = job.log_path();
-                self.fsr_job = None;
                 if !exit.success() {
-                    let dir = crate::fsr::data_dir();
-                    let recorded = crate::fsr::install::read_installed(&dir)
-                        .is_some_and(|installed| installed.state == "failed");
-                    if !recorded {
-                        let _ = crate::fsr::install::record_failure(
-                            &dir,
-                            &format!(
-                                "A instalação do FSR terminou com erro ({exit}). Consulte o log em {}.",
-                                log.display()
-                            ),
-                        );
-                    }
+                    job.record_interruption(&format!(
+                        "A instalação do FSR terminou com erro ({exit}). Consulte o log."
+                    ));
                 }
+                self.fsr_job = None;
             }
             Err(error) => {
+                let _ = job.cancel();
+                job.record_interruption(&format!(
+                    "Não foi possível consultar a instalação do FSR: {error}"
+                ));
                 self.fsr_job = None;
-                let _ = crate::fsr::install::record_failure(
-                    &crate::fsr::data_dir(),
-                    &format!("Não foi possível consultar a instalação do FSR: {error}"),
-                );
             }
         }
     }

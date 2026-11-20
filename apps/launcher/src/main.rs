@@ -303,14 +303,18 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
     Ok(root)
 }
 
-#[cfg(any(windows, mk8_portable))]
+#[cfg(any(mk8_portable, test))]
 fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> Result<(), Error> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match fs::rename(stage, root) {
             Ok(()) => return Ok(()),
+            Err(_) if root.is_dir() => {
+                let _ = fs::remove_dir_all(stage);
+                return Ok(());
+            }
             Err(error)
-                if matches!(error.raw_os_error(), Some(5 | 32 | 33))
+                if cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32 | 33))
                     && std::time::Instant::now() < deadline =>
             {
                 // Scanners may still hold the freshly extracted directory. Never delete to retry.
@@ -430,6 +434,8 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
     println!("MK8-online: {page}");
     let Some(parent) = parent else {
+        #[cfg(target_os = "linux")]
+        update::mark_ready();
         server::serve(app, server, authority, page, token);
         return Ok(());
     };
@@ -533,9 +539,9 @@ fn launcher_after_setup(
 
 #[cfg(test)]
 mod tests {
-    use super::canonical;
     #[cfg(windows)]
     use super::share_tools;
+    use super::{canonical, publish_payload};
     use std::fs;
     #[cfg(windows)]
     use std::process::Command;
@@ -595,6 +601,27 @@ mod tests {
         fs::remove_dir_all(&base).unwrap();
         assert!(!verbatim, "{}", path.display());
         assert!(found, "{}", path.display());
+    }
+
+    #[test]
+    fn concurrent_payload_publication_keeps_the_first_complete_copy() {
+        let base = std::env::temp_dir().join(format!("mk8-payload-race-{}", std::process::id()));
+        let destination = base.join("ready");
+        let first = base.join("first");
+        let second = base.join("second");
+        for stage in [&first, &second] {
+            fs::create_dir_all(stage).unwrap();
+            fs::write(
+                stage.join("payload.txt"),
+                stage.file_name().unwrap().as_encoded_bytes(),
+            )
+            .unwrap();
+        }
+        publish_payload(&first, &destination, std::time::Duration::ZERO).unwrap();
+        publish_payload(&second, &destination, std::time::Duration::ZERO).unwrap();
+        assert_eq!(fs::read(destination.join("payload.txt")).unwrap(), b"first");
+        assert!(!second.exists());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[cfg(windows)]

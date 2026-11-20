@@ -193,6 +193,7 @@ pub struct Request {
     pub root: PathBuf,
     pub local: PathBuf,
     pub fsr_dir: PathBuf,
+    pub job_id: String,
     /// Either a configured path or a resolved one; empty asks the child to
     /// resolve it again from the same environment.
     pub dxc: String,
@@ -237,9 +238,24 @@ pub struct UpscalerState {
     pub built_at: u64,
 }
 
+fn cache_lock(dir: &Path) -> Result<fs::File> {
+    fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join(".install.lock"))
+        .map_err(|error| error.to_string())?;
+    lock.try_lock()
+        .map_err(|error| format!("Outra instância está atualizando o cache FidelityFX: {error}"))?;
+    Ok(lock)
+}
+
 pub struct Job {
     child: Child,
     dir: PathBuf,
+    id: String,
 }
 
 impl Job {
@@ -252,6 +268,10 @@ impl Job {
             root: root.into(),
             local: local.into(),
             fsr_dir: dir.clone(),
+            job_id: mk8_transport::random::<16>()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
             dxc: settings.dxc.clone(),
             build_upscaler: cfg!(target_os = "linux") && settings.upscaling == "3.1.6",
             build_fsr4: cfg!(target_os = "linux") && settings.upscaling == "4.1.2",
@@ -296,7 +316,11 @@ impl Job {
                 reply.trim()
             ));
         }
-        Ok(Self { child, dir })
+        Ok(Self {
+            child,
+            dir,
+            id: request.job_id,
+        })
     }
 
     /// `None` while running, the exit status once it finishes.
@@ -306,12 +330,15 @@ impl Job {
 
     pub fn cancel(&mut self) -> Result<()> {
         mk8_build_manager::terminate_tree(&mut self.child)?;
-        let _ = record_failure(&self.dir, "Instalação do FSR cancelada pelo usuário.");
+        self.record_interruption("Instalação do FSR cancelada pelo usuário.");
         Ok(())
     }
 
-    pub fn log_path(&self) -> PathBuf {
-        self.dir.join(BUILD_LOG)
+    pub fn record_interruption(&self, detail: &str) {
+        let Ok(_lock) = cache_lock(&self.dir) else {
+            return;
+        };
+        record_interrupted_job(&self.dir, &self.id, detail);
     }
 }
 
@@ -326,9 +353,18 @@ impl Drop for Job {
 }
 
 /// Entry point for `--fsr-install` children. Prints `READY` for the parent,
-/// then records every outcome in `install.json`/`build.log`.
+/// records progress and failures separately from the verified installation receipt.
 pub fn run_from_stdin() -> Result<i32> {
     let request: Request = mk8_build_manager::supervisor::read_request()?;
+    let _lock = match cache_lock(&request.fsr_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            println!("{error}");
+            return Ok(1);
+        }
+    };
+    set_progress(&request.fsr_dir, "starting", 0, "Iniciando instalação…")?;
+    crate::fsr::write_atomic(&request.fsr_dir.join("job-id"), request.job_id.as_bytes())?;
     mk8_build_manager::supervisor::ready()?;
     match install(&request) {
         Ok(()) => Ok(0),
@@ -342,7 +378,6 @@ pub fn run_from_stdin() -> Result<i32> {
 
 fn install(request: &Request) -> Result<()> {
     let dir = &request.fsr_dir;
-    fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
     let _ = fs::remove_file(dir.join(BUILD_LOG));
     append_log(
         dir,
@@ -767,6 +802,16 @@ fn upscaler_version_ok(version: &str, expected: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
+fn fsr4_dispatch_supported(path: &Path) -> bool {
+    unsafe {
+        libloading::Library::new(path).is_ok_and(|lib| {
+            lib.get::<unsafe extern "C" fn()>(b"mk8Fsr4DispatchV1\0")
+                .is_ok()
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn upscaler_ready(dir: &Path, version: &str) -> bool {
     if !installed_upscaler_version(dir, version)
         .is_some_and(|reported| upscaler_version_ok(&reported, version))
@@ -775,7 +820,8 @@ fn upscaler_ready(dir: &Path, version: &str) -> bool {
     }
     if version == FSR4_VERSION {
         let provider = crate::fsr::upscaler_for(dir, version);
-        return provider.parent().is_some_and(fsr4_licenses_present);
+        return provider.parent().is_some_and(fsr4_licenses_present)
+            && fsr4_dispatch_supported(&provider);
     }
     true
 }
@@ -1083,23 +1129,15 @@ fn publish_fsr4(dir: &Path, next: &Path) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 fn build_fsr4(request: &Request, dir: &Path) -> Result<()> {
-    if let Some(version) = installed_upscaler_version(dir, FSR4_VERSION) {
-        if upscaler_version_ok(&version, FSR4_VERSION) {
-            record_upscaler_state(dir, FSR4_VERSION)?;
-            set_progress(
-                dir,
-                "done",
-                100,
-                &format!("Provedor FSR {FSR4_VERSION} já está instalado."),
-            )?;
-            return Ok(());
-        }
-        append_log(
+    if upscaler_ready(dir, FSR4_VERSION) {
+        record_upscaler_state(dir, FSR4_VERSION)?;
+        set_progress(
             dir,
-            &format!(
-                "O provedor FSR 4.1.2 instalado reporta {version}; esperado {FSR4_VERSION}. Recompilando."
-            ),
+            "done",
+            100,
+            &format!("Provedor FSR {FSR4_VERSION} já está instalado."),
         )?;
+        return Ok(());
     }
     let script = request.root.join(BUILD_FSR4_SCRIPT);
     if !script.is_file() {
@@ -1212,6 +1250,9 @@ fn build_fsr4(request: &Request, dir: &Path) -> Result<()> {
         return Err(format!(
             "O provedor compilado reporta a versão {version}; esperado {FSR4_VERSION}. O provedor não foi instalado."
         ));
+    }
+    if !fsr4_dispatch_supported(&produced) {
+        return Err("O provedor compilado não exporta mk8Fsr4DispatchV1.".into());
     }
     publish_fsr4(dir, &next)?;
     let state = record_upscaler_state(dir, FSR4_VERSION)?;
@@ -1451,6 +1492,7 @@ fn download_pinned(pinned: &PinnedFile, part: &Path, label: &str) -> Result<()> 
 #[cfg(target_os = "linux")]
 fn ensure_dxc(progress_dir: &Path) -> Result<PathBuf> {
     let dir = crate::fsr::dxc_dir();
+    let _lock = cache_lock(&dir)?;
     fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
     if !pinned_cached(&dir, &DXC_PINNED) {
         set_progress(
@@ -1526,7 +1568,7 @@ fn ensure_license(dir: &Path) -> Result<()> {
     if crate::fsr::license_status(dir)["verified"] == true {
         return Ok(());
     }
-    fetch_license(dir)?;
+    fetch_license_locked(dir)?;
     Ok(())
 }
 
@@ -1534,7 +1576,11 @@ fn ensure_license(dir: &Path) -> Result<()> {
 /// SHA-256, and saves it beside the SDK archive. The acceptance step never
 /// fetches; it only accepts an already verified file.
 pub fn fetch_license(dir: &Path) -> Result<String> {
-    fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let _lock = cache_lock(dir)?;
+    fetch_license_locked(dir)
+}
+
+fn fetch_license_locked(dir: &Path) -> Result<String> {
     let target = crate::fsr::license_path(dir);
     if crate::fsr::license_status(dir)["verified"] == true {
         return fs::read_to_string(&target)
@@ -1578,6 +1624,7 @@ pub fn fetch_license(dir: &Path) -> Result<String> {
 /// Explicit acceptance of the text the page displayed. Requires the verified
 /// file, so accepting without the fetched official text is impossible.
 pub fn accept_terms(dir: &Path) -> Result<()> {
+    let _lock = cache_lock(dir)?;
     if crate::fsr::license_status(dir)["verified"] != true {
         return Err(
             "Leia a licença da AMD (texto oficial da tag v2.4.0) antes de aceitar os termos."
@@ -1690,24 +1737,19 @@ fn set_progress(dir: &Path, phase: &str, percent: u8, detail: &str) -> Result<()
     crate::fsr::write_atomic(&dir.join(PROGRESS_FILE), &bytes)
 }
 
-pub fn record_failure(dir: &Path, detail: &str) -> Result<()> {
-    let progress = read_progress(dir);
-    let installed = Installed {
-        state: "failed".into(),
-        detail: detail.into(),
-        version: None,
-        upscaler_version: None,
-        framegeneration_version: None,
-        provider_bytes: 0,
-        provider_sha256: String::new(),
-        sdk_sha256: SDK_SHA256.into(),
-        built_at: unix_now(),
-    };
-    let _ = set_progress(dir, "failed", progress.percent, detail);
-    crate::fsr::write_atomic(
-        &dir.join(INSTALL_FILE),
-        &serde_json::to_vec_pretty(&installed).map_err(|error| error.to_string())?,
-    )
+fn record_interrupted_job(dir: &Path, id: &str, detail: &str) {
+    if fs::read_to_string(dir.join("job-id")).is_ok_and(|current| current == id)
+        && !matches!(
+            read_progress(dir).phase.as_str(),
+            "done" | "ready" | "failed"
+        )
+    {
+        let _ = record_failure(dir, detail);
+    }
+}
+
+fn record_failure(dir: &Path, detail: &str) -> Result<()> {
+    set_progress(dir, "failed", read_progress(dir).percent, detail)
 }
 
 fn record_installed(
@@ -2044,7 +2086,8 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
         upscaler.is_file()
     } else {
         let fsr4_files_ok = selected_upscaler != FSR4_VERSION
-            || upscaler.parent().is_some_and(fsr4_licenses_present);
+            || (upscaler.parent().is_some_and(fsr4_licenses_present)
+                && fsr4_dispatch_supported(&upscaler));
         upscaler.is_file()
             && upscaler_version.as_deref() == Some(selected_upscaler)
             && fsr4_files_ok
@@ -2112,21 +2155,17 @@ pub fn status(dir: &Path, settings: &crate::fsr::Settings, root: &Path, running:
                     dir.display()
                 );
             }
-            "failed" => {
-                state = "failed";
-                detail = installed.detail.clone();
-            }
             _ => (),
         }
     }
-    if state == "not-installed" && up_requested && upscaler_ready && !fg_requested {
+    if state != "ready" && !running && up_requested && upscaler_ready && !fg_requested {
         state = "ready";
         detail = format!(
             "Provedor FSR {selected_upscaler} pronto ({}).",
             upscaler.display()
         );
     }
-    if state == "not-installed" && progress.phase == "failed" {
+    if state != "ready" && !running && progress.phase == "failed" {
         state = "failed";
         detail = progress.detail.clone();
     }
@@ -2231,6 +2270,31 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn install_lock_and_stale_failures_preserve_the_verified_receipt() {
+        let dir = temp("install-retry");
+        let lock = cache_lock(&dir).unwrap();
+        assert!(cache_lock(&dir).is_err());
+        fs::write(dir.join("job-id"), "failed-attempt").unwrap();
+        set_progress(&dir, "build", 20, "building").unwrap();
+        record_interrupted_job(&dir, "failed-attempt", "interrupted");
+        assert_eq!(read_progress(&dir).phase, "failed");
+        assert!(read_installed(&dir).is_none());
+        drop(lock);
+
+        let retry_lock = cache_lock(&dir).unwrap();
+        fs::write(dir.join("job-id"), "retry").unwrap();
+        set_progress(&dir, "build", 70, "building").unwrap();
+        record_interrupted_job(&dir, "failed-attempt", "stale");
+        assert_eq!(read_progress(&dir).percent, 70);
+        assert_ne!(read_progress(&dir).phase, "failed");
+        record_installed(&dir, "3.1.7", None, Some("3.1.7"), "hash", 123).unwrap();
+        record_failure(&dir, "later attempt failed").unwrap();
+        assert_eq!(read_installed(&dir).unwrap().provider_bytes, 123);
+        drop(retry_lock);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -2668,7 +2732,10 @@ uint32_t ffxQuery(void* context, Header* header) {{
             installed_upscaler_version(&dir, FSR4_VERSION).as_deref(),
             Some(FSR4_VERSION)
         );
-        assert!(upscaler_ready(&dir, FSR4_VERSION));
+        assert!(
+            !upscaler_ready(&dir, FSR4_VERSION),
+            "old 4.1.2 lacks the private dispatch export"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

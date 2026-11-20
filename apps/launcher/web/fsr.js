@@ -48,10 +48,12 @@
     const settingsError = data.settings_error || '';
     get('fsr-settings-error').hidden = !settingsError;
     text('fsr-settings-error', settingsError);
-    setValue(get('fsr-upscaling'), settings.upscaling);
-    setValue(get('fsr-provider'), settings.provider_lib);
-    setValue(get('fsr-fg'), settings.frame_generation);
-    setValue(get('fsr-dxc'), settings.dxc);
+    if (!saving) {
+      setValue(get('fsr-upscaling'), settings.upscaling);
+      setValue(get('fsr-provider'), settings.provider_lib);
+      setValue(get('fsr-fg'), settings.frame_generation);
+      setValue(get('fsr-dxc'), settings.dxc);
+    }
 
     const off = settings.upscaling === 'off';
     const fsr4 = data.fsr4 || {};
@@ -161,36 +163,46 @@
     }
   }
 
-  async function save(message) {
-    if (saving) return;
+  let pendingSave = Promise.resolve();
+  function save(message) {
+    const snapshot = {
+      upscaling: get('fsr-upscaling').value,
+      provider_lib: get('fsr-provider').value.trim(),
+      frame_generation: get('fsr-fg').value,
+      dxc: get('fsr-dxc').value.trim(),
+    };
     saving = true;
-    render();
-    try {
-      await api('fsr/settings', {
-        upscaling: get('fsr-upscaling').value,
-        provider_lib: get('fsr-provider').value.trim(),
-        frame_generation: get('fsr-fg').value,
-        dxc: get('fsr-dxc').value.trim(),
-      });
-      notice(message);
-      await load();
-    } catch (error) {
-      notice(error.message, true);
-      await load().catch(() => {});
-    } finally {
-      saving = false;
-      render();
-    }
+    const operation = pendingSave.catch(() => {}).then(async () => {
+      try {
+        await api('fsr/settings', snapshot);
+        await load();
+        return { message };
+      } catch (error) {
+        await load().catch(() => {});
+        throw error;
+      } finally {
+        if (pendingSave === operation) {
+          saving = false;
+          render();
+        }
+      }
+    });
+    pendingSave = operation;
+    return operation;
   }
 
   function afterBrowse(id) {
-    save(id === 'fsr-dxc' ? 'Compilador DXC salvo.' : 'Provedor FSR salvo.');
+    return save(id === 'fsr-dxc' ? 'Compilador DXC salvo.' : 'Provedor FSR salvo.');
   }
 
-  get('fsr-upscaling').onchange = () => save('Preferência de ampliação salva. Vale ao iniciar o jogo.');
-  get('fsr-fg').onchange = () => save('Preferência de geração de quadros salva. Vale ao iniciar o jogo.');
-  get('fsr-provider').onchange = () => save('Provedor FSR salvo.');
-  get('fsr-dxc').onchange = () => save('Compilador DXC salvo.');
+  function saveControl(message) {
+    save(message).then(result => notice(result.message), error => notice(error.message, true));
+  }
+
+  get('fsr-upscaling').onchange = () => saveControl('Preferência de ampliação salva. Vale ao iniciar o jogo.');
+  get('fsr-fg').onchange = () => saveControl('Preferência de geração de quadros salva. Vale ao iniciar o jogo.');
+  get('fsr-provider').onchange = () => saveControl('Provedor FSR salvo.');
+  get('fsr-dxc').onchange = () => saveControl('Compilador DXC salvo.');
 
   get('fsr-license-load').onclick = async () => {
     const button = get('fsr-license-load');

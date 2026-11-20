@@ -130,11 +130,19 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-pub fn acquire_operation(root: &Path, local: &Path) -> Result<Vec<fs::File>> {
+pub struct ResourceGuard(fs::File);
+
+impl Drop for ResourceGuard {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+pub fn acquire_operation(root: &Path, local: &Path) -> Result<Vec<ResourceGuard>> {
     acquire_resources(root, local, false)
 }
 
-pub fn acquire_game(root: &Path, local: &Path) -> Result<Vec<fs::File>> {
+pub fn acquire_game(root: &Path, local: &Path) -> Result<Vec<ResourceGuard>> {
     let mut guards = acquire_resources(root, local, true)?;
     // Same file as the Python CLI's byte lock: refuse direct rebuilds while saves/game data are in use.
     let file = fs::OpenOptions::new()
@@ -146,11 +154,11 @@ pub fn acquire_game(root: &Path, local: &Path) -> Result<Vec<fs::File>> {
         .map_err(|e| e.to_string())?;
     file.try_lock()
         .map_err(|e| format!("Preparação em andamento nesta pasta: {e}"))?;
-    guards.push(file);
+    guards.push(ResourceGuard(file));
     Ok(guards)
 }
 
-fn acquire_resources(root: &Path, local: &Path, game: bool) -> Result<Vec<fs::File>> {
+fn acquire_resources(root: &Path, local: &Path, game: bool) -> Result<Vec<ResourceGuard>> {
     let mut guards = Vec::new();
     let mut paths = vec![root.join("local"), local.to_path_buf()];
     if let Some(shared) = std::env::var_os("MK8_NATIVE_TOOLS") {
@@ -177,7 +185,7 @@ fn acquire_resources(root: &Path, local: &Path, game: bool) -> Result<Vec<fs::Fi
             file.try_lock()
         };
         result.map_err(|e| format!("Outra instância está usando dados ou ferramentas. Feche o jogo ou aguarde a operação: {e}"))?;
-        guards.push(file);
+        guards.push(ResourceGuard(file));
     }
     Ok(guards)
 }
@@ -366,8 +374,10 @@ mod tests {
             std::fs::read(local.join("config.json")).unwrap(),
             b"preserve"
         );
+        let duplicate = guard[0].0.try_clone().unwrap();
         drop(guard);
         assert!(super::acquire_operation(&root, &local).is_ok());
+        drop(duplicate);
     }
 
     #[test]

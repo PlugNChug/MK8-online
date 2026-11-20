@@ -57,7 +57,7 @@ pub fn project_root() -> Result<std::path::PathBuf, crate::Error> {
     std::fs::create_dir_all(root.parent().ok_or("Pasta das versões indisponível")?)?;
     let stage = root.with_extension(std::process::id().to_string());
     std::fs::create_dir(&stage)?;
-    let archive = stage.with_extension("zip");
+    let archive = stage.join("payload.zip");
     std::fs::write(&archive, include_bytes!(env!("MK8_LAUNCHER_PAYLOAD")))?;
     let output = std::process::Command::new("bsdtar")
         .args(["-xf"])
