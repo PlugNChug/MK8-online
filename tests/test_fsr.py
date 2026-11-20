@@ -18,6 +18,11 @@ static void render_pass(void) {
     if (g_debug_frame || mk8_rtt_pass) debug_draw(pr, r, indexed);  // (toolchain/texture_pool.py)
 }
 static void end_pass(void) {
+            VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},
+                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},
+                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};
+            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,
+                                             .poolSizeCount = 5, .pPoolSizes = sizes};
     vkCmdEndRendering(vk_cmd());
     in_pass = false;
 }

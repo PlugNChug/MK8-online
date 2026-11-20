@@ -104,6 +104,9 @@ class FsrFgPatchTests(unittest.TestCase):
         shaders = (runtime / 'nvn/vulkan/shaders.c').read_text(encoding='utf-8')
         self.assertIn('gl_FragCoord.xy / pc.a.xy', shaders)
         self.assertIn('resampled to the presented size', exec_c)
+        # The motion-vector compute's storage-image descriptor needs a matching pool size.
+        self.assertIn('bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG");', exec_c)
+        self.assertIn('sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};', exec_c)
 
     def test_is_idempotent(self):
         runtime = self.patched()

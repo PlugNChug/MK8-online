@@ -135,6 +135,25 @@ def prepare_exec(runtime):
         text = text.replace('FG_DUMMY = 20, N_POST = 21', 'FG_DUMMY = 20, N_POST = 23', 1)
     elif 'FG_DUMMY = 20, FSR_DEPTH = 21, N_POST = 22' in text:
         text = text.replace('FG_DUMMY = 20, FSR_DEPTH = 21, N_POST = 22', 'FG_DUMMY = 20, N_POST = 23', 1)
+    # The FSR/FG motion-vector compute allocates a storage-image descriptor from the runtime's
+    # descriptor pool, which was created without that type. Add it only when FSR/FG runs.
+    old = ('            VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},\n'
+           '                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},\n'
+           '                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};\n'
+           '            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,\n'
+           '                                             .poolSizeCount = 5, .pPoolSizes = sizes};')
+    new = ('            VkDescriptorPoolSize sizes[6] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},\n'
+           '                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},\n'
+           '                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};\n'
+           '            bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG");\n'
+           '            if (fsr_mv_pool) sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};\n'
+           '            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,\n'
+           '                                             .poolSizeCount = fsr_mv_pool ? 6 : 5, .pPoolSizes = sizes};')
+    if 'fsr_mv_pool' not in text:
+        if text.count(old) != 1:
+            raise ValueError('Descriptor pool sizes changed upstream')
+        text = text.replace(old, new, 1)
+
     anchor = 'static void vk_end_pass_at(int line);'
     at = text.find(anchor)
     if at >= 0 and 'static void post_pass(VkCommandBuffer cb' not in text[:at]:
