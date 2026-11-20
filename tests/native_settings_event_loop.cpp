@@ -10,8 +10,9 @@ static SDL_Window *window;
 static bool active=true, physical_blocked;
 static uint64_t held;
 static unsigned events, polls, transitions, editor_polls, tip_polls, tip_events, title_polls, title_events;
-static unsigned steam_polls;
+static unsigned steam_polls, rumble_polls;
 void mk8_poll_steam_gamepads(void) { ++steam_polls; }
+void mk8_rumble_pump(void) { ++rumble_polls; }
 static uint64_t previous;
 static SDL_JoystickID id;
 static SDL_Joystick *stick;
@@ -80,7 +81,7 @@ static void set_input(bool down) {
     SDL_UpdateJoysticks();
 }
 static void menu_apply_window_requests(void *) {
-    assert(steam_polls==polls+1);
+    assert(steam_polls==polls+1 && rumble_polls==polls+1);
     before_poll=drawable_updates;
     assert(events<=128); events=0;
     // Apply the same close/reopen operation as reassignment while input is held.
@@ -118,7 +119,7 @@ int main() {
     SDL_UpdateJoysticks();mk8_settings_poll(false);
     noise();assert(ui_run()==1);
     assert(polls==80 && transitions==19 && resize_events==1 && drawable_updates>=82);
-    assert(steam_polls==polls);
+    assert(steam_polls==polls && rumble_polls==polls);
     assert(editor_polls==polls && title_polls==polls && tip_polls==polls && tip_events==title_events && title_events);
     SDL_CloseGamepad(pad);SDL_CloseJoystick(stick);SDL_DetachVirtualJoystick(id);SDL_Quit();
 }
