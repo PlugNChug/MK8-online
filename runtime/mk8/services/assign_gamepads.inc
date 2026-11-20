@@ -280,7 +280,7 @@ static void mk8_forget_moved_grip(SDL_Gamepad *g) {
         if (candidates==(1u<<p)) mk8_forget_seat(p);
 }
 
-static bool mk8_recover_gamepad(SDL_JoystickID added) {
+static void mk8_route_gamepad(SDL_JoystickID added) {
     // SDL may deliver the replacement ADD before the old REMOVE.
     for (unsigned p=0; p<=EXTRA_PADS; ++p) {
         SDL_Gamepad *g = *mk8_primary_slot(p);
@@ -288,8 +288,11 @@ static bool mk8_recover_gamepad(SDL_JoystickID added) {
         else if (mk8_partner[p] && !SDL_GamepadConnected(mk8_partner[p]))
             mk8_remove_assigned(SDL_GetGamepadID(mk8_partner[p]));
     }
+    // Keep the driver open through identity checks and assignment, including their temporary SDL references.
     SDL_Gamepad *g = SDL_OpenGamepad(added);
-    if (!g) return false;
+    // Automatic discovery previously got a second attempt when the identity probe failed.
+    if (!g && (mk8_title_extra_seats || !mk8_explicit_slots)) g = SDL_OpenGamepad(added);
+    if (!g) return;
     int strongest;
     unsigned candidates=mk8_reconnect_candidates(g,&strongest);
     if (strongest<3 && mk8_pending_identity(g)) {
@@ -302,23 +305,18 @@ static bool mk8_recover_gamepad(SDL_JoystickID added) {
                 entry->pad = g;
                 entry->next = mk8_pending_grips;
                 mk8_pending_grips = entry;
-                return true;
+                return;
             }
         }
-        SDL_CloseGamepad(g);
-        return true;
+    } else if (candidates) {
+        for (unsigned p=0; p<=EXTRA_PADS; ++p)
+            if (candidates == (1u << p)) mk8_restore_seat(p);
+    } else if (mk8_title_extra_seats || (!mk8_explicit_slots && (mk8_reserved_seats & 1))) {
+        open_extra(added);
+    } else if (!mk8_explicit_slots) {
+        mk8_open_gamepad(added);
     }
     SDL_CloseGamepad(g);
-    if (!candidates) return false;
-    for (unsigned p=0; p<=EXTRA_PADS; ++p)
-        if (candidates == (1u << p)) mk8_restore_seat(p);
-    return true;
-}
-
-static void mk8_route_gamepad(SDL_JoystickID id) {
-    if (mk8_recover_gamepad(id)) return;
-    if (mk8_title_extra_seats || (!mk8_explicit_slots && (mk8_reserved_seats & 1))) open_extra(id);
-    else if (!mk8_explicit_slots) mk8_open_gamepad(id);
 }
 
 static void mk8_retry_pending_grips(SDL_JoystickID id, bool removed) {

@@ -32,6 +32,18 @@ bool game_pc_wheel(float dx, float dy, bool shift) { return false; }
 
 enum Device { PRO, PAIR_L, PAIR_R, SOLO_L, SOLO_R, DEVICE_COUNT };
 static SDL_JoystickID ids[DEVICE_COUNT];
+static SDL_JoystickID counted_id;
+static unsigned cold_opens, failures_remaining;
+static SDL_Gamepad *count_gamepad_open(SDL_JoystickID id) {
+    if (id == counted_id && failures_remaining) {
+        --failures_remaining;
+        return NULL;
+    }
+    bool cold = id == counted_id && !SDL_GetJoystickFromID(id);
+    SDL_Gamepad *g = SDL_OpenGamepad(id);
+    if (cold && g) ++cold_opens;
+    return g;
+}
 static bool fixture_serials, returning_serial_ready, spare_serial_ready;
 static const char *fixture_serial(SDL_Gamepad *gamepad) {
     if (!fixture_serials) return SDL_GetGamepadSerial(gamepad);
@@ -43,7 +55,9 @@ static const char *fixture_serial(SDL_Gamepad *gamepad) {
 }
 // SDL virtual joysticks have no serial field. Only these Bluetooth metadata reads are simulated.
 #define SDL_GetGamepadSerial fixture_serial
+#define SDL_OpenGamepad count_gamepad_open
 #include "mixed.inc"
+#undef SDL_OpenGamepad
 #undef SDL_GetGamepadSerial
 #include "keyboard_routing.inc"
 
@@ -585,6 +599,9 @@ int main(int argc, char **argv) {
     if(!strncmp(argv[2],"all-reconnect",13)) {
         check_all_reconnect(argv[2]);
         SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"hotplug-open-failure")) {
+        check_hotplug_open_failure(); SDL_Quit(); return 0;
     }
     if(!strcmp(argv[2],"steam-title")) return steam_gamepads_title_test();
     if(!strcmp(argv[2],"title")) {

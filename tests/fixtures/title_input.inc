@@ -318,6 +318,32 @@ static void check_extra_button(enum Device device,int player) {
     button(sticks[device],SDL_GAMEPAD_BUTTON_WEST,false);
 }
 
+static void pump_pro_hotplug(void) {
+    // A physical hotplug has no fixture handle keeping the driver open between identity checks and assignment.
+    SDL_CloseJoystick(sticks[PRO]);
+    counted_id = ids[PRO];
+    cold_opens = 0;
+    pump();
+    if (cold_opens != 1) fprintf(stderr, "Pro hotplug opened the joystick driver %u times\n", cold_opens);
+    assert(cold_opens == 1);
+    counted_id = 0;
+    sticks[PRO] = SDL_OpenJoystick(ids[PRO]);
+    assert(sticks[PRO]);
+}
+
+static void check_hotplug_open_failure(void) {
+    title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
+    for (unsigned failures = 1; failures <= 2; ++failures) {
+        attach(PRO);
+        counted_id = ids[PRO];
+        failures_remaining = failures;
+        pump();
+        assert(failures_remaining == 0);
+        assert(title_pad_seat(ids[PRO]) == (failures == 1 ? 1 : -1));
+        detach_title_pad(PRO);
+    }
+}
+
 static void check_all_reconnect(const char *scenario) {
     bool edited=!strcmp(scenario,"all-reconnect-edited");
     bool identical=!strcmp(scenario,"all-reconnect-identical");
@@ -328,7 +354,7 @@ static void check_all_reconnect(const char *scenario) {
     enum Device p3=stock ? PAIR_L : PAIR_R;
     if (stock) g_settings.pads_from_p2=true;
     else { title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted(); }
-    attach(PRO); attach(p3); attach_as(SOLO_R,PAIR_R); pump();
+    attach(PRO); attach(p3); attach_as(SOLO_R,PAIR_R); pump_pro_hotplug();
     int pro=1,right=2;
     if(edited) {
         assert(edit(MK8_EDIT_BEGIN,4,0)==MK8_EDIT_READY);
@@ -345,7 +371,7 @@ static void check_all_reconnect(const char *scenario) {
     attach_as(SOLO_R,PAIR_R); pump();
     assert(ids[SOLO_R]!=old);
     check_extra_button(SOLO_R,identical || one_serial ? -1 : 3);
-    attach(p3); attach(PRO); pump();
+    attach(p3); attach(PRO); pump_pro_hotplug();
     check_extra_button(PRO,pro);
     check_extra_button(p3,identical ? -1 : right);
     check_extra_button(SOLO_R,identical || one_serial ? -1 : 3);

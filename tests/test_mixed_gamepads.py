@@ -65,6 +65,7 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 ('forward', None, 'all-reconnect-edited'),
                 ('forward', None, 'all-reconnect-identical'),
                 ('forward', None, 'all-reconnect-one-serial'),
+                ('forward', None, 'hotplug-open-failure'),
                 ('forward', None, 'title-reconnect'),
                 ('early-add', None, 'right-reconnect'),
                 ('late-serial', None, 'right-reconnect'),
