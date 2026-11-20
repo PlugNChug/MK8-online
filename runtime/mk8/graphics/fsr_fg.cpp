@@ -131,22 +131,13 @@ static bool enabled_by_env(void) {
         const char *e = getenv("MK8_FSR_FG");
         mode = (e && *e && !strcasecmp(e, "fsr3")) ? 1 : 0;
         if (e && *e && !mode) fprintf(stderr, "[fsr_fg] ignored: MK8_FSR_FG=%s (only fsr3 is implemented)\n", e);
-        if (mode) {
-            // The source-built provider (tools/gen_fg_blobs.py) is dispatch-validated headlessly: the
-            // generated blobs bind the constant/UAV/SRV buffers, declare the non-atomic storage
-            // images with format Unknown (the device enables the formatless features when FG is
-            // requested), and the headless fixture and 120-frame harness run with validation clean
-            // and no GPU fault. It is not qualified in-game yet (image quality, pacing, 120 Hz,
-            // upscaler combination), so enabling it still needs an explicit acknowledgement.
-            const char *allow = getenv("MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER");
-            if (!allow || !*allow || !strcmp(allow, "0")) {
-                mode = 0;
-                fprintf(stderr, "[fsr_fg] disabled: the source-built provider is not qualified in-game yet "
-                                "(the headless fixture and harness are validation-clean; image quality, pacing and "
-                                "upscaler combination are unverified). Set MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1 "
-                                "to test a provider build.\n");
-            }
-        }
+        // The source-built provider (tools/gen_fg_blobs.py) is the validated one: the generated blobs
+        // bind the constant/UAV/SRV buffers, declare the non-atomic storage images with format
+        // Unknown, and the headless fixture, the 120-frame harness (validation clean) and an in-game
+        // run (title, menus, race start and an in-race frame; no GPU fault, no device loss) exercise
+        // the interpolation path. Image quality, pacing/latency, 120 Hz, combining with the upscaler
+        // and the full race/restart/save remain unverified, so this is not a gameplay qualification.
+        // The exact 3.1.7 check below still refuses any other provider.
     }
     return mode != 0;
 }
