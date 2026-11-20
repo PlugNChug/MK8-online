@@ -34,6 +34,7 @@
 #include "vulkan/vk.h"
 #include "fsr_fg.h"
 #include "dlss.h"
+#include "xess.h"
 
 extern "C" {
 VkDescriptorSet fsr_vk_alloc_set(VkDescriptorSetLayout layout);
@@ -559,6 +560,11 @@ extern "C" VkImageView mk8_fsr4_upscale(VkCommandBuffer cb, TexBackend *color, T
     if (getenv("MK8_DLSS")) {
         VkImageView dlss_view = mk8_dlss_upscale(cb, color, depth, rw, rh, ow, oh, frame_ms);
         if (dlss_view) return dlss_view;
+    }
+    // MK8_XESS is the Windows XeSS bridge (Deliberately a stub on Linux, where Intel ships no library).
+    if (getenv("MK8_XESS")) {
+        VkImageView xess_view = mk8_xess_upscale(cb, color, depth, rw, rh, ow, oh, frame_ms);
+        if (xess_view) return xess_view;
     }
     if (!getenv("MK8_FSR4")) return VK_NULL_HANDLE;  // diagnostic switch until the settings/UI land
     if (getenv("MK8_FSR_FG")) {  // native frame generation takes the final image; combining is not finished
