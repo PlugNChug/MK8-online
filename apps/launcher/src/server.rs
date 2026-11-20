@@ -399,9 +399,10 @@ impl App {
         self.start_game(false, None, false)?;
         let mut child = self.game.take().ok_or("O jogo não iniciou")?;
         let status = child.wait().map_err(|e| e.to_string())?;
+        let shown = self.finish_game(status);
         if !status.success() {
             return Err(format!(
-                "O jogo encerrou com erro: {status}. Consulte game.log na pasta de dados."
+                "O jogo encerrou com erro: {shown}. Consulte game.log na pasta de dados."
             ));
         }
         Ok(())
@@ -680,32 +681,35 @@ impl App {
     }
     fn poll_game(&mut self) {
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
-            let mut shown = exit.to_string();
-            if !exit.success() {
-                let log = std::fs::read(self.local.join("game.log")).unwrap_or_default();
-                let language = crate::language::effective(&self.local);
-                if let Some(reason) =
-                    crate::game_session::nextendo_refusal(&String::from_utf8_lossy(&log), &language)
-                {
-                    shown = format!("{shown}. {reason}");
-                }
-            }
-            self.game_exit = Some(shown);
             self.game = None;
-            if self.steam_room.is_some() {
-                self.clear_steam_session();
-            }
-            if !exit.success() {
-                // A crash leaves its report ready to send, before the next launch rotates the log.
-                let summary =
-                    json!({"game_exit": exit.to_string(), "build": self.build.poll().state});
-                let install = self.installation().or_else(|| self.candidate());
-                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
-                self.last_report = report::create(&self.local, runtime, "game-exit", summary)
-                    .ok()
-                    .map(|p| p.display().to_string());
-            }
+            self.finish_game(exit);
         }
+    }
+
+    fn finish_game(&mut self, exit: std::process::ExitStatus) -> String {
+        if self.steam_room.is_some() {
+            self.clear_steam_session();
+        }
+        let mut shown = exit.to_string();
+        if !exit.success() {
+            let log = self.log_tail("game.log").unwrap_or_default();
+            let detail = crate::game_session::exit_reason(
+                &log,
+                exit.code(),
+                &crate::language::effective(&self.local),
+            );
+            if let Some(reason) = &detail {
+                shown = format!("{shown}. {reason}");
+            }
+            let summary = json!({"game_exit": exit.to_string(), "game_exit_detail": detail, "build": self.build.poll().state});
+            let install = self.installation().or_else(|| self.candidate());
+            let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+            self.last_report = report::create(&self.local, runtime, "game-exit", summary)
+                .ok()
+                .map(|p| p.display().to_string());
+        }
+        self.game_exit = Some(shown.clone());
+        shown
     }
 
     fn status(&mut self) -> Value {
@@ -2076,6 +2080,36 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_game_keeps_the_reason_in_status_and_a_report() {
+        let root = std::env::temp_dir().join(format!("mk8-failed-game-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let fatal = "SDL_Vulkan_CreateSurface: VK_KHR_win32_surface extension is not enabled";
+        fs::write(
+            root.join("game.log"),
+            format!("{}\nFATAL: {fatal}\n", "x".repeat(40_000)),
+        )
+        .unwrap();
+        let exit = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "exit 1"])
+            .status()
+            .unwrap();
+        assert!(app.finish_game(exit).contains(fatal));
+        assert!(app.game_exit.as_deref().unwrap().contains(fatal));
+        let extracted = std::process::Command::new("tar.exe")
+            .arg("-xOf")
+            .arg(app.last_report.as_ref().unwrap())
+            .arg("report.json")
+            .output()
+            .unwrap();
+        assert!(extracted.status.success());
+        let report: Value = serde_json::from_slice(&extracted.stdout).unwrap();
+        assert_eq!(report["launcher"]["game_exit_detail"], fatal);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn dlc_file_readiness_uses_real_files_and_the_importers_key_selection() {

@@ -115,14 +115,15 @@ pub fn run() -> Result<i32> {
 
 /// What to do when Nextendo refused online play for the account; the reason is the one the
 /// runtime logs (`[nextendo] online status: refused: <reason>`, runtime net/nextendo.c).
-pub fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
-    let line = log
+fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
+    let status = log
         .lines()
         .rev()
-        .find(|line| line.starts_with("[nextendo] online status: refused"))?;
-    let reason = line
-        .split_once("refused: ")
-        .map_or("", |(_, reason)| reason.trim());
+        .find_map(|line| line.strip_prefix("[nextendo] online status: "))?;
+    let reason = status
+        .strip_prefix("refused")?
+        .trim_start_matches(':')
+        .trim();
     let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
     Some(match reason {
         "discord_unlinked" => pick(
@@ -158,9 +159,64 @@ pub fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
     })
 }
 
+pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<String> {
+    let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
+    if let Some(fatal) = log.lines().rev().find_map(|line| {
+        line.strip_prefix("FATAL:")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }) {
+        return Some(fatal.chars().take(400).collect());
+    }
+    let reason = match code.map(|n| n as u32) {
+        Some(0xc0000135) => pick(
+            "O Windows não encontrou uma DLL necessária para iniciar o jogo.",
+            "Windows could not find a DLL required to start the game.",
+            "Windows no encontró una DLL necesaria para iniciar el juego.",
+        ),
+        Some(0xc000007b) => pick(
+            "O Windows recusou o formato de um executável ou de uma DLL do jogo.",
+            "Windows rejected the format of a game executable or DLL.",
+            "Windows rechazó el formato de un ejecutable o una DLL del juego.",
+        ),
+        _ => nextendo_refusal(log, language)?,
+    };
+    Some(reason.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::nextendo_refusal;
+    use super::{exit_reason, nextendo_refusal};
+
+    #[test]
+    fn reports_the_last_fatal_or_windows_loader_status_without_guessing() {
+        let refusal = "[nextendo] online status: refused: discord_unlinked\n";
+        let log = format!(
+            "{refusal}FATAL: older error\nFATAL: SDL_Vulkan_CreateSurface: VK_KHR_win32_surface\n"
+        );
+        assert_eq!(
+            exit_reason(&log, Some(1), "en").unwrap(),
+            "SDL_Vulkan_CreateSurface: VK_KHR_win32_surface"
+        );
+        assert!(exit_reason("", Some(0xc0000135u32 as i32), "en")
+            .unwrap()
+            .contains("DLL"));
+        assert!(exit_reason("", Some(0xc000007bu32 as i32), "es")
+            .unwrap()
+            .contains("formato"));
+        assert!(exit_reason(refusal, Some(1), "en")
+            .unwrap()
+            .contains("Discord"));
+        assert_eq!(
+            exit_reason(
+                &format!("{refusal}[nextendo] online status: allowed"),
+                Some(1),
+                "en"
+            ),
+            None
+        );
+        assert_eq!(exit_reason("[vk] loader initialized", Some(1), "en"), None);
+    }
 
     #[test]
     fn explains_nextendo_refusal_from_the_game_log() {
