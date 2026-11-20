@@ -480,6 +480,17 @@ void mk8_controller_applet_result(int min,int max,int players) {
 
 bool mk8_controller_layout_active(void) { return !controller_detached && (controller_preview || controller_visible); }
 bool mk8_controller_join_visible(void) { return controller_required && controller_visible && !controller_detached; }
+bool mk8_controller_pointer_available(void) { return controller_entry_players || controller_mouse_down || mk8_controller_layout_active(); }
+
+static bool controller_can_open(void) {
+    return controller_entry_players && controller_focused && !requested && !active &&
+           !mk8_controller_layout_active() && !menu_input_captured();
+}
+
+static void controller_request_editor(void) {
+    controller_armed=controller_click=-1; controller_hover=-2;
+    controller_preview=true;
+}
 
 bool mk8_controller_pointer(int x,int y,int action) {
     if (action==3 || action==4) {
@@ -487,7 +498,23 @@ bool mk8_controller_pointer(int x,int y,int action) {
         controller_armed=controller_click=-1; controller_hover=-1;
         return false;
     }
-    if (!mk8_controller_layout_active()) return action==2 && atomic_exchange(&controller_mouse_down,false);
+    if (!mk8_controller_layout_active()) {
+        // B_MP_00 in the local CharaParts layout: 260 x 64 at 0.8 scale, centered at (640,643).
+        bool hit=x>=536 && x<744 && y>=618 && y<=668;
+        enum { SHORTCUT=6 };
+        if (action==1) {
+            bool capture=hit && controller_can_open();
+            controller_mouse_down=capture; controller_armed=capture ? SHORTCUT : -1;
+            return capture;
+        }
+        if (!controller_mouse_down) return false;
+        if (action==0 && !hit) controller_armed=-1;
+        if (action==2) {
+            controller_mouse_down=false;
+            if (atomic_exchange(&controller_armed,-1)==SHORTCUT && hit && controller_can_open()) controller_request_editor();
+        }
+        return true;
+    }
     if (action==1) controller_mouse_down=true;
     if (action==2 && !atomic_exchange(&controller_mouse_down,false)) return false;
     if (!controller_focused) return true;
@@ -1010,11 +1037,7 @@ void mk8_settings_page_fixed(uint64_t b) { fixed_buttons=b; }
 void mk8_settings_page_wheel(int steps) { atomic_fetch_add(&wheel,steps); }
 uint64_t mk8_settings_page_input(uint64_t b, int32_t st[4],uint64_t scripted) {
     uint64_t edge=b&~atomic_exchange(&raw_buttons,b); buttons=scripted;
-    if ((edge&(1ull<<10)) && controller_entry_players && controller_focused &&
-        !mk8_settings_page_active() && !menu_input_captured()) {
-        controller_armed=controller_click=-1; controller_hover=-2;
-        controller_preview=true;
-    }
+    if ((edge&(1ull<<10)) && controller_can_open()) controller_request_editor();
     if (mk8_settings_page_active()) { memset(st,0,4*sizeof *st); return 0; }
     uint64_t held=atomic_load(&suppressed)&b;
     suppressed=held;

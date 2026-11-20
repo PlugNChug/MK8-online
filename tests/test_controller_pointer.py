@@ -24,7 +24,9 @@ class ControllerPointerTests(unittest.TestCase):
             src = out / 'pointer.c'
             src.write_text('#include <SDL3/SDL.h>\n#include <pthread.h>\n#include <assert.h>\n' + mapping + adapter + r'''
 static int x, y, action;
-bool mk8_controller_layout_active(void) { return true; }
+static bool popup=true, available=true;
+bool mk8_controller_layout_active(void) { return popup; }
+bool mk8_controller_pointer_available(void) { return available; }
 bool mk8_controller_pointer(int gx, int gy, int kind) { x=gx; y=gy; action=kind; return true; }
 int main(void) {
     assert(SDL_Init(SDL_INIT_VIDEO));
@@ -43,6 +45,26 @@ int main(void) {
     assert(!mk8_controller_pointer_event(&e) && action==3);
     e.type=SDL_EVENT_WINDOW_FOCUS_GAINED;
     assert(!mk8_controller_pointer_event(&e) && action==4);
+    popup=false;
+    e=(SDL_Event){.type=SDL_EVENT_MOUSE_BUTTON_DOWN};
+    e.button.windowID=SDL_GetWindowID(win); e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=500; e.button.y=342;
+    assert(mk8_controller_pointer_event(&e) && x==640 && y==644 && action==1);
+    e.type=SDL_EVENT_MOUSE_BUTTON_UP;
+    assert(mk8_controller_pointer_event(&e) && action==2);
+    e=(SDL_Event){.type=SDL_EVENT_FINGER_DOWN};
+    e.tfinger.touchID=8; e.tfinger.fingerID=12; e.tfinger.x=.5f; e.tfinger.y=.855f;
+    available=false;
+    assert(!mk8_controller_pointer_event(&e));
+    available=true;
+    assert(mk8_controller_pointer_event(&e) && x==640 && y==644 && action==1);
+    e.type=SDL_EVENT_FINGER_UP; e.tfinger.fingerID=13;
+    assert(!mk8_controller_pointer_event(&e));
+    e.tfinger.fingerID=12;
+    assert(mk8_controller_pointer_event(&e) && action==2);
+    e.type=SDL_EVENT_FINGER_DOWN; assert(mk8_controller_pointer_event(&e));
+    e.type=SDL_EVENT_FINGER_CANCELED;
+    assert(mk8_controller_pointer_event(&e) && x==-1 && y==-1 && action==2);
     SDL_DestroyWindow(win);
     SDL_Quit();
 }

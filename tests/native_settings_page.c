@@ -419,9 +419,16 @@ static void check_controller_footer(uint64_t manager) {
     // The initial controller applet and a transitioning player selection page cannot open the popup.
     ST32(drivers+0x120,3); mk8_settings_page_frame(manager);
     assert(mk8_settings_page_input(plus,st,0)==plus);
+    assert(!mk8_controller_pointer(640,643,1) && !mk8_controller_pointer(640,643,2));
     ST32(drivers+0x120,4); mk8_settings_page_frame(manager);
     cursor_mask=13;
-    popup_open(manager);
+    assert(!mk8_controller_pointer(640,670,1) && !mk8_controller_pointer(640,643,2));
+    assert(mk8_controller_pointer(640,643,1) && mk8_controller_pointer(640,670,0) && mk8_controller_pointer(640,643,2));
+    assert(!mk8_controller_layout_active());
+    assert(mk8_controller_pointer(640,643,1) && mk8_controller_pointer(640,643,2));
+    mk8_settings_page_frame(manager);
+    assert(controller_visible);
+    mk8_settings_page_input(0,st,0);
     assert(!memcmp(shown_tips[0],u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all",sizeof u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all"));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J","Keyboard X","Delete","Backspace"}};
     // A previously prepared title control has only the original two text panes.
