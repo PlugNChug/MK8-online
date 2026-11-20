@@ -24,6 +24,16 @@ pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
 variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
 `gameplay_verified` continua falso.
 
+## FSR 3 FG, DLSS-G a 2560 e XeSS in-engine na RTX 5080 — 20/11/2026
+
+**FSR 3.1.6 frame generation com o DLL assinado da AMD** funciona nativamente em Windows/NVIDIA: `[fsr_fg] swapchain provider 3.1.7`, `frame-generation effect provider 3.1.6`, `active: FFX frame-interpolation swapchain 1920x1080`, profundidade capturada e MVs de câmera, `first interpolated frame recorded`, exit 0, sem GPUVM/device-lost (`fsrfg316-05000.png`). O mesmo caminho com o DLL `4.0.2`/MLFI continua sem provider na NVIDIA, como já registrado.
+
+**DLSS-G a 2560x1440** agora funciona: quando a profundidade capturada é menor que o display mas tem o mesmo aspecto (1152x648 → 2560x1440), `fsr.cpp` faz blit para uma imagem R32F no tamanho do display, usada só nas entradas do FG (`4acc57d`). Log: `depth resampled 1152x648 -> 2560x1440`, `pair present: real image 0 + interpolated image 1`, exit 0 (`dlssfg1152-05000.png`). O caminho 1920x1080 de tamanho igual continua passando.
+
+**XeSS in-engine** está parcial: o hook de dispositivo funciona (`VK_EXT_mutable_descriptor_type` + feature), o contexto 1920x1080→2560x1440 é criado e `upscale active` é registrado, mas `xessVKExecute` devolve -4 com a mensagem do DLL `velocityTexture is invalid` para uma view 1920x1080 `R16G16_SFLOAT` não nula, com MVs de câmera. O fallback renderiza e o processo sai 0 (`xess2560-05000.png`). A diferença em relação ao harness (que executa no mesmo DLL/GPU) está em investigação; o provider reporta 2.0.2.
+
+O pacote Windows portátil precisa ser reconstruído com o host que tem o resample (`99c88afd…`) para incluir o DLSS-G 2560; reconstrução em andamento.
+
 ## Pacote Windows portátil e hashes dos patches opcionais — 20/11/2026
 
 Os hashes fixados dos patches guest opcionais (`ultrawide`, `ultrawide_hud`, `settings_menu`) foram atualizados para as unidades geradas após a correção do recompilador (`4318c07`): `main_077.c` `d4f3917c…`, `main_164.c` `6794319a…`, `main_114.c` `bea4142a…`, `main_113.c` `ab615528…`, `main_082.c` `bcacfa65…`, `main_115.c` `02f16954…`, `main_100.c` `3134491b…`, `main_191.c` `2ae69dad…`; `tests.test_optional_guest_patches` 3/3. O build Windows passou a rodar **sem** `MK8_SKIP_OPTIONAL_GUEST_PATCHES=1` (483 unidades, hooks `mk8_ultrawide_*`/`mk8_settings_*` presentes), e o Linux também (483 unidades, `mk8dgame.so` 159.341.232 bytes).
