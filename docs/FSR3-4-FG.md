@@ -161,6 +161,11 @@ MK8_FSR_FG=fsr3 MK8_FSR_FG_LIB=/path/to/libamd_fidelityfx_framegeneration_vk.so 
 # sha256 111f9b19c0c9b8a1f24d2a5104095b8e626f12deb4eca53cd0c29921aa1fd43a
 python3 tools/build_fg_provider.py --sdk-archive FidelityFX-SDK-v2.4.0.tar.gz --sdk-size 253592010 --sdk-sha256 111f9b19c0c9b8a1f24d2a5104095b8e626f12deb4eca53cd0c29921aa1fd43a --dxc /path/to/dxc --self-test
 
+# DXC can also be fetched by the launcher: official v1.9.2609 Linux archive,
+# https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/linux_dxc_2026_09_28.x86_x64.tar.gz
+# 13,297,763 bytes, sha256 96faadc7f5c282d2ffda49804beb4c3ee38127bc252b723234e3c5cdf7aa39a1
+# tools/build_fg_provider.py --dxc-archive <archive> --dxc-size 13297763 --dxc-sha256 96faadc7...39a1
+
 # native provider tests (skip when the provider/SDK headers are absent)
 MK8_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so MK8_FG_SDK=$HOME/.cache/mk8online/fsr-build/sdk-copy python3 -m unittest tests.test_fg_provider -v
 ```
