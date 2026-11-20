@@ -51,6 +51,16 @@ submit concluído em vez de esperar o relatório pendente; `tests/test_occlusion
 compilado nativamente neste host; o controle negativo com o gate desativado falha). Não validado em execução — falta
 host ocioso. `gameplay_verified` continua falso.
 
+**Segunda tentativa de medir (20/11, 08:22): bloqueada.** O host não estava ocioso — um build externo
+(`/home/mitchell/Projects/mkdx-x64-wt`, `ninja -j2` + `cc1`, fora deste repositório) elevou a carga de 7,8 para 17,8 e
+a memória livre caiu a 5–8 GiB. Pelo limite de ~8, **nenhuma execução de tempo foi iniciada**. O runtime foi
+recompilado no HEAD `08fa336` (`--runtime-only`, 221/221 unidades, candidato `1898e0aa…`, exe `bf848bcb…`) com todos
+os marcadores conferidos (`[present] flush`, `[submit] pre`, `mk8_acquire_timeout_ns`, `MK8_OCCL_STALE`,
+`mk8_yaz0_loop`, 35 símbolos FSR/FFX). O driver ABBA (`local/qualification/perf-2026-11-20/abba.py`, ABBA
+intercalado, `nice -n 10`, gate em load 8) e os comandos exatos ficaram registrados em
+[PERF-2026-11-20.md](PERF-2026-11-20.md) §10. Nenhum tempo foi medido; os números da tabela de base continuam os de
+18–20/11.
+
 ## Upscaler FSR 3.1.6 nativo e MLFI (FSR 4) — 20/11/2026
 
 O upscaler **FSR 3.1.6** também é construído localmente a partir do SDK MIT: `tools/gen_upscaler_blobs.py` compila os 11 passes com DXC, reflete os descritores (incluindo `Uniform`/`StorageBuffer`), reescreve os formatos das storage images e `tools/build_upscaler_provider.py` produz `libamd_fidelityfx_upscaler_vk.so` (573.136 bytes, sha256 `4c3a75cf…fde709`). Duas builds independentes são idênticas; `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`); a saída 1920x1080→2560x1440 é **byte-idêntica** à do DLL assinado da AMD no Windows para as entradas capturadas (SHA-256 `df8c4cf2…49ae`, MAE 0). No jogo: `[fsr] provider 3.1.6`, `upscale active 1920x1080 -> 2560x1440`, `depth now game`, `motion now camera`, título e largada renderizados. 7/7 testes.
