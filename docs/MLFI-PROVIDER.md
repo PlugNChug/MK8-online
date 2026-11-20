@@ -480,7 +480,8 @@ Driver: Mesa 27.0.0-devel (mesa-git `f7dd61f78f8`), RADV GFX1201, Vulkan 1.4.363
 `~/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so` (3.1.7) and
 `~/.cache/mk8online/mlfi-provider/build/libmk8_mlfi_framegeneration_vk.so` (419,176 B).
 
-A headless two-library run (the repo fixture adapted in `/tmp`, 1280×720, validation layer) created
+A headless two-library run (a copy of the repo fixture adapted for fsr4 and saved in
+`local/qualification/fsr4-fg-2026-11-20/`, 1280×720, validation layer) created
 the swapchain, the 3.1.7 router and the MLFI effect (`rc=0` each), queried 4.0.2 and presented six
 frames through the router-installed callback. The only validation messages were shader-module
 disagreements in the same classes the provider test counts as known (linear sampler on integer
@@ -502,7 +503,8 @@ In-game `MK8_FSR_FG=fsr4` at 1280×720:
 [fsr_fg] MLFI progress: 1800 generated frames, 191 model + 1 compose dispatches
 ```
 
-Exit 0, 2,150 frames, screenshots at frames 840 and 2040, no GPUVM/device-lost/`FATAL` line, and the
+Exit 0 (the last screenshot is frame 2040; the input script was sized to 2,150), screenshots at
+frames 840 and 2040, no GPUVM/device-lost/`FATAL` line, and the
 bridge never disabled itself after activation. A separate attempt reached 2,400 frames. Both real
 frames are byte-identical between the final fsr4 and fsr3 runs at the same frames/window/driver
 (menu sha256 `617d9919291a5d02483360b20c959ae15fb13aa500f32e5923221dbee82f22ea`, kart select
@@ -555,6 +557,9 @@ nice -n 19 "$HOME/.cache/mk8online/mlfi-provider/build/mlfi_provider_test"
 
 # tests (skip when the extraction/tools are absent)
 python3 -m unittest tests.test_mlfi_provider -v
+
+# in-game fsr4 (the full command list is in local/qualification/fsr4-fg-2026-11-20.md)
+MK8_FSR_FG=fsr4 MK8_FSR_FG_LIB=$HOME/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so MK8_FSR_MLFI_LIB=$HOME/.cache/mk8online/mlfi-provider/build/libmk8_mlfi_framegeneration_vk.so LARECOMP_WINDOW=1280x720 SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1 ./mk8drecomp <game-root>
 ```
 
 The test prepares, builds, runs the program twice and asserts: context rc 0, `ffxQuery` 4.0.2,
@@ -579,7 +584,7 @@ TSVs. `MK8_MLFI_PROVIDER_REQUIRE=1` turns a missing prerequisite into a failure.
 | runs are deterministic across processes | **verified** (identical FNV hashes and byte-identical raw dumps) |
 | validation is clean | **verified except** the three documented validator disagreements (same 10/8/20 as the replay) |
 | no GPUVM fault / device loss | **verified** for these runs (`device=alive`, no kernel amdgpu line) |
-| `MK8_FSR_FG=fsr4` in the runtime | **implemented and exercised** through title, menus, kart select and the race transition (clean exits at 2,150 frames with 1,800 generated and at 2,400 frames); no race frame because the host driver crashes there (see §9.3). `gameplay_verified` remains false |
+| `MK8_FSR_FG=fsr4` in the runtime | **implemented and exercised** through title, menus, kart select and the race transition (clean exits at 2,040 frames with at least 1,800 generated and at 2,400 frames); no race frame because the host driver crashes there (see §9.3). `gameplay_verified` remains false |
 | the swapchain provider is replaced | **not implemented**; the 3.1.7 provider stays |
 | the provider matches AMD's frame | **not demonstrated** — no vendor reference on Linux |
 | image quality / ghosting / haloing | **not measured** — synthetic inputs, no reference, our composition |
