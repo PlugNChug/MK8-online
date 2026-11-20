@@ -108,12 +108,18 @@ fn dlc_keys(config: &Config, package: &str, keys: &str) -> Option<PathBuf> {
     detect_keys(&config)
 }
 
+fn is_dlc_package(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp") || ext.eq_ignore_ascii_case("nsz"))
+}
+
 fn dlc_files(config: &Config, package: &str, keys: &str) -> Value {
     let selected = dlc_keys(config, package, keys);
     let package_path = Path::new(package);
     json!({
-        "package_ok": !package.is_empty() && package_path.is_file()
-            && package_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("nsp")),
+        "package_ok": is_dlc_package(package_path),
         "keys_ok": selected.as_ref().is_some_and(|path| path.is_file()),
         "keys_detected": keys.is_empty(),
         "keys": selected.map(|path| path.to_string_lossy().into_owned()),
@@ -949,17 +955,13 @@ impl App {
                 let package = value["package"]
                     .as_str()
                     .filter(|s| !s.is_empty())
-                    .ok_or("Selecione o NSP do DLC.")?;
+                    .ok_or("Selecione o NSP/NSZ do DLC.")?;
                 if !install.dlc_supported {
                     return Err("Atualize a build para usar DLC.".into());
                 }
                 let package = Path::new(package);
-                if !package.is_file()
-                    || !package
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp"))
-                {
-                    return Err("Selecione o NSP do DLC.".into());
+                if !is_dlc_package(package) {
+                    return Err("Selecione o NSP/NSZ do DLC.".into());
                 }
                 let keys = dlc_keys(
                     &self.config,
@@ -1213,9 +1215,9 @@ impl App {
                 let dlc = if package.is_empty() {
                     None
                 } else {
-                    if !Path::new(package).is_file() {
+                    if !is_dlc_package(Path::new(package)) {
                         return Err(
-                            "Selecione um NSP válido para a DLC opcional ou deixe o campo vazio."
+                            "Selecione um NSP/NSZ válido para a DLC opcional ou deixe o campo vazio."
                                 .into(),
                         );
                     }
@@ -1644,8 +1646,13 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
         Some("dlc") => Some((
-            crate::language::pick(&language, "NSP do DLC", "DLC NSP", "NSP del DLC"),
-            &["nsp"][..],
+            crate::language::pick(
+                &language,
+                "NSP/NSZ do DLC",
+                "DLC NSP/NSZ",
+                "NSP/NSZ del DLC",
+            ),
+            &["nsp", "nsz"][..],
         )),
         Some("nacp") => Some((
             crate::language::pick(

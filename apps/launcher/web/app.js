@@ -548,7 +548,7 @@ function renderInstall(status) {
   $("dlc-change").hidden = dlc.state !== "ready" || dlcReplace;
   $("dlc-change").disabled = busyNow;
   i18n.text($("dlc-import"), dlc.state === "ready" ? "Reinstalar DLC…"
-    : dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP…");
+    : dlc.state === "invalid" ? "Reparar importação…" : "Importar DLC NSP/NSZ…");
   $("dlc-files").hidden = dlc.state === "ready" && !dlcReplace;
   for (const id of ["dlc-package", "dlc-keys"]) $(id).disabled = busyNow;
   document.querySelectorAll("[data-browse]").forEach((button) => (button.disabled = busyNow));
