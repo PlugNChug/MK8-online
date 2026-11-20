@@ -264,7 +264,7 @@ Scratch provider built from the same sources with the four fixes above:
 [fg-harness] swapchain format=44 colorspace=0
 [fg-harness] swapchain provider offers 3.1.7
 [fg-harness] swapchain ABI=3.1.7 (0xc01007)
-[fg-harness] swapchain context=ok proxy-handle=0x55b03b4bb9c0
+[fg-harness] swapchain context=ok proxy-handle=0x5565bb7ccc00
 [fg-harness] replacement images=4 composition=game-queue
 [fg-harness] frame-generation effect provider=3.1.6
 [fg-harness] readback capture frame=60 buffers=3686400 bytes each
