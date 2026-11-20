@@ -107,7 +107,8 @@ class SettingsLayoutTests(unittest.TestCase):
             with patch.object(layout, 'MENU_SHA256', hashlib.sha256(source).hexdigest()):
                 with patch.object(layout, 'COMMON_SHA256', hashlib.sha256(common).hexdigest()):
                     with (patch.object(layout, 'settings_icon_button', return_value=b'private-wrench-button'),
-                          patch.object(layout, 'join_button', side_effect=lambda source, button: source+button.encode())):
+                          patch.object(layout, 'menu_symbols',return_value=None),
+                          patch.object(layout, 'join_button', side_effect=lambda source,button: source+button.encode())):
                         with patch.object(layout, 'dialog_label',return_value=b'private-label'), patch.object(layout, 'dialog_button',return_value=b'private-dialog-button'):
                             target = layout.prepare(root/'romfs', output)
                             again = layout.prepare(root/'romfs', output).read_bytes()
@@ -280,6 +281,14 @@ class SettingsLayoutTests(unittest.TestCase):
         plus=[s for s in derived if s[:4]==b'txt1' and s[12:22]==b'T_JoinPlus']
         self.assertEqual([s[12:36].rstrip(b'\0') for s in plus],[b'T_JoinPlus0', b'T_JoinPlus1'])
         self.assertTrue(all(not s[8]&1 and s[84:]==title[84:] for s in plus))
+        sheets=[('SetPad0^t',b''),('SetPad1^t',b'')]
+        symbols=(sheets,{'A':(0,64,40),'R':(1,0,56)},bytes(84))
+        pictures=list(layout.symbol_panes(symbols,2,title[8:12],5))
+        self.assertEqual([p[12:36].rstrip(b'\0') for p in pictures],[b'P_Map2A',b'P_Map2R'])
+        self.assertTrue(all(p[:4]==b'pic1' and not p[8]&1 for p in pictures))
+        self.assertEqual([struct.unpack_from('<H',p,100)[0] for p in pictures],[5,6])
+        self.assertAlmostEqual(struct.unpack_from('<f',pictures[0],104)[0],64/200)
+        self.assertAlmostEqual(struct.unpack_from('<f',pictures[0],112)[0],104/200)
 
     def test_join_buttons_bind_each_stock_texture_without_its_pattern_animation(self):
         for button in layout.JOIN_BUTTONS:
@@ -335,6 +344,24 @@ class SettingsLayoutTests(unittest.TestCase):
         with self.assertRaises(ValueError): layout.texture(tex,name)
         invalid=bytearray(source);struct.pack_into('<I',invalid,80+52,0)
         with self.assertRaises(ValueError): layout.square_hint_checker(invalid)
+
+    def test_button_sheets_append_without_changing_existing_textures_or_materials(self):
+        names=b'checker\0side\0'
+        textures=b'txl1'+struct.pack('<IHH2I',36,2,0,8,16)+names+bytes(3)
+        materials=b'mat1'+struct.pack('<IHH2I',28,2,0,20,24)+b'abcdwxyz'
+        donor=bytes(range(64))
+        sheets=[('SetPad0^t',b''),('SetPad1^t',b'')]
+        txl,mat=layout.add_symbol_materials([textures,materials],(sheets,{},donor))
+        offsets=struct.unpack_from('<4I',txl,12)
+        self.assertEqual([txl[12+i:].split(b'\0',1)[0] for i in offsets],
+                         [b'checker',b'side',b'SetPad0^t',b'SetPad1^t'])
+        stock_a,stock_b,pad0,pad1=struct.unpack_from('<4I',mat,12)
+        self.assertEqual(mat[stock_a:stock_b],b'abcd')
+        self.assertEqual(mat[stock_b:pad0],b'wxyz')
+        for i,offset in enumerate((pad0,pad1)):
+            self.assertEqual(mat[offset:offset+28].rstrip(b'\0'),sheets[i][0].encode())
+            self.assertEqual(struct.unpack_from('<H',mat,offset+44)[0],2+i)
+            self.assertEqual(mat[offset+46:offset+64],donor[46:])
 
     def test_only_double_height_material_repeats_checker_vertically(self):
         frame=bytearray(60)

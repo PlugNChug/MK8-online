@@ -133,10 +133,12 @@ void guest_call(Cpu *c,uint64_t address) {
         else if(!strcmp(name,"L_Btn_LR")) c->x[0]=HEAP_BASE+13200+(c->x[0]-HEAP_BASE-4000-0x30)/512*128;
         else assert(0);
     } else if(address==0x70008ade74ull) {
-        assert(c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+19100);
+        assert((c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+19100) ||
+               (c->x[0]>=HEAP_BASE+26000 && c->x[0]<HEAP_BASE+27000));
         ST8(c->x[0]+0x58,(LD8(c->x[0]+0x58)&~1)|c->x[1]);
     } else if(address==0x70008ade34ull) {
-        assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+14680 ||
+        assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+3700 ||
+               (c->x[0]>=HEAP_BASE+26000 && c->x[0]<HEAP_BASE+27000) || c->x[0]==HEAP_BASE+14680 ||
                (c->x[0]>=HEAP_BASE+1256 && c->x[0]<=HEAP_BASE+2280 && (c->x[0]-HEAP_BASE-1000)%256==0) ||
                (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+19100) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
                (c->x[0]>=HEAP_BASE+12400 && c->x[0]<=HEAP_BASE+12400+SETTINGS_VISIBLE*128));
@@ -603,8 +605,10 @@ static void check_controller_footer(uint64_t manager) {
     assert(controller_focus==3 && open_sounds==opens+1);
     assert(!(LD8(HEAP_BASE+14600+0x58)&1));
     assert(!wcscmp(shown_title,L"Player 4: choose how to join"));
-    assert(!wcscmp((const wchar_t *)shown_tips[0],L"To pair two Joy-Cons, hold L and R."));
-    assert(!strcmp(action_strings[0],"Controller") && !strcmp(action_strings[1],"Sideways Joy-Con"));
+    assert(!shown_tips[0][0]);
+    assert(!strcmp(action_strings[0],"Controller or paired Joy-Cons") && !strcmp(action_strings[1],"Sideways Joy-Con"));
+    assert(pane_float(action_labels[0],0x34)>pane_float(action_labels[1],0x34));
+    assert(pane_float(join_plus[0],0x30)==pane_float(join_plus[1],0x30));
     for(unsigned i=0;i<2;i++) {
         assert(!(LD8(keycaps[i]+0x58)&1) && !(LD8(key_labels[i]+0x58)&1));
         assert((LD8(join_buttons[2*i]+0x58)&1) && (LD8(join_buttons[2*i+1]+0x58)&1) && (LD8(join_plus[i]+0x58)&1));
@@ -627,6 +631,39 @@ static void check_controller_footer(uint64_t manager) {
     for(unsigned i=0;i<4;i++) assert(!(LD8(join_buttons[i]+0x58)&1));
     for(unsigned i=0;i<2;i++) assert(!(LD8(join_plus[i]+0x58)&1));
     assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 Continue  \ue001 Cancel"));
+    symbol_help=symbol_dialog=HEAP_BASE+14400;
+    symbol_parts[0][0]=HEAP_BASE+26000; symbol_parts[1][1]=HEAP_BASE+26128;
+    symbol_parts[2][1]=HEAP_BASE+26256; symbol_parts[4][1]=HEAP_BASE+26384;
+    symbol_parts[3][4]=HEAP_BASE+26512; symbol_parts[3][5]=HEAP_BASE+26640;
+    symbol_parts[0][1]=HEAP_BASE+26768;
+    editor_state=MK8_EDIT_LISTEN; edit_row=2; join_keyboard=false;
+    mk8_settings_page_frame(manager);
+    assert(shown_symbols[2]==symbol_parts[2][1] && shown_symbols[4]==symbol_parts[4][1]);
+    assert(!wcscmp(shown_cancel,L"Cancel"));
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_PLAYSTATION,{"Cross","Circle"}};
+    mk8_settings_page_frame(manager);
+    assert(!shown_symbols[2] && !shown_symbols[4] && !(LD8(keycaps[2]+0x58)&1));
+    assert(!strcmp(action_strings[2],"Circle Cancel") && !wcscmp(shown_cancel,L"Circle Cancel"));
+    join_keyboard=true;
+    mk8_settings_page_frame(manager);
+    check_keycap(2,"Enter","Join keyboard");
+    join_keyboard=false;
+    popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y","Minus"}};
+    for(unsigned i=0;i<2;i++) {
+        editor_state=i ? MK8_EDIT_NEED_RIGHT : MK8_EDIT_NEED_LEFT;
+        mk8_settings_page_frame(manager);
+        assert(!wcscmp(shown_title,L"Player 3: pair Joy-Cons"));
+        assert(!strcmp(action_strings[3],"Press") && !strcmp(last_hint,"on other Joy-Con to pair."));
+        assert(shown_symbols[3]==symbol_parts[3][4+i]);
+        assert(pane_float(action_labels[3],0x30)<pane_float(shown_symbols[3],0x30));
+        assert(pane_float(shown_symbols[3],0x30)<pane_float(hint,0x30));
+    }
+    editor_state=MK8_EDIT_READY; edit_row=-1;
+    mk8_settings_page_frame(manager);
+    assert(shown_symbols[0]==symbol_parts[0][0] && shown_symbols[1]==symbol_parts[1][1]);
+    assert(!shown_symbols[2] && !shown_symbols[3] && !shown_symbols[4]);
+    assert(!shown_tips[0][0] || !strcmp(last_hint,"All players are ready."));
+    symbol_help=symbol_dialog=0;
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(0,"Return","Continue"); check_keycap(1,"J","Cancel");

@@ -13,6 +13,8 @@ COMMON_RELATIVE = RELATIVE.with_name('common.sarc')
 CONTROLLER_RELATIVE = Path('controller-menu/romfs/UI/cmn/common.sarc')
 SETTINGS_PAGE = 'cm_Page_SetUI'
 JOIN_BUTTONS = ('L', 'R', 'SL', 'SR')
+BUTTON_SOURCES = dict(L='L', R='R', SL='L', SR='R', A='A', B='B', X='X', Y='Y',
+                      ZL='L', ZR='R', DL='Y', DR='A', DT='X', DB='B', Plus='MP', Minus='MP')
 LIMIT = 32 * 1024 * 1024
 
 
@@ -167,7 +169,82 @@ def settings_icon_button(button, source):
     return b'Yaz0'+struct.pack('>I',len(packed))+bytes(8)+b''.join(b'\xff'+packed[i:i+8] for i in range(0,len(packed),8))
 
 
-def dialog_label(source, *, hints=False):
+def menu_symbols(common):
+    """Pack original BC5 blocks into 200x56 sheets matching the title's texture descriptor."""
+    from mii_resource_nx import deswizzle, swizzle
+    sheets, coordinates, donors = [], {}, {}
+    for i,(button,donor) in enumerate(BUTTON_SOURCES.items()):
+        if donor not in donors:
+            archive='cm_UnderBase_00.szs' if donor=='MP' else 'cm_L_NXBtnIcon'+donor+'_00.szs'
+            donors[donor],=[v for _,_,v in entries(yaz0(common[archive])) if v[:4]==b'BNTX']
+        data=donors[donor]
+        name='NXBtnIcon'+('MP' if donor=='MP' else button)+'_00^t'
+        at,start,size=texture(data,name)
+        width,height=struct.unpack_from('<II',data,at+36)
+        expected=64 if donor=='MP' else 56 if donor in ('L','R') else 40
+        if (width,height)!=(expected,40) or struct.unpack_from('<I',data,at+28)[0]!=0x1e01 or data[at+88:at+92]!=bytes((2,2,2,3)):
+            raise ValueError('Unexpected common-menu button format: '+name)
+        blocks=deswizzle(data[start:start+size],width//4,10,16,struct.unpack_from('<I',data,at+52)[0]&7)
+        sheet,cell=divmod(i,3)
+        if not cell: sheets.append(bytearray(50*14*16))
+        for y in range(10):
+            for x in range(width//4):
+                # The stock -/+ artwork shares one texture. Exclude the diagonal separator.
+                if button=='Minus' and not (1<=x<=6 and 4<=y<=5): continue
+                if button=='Plus' and not (10<=x<=14 and 4<=y<=5 or 11<=x<=13 and 2<=y<=7): continue
+                src=(y*(width//4)+x)*16
+                dst=(y*50+16*cell+x)*16
+                sheets[sheet][dst:dst+16]=blocks[src:src+16]
+        left=64*cell+(4 if button=='Minus' else 38 if button=='Plus' else 0)
+        coordinates[button]=(sheet,left,24 if donor=='MP' else width)
+    packed=[(f'SetPad{i}^t',swizzle(data,50,14,16,1)) for i,data in enumerate(sheets)]
+    src=next(v for _,_,v in entries(yaz0(common['cm_L_NXBtnIconL_00.szs'])) if v[:4]==b'FLYT')
+    mat=next(s for _,s in sections(src) if s[:4]==b'mat1')
+    lo,hi=struct.unpack_from('<2I',mat,12)
+    material=mat[lo:hi]
+    if not material.startswith(b'P_BtnIcon_00\0') or material[44:48]!=bytes((0,0,4,4)):
+        raise ValueError('Unexpected common-menu picture material')
+    return packed,coordinates,material
+
+
+def symbol_panes(symbols,slot,flags,first_material):
+    for name,(sheet,left,width) in symbols[1].items():
+        pic=bytearray(pane(b'pic1',f'P_Map{slot}'+name,visible=False))
+        pic[8:12]=flags; pic[8]&=~1
+        struct.pack_into('<2f',pic,76,width,40)
+        u0,u1=left/200,(left+width)/200
+        pic.extend(bytes([255])*16+struct.pack('<HBB8f',first_material+sheet,1,0,u0,0,u1,0,u0,40/56,u1,40/56))
+        struct.pack_into('<I',pic,4,len(pic))
+        yield pic
+
+
+def add_symbol_materials(panes,symbols):
+    sheets,_,material=symbols
+    result=[]
+    for s in panes:
+        if s[:4] in (b'txl1',b'mat1'):
+            count,=struct.unpack_from('<H',s,8)
+            offsets=struct.unpack_from(f'<{count}I',s,12)
+            base=12 if s[:4]==b'txl1' else 0
+            items=[s[base+i:base+j] for i,j in zip(offsets,(*offsets[1:],len(s)-base))]
+            if base:
+                items=[item.split(b'\0')[0]+b'\0' for item in items]
+                if count!=2: raise ValueError('Unexpected title texture count')
+            for i,(name,_) in enumerate(sheets):
+                if base: items.append(name.encode()+b'\0')
+                else:
+                    m=bytearray(material); m[:28]=name.encode().ljust(28,b'\0')
+                    struct.pack_into('<H',m,44,2+i); items.append(m)
+            size=12+4*len(items); out=bytearray(s[:12])
+            for item in items:
+                out+=struct.pack('<I',size-base); size+=len(item)
+            out+=b''.join(items); out+=bytes(-len(out)%4)
+            struct.pack_into('<IH',out,4,len(out),len(items)); s=out
+        result.append(s)
+    return result
+
+
+def dialog_label(source, *, hints=False, symbols=None):
     """Use the working game-font title control as plain dark text in our native dialog."""
     old='cm_L_Scroll_ListTitle_00'
     new='cm_L_SetHints_00' if hints else 'cm_L_SetLabel_00'
@@ -215,6 +292,9 @@ def dialog_label(source, *, hints=False):
                                 panes.append(label)
                         for button in JOIN_BUTTONS:
                             panes.append(join_button_pane(button,s[8:12]))
+                        if symbols:
+                            for slot in range(4):
+                                panes.extend(symbol_panes(symbols,slot,s[8:12],5))
                         for i in range(2):
                             plus=bytearray(s)
                             plus[8]&=~1
@@ -228,19 +308,25 @@ def dialog_label(source, *, hints=False):
                 if s[:4]==b'txt1' and name!=b'T_Title_00':
                     pane[8]&=~1
                 if s[:4]==b'txt1' and name==b'T_Title_00':
+                    if symbols: panes.extend(symbol_panes(symbols,0,s[8:12],4))
                     struct.pack_into('<2f',pane,76,900,160)
                     struct.pack_into('<H',pane,84,160)
                     pane[92]=4
                     pane[104:112]=bytes((30,30,30,255))*2
                     struct.pack_into('<2f',pane,112,30,38)
                 panes.append(pane)
+            if symbols:
+                panes=add_symbol_materials(panes,symbols)
             out=bytearray(data[:20])+b''.join(panes)
             struct.pack_into('<IH',out,12,len(out),len(panes))
         elif data[:4]==b'FLAN':
             if key!=name_hash('anim/'+old+'_Ptn.bflan'): raise ValueError('Settings dialog label animation changed')
             key=name_hash('anim/'+new+'_Ptn.bflan')
-        elif hints and data[:4]==b'BNTX':
-            square_hint_checker(out)
+        elif data[:4]==b'BNTX':
+            if hints: square_hint_checker(out)
+            if symbols:
+                from ctgp_pack import bntx_add_textures
+                out=bntx_add_textures(bytes(out),[(name,'ListTitleSide_00^t',sheet) for name,sheet in symbols[0]])
         result.append((key,bytes(out)))
     packed=pack_entries(result)
     return b'Yaz0'+struct.pack('>I',len(packed))+bytes(8)+b''.join(b'\xff'+packed[i:i+8] for i in range(0,len(packed),8))
@@ -580,8 +666,9 @@ def prepare(romfs, output):
         packed = b'Yaz0' + struct.pack('>I', len(nested)) + bytes(8)
         packed += b''.join(b'\xff'+nested[i:i+8] for i in range(0, len(nested), 8))
         common_parts[destination + '.szs'] = packed
-    common_parts['cm_L_SetLabel_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'])
-    common_parts['cm_L_SetHints_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'], hints=True)
+    symbols=menu_symbols(common_parts)
+    common_parts['cm_L_SetLabel_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'],symbols=symbols)
+    common_parts['cm_L_SetHints_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'], hints=True,symbols=symbols)
     for button in JOIN_BUTTONS:
         common_parts['cm_L_Join'+button+'.szs']=join_button(common_parts['cm_L_NXBtnIcon'+button[-1]+'_00.szs'],button)
     common_parts['cm_L_SetBtn_00.szs'] = dialog_button(common_parts['cm_L_WinBtn_00.szs'])

@@ -13,6 +13,9 @@ static uint64_t owner, labels[SETTINGS_VISIBLE+1], values[SETTINGS_VISIBLE+1], r
 static struct Mk8ControlTips tips;
 static uint64_t hint_plate, hint_single, hint_double, keycaps[4], key_labels[4], action_labels[4];
 static uint64_t join_buttons[4], join_plus[2];
+static const char *const symbol_names[]={"A","B","X","Y","L","R","ZL","ZR","SL","SR","Plus","Minus","DL","DR","DT","DB"};
+enum { SYMBOL_COUNT=sizeof symbol_names/sizeof *symbol_names };
+static uint64_t symbol_help, symbol_dialog, symbol_parts[5][SYMBOL_COUNT], shown_symbols[5];
 static uint64_t top, top_root, restore_nav, scrollbar;
 static uint64_t dialog, dialog_buttons[2], dialog_animations[2];
 static uint64_t dialog_labels[3];
@@ -236,6 +239,42 @@ static void hint_box(Cpu *c,uint64_t pane,float x,float y,float width,float heig
     call(c,0x70008ade58ull,pane,c->sp+332,0,0,0);
 }
 
+static int symbol_index(const char *label) {
+    bool xbox=tips.source==MK8_TIP_XBOX;
+    if(!xbox && tips.source!=MK8_TIP_NINTENDO) return -1;
+    for(unsigned i=0;i<(xbox ? 4 : SYMBOL_COUNT);i++)
+        if(!strcmp(label,symbol_names[i])) return (int)i;
+    if(!xbox) {
+        static const char *const directions[]={"Left","Right","Up","Down"};
+        if(!strncmp(label,"D-pad ",6)) label+=6;
+        for(unsigned i=0;i<4;i++) if(!strcmp(label,directions[i])) return 12+(int)i;
+    }
+    return -1;
+}
+
+static void hide_symbol(Cpu *c,unsigned slot) {
+    if(shown_symbols[slot]) call(c,0x70008ade74ull,shown_symbols[slot],false,0,0,0);
+    shown_symbols[slot]=0;
+}
+
+static float symbol_width(int icon) {
+    if(icon==10 || icon==11) return 24;
+    return icon>=4 && icon<=9 ? 56 : 40;
+}
+
+static void show_symbol(Cpu *c,unsigned slot,int icon,float x,float y) {
+    uint64_t parent=slot==4 ? symbol_dialog : symbol_help;
+    uint64_t *part=&symbol_parts[slot][icon];
+    if(!*part) {
+        char name[16];
+        snprintf(name,sizeof name,"P_Map%u%s",slot==4 ? 0 : slot,symbol_names[icon]);
+        *part=find(c,parent,name);
+    }
+    shown_symbols[slot]=*part;
+    call(c,0x70008ade74ull,*part,true,0,0,0);
+    hint_box(c,*part,x,y-5.5f,symbol_width(icon),40);
+}
+
 static float hint_text_y(bool two_lines,bool lower) {
     // The font baseline places the 36-unit keycap ten units inside each 56-unit row.
     if(hint_double && two_lines) return lower ? -57 : -1;
@@ -256,11 +295,19 @@ static void hint_background(Cpu *c,bool two_lines,float width) {
 }
 
 static bool keycap_tips(Cpu *c,const char *description,const char *const keys_text[],const char *const verbs_text[],
-                        unsigned n,const char *mouse_hint,bool show_chords) {
+                        unsigned n,const char *mouse_hint,bool show_chords,bool keyboard_joins) {
     if(!keycaps[0]) return false; // Previously prepared archives retain their stock text-only hints.
     float keys[4], verbs[4], widths[4], columns[4]={0}, total=0;
+    int icons[4]={-1,-1,-1,-1};
+    bool plain[4]={0};
     for(unsigned i=0;i<4;i++) {
-        bool cap=i<n && !(show_chords && i<2);
+        hide_symbol(c,i);
+        bool pad=i<n && tips.source!=MK8_TIP_KEYBOARD && !(keyboard_joins && i+1==n);
+        if(pad && (controller_required || controller_preview) && symbol_help && !(show_chords && i<2)) {
+            icons[i]=symbol_index(keys_text[i]);
+            plain[i]=icons[i]<0;
+        }
+        bool cap=i<n && icons[i]<0 && !plain[i] && !(show_chords && i<2);
         call(c,0x70008ade74ull,keycaps[i],cap,0,0,0);
         call(c,0x70008ade74ull,key_labels[i],cap,0,0,0);
         call(c,0x70008ade74ull,action_labels[i],i<n,0,0,0);
@@ -271,14 +318,21 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
     }
     if(!n) return false;
     unsigned per_row=n==4 ? 2 : n;
-    bool two_lines=description || mouse_hint || n>per_row;
+    bool two_lines=show_chords || description || mouse_hint || n>per_row;
     for(unsigned i=0;i<n;i++) {
-        keys[i]=show_chords && i<2 ? 136 : 22+17*strlen(keys_text[i]);
+        keys[i]=show_chords && i<2 ? 136 : icons[i]>=0 ? symbol_width(icons[i]) : 22+17*strlen(keys_text[i]);
         verbs[i]=12+17*strlen(verbs_text[i]);
+        // Use the two join captions' rendered widths so both words start in one column.
+        if(show_chords && i<2) verbs[i]=i ? 264 : 440;
         widths[i]=keys[i]+8+verbs[i];
         if(widths[i]>columns[i%per_row]) columns[i%per_row]=widths[i];
     }
     for(unsigned i=0;i<per_row;i++) total+=columns[i]+(i ? 40 : 0);
+    float lower_width=0;
+    if(show_chords) {
+        lower_width=widths[1]+(n==3 ? 88+widths[2] : 0);
+        total=widths[0]>lower_width ? widths[0] : lower_width;
+    }
     hint_background(c,two_lines,total+44>880 ? total+44 : 880);
     instruction(c,hint,79,description ? description : "");
     call(c,0x70008ade74ull,hint_second,mouse_hint!=NULL,0,0,0);
@@ -286,9 +340,18 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
     float x=0;
     for(unsigned i=0;i<n;i++) {
         if(i%per_row==0) x=-total/2;
+        if(show_chords && i<2) x=-total/2;
         float start=x+(columns[i%per_row]-widths[i])/2;
-        float y=hint_text_y(two_lines,description || i>=per_row);
+        float y=hint_text_y(two_lines,show_chords ? i!=0 : description || i>=per_row);
         float key_center=start+keys[i]/2;
+        if(plain[i]) {
+            char label[64];
+            snprintf(label,sizeof label,"%s %s",keys_text[i],verbs_text[i]);
+            hint_box(c,action_labels[i],start+widths[i]/2,y,widths[i],50);
+            text(c,action_labels[i],label);
+            x+=columns[i%per_row]+(show_chords ? 88 : 40);
+            continue;
+        }
         // The stock title font's baseline is nine layout units below its pane center.
         if(show_chords && i<2) {
             // Center the chord on the label's capital letters, above the font's plus baseline.
@@ -300,6 +363,8 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
             hint_box(c,join_buttons[2*i],key_center-left_offset,icon_y,56,40);
             hint_box(c,join_buttons[2*i+1],key_center+40,icon_y,56,40);
             hint_box(c,join_plus[i],key_center,plus_y,24,50);
+        } else if(icons[i]>=0) {
+            show_symbol(c,i,icons[i],key_center,y);
         } else {
             hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
             hint_box(c,key_labels[i],key_center,y,keys[i],50);
@@ -307,7 +372,7 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
         }
         hint_box(c,action_labels[i],start+keys[i]+8+verbs[i]/2,y,verbs[i],50);
         text(c,action_labels[i],verbs_text[i]);
-        x+=columns[i%per_row]+40;
+        x+=columns[i%per_row]+(show_chords ? 88 : 40);
     }
     return true;
 }
@@ -316,11 +381,11 @@ static void action_tips(Cpu *c,const char *description,const struct TipAction *a
     if(!hint) return;
     const char *key[4],*verb[4];
     unsigned n=0;
-    if(tips.source==MK8_TIP_KEYBOARD) for(unsigned i=0;i<count;i++) {
+    if(tips.source==MK8_TIP_KEYBOARD || ((controller_required || controller_preview) && symbol_help)) for(unsigned i=0;i<count;i++) {
         const char *label=tips.label[actions[i].action];
         if(*label && strcmp(label,"(none)")) { key[n]=label; verb[n++]=actions[i].verb; }
     }
-    if(keycap_tips(c,description,key,verb,n,n<count && !description && *fallback ? fallback : NULL,false)) return;
+    if(keycap_tips(c,description,key,verb,n,n<count && !description && *fallback ? fallback : NULL,false,false)) return;
     uint16_t lines[2][41]={{0}};
     size_t used[2]={0};
     unsigned line=0;
@@ -681,14 +746,15 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
             snprintf(title,sizeof title,"Swap Player %d with...",action_player+1);
             heading=title; help="Select another player to swap inputs."; left="Back";
         } else if(enrolling) {
-            const char *format=state==MK8_EDIT_LISTEN && join_buttons[0] ? "Player %d: choose how to join" :
+            const char *format=symbol_help && (state==MK8_EDIT_NEED_LEFT || state==MK8_EDIT_NEED_RIGHT) ? "Player %d: pair Joy-Cons" :
+                state==MK8_EDIT_LISTEN && join_buttons[0] ? "Player %d: choose how to join" :
                 keycaps[0] ? "Player %d: [L] + [R] to join" : "Player %d: [L] + [R] or SL + SR";
             snprintf(title,sizeof title,format,listening+1);
             heading=title; left="Back"; right="Use keyboard";
             switch(state) {
             case MK8_EDIT_AMBIGUOUS:
                 snprintf(title,sizeof title,"Player %d: multiple Joy-Cons",listening+1);
-                help="Release all. One player holds [L] + [R]."; break;
+                help=symbol_help ? "Release both. Pair one set at a time." : "Release all. One player holds [L] + [R]."; break;
             case MK8_EDIT_PAIR_HELD:
                 snprintf(title,sizeof title,"Player %d: Joy-Con pair ready",listening+1);
                 help="Release both shoulder buttons to join."; break;
@@ -716,20 +782,48 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
         else if(state==MK8_EDIT_LISTEN && keycaps[0]) {
             const char *key[]={"SL","SR",keyboard ? "Enter" : tips.label[MK8_TIP_BACK]};
             bool chords=join_buttons[0]!=0;
-            const char *verb[]={chords ? "Controller" : "+",chords ? "Sideways Joy-Con" : "Join sideways",
+            const char *verb[]={chords ? "Controller or paired Joy-Cons" : "+",chords ? "Sideways Joy-Con" : "Join sideways",
                                 keyboard ? "Join keyboard" : back_tip.verb};
-            bool third=keyboard || (tips.source==MK8_TIP_KEYBOARD && *key[2] && strcmp(key[2],"(none)"));
-            keycap_tips(c,help,key,verb,third ? 3 : 2,NULL,chords);
+            bool third=keyboard || ((symbol_help || tips.source==MK8_TIP_KEYBOARD) && *key[2] && strcmp(key[2],"(none)"));
+            keycap_tips(c,chords ? NULL : help,key,verb,third ? 3 : 2,NULL,chords,keyboard);
+        }
+        else if(symbol_help && (state==MK8_EDIT_NEED_LEFT || state==MK8_EDIT_NEED_RIGHT)) {
+            const char *keys[]={keyboard ? "Enter" : tips.label[MK8_TIP_BACK]};
+            const char *verbs[]={keyboard ? "Join keyboard" : back_tip.verb};
+            bool bound=*keys[0] && strcmp(keys[0],"(none)");
+            keycap_tips(c,"",keys,verbs,bound,NULL,false,keyboard);
+            hint_background(c,true,880);
+            call(c,0x70008ade74ull,hint_second,false,0,0,0);
+            float y=hint_text_y(true,false);
+            call(c,0x70008ade74ull,action_labels[3],true,0,0,0);
+            hint_box(c,action_labels[3],-205,y,96,50);
+            text(c,action_labels[3],"Press");
+            show_symbol(c,3,state==MK8_EDIT_NEED_LEFT ? 4 : 5,-134,y);
+            hint_box(c,hint,77,y,350,50);
+            text(c,hint,"on other Joy-Con to pair.");
         }
         else if(enrolling && keyboard) {
             const char *key[]={"Enter"}, *verb[]={"Join keyboard"};
-            if(!keycap_tips(c,help,key,verb,1,NULL,false))
+            if(!keycap_tips(c,help,key,verb,1,NULL,false,true))
                 action_tips(c,"Enter joins with the keyboard.",&back_tip,1,"Esc cancels.");
         }
         else if(enrolling) action_tips(c,help,&back_tip,1,"Click Back.");
         else action_tips(c,help,NULL,0,"");
         uint16_t back_icon=enrolling ? button_glyph(tips.label[MK8_TIP_BACK]) : 0;
-        if(back_icon) {
+        int mapped_back=enrolling && symbol_dialog ? symbol_index(tips.label[MK8_TIP_BACK]) : -1;
+        if(symbol_dialog) {
+            hide_symbol(c,4);
+            hint_box(c,dialog_labels[1],mapped_back>=0 ? 20 : 0,-5,900,160);
+        }
+        if(mapped_back>=0) {
+            show_symbol(c,4,mapped_back,-10-8*(float)strlen(left),0);
+            text(c,dialog_labels[1],left);
+        } else if(symbol_dialog && enrolling && tips.source!=MK8_TIP_KEYBOARD &&
+                  *tips.label[MK8_TIP_BACK] && strcmp(tips.label[MK8_TIP_BACK],"(none)")) {
+            char button[64];
+            snprintf(button,sizeof button,"%s %s",tips.label[MK8_TIP_BACK],left);
+            text(c,dialog_labels[1],button);
+        } else if(back_icon && !symbol_dialog) {
             uint16_t *line=(uint16_t *)(uintptr_t)(c->sp+128);
             line[0]=back_icon; line[1]=' '; instruction_line(line+2,38,left);
             call(c,0x70008adc54ull,dialog_labels[1],c->sp+128,0,0,0);
@@ -830,6 +924,10 @@ static void controller_layout(Cpu *c,bool required) {
 
 static void dialog_draw(Cpu *c,bool instant) {
     static const char *messages[]={"Some settings require a restart.\nRestart now?","Yes","No"};
+    if(symbol_dialog) {
+        hide_symbol(c,4);
+        hint_box(c,dialog_labels[1],0,-5,900,160);
+    }
     for(unsigned i=0;i<3;i++) if(dialog_labels[i]) text(c,dialog_labels[i],messages[i]);
     for(unsigned i=0;i<2;i++) {
         bool selected=(i==0)==restart_yes;
@@ -889,6 +987,9 @@ void mk8_settings_shared_build(uint64_t page) {
     uint64_t title=attach(c,page,root,"L_SettingsTitle");
     title_label=find(c,title,"T_Title_00"); text(c,title_label,"Settings");
     uint64_t help=attach(c,page,root,"L_SettingsHint");
+    symbol_help=call(c,0x70008ad8e8ull,help,string(c,"P_Map0A"),0,0,0) ? help : 0;
+    symbol_dialog=0;
+    memset(symbol_parts,0,sizeof symbol_parts); memset(shown_symbols,0,sizeof shown_symbols);
     hint=find(c,help,"T_Title_00"); hint_second=find(c,help,"T_Title_01");
     hint_plate=find(c,help,"W_Title_00");
     hint_double=call(c,0x70008ad8e8ull,help,string(c,"W_HintDouble"),0,0,0);
@@ -950,7 +1051,9 @@ void mk8_settings_shared_build(uint64_t page) {
     for(unsigned i=0;i<2;i++) {
         visible(c,dialog,i ? "L_WinBtn_R" : "L_WinBtn_L",false);
         dialog_buttons[i]=attach(c,page,root,i ? "L_SettingsNo" : "L_SettingsYes");
-        dialog_labels[i+1]=find(c,attach(c,page,dialog_buttons[i],"L_SettingsLabel"),"T_Title_00");
+        uint64_t label=attach(c,page,dialog_buttons[i],"L_SettingsLabel");
+        dialog_labels[i+1]=find(c,label,"T_Title_00");
+        if(!i && symbol_help) symbol_dialog=label;
         dialog_animations[i]=button_animations(c,dialog_buttons[i]);
     }
     // Um cursor próprio preserva a posição e a animação do retículo da cena.
