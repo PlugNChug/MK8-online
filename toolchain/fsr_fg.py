@@ -90,6 +90,56 @@ def prepare_device(runtime):
                     '                             .enabledExtensionCount = n_ext, .ppEnabledExtensionNames = ext};',
                     'Device queue creation')
 
+    # The generated shader blobs declare their storage images with format Unknown
+    # (tools/gen_fg_blobs.py): the SDK creates each image with a format chosen for the effect
+    # (R16G16_SFLOAT, R8_UINT, R16G16_SINT, the swapchain format, ...), so the format must come
+    # from the image view. Only when frame generation is requested, so the disabled path creates
+    # the device exactly as before.
+    text = _replace(text,
+                    '    b->shaderClipDistance = h->shaderClipDistance;',
+                    '    b->shaderClipDistance = h->shaderClipDistance;\n'
+                    '    if (getenv("MK8_FSR_FG")) {\n'
+                    '        b->shaderStorageImageWriteWithoutFormat = h->shaderStorageImageWriteWithoutFormat;\n'
+                    '        b->shaderStorageImageReadWithoutFormat = h->shaderStorageImageReadWithoutFormat;\n'
+                    '        LOG("[fsr_fg] formatless storage images: write %d read %d\\n",\n'
+                    '            (int)b->shaderStorageImageWriteWithoutFormat, (int)b->shaderStorageImageReadWithoutFormat);\n'
+                    '        if (!b->shaderStorageImageWriteWithoutFormat)\n'
+                    '            LOG("[fsr_fg] warning: no shaderStorageImageWriteWithoutFormat; frame generation cannot run\\n");\n'
+                    '    }',
+                    'Device features')
+
+    # The generated frame-interpolation shaders declare ComputeDerivativeGroupLinearKHR
+    # (Mesa/RADV: VK_KHR_compute_shader_derivatives). Enable the extension and its feature only
+    # when frame generation is requested.
+    text = _replace(text,
+                    '    g_fault_ext = fault;',
+                    '    g_fault_ext = fault;\n'
+                    '    bool fg_derivatives = false;\n'
+                    '    if (getenv("MK8_FSR_FG") && has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
+                    '        fg_derivatives = true;\n'
+                    '        ext[n_ext++] = VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME;\n'
+                    '    }',
+                    'Compute shader derivatives extension')
+    text = _replace(text,
+                    '    VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,\n'
+                    '                                   .pNext = rob2 ? (void *)&r2 : fault ? (void *)&ff : (void *)&f11};',
+                    '    VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,\n'
+                    '                                   .pNext = rob2 ? (void *)&r2 : fault ? (void *)&ff : (void *)&f11};\n'
+                    '    VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR fg_deriv_feat = {\n'
+                    '        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR};\n'
+                    '    if (fg_derivatives) {\n'
+                    '        VkPhysicalDeviceFeatures2 fg_deriv_query = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,\n'
+                    '                                                    .pNext = &fg_deriv_feat};\n'
+                    '        vkGetPhysicalDeviceFeatures2(g_vk.phys, &fg_deriv_query);\n'
+                    '        if (fg_deriv_feat.computeDerivativeGroupLinear) {\n'
+                    '            fg_deriv_feat.pNext = f.pNext;\n'
+                    '            f.pNext = &fg_deriv_feat;\n'
+                    '        } else {\n'
+                    '            LOG("[fsr_fg] warning: no computeDerivativeGroupLinear; frame generation cannot run\\n");\n'
+                    '        }\n'
+                    '    }',
+                    'Compute shader derivatives feature')
+
     text = _replace(text,
                     'void vk_queue_lock(void) { pthread_mutex_lock(&queue_lock); }\n'
                     'void vk_queue_unlock(void) { pthread_mutex_unlock(&queue_lock); }',

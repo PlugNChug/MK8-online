@@ -132,17 +132,18 @@ static bool enabled_by_env(void) {
         mode = (e && *e && !strcasecmp(e, "fsr3")) ? 1 : 0;
         if (e && *e && !mode) fprintf(stderr, "[fsr_fg] ignored: MK8_FSR_FG=%s (only fsr3 is implemented)\n", e);
         if (mode) {
-            // The source-built provider (tools/gen_fg_blobs.py) creates contexts and reports 3.1.7,
-            // but its generated SPIR-V declares storage-image formats that do not match the SDK's
-            // resources (Rg32f vs R16G16_FLOAT, R32ui vs R8_UINT, ...); the GPU faults on the second
-            // present. Enabling it needs an explicit acknowledgement until those blobs are fixed and
-            // dispatch-validated. A provider built from AMD's signed SPIR-V also passes this check.
+            // The source-built provider (tools/gen_fg_blobs.py) is dispatch-validated headlessly: the
+            // generated blobs bind the constant/UAV/SRV buffers, declare the non-atomic storage
+            // images with format Unknown (the device enables the formatless features when FG is
+            // requested), and the headless fixture and 120-frame harness run with validation clean
+            // and no GPU fault. It is not qualified in-game yet (image quality, pacing, 120 Hz,
+            // upscaler combination), so enabling it still needs an explicit acknowledgement.
             const char *allow = getenv("MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER");
             if (!allow || !*allow || !strcmp(allow, "0")) {
                 mode = 0;
-                fprintf(stderr, "[fsr_fg] disabled: the source-built provider is not dispatch-validated "
-                                "(storage-image formats in the generated shader blobs do not match the SDK resources; "
-                                "the GPU faults on the second present). Set MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1 only "
+                fprintf(stderr, "[fsr_fg] disabled: the source-built provider is not qualified in-game yet "
+                                "(the headless fixture and harness are validation-clean; image quality, pacing and "
+                                "upscaler combination are unverified). Set MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1 "
                                 "to test a provider build.\n");
             }
         }

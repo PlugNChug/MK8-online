@@ -63,6 +63,30 @@ class FsrFgPatchTests(unittest.TestCase):
         self.assertIn('.queueCount = 2,', device)
         self.assertIn('.queueCreateInfoCount = fg_queues ? 2 : 1', device)
 
+    def test_enables_formatless_storage_images_only_for_frame_generation(self):
+        # The generated FG blobs declare storage images with format Unknown (tools/gen_fg_blobs.py),
+        # so the device needs shaderStorageImageWrite/ReadWithoutFormat. The gate keeps the
+        # FG-disabled device creation identical.
+        runtime = self.patched()
+        device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
+        gate = ('    if (getenv("MK8_FSR_FG")) {\n'
+                '        b->shaderStorageImageWriteWithoutFormat = h->shaderStorageImageWriteWithoutFormat;\n'
+                '        b->shaderStorageImageReadWithoutFormat = h->shaderStorageImageReadWithoutFormat;')
+        self.assertIn(gate, device)
+
+    def test_enables_compute_shader_derivatives_for_frame_generation(self):
+        # The FG inpainting-pyramid shaders declare ComputeDerivativeGroupLinearKHR, so the device
+        # needs VK_KHR_compute_shader_derivatives and the feature; also FG-gated.
+        runtime = self.patched()
+        device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
+        self.assertIn(
+            'if (getenv("MK8_FSR_FG") && has_ext(ep, ne, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {\n'
+            '        fg_derivatives = true;\n'
+            '        ext[n_ext++] = VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME;',
+            device)
+        self.assertIn('VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR fg_deriv_feat', device)
+        self.assertIn('f.pNext = &fg_deriv_feat;', device)
+
     def test_enables_the_depth_capture_and_camera_scan_for_frame_generation(self):
         runtime = self.patched()
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
@@ -119,7 +143,14 @@ class FsrFgNativeTests(unittest.TestCase):
             self.assertIn('swapchain provider offers 3.1.7', output)
             self.assertIn('swapchain context: rc=0 (OK)', output)
             self.assertIn('frame-generation context: rc=0 (OK)', output)
+            self.assertIn('presented 6 frames', output)
+            self.assertIn('frame 5:', output)
             self.assertIn('RESULT: OK', output)
+            # The fixture enables the validation layer whenever it is installed, and fails the run
+            # itself on any validation error. Assert the clean result when it ran.
+            if 'validation: VK_LAYER_KHRONOS_validation enabled' in output:
+                self.assertIn('validation errors: 0', output)
+                self.assertIn('features: formatless storage image write=1 read=1', output)
 
 
 if __name__ == '__main__':

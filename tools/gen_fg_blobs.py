@@ -15,6 +15,14 @@ Bindings are rewritten to a stable scheme that matches the SDK's Vulkan backend:
 The blob metadata and the SPIR-V decorations are emitted from the same reflection data, so the
 descriptor set layout, the pipeline bindings and the dispatch bindings stay consistent.
 
+DXC infers storage-image formats from the HLSL element type (Rg32f, R32ui, ...), but the SDK creates
+its internal images with different formats (R16G16_SFLOAT, R8_UINT, R16G16_SINT, R8_UNORM, ...).
+AMD's shipped Windows shaders declare the same inferred formats and their driver tolerates the
+mismatch; Vulkan validation and RADV require the declared format to match the view. Every non-atomic
+storage image is therefore rewritten to format Unknown, with the StorageImageRead/WriteWithoutFormat
+capabilities, and the caller enables the matching device features. Images accessed through
+OpImageTexelPointer keep an explicit R32ui format (Vulkan does not allow Unknown there).
+
 Usage:
   gen_fg_blobs.py --sdk <FidelityFX-SDK tree> --dxc <dxc> --out fg_blobs.cpp
 """
@@ -88,14 +96,19 @@ def classify(text, bindings):
     for tid, (op, rest) in types.items():
         if op == "OpTypePointer":
             toks = rest.split()
-            if toks and toks[0] == "UniformConstant":
+            if toks and toks[0] in ("UniformConstant", "Uniform", "StorageBuffer"):
                 ptr_target[tid] = toks[1].lstrip("%")
 
     nonwritable = set(re.findall(r"OpDecorate %(\w+) NonWritable", text))
+    # DXC decorates the runtime-array member of a StructuredBuffer NonWritable, not the variable.
+    nonwritable_members = {}
+    for m in re.finditer(r"OpMemberDecorate %(\w+) (\d+) NonWritable", text):
+        nonwritable_members.setdefault(m.group(1), set()).add(int(m.group(2)))
 
     out = []
     counters = {"srv_tex": 0, "uav_tex": 0, "cbv": 0, "srv_buf": 0, "uav_buf": 0}
-    for m in re.finditer(r"^\s*%(\w+) = OpVariable %(\w+) UniformConstant", text, re.M):
+    for m in re.finditer(
+            r"^\s*%(\w+) = OpVariable %(\w+) (UniformConstant|Uniform|StorageBuffer)\b", text, re.M):
         var, ptr = m.group(1), m.group(2)
         pointee = ptr_target.get(ptr)
         if pointee is None:
@@ -110,8 +123,15 @@ def classify(text, bindings):
             kind = "sampler"
         elif op == "OpTypeStruct":
             members = [t.lstrip("%") for t in rest.split()]
-            if any(types.get(t, ("", ""))[0] == "OpTypeRuntimeArray" for t in members):
-                kind = "srv_buf" if var in nonwritable else "uav_buf"
+            runtime_arrays = [i for i, t in enumerate(members)
+                              if types.get(t, ("", ""))[0] == "OpTypeRuntimeArray"]
+            if runtime_arrays:
+                # StructuredBuffer (SRV) / RWStructuredBuffer (UAV). Both live in a Uniform or
+                # StorageBuffer storage class in the Vulkan 1.2 SPIR-V DXC emits; the read-only one
+                # has NonWritable on the variable or on its runtime-array member.
+                readonly = var in nonwritable or any(
+                    i in nonwritable_members.get(pointee, ()) for i in runtime_arrays)
+                kind = "srv_buf" if readonly else "uav_buf"
             else:
                 kind = "cbv"
         else:
@@ -138,6 +158,99 @@ def rewrite_bindings(text, descriptors):
         lambda m: f"{m.group(1)}{new_binding.get(m.group(2), m.group(3))}",
         text,
     )
+    return text
+
+
+def rewrite_storage_image_formats(text):
+    """Declare storage image formats Unknown (except images used by atomics) and add capabilities.
+
+    The SDK creates its internal images with formats chosen for the effect (R16G16_SFLOAT,
+    R8_UINT, R16G16_SINT, R8_UNORM, the swapchain format, ...), while DXC infers Rg32f/R32ui/...
+    from the HLSL element type. Rewriting to Unknown moves the format decision to the image view,
+    which is the only way the same shader can serve all of them. OpTypeImage declarations that
+    become identical are merged because SPIR-V forbids duplicate non-aggregate types.
+
+    Vulkan requires OpImageTexelPointer (InterlockedAdd and friends) to name an explicit 32/64-bit
+    format, so the image types used by atomics keep the format DXC inferred. Those are the R32_UINT
+    motion-vector/depth/SCD images, and R32ui matches the SDK views.
+    """
+    var_type = {}
+    for m in re.finditer(
+            r"^\s*%(\w+) = OpVariable %(\w+) (?:UniformConstant|Uniform|StorageBuffer)\b", text, re.M):
+        var_type[m.group(1)] = m.group(2)
+    ptr_type = {}
+    for m in re.finditer(r"^\s*%(\w+) = OpTypePointer \w+ %(\w+)", text, re.M):
+        ptr_type[m.group(1)] = m.group(2)
+    atomic_types = set()
+    for m in re.finditer(r"OpImageTexelPointer \S+ %(\w+)\b", text):
+        pointer = var_type.get(m.group(1))
+        target = ptr_type.get(pointer) if pointer else None
+        if target:
+            atomic_types.add(target)
+
+    lines = text.splitlines()
+    aliases = {}
+    seen = {}
+    drop = set()
+    changed = False
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)%(\w+) = OpTypeImage (.*)$", line)
+        if not m:
+            continue
+        tokens = m.group(3).split()
+        # Tokens: sampled type, dim, depth, arrayed, ms, sampled, format[, access qualifier]
+        if len(tokens) < 7:
+            continue
+        if int(tokens[5]) == 2 and tokens[6] != "Unknown":
+            if m.group(2) in atomic_types:
+                # Vulkan's OpImageTexelPointer rule: only an explicit 32/64-bit format is valid.
+                if tokens[6] not in ("R64i", "R64ui", "R32f", "R32i", "R32ui"):
+                    raise RuntimeError(
+                        f"atomic storage image has unsupported format {tokens[6]} (module uses OpImageTexelPointer)")
+            else:
+                tokens[6] = "Unknown"
+                line = f"{m.group(1)}%{m.group(2)} = OpTypeImage " + " ".join(tokens)
+                lines[i] = line
+                changed = True
+        payload = " ".join(tokens)
+        if payload in seen:
+            aliases[m.group(2)] = seen[payload]
+            drop.add(i)
+        else:
+            seen[payload] = m.group(2)
+
+    kept = [line for i, line in enumerate(lines) if i not in drop]
+    text = "\n".join(kept) + "\n"
+    for duplicate, keep in aliases.items():
+        # Drop metadata for the merged type before repointing every use at the kept type.
+        text = re.sub(rf"^\s*Op(Name|Decorate|MemberDecorate) %{duplicate}\b.*\n", "", text, flags=re.M)
+        text = re.sub(rf"%{duplicate}\b", f"%{keep}", text)
+
+    if changed or aliases:
+        # DXC adds StorageImageExtendedFormats for the Rg32f/R32ui formats it inferred. It is only
+        # needed for formats outside the core set; with everything but the atomic R32ui images
+        # Unknown it would require an extra device feature for no reason.
+        core = {"R64i", "R64ui", "R32f", "R32i", "R32ui"}
+        formats = re.findall(r"OpTypeImage \S+ \S+ \d+ \d+ \d+ \d+ (\w+)", text)
+        if all(fmt in core or fmt == "Unknown" for fmt in formats):
+            text = re.sub(r"^\s*OpCapability StorageImageExtendedFormats\n", "", text, flags=re.M)
+        # A storage image with format Unknown needs the matching read/write capability, no matter
+        # whether this module had a format to rewrite (a three-component image is already Unknown).
+        has_unknown_storage = any(
+            int(tokens[5]) == 2 and tokens[6] == "Unknown"
+            for tokens in (m.group(1).split() for m in re.finditer(r"OpTypeImage (.*)$", text, re.M))
+            if len(tokens) >= 7)
+        if has_unknown_storage:
+            capabilities = []
+            if re.search(r"OpImageRead\b", text):
+                capabilities.append("StorageImageReadWithoutFormat")
+            if re.search(r"OpImageWrite\b", text):
+                capabilities.append("StorageImageWriteWithoutFormat")
+            if capabilities and "OpCapability Shader" in text:
+                anchor = re.search(r"^\s*OpCapability Shader\n", text, re.M)
+                added = "".join(f"               OpCapability {capability}\n" for capability in capabilities
+                                if f"OpCapability {capability}" not in text)
+                text = text[:anchor.end()] + added + text[anchor.end():]
     return text
 
 
@@ -171,6 +284,7 @@ def build_module(module_name, hlsl, include_dirs, dxc, defines, tmp):
     run(cmd)
 
     text = disassemble(spv)
+    text = rewrite_storage_image_formats(text)
     bindings = name_map(text)
     descriptors = classify(text, bindings)
     text = rewrite_bindings(text, descriptors)
@@ -200,10 +314,16 @@ def c_bytes(data):
 
 
 def c_names(values):
+    # A zero-length array is not valid C++ (MSVC rejects it); the count in the blob is 0, so the
+    # contents are never read. Emit one null entry so the declaration is well-formed everywhere.
+    if not values:
+        return "{nullptr}"
     return "{" + ", ".join(f'"{v}"' for v in values) + "}"
 
 
 def c_u32(values):
+    if not values:
+        return "{0}"
     return "{" + ", ".join(str(v) for v in values) + "}"
 
 
@@ -229,8 +349,8 @@ def emit_blob(mod, guard):
         ("sampler_bind", [b for _, b in mod.samplers]),
     ):
         lines.append(f"static const uint32_t {ident}_{field}[] = {c_u32(values)};")
-        lines.append(f"static const uint32_t {ident}_{field}_counts[] = {{{','.join(['1'] * len(values))}}};")
-        lines.append(f"static const uint32_t {ident}_{field}_spaces[] = {{{','.join(['0'] * len(values))}}};")
+        lines.append(f"static const uint32_t {ident}_{field}_counts[] = {c_u32([1] * len(values))};")
+        lines.append(f"static const uint32_t {ident}_{field}_spaces[] = {c_u32([0] * len(values))};")
     lines.append(
         "extern const FfxShaderBlob %s = {\n"
         "    %s_data, sizeof(%s_data), \"CS\",\n"

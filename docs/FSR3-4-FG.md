@@ -137,35 +137,64 @@ Status 20/11/2026. Extends `docs/FSR.md`.
 - **Provider build fix:** `tools/fg-linux/CMakeLists.txt` now defines `FFX_FRAMEGENERATION=1`. Without it the
   Vulkan backend leaves `fpSwapChainConfigureFrameGeneration` null and `ffxConfigure` on the frame-generation
   context dereferences null; a provider built before this fix cannot use the swapchain path.
-- **Provider blocker (20/11/2026):** the generated shader blobs are not dispatch-validated. The Khronos validation
-  layer reports storage-image format mismatches during the first prepare/interpolation: `rw_dilated_motion_vectors`
-  declares `Rg32f` but the SDK resource view is `R16G16_SFLOAT`, `rw_optical_flow_input*` declares `R32ui` but the
-  view is `R8_UINT`, `rw_optical_flow` declares `Rg32i` but the view is `R16G16_SINT`, and `rw_output` writes three
-  components into a `B8G8R8A8_UNORM` image. `rw_counters`/`r_counters` are also declared but absent from the bound
-  descriptor sets. On the second present the GPU faults (`radv: GPUVM fault detected at address 0x8001198000`), the
-  composition command lists never complete, and the provider's command pool dereferences a null entry. This is a
-  blob-generation issue (`tools/gen_fg_blobs.py` needs the SDK's resource-format override table and the correct
-  component widths), not a runtime-path issue: context creation, the 3.1.7 check, the first prepare and the first
-  present all succeed. Until the blobs are fixed, the bridge refuses to enable without
-  `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1`; enabling it reproduces the fault and is for provider development only.
+- **Provider blocker fixed in the generated blobs (20/11/2026, later):** the fault had two independent causes,
+  both in the provider artifacts rather than in the runtime path. (a) `tools/gen_fg_blobs.py::classify` only
+  scanned `UniformConstant` variables. DXC puts constant buffers and `StructuredBuffer` in `Uniform` and
+  `RWStructuredBuffer` in `StorageBuffer`, so `cbFI` (all passes), `rw_counters` (setup and the inpainting
+  pyramid) and `r_counters` (interpolation/disocclusion) were missing from the blob table and kept their original
+  DXC binding slots, colliding with texture bindings; the pipeline layout had no binding 128 and the counters
+  were unbound, which is what RADV faulted on (`GPUVM fault detected at address 0x8001198000`) and why the
+  composition command lists never completed. The classifier now scans all three storage classes, treats a struct
+  with `OpTypeRuntimeArray` as a buffer, and detects a read-only `StructuredBuffer` from the
+  `OpMemberDecorate ... NonWritable` DXC emits, not only from a variable decoration. `r_counters` is therefore an
+  SRV buffer and `rw_counters` a UAV buffer, matching the shader decoration and the SDK's
+  `FFX_FRAMEINTERPOLATION_RESOURCE_IDENTIFIER_COUNTERS` binding table. (b) DXC infers `Rg32f`/`R32ui`/`Rg32i`
+  from the HLSL element type while the SDK creates `R16G16_SFLOAT`, `R8_UINT`, `R16G16_SINT`, `R8_UNORM`,
+  `R8G8_UNORM` and the BGRA8 backbuffer; Vulkan requires the declared storage-image format to match the view.
+  Every non-atomic storage image is now emitted with format `Unknown` and the
+  `StorageImageReadWithoutFormat`/`StorageImageWriteWithoutFormat` capabilities; `toolchain/fsr_fg.py` enables the
+  matching device features only when `MK8_FSR_FG` is set, so the FG-disabled device is unchanged. Images used by
+  `OpImageTexelPointer` (motion-vector fields, reconstructed depth, SCD histogram/temp) keep `R32ui`, which is the
+  only form Vulkan allows there and matches their `R32_UINT` views. (c) The SDK's Vulkan port declared
+  `RWTexture2D<FfxFloat32x3> rw_output` and wrote three components into the four-component backbuffer;
+  `tools/build_fg_provider.py` now patches `ffx_frameinterpolation_callbacks_hlsl.h` to a four-component output
+  (the inpainting mask still receives alpha). (d) The inpainting-pyramid shaders declare
+  `ComputeDerivativeGroupLinearKHR`; `toolchain/fsr_fg.py` enables `VK_KHR_compute_shader_derivatives` and
+  `computeDerivativeGroupLinear` for FG. (e) Two provider defects found by the same runs were patched in the
+  build: `FrameInterpolationSwapchainVK::init` created the per-image present semaphores twice (four leaked
+  semaphores at `vkDestroyDevice`), and the UI-composition/debug-pacing pipelines used `lineWidth = 0.0`; the
+  global UI composition objects are now released when the swapchain context is destroyed. With these changes the
+  headless swapchain fixture and the 120-frame harness run with `VK_LAYER_KHRONOS_validation` report zero errors
+  and no GPU fault. The bridge still requires `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1`: the provider is
+  dispatch-validated headlessly, but the in-game path has not been re-run with this build, and image quality,
+  pacing/latency, 120 Hz and combination with the upscaler remain unverified. Removing the gate is a separate
+  one-line change after that run.
 - **Tests:** `tests/test_fsr_fg.py` applies the real patch chain (`fsr` → `submit_profile` → `acquire_bound` →
   `fsr_fg`) to the pinned runtime and runs `tests/fixtures/fsr_fg_swapchain.cpp`: a headless 1920x1080 device that
-  checks 3.1.7, creates both contexts, queries the replacement functions, records a prepare dispatch and presents.
-  It exits non-zero on any failure; `MK8_FSR_FG_REQUIRE_NATIVE=1` turns a missing provider into a failure instead
-  of a skip.
-- **Evidence:** the native smoke test passes on RADV GFX1201 (RX 9070 XT) with provider 3.1.7 (3.1.7 check,
-  swapchain context, 1080p effect context, replacement functions, prepare dispatch, present, `vkDeviceWaitIdle`
-  clean). The runtime builds (221 units). The FG-disabled boot reaches the start screen and presents (frame 597 at
-  1920x1080, no `[fsr_fg]` activation lines). `MK8_FSR_FG=fsr3` alone logs the unvalidated-provider gate and keeps
-  the normal path; with `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER=1` the log shows `swapchain provider offers 3.1.7`,
-  `swapchain provider 3.1.7`, `active: FFX frame-interpolation swapchain 1920x1080`, the first prepare and
-  `first interpolated frame recorded`, then the provider GPU fault described above. Image quality, pacing/latency,
-  a real 120 Hz presentation and combining with the upscaler are **not** verified; `gameplay_verified` stays false.
+  checks 3.1.7, creates both contexts, queries the replacement functions, records six prepare dispatches with
+  increasing frame IDs and presents six frames, enabling the validation layer and its messenger when installed.
+  It exits non-zero on any failure or validation error; `MK8_FSR_FG_REQUIRE_NATIVE=1` turns a missing provider into
+  a failure instead of a skip.
+- **Evidence (final provider, 20/11/2026):** `tools/build_fg_provider.py` from the pinned archives completes with
+  the 1080p context self-test (`ffxCreateContext ... rc=0 (OK)`, `ffxDestroyContext rc=0 (OK)`). The headless
+  fixture does six prepares/presents with `VK_LAYER_KHRONOS_validation` and reports `validation errors: 0`,
+  `RESULT: OK` and no GPU fault. The 120-frame harness (`tools/fg-harness/fg_harness.cpp`, 1280x720) reports
+  `FG-HARNESS ok rendered=120 presented=240 last_present_count=238 generated=120 real=120 readback=ok
+  validation=clean warnings=0 ... generated_dispatch=120`; the readback differs from both neighbours
+  (`generated-vs-previous=0.1899`, `generated-vs-current=0.1894`). `tests.test_fg_provider` passes its three native
+  provider tests and three generator tests; `tests.test_fsr_fg` passes 8/8. The FG-disabled path is unchanged (the
+  new device features and the derivatives extension are gated on `MK8_FSR_FG`). Still unverified: in-game image
+  quality, pacing/latency, a real 120 Hz presentation, combining with the upscaler, and the full
+  race/restart/save; `gameplay_verified` stays false.
 
 ```sh
 # native smoke test (no game, no window)
 MK8_FSR_FG_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so \
   MK8_FSR_FG_REQUIRE_NATIVE=1 python3 -m unittest tests.test_fsr_fg -v
+
+# 120-frame native harness (validation layer on by default)
+MK8_FG_HARNESS_LIB=$XDG_DATA_HOME/mk8online/fsr/libamd_fidelityfx_framegeneration_vk.so \
+  MK8_FG_HARNESS_REQUIRE_PROVIDER=1 python3 -m unittest tests.test_fg_harness -v
 
 # runtime: normal path (FG off), the safe gate, and provider development
 ./mk8drecomp <game-root>

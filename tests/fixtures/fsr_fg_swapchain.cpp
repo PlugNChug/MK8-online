@@ -3,8 +3,13 @@
 // It mirrors runtime/mk8/graphics/fsr_fg.cpp against a headless Vulkan surface: verify that the
 // provider offers the swapchain ABI 3.1.7, create the swapchain context with the extra present and
 // acquire queues, query the replacement functions, create a 1080p frame-generation context,
-// configure it, record one prepare dispatch, present once, and destroy everything in the documented
-// order. Any failure returns non-zero; no step is treated as optional.
+// configure it, record a prepare dispatch and present several frames (the provider's interpolation
+// and composition run between presents), and destroy everything in the documented order.
+//
+// The device enables formatless storage images because the generated frame-generation SPIR-V
+// declares its storage images with format Unknown. When the Khronos validation layer is available
+// (or MK8_FSR_FG_VALIDATION=1 is set), the instance enables it and a debug messenger; any validation
+// error fails the run. Any failure returns non-zero; no step is treated as optional.
 //
 // Usage: fsr_fg_swapchain [provider.so]
 // Provider resolution otherwise matches the runtime: MK8_FSR_FG_LIB, XDG_DATA_HOME, HOME.
@@ -26,6 +31,19 @@
 #include <vector>
 
 namespace {
+
+constexpr uint32_t kFrames = 6;
+uint32_t g_validation_errors = 0;
+
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                  VkDebugUtilsMessageTypeFlagsEXT,
+                                                  const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
+    const bool error = severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    fprintf(stderr, "validation %s: %s: %s\n", error ? "ERROR" : "warning",
+            data->pMessageIdName ? data->pMessageIdName : "(no id)", data->pMessage);
+    if (error) g_validation_errors++;
+    return VK_FALSE;
+}
 
 typedef ffxReturnCode_t (*PfnCreate)(ffxContext*, ffxCreateContextDescHeader*, const ffxAllocationCallbacks*);
 typedef ffxReturnCode_t (*PfnDestroy)(ffxContext*, const ffxAllocationCallbacks*);
@@ -135,15 +153,62 @@ int main(int argc, char** argv) {
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.apiVersion = VK_API_VERSION_1_3;
-    const char* extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME};
+    bool validation = false;
+    bool debug_utils = false;
+    {
+        uint32_t layer_count = 0;
+        vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+        std::vector<VkLayerProperties> layers(layer_count);
+        vkEnumerateInstanceLayerProperties(&layer_count, layers.data());
+        for (const VkLayerProperties& layer : layers)
+            if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) validation = true;
+        uint32_t extension_count = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
+        std::vector<VkExtensionProperties> available(extension_count);
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, available.data());
+        for (const VkExtensionProperties& extension : available)
+            if (strcmp(extension.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) debug_utils = true;
+    }
+    if (!validation || !debug_utils) {
+        if (getenv("MK8_FSR_FG_VALIDATION")) {
+            printf("FAIL: validation requested but the layer or VK_EXT_debug_utils is unavailable\n");
+            return 1;
+        }
+        validation = false;  // run without the layer rather than requiring it everywhere
+    }
+    VkDebugUtilsMessengerCreateInfoEXT debug_info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+    debug_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+    debug_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    debug_info.pfnUserCallback = validation_message;
+    const char* layers[] = {"VK_LAYER_KHRONOS_validation"};
+    const char* extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME,
+                                VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
     VkInstanceCreateInfo instance_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     instance_info.pApplicationInfo = &app;
-    instance_info.enabledExtensionCount = 2;
+    instance_info.enabledExtensionCount = validation ? 3u : 2u;
     instance_info.ppEnabledExtensionNames = extensions;
+    instance_info.enabledLayerCount = validation ? 1u : 0u;
+    instance_info.ppEnabledLayerNames = layers;
+    instance_info.pNext = validation ? &debug_info : nullptr;
     VkInstance instance = VK_NULL_HANDLE;
     if (vkCreateInstance(&instance_info, nullptr, &instance) != VK_SUCCESS) {
         printf("vkCreateInstance failed\n");
         return 1;
+    }
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+    if (validation) {
+        auto create_messenger =
+            (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+        if (!create_messenger || create_messenger(instance, &debug_info, nullptr, &messenger) != VK_SUCCESS) {
+            printf("FAIL: could not install the validation messenger\n");
+            return 1;
+        }
+        printf("validation: VK_LAYER_KHRONOS_validation enabled\n");
+    } else {
+        printf("validation: layer not enabled (not installed)\n");
     }
     auto create_headless = (PFN_vkCreateHeadlessSurfaceEXT)vkGetInstanceProcAddr(instance, "vkCreateHeadlessSurfaceEXT");
     VkHeadlessSurfaceCreateInfoEXT headless{VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT};
@@ -210,12 +275,61 @@ int main(int argc, char** argv) {
     queues[1].queueFamilyIndex = present_family;
     queues[1].queueCount = 2;
     queues[1].pQueuePriorities = &priority;
-    const char* device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    uint32_t property_count = 0;
+    vkEnumerateDeviceExtensionProperties(physical, nullptr, &property_count, nullptr);
+    std::vector<VkExtensionProperties> device_properties(property_count);
+    vkEnumerateDeviceExtensionProperties(physical, nullptr, &property_count, device_properties.data());
+    bool derivatives_supported = false;
+    for (const VkExtensionProperties& property : device_properties)
+        if (strcmp(property.extensionName, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME) == 0)
+            derivatives_supported = true;
+    if (derivatives_supported) device_extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+
+    // The generated frame-generation shaders need formatless storage images (their OpTypeImage
+    // format is Unknown), timeline semaphores (the swapchain creates them), dynamic rendering and
+    // ComputeDerivativeGroupLinearKHR (the inpainting-pyramid passes).
+    VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR available_derivatives{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR};
+    VkPhysicalDeviceVulkan13Features available13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceVulkan12Features available12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    available13.pNext = &available_derivatives;
+    available12.pNext = &available13;
+    VkPhysicalDeviceFeatures2 available_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    available_features.pNext = &available12;
+    vkGetPhysicalDeviceFeatures2(physical, &available_features);
+    if (!available_features.features.shaderStorageImageWriteWithoutFormat) {
+        printf("FAIL: the device cannot write storage images without a format\n");
+        return 1;
+    }
+    if (!available12.timelineSemaphore || !available13.dynamicRendering || !derivatives_supported ||
+        !available_derivatives.computeDerivativeGroupLinear) {
+        printf("FAIL: missing a device feature the frame-generation provider requires\n");
+        return 1;
+    }
+    VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR enabled_derivatives{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR};
+    enabled_derivatives.computeDerivativeGroupLinear = VK_TRUE;
+    VkPhysicalDeviceVulkan13Features enabled13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    enabled13.dynamicRendering = VK_TRUE;
+    VkPhysicalDeviceVulkan12Features enabled12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    enabled12.timelineSemaphore = VK_TRUE;
+    VkPhysicalDeviceFeatures2 enabled_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    enabled_features.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+    enabled_features.features.shaderStorageImageReadWithoutFormat =
+        available_features.features.shaderStorageImageReadWithoutFormat;
+    enabled_features.pNext = &enabled12;
+    enabled12.pNext = &enabled13;
+    enabled13.pNext = &enabled_derivatives;
+    printf("features: formatless storage image write=1 read=%d derivatives=%d\n",
+           (int)enabled_features.features.shaderStorageImageReadWithoutFormat,
+           (int)enabled_derivatives.computeDerivativeGroupLinear);
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.queueCreateInfoCount = 2;
     device_info.pQueueCreateInfos = queues;
-    device_info.enabledExtensionCount = 1;
-    device_info.ppEnabledExtensionNames = device_extensions;
+    device_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
+    device_info.ppEnabledExtensionNames = device_extensions.data();
+    device_info.pNext = &enabled_features;
     VkDevice device = VK_NULL_HANDLE;
     if (vkCreateDevice(physical, &device_info, nullptr, &device) != VK_SUCCESS) {
         printf("vkCreateDevice failed\n");
@@ -266,9 +380,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    VkSurfaceCapabilitiesKHR surface_caps{};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &surface_caps);
     VkSwapchainCreateInfoKHR create_info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     create_info.surface = surface;
-    create_info.minImageCount = 3;
+    create_info.minImageCount = surface_caps.minImageCount > 3 ? surface_caps.minImageCount : 3;
     create_info.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
     create_info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     create_info.imageExtent = {1920, 1080};
@@ -374,32 +490,22 @@ int main(int argc, char** argv) {
     VkCommandBufferAllocateInfo command_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     command_info.commandPool = pool;
     command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command_info.commandBufferCount = 1;
-    VkCommandBuffer command = VK_NULL_HANDLE;
-    vkAllocateCommandBuffers(device, &command_info, &command);
+    command_info.commandBufferCount = kFrames;
+    VkCommandBuffer commands[kFrames]{};
+    vkAllocateCommandBuffers(device, &command_info, commands);
     VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    VkSemaphore acquired = VK_NULL_HANDLE, rendered = VK_NULL_HANDLE;
-    vkCreateSemaphore(device, &semaphore_info, nullptr, &acquired);
-    vkCreateSemaphore(device, &semaphore_info, nullptr, &rendered);
-
-    uint32_t index = 0;
-    if (functions.pOutAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &index) != VK_SUCCESS) {
-        printf("acquire failed\n");
-        return 1;
+    VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkSemaphore acquired[kFrames]{}, rendered[kFrames]{};
+    VkFence fences[kFrames]{};
+    for (uint32_t frame = 0; frame < kFrames; frame++) {
+        vkCreateSemaphore(device, &semaphore_info, nullptr, &acquired[frame]);
+        vkCreateSemaphore(device, &semaphore_info, nullptr, &rendered[frame]);
+        vkCreateFence(device, &fence_info, nullptr, &fences[frame]);
     }
-    VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    view_info.image = images[index];
-    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format = create_info.imageFormat;
-    view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    VkImageView view = VK_NULL_HANDLE;
-    vkCreateImageView(device, &view_info, nullptr, &view);
 
-    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(command, &begin);
-    auto barrier = [&](VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
-                       VkAccessFlags src, VkAccessFlags dst, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage) {
+    auto barrier = [](VkCommandBuffer command, VkImage image, VkImageAspectFlags aspect, VkImageLayout from,
+                      VkImageLayout to, VkAccessFlags src, VkAccessFlags dst, VkPipelineStageFlags src_stage,
+                      VkPipelineStageFlags dst_stage) {
         VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
         b.srcAccessMask = src;
         b.dstAccessMask = dst;
@@ -411,92 +517,138 @@ int main(int argc, char** argv) {
         b.subresourceRange = {aspect, 0, 1, 0, 1};
         vkCmdPipelineBarrier(command, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &b);
     };
-    barrier(images[index], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    attachment.imageView = view;
-    attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.clearValue.color.float32[0] = 0.1f;
-    attachment.clearValue.color.float32[1] = 0.2f;
-    attachment.clearValue.color.float32[2] = 0.3f;
-    attachment.clearValue.color.float32[3] = 1.0f;
-    VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    rendering.renderArea = {{0, 0}, {1920, 1080}};
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &attachment;
-    vkCmdBeginRendering(command, &rendering);
-    vkCmdEndRendering(command);
-    barrier(images[index], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-    barrier(depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-    VkClearColorValue depth_clear{{1.0f, 0.0f, 0.0f, 0.0f}};
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdClearColorImage(command, depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &depth_clear, 1, &range);
-    barrier(depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-    barrier(motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-    VkClearColorValue motion_clear{{0, 0, 0, 0}};
-    vkCmdClearColorImage(command, motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &motion_clear, 1, &range);
-    barrier(motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
     ffxDispatchDescFrameGenerationPrepareV2 prepare{};
     prepare.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_V2;
-    prepare.frameID = 0;
-    prepare.commandList = command;
     prepare.renderSize = {1920, 1080};
     prepare.jitterOffset = {0.0f, 0.0f};
     prepare.motionVectorScale = {1920.0f, 1080.0f};
     prepare.frameTimeDelta = 16.7f;
-    prepare.reset = true;
     prepare.cameraNear = 0.1f;
     prepare.cameraFar = 1000.0f;
     prepare.cameraFovAngleVertical = 1.0472f;
     prepare.viewSpaceToMetersFactor = 1.0f;
-    prepare.depth = ffxApiGetResourceVK(depth, ffxApiGetImageResourceDescriptionVK(depth, depth_info, VK_IMAGE_USAGE_SAMPLED_BIT),
+    prepare.depth = ffxApiGetResourceVK(depth, ffxApiGetImageResourceDescriptionVK(depth, depth_info, 0),
                                         FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
-    prepare.motionVectors = ffxApiGetResourceVK(motion, ffxApiGetImageResourceDescriptionVK(motion, motion_info, VK_IMAGE_USAGE_SAMPLED_BIT),
+    prepare.motionVectors = ffxApiGetResourceVK(motion, ffxApiGetImageResourceDescriptionVK(motion, motion_info, 0),
                                                 FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
     prepare.cameraPosition[2] = 5.0f;
     prepare.cameraUp[1] = 1.0f;
     prepare.cameraRight[0] = 1.0f;
     prepare.cameraForward[2] = -1.0f;
-    rc = provider.dispatch(&g_effect, &prepare.header);
-    printf("prepare dispatch: rc=%d (%s)\n", (int)rc, rc == FFX_API_RETURN_OK ? "OK" : "FAILED");
-    if (rc != FFX_API_RETURN_OK) return 1;
-    vkEndCommandBuffer(command);
 
-    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    submit.waitSemaphoreCount = 1;
-    submit.pWaitSemaphores = &acquired;
-    submit.pWaitDstStageMask = &wait_stage;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &command;
-    submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores = &rendered;
-    if (vkQueueSubmit(g_game, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS) {
-        printf("submit failed\n");
+    VkImageView views[kFrames]{};
+    for (uint32_t frame = 0; frame < kFrames; frame++) {
+        uint32_t index = 0;
+        VkResult acquire_result =
+            functions.pOutAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired[frame], VK_NULL_HANDLE, &index);
+        if (acquire_result != VK_SUCCESS) {
+            printf("acquire %u failed: %d\n", frame, (int)acquire_result);
+            return 1;
+        }
+        VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        view_info.image = images[index];
+        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_info.format = create_info.imageFormat;
+        view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        if (vkCreateImageView(device, &view_info, nullptr, &views[frame]) != VK_SUCCESS) {
+            printf("image view %u failed\n", frame);
+            return 1;
+        }
+
+        VkCommandBuffer command = commands[frame];
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (vkBeginCommandBuffer(command, &begin) != VK_SUCCESS) return 1;
+
+        // The depth and motion images are cleared once and stay in SHADER_READ_ONLY for every
+        // prepare dispatch. The backbuffer is acquired fresh each frame, so its layout starts at
+        // UNDEFINED.
+        if (frame == 0) {
+            VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkClearColorValue depth_clear{{1.0f, 0.0f, 0.0f, 0.0f}};
+            barrier(command, depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            vkCmdClearColorImage(command, depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &depth_clear, 1, &range);
+            barrier(command, depth, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+            VkClearColorValue motion_clear{{0, 0, 0, 0}};
+            barrier(command, motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            vkCmdClearColorImage(command, motion, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &motion_clear, 1, &range);
+            barrier(command, motion, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        }
+
+        barrier(command, images[index], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        attachment.imageView = views[frame];
+        attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachment.clearValue.color.float32[0] = 0.1f + 0.01f * (float)frame;
+        attachment.clearValue.color.float32[1] = 0.2f;
+        attachment.clearValue.color.float32[2] = 0.3f;
+        attachment.clearValue.color.float32[3] = 1.0f;
+        VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        rendering.renderArea = {{0, 0}, {1920, 1080}};
+        rendering.layerCount = 1;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachments = &attachment;
+        vkCmdBeginRendering(command, &rendering);
+        vkCmdEndRendering(command);
+        barrier(command, images[index], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+        prepare.frameID = frame;
+        prepare.commandList = command;
+        prepare.reset = frame == 0;
+        rc = provider.dispatch(&g_effect, &prepare.header);
+        if (rc != FFX_API_RETURN_OK) {
+            printf("prepare dispatch %u: rc=%d (FAILED)\n", frame, (int)rc);
+            return 1;
+        }
+        if (vkEndCommandBuffer(command) != VK_SUCCESS) return 1;
+
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        submit.waitSemaphoreCount = 1;
+        submit.pWaitSemaphores = &acquired[frame];
+        submit.pWaitDstStageMask = &wait_stage;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &command;
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores = &rendered[frame];
+        if (vkQueueSubmit(g_game, 1, &submit, fences[frame]) != VK_SUCCESS) {
+            printf("submit %u failed\n", frame);
+            return 1;
+        }
+        VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+        present.waitSemaphoreCount = 1;
+        present.pWaitSemaphores = &rendered[frame];
+        present.swapchainCount = 1;
+        present.pSwapchains = &swapchain;
+        present.pImageIndices = &index;
+        VkResult present_result = functions.pOutQueuePresentKHR(g_game, &present);
+        printf("frame %u: image %u prepare OK present %d\n", frame, index, (int)present_result);
+        if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) return 1;
+    }
+    VkResult fences_result = vkWaitForFences(device, kFrames, fences, VK_TRUE, UINT64_MAX);
+    if (fences_result != VK_SUCCESS) {
+        printf("frame fences failed: %d\n", (int)fences_result);
         return 1;
     }
-    VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-    present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores = &rendered;
-    present.swapchainCount = 1;
-    present.pSwapchains = &swapchain;
-    present.pImageIndices = &index;
-    VkResult present_result = functions.pOutQueuePresentKHR(g_game, &present);
-    printf("present: %d\n", (int)present_result);
-    if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) return 1;
+    printf("presented %u frames\n", kFrames);
 
     config.frameGenerationEnabled = false;
     config.frameGenerationCallback = nullptr;
@@ -518,18 +670,31 @@ int main(int argc, char** argv) {
     printf("device idle after present: %d\n", (int)idle);
     if (idle != VK_SUCCESS) return 1;
 
-    vkDestroyImageView(device, view, nullptr);
+    printf("validation errors: %u\n", g_validation_errors);
+    for (uint32_t frame = 0; frame < kFrames; frame++) {
+        if (views[frame]) vkDestroyImageView(device, views[frame], nullptr);
+        vkDestroySemaphore(device, acquired[frame], nullptr);
+        vkDestroySemaphore(device, rendered[frame], nullptr);
+        vkDestroyFence(device, fences[frame], nullptr);
+    }
     vkDestroyImage(device, depth, nullptr);
     vkDestroyImage(device, motion, nullptr);
     vkFreeMemory(device, depth_memory, nullptr);
     vkFreeMemory(device, motion_memory, nullptr);
-    vkDestroySemaphore(device, acquired, nullptr);
-    vkDestroySemaphore(device, rendered, nullptr);
     vkDestroyCommandPool(device, pool, nullptr);
     vkDestroyDevice(device, nullptr);
+    if (messenger) {
+        auto destroy_messenger =
+            (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+        if (destroy_messenger) destroy_messenger(instance, messenger, nullptr);
+    }
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
     dlclose(provider.library);
+    if (g_validation_errors != 0) {
+        printf("RESULT: FAILED (validation errors)\n");
+        return 1;
+    }
     printf("RESULT: OK\n");
     return 0;
 }

@@ -39,7 +39,12 @@ API_H = "Kits/FidelityFX/api/include/ffx_api.h"
 PROVIDER_H = "Kits/FidelityFX/api/internal/ffx_provider.h"
 VK_CPP = "Kits/FidelityFX/backend/vk/ffx_vk.cpp"
 FI_H = "Kits/FidelityFX/framegeneration/fsr3/include/ffx_frameinterpolation.h"
+FI_CALLBACKS_HLSL = ("Kits/FidelityFX/framegeneration/fsr3/include/gpu/frameinterpolation/"
+                     "ffx_frameinterpolation_callbacks_hlsl.h")
 SWAP_CPP = "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK.cpp"
+SWAP_UI_CPP = "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK_UiComposition.cpp"
+SWAP_UI_H = "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK_UiComposition.h"
+SWAP_PACING_CPP = "Kits/FidelityFX/framegeneration/fsr3/vk/FrameInterpolationSwapchainVK_DebugPacing.cpp"
 PROV_SWAP_CPP = "Kits/FidelityFX/framegeneration/fsr3/vk/ffx_provider_framegenerationswapchain_vk.cpp"
 PROV_FG_CPP = "Kits/FidelityFX/framegeneration/fsr3/internal/ffx_provider_fsr3framegeneration.cpp"
 
@@ -99,6 +104,53 @@ PATCHES = [
         "#endif",
     ),
     (
+        # Vulkan rejects a 3-component OpImageWrite into the 4-component BGRA8/RGBA8 backbuffer
+        # (VUID-vkCmdDispatch-OpImageWrite-08795); D3D12 accepts it. Write all four components, as
+        # the output image has four; the inpainting mask keeps the alpha the SDK expects.
+        FI_CALLBACKS_HLSL,
+        "    RWTexture2D<FfxFloat32x3> rw_output          FFX_DECLARE_UAV(FFX_FRAMEINTERPOLATION_BIND_UAV_OUTPUT);\n"
+        "    RWTexture2D<FfxFloat32>   rw_inpainting_mask FFX_DECLARE_UAV(FFX_FRAMEINTERPOLATION_BIND_UAV_INPAINTING_MASK);\n"
+        "\n"
+        "    FfxFloat32x4 RWLoadFrameinterpolationOutput(FFX_PARAMETER_IN FfxInt32x2 iPxPos)\n"
+        "    {\n"
+        "        return FfxFloat32x4(rw_output[iPxPos], rw_inpainting_mask[iPxPos]);\n"
+        "    }\n"
+        "\n"
+        "    void StoreFrameinterpolationOutput(FFX_PARAMETER_IN FfxInt32x2 iPxPos, FFX_PARAMETER_IN FfxFloat32x4 val)\n"
+        "    {\n"
+        "        rw_output[iPxPos] = val.rgb;\n"
+        "        rw_inpainting_mask[iPxPos] = val.a;\n"
+        "    }\n",
+        "    RWTexture2D<FfxFloat32x4> rw_output          FFX_DECLARE_UAV(FFX_FRAMEINTERPOLATION_BIND_UAV_OUTPUT);\n"
+        "    RWTexture2D<FfxFloat32>   rw_inpainting_mask FFX_DECLARE_UAV(FFX_FRAMEINTERPOLATION_BIND_UAV_INPAINTING_MASK);\n"
+        "\n"
+        "    FfxFloat32x4 RWLoadFrameinterpolationOutput(FFX_PARAMETER_IN FfxInt32x2 iPxPos)\n"
+        "    {\n"
+        "        return rw_output[iPxPos];\n"
+        "    }\n"
+        "\n"
+        "    void StoreFrameinterpolationOutput(FFX_PARAMETER_IN FfxInt32x2 iPxPos, FFX_PARAMETER_IN FfxFloat32x4 val)\n"
+        "    {\n"
+        "        rw_output[iPxPos] = val;\n"
+        "        rw_inpainting_mask[iPxPos] = val.a;\n"
+        "    }\n",
+    ),
+    (
+        # init() created FFX_FRAME_INTERPOLATION_SWAP_CHAIN_MAX_BUFFER_COUNT per-image present
+        # semaphores before the real image count was known, then overwrote them with the second
+        # loop below; the first set leaks at vkDestroyDevice (validation: 4 leaked objects).
+        SWAP_CPP,
+        "    // semaphores used for present to wait until rendering is over\n"
+        "    for (uint32_t i = 0; i < FFX_FRAME_INTERPOLATION_SWAP_CHAIN_MAX_BUFFER_COUNT; ++i)\n"
+        "    {\n"
+        "        res = createSemaphoreFormat(presentInfo.frameRenderedSemaphores[i], \"AMD FSR FrameRenderedSemaphore %d\", i);\n"
+        "        EXIT_ON_VKRESULT_NOT_SUCCESS(res);\n"
+        "    }\n",
+        "    // The per-image present semaphores are created after the real swapchain image count is known\n"
+        "    // (the \"AMD swapchain image semaphore\" loop below). Creating MAX_BUFFER_COUNT of them here\n"
+        "    // would leak the first set at vkDestroyDevice. Linux build patch.\n",
+    ),
+    (
         SWAP_CPP,
         "    VkSurfaceFullScreenExclusiveInfoEXT      surfaceFullScreenExclusive;\n"
         "    VkSurfaceFullScreenExclusiveWin32InfoEXT surfaceFullScreenExclusiveWin32;\n",
@@ -148,6 +200,67 @@ PATCHES = [
         PROV_FG_CPP,
         "0xF600'0000ui64",
         "0xF6000000ull",
+    ),
+    (
+        # Vulkan requires lineWidth 1.0 (wideLines is not enabled); 0.0 is rejected by validation.
+        # The UI composition and debug-pacing pipelines were never exercised on the Windows driver
+        # with validation enabled.
+        SWAP_UI_CPP,
+        "        rasterizationStateCreateInfo.lineWidth                              = 0.0f;",
+        "        rasterizationStateCreateInfo.lineWidth                              = 1.0f;",
+    ),
+    (
+        SWAP_PACING_CPP,
+        "        rasterizationStateCreateInfo.lineWidth                              = 0.0f;",
+        "        rasterizationStateCreateInfo.lineWidth                              = 1.0f;",
+    ),
+    (
+        SWAP_UI_CPP,
+        "void releaseUiBlitGpuResources(const VkAllocationCallbacks* pAllocator)\n"
+        "{\n"
+        "    vkDestroyDescriptorPool(s_uiCompositionDevice, s_uiCompositionDescriptorPool, pAllocator);",
+        "void releaseUiBlitGpuResources(const VkAllocationCallbacks* pAllocator)\n"
+        "{\n"
+        "    if (s_uiCompositionDevice == VK_NULL_HANDLE)\n"
+        "        return;  // no UI composition pass ran (a custom present callback was used)\n"
+        "\n"
+        "    vkDestroyDescriptorPool(s_uiCompositionDevice, s_uiCompositionDescriptorPool, pAllocator);",
+    ),
+    (
+        # The UI composition pipeline, render pass and descriptor sets are process-wide and were
+        # never released: validation reports them as leaked objects at vkDestroyDevice. Release
+        # them when the swapchain context is destroyed.
+        SWAP_UI_H,
+        "FFX_API ffxReturnCode_t ffxFrameInterpolationUiComposition(ffxCallbackDescFrameGenerationPresent* params, void* unusedUserCtx);",
+        "FFX_API ffxReturnCode_t ffxFrameInterpolationUiComposition(ffxCallbackDescFrameGenerationPresent* params, void* unusedUserCtx);\n"
+        "void releaseUiBlitGpuResources(const VkAllocationCallbacks* pAllocator);",
+    ),
+    (
+        SWAP_CPP,
+        "    destroyImage(uiReplacementBuffer, pAllocator);\n"
+        "}\n",
+        "    destroyImage(uiReplacementBuffer, pAllocator);\n"
+        "\n"
+        "    // The UI composition pipeline/render pass/descriptor sets are global; release them so a\n"
+        "    // destroyed swapchain does not leave them for vkDestroyDevice to report as leaked.\n"
+        "    releaseUiBlitGpuResources(pAllocator);\n"
+        "}\n",
+    ),
+    (
+        SWAP_UI_CPP,
+        "    for (uint32_t i = 0; i < _countof(s_uiCompositionFramebuffers); ++i)\n"
+        "    {\n"
+        "        vkDestroyFramebuffer(s_uiCompositionDevice, s_uiCompositionFramebuffers[i], pAllocator);\n"
+        "        s_uiCompositionFramebuffers[i] = VK_NULL_HANDLE;\n"
+        "    }\n"
+        "}\n",
+        "    for (uint32_t i = 0; i < _countof(s_uiCompositionFramebuffers); ++i)\n"
+        "    {\n"
+        "        vkDestroyFramebuffer(s_uiCompositionDevice, s_uiCompositionFramebuffers[i], pAllocator);\n"
+        "        s_uiCompositionFramebuffers[i] = VK_NULL_HANDLE;\n"
+        "    }\n"
+        "    s_uiCompositionDevice = VK_NULL_HANDLE;\n"
+        "}\n",
     ),
 ]
 

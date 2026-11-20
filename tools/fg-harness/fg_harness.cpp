@@ -1256,7 +1256,15 @@ int main(int argc, char** argv) {
     if (!derivatives.computeDerivativeGroupLinear)
         die("device does not support VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR"
             "::computeDerivativeGroupLinear (required by the FFX FG shaders)");
+    // The generated FG shader blobs declare their storage images with format Unknown
+    // (tools/gen_fg_blobs.py), so the format comes from each image view; the device must allow it.
+    if (!available_features.features.shaderStorageImageWriteWithoutFormat)
+        die("device does not support shaderStorageImageWriteWithoutFormat (required by the FFX FG blobs)");
 
+    VkPhysicalDeviceFeatures2 enabled_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    enabled_features.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+    enabled_features.features.shaderStorageImageReadWithoutFormat =
+        available_features.features.shaderStorageImageReadWithoutFormat;
     VkPhysicalDeviceVulkan12Features enabled12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     enabled12.timelineSemaphore = VK_TRUE;
     enabled12.shaderInt8 = features12.shaderInt8;
@@ -1294,7 +1302,8 @@ int main(int argc, char** argv) {
         die("VK_KHR_compute_shader_derivatives is missing and the compute derivative feature is unavailable");
 
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    device_info.pNext = &enabled12;
+    enabled_features.pNext = &enabled12;
+    device_info.pNext = &enabled_features;
     device_info.queueCreateInfoCount = static_cast<uint32_t>(queue_infos.size());
     device_info.pQueueCreateInfos = queue_infos.data();
     device_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
