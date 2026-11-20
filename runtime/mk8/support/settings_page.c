@@ -12,6 +12,7 @@ bool mk8_auto_lan_requested(void);
 static uint64_t owner, labels[SETTINGS_VISIBLE+1], values[SETTINGS_VISIBLE+1], rows[SETTINGS_VISIBLE+1], root, hint, hint_second;
 static struct Mk8ControlTips tips;
 static uint64_t hint_plate, hint_single, hint_double, keycaps[4], key_labels[4], action_labels[4];
+static uint64_t join_buttons[4], join_plus[2];
 static uint64_t top, top_root, restore_nav, scrollbar;
 static uint64_t dialog, dialog_buttons[2], dialog_animations[2];
 static uint64_t dialog_labels[3];
@@ -254,22 +255,25 @@ static void hint_background(Cpu *c,bool two_lines,float width) {
     hint_box(c,hint_second,0,hint_text_y(two_lines,true),width,50);
 }
 
-static void keycap_visible(Cpu *c,unsigned i,bool show) {
-    call(c,0x70008ade74ull,keycaps[i],show,0,0,0);
-    call(c,0x70008ade74ull,key_labels[i],show,0,0,0);
-    call(c,0x70008ade74ull,action_labels[i],show,0,0,0);
-}
-
 static bool keycap_tips(Cpu *c,const char *description,const char *const keys_text[],const char *const verbs_text[],
-                        unsigned n,const char *mouse_hint) {
+                        unsigned n,const char *mouse_hint,bool show_chords) {
     if(!keycaps[0]) return false; // Previously prepared archives retain their stock text-only hints.
     float keys[4], verbs[4], widths[4], columns[4]={0}, total=0;
-    for(unsigned i=0;i<4;i++) keycap_visible(c,i,i<n);
+    for(unsigned i=0;i<4;i++) {
+        bool cap=i<n && !(show_chords && i<2);
+        call(c,0x70008ade74ull,keycaps[i],cap,0,0,0);
+        call(c,0x70008ade74ull,key_labels[i],cap,0,0,0);
+        call(c,0x70008ade74ull,action_labels[i],i<n,0,0,0);
+        if(join_buttons[0]) {
+            call(c,0x70008ade74ull,join_buttons[i],show_chords,0,0,0);
+            if(i<2) call(c,0x70008ade74ull,join_plus[i],show_chords,0,0,0);
+        }
+    }
     if(!n) return false;
     unsigned per_row=n==4 ? 2 : n;
     bool two_lines=description || mouse_hint || n>per_row;
     for(unsigned i=0;i<n;i++) {
-        keys[i]=22+17*strlen(keys_text[i]);
+        keys[i]=show_chords && i<2 ? 136 : 22+17*strlen(keys_text[i]);
         verbs[i]=12+17*strlen(verbs_text[i]);
         widths[i]=keys[i]+8+verbs[i];
         if(widths[i]>columns[i%per_row]) columns[i%per_row]=widths[i];
@@ -286,10 +290,18 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
         float y=hint_text_y(two_lines,description || i>=per_row);
         float key_center=start+keys[i]/2;
         // The stock title font's baseline is nine layout units below its pane center.
-        hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
-        hint_box(c,key_labels[i],key_center,y,keys[i],50);
+        if(show_chords && i<2) {
+            // The stock picture sits half its height above the part origin.
+            float icon_y=y-9-20;
+            hint_box(c,join_buttons[2*i],key_center-40,icon_y,56,40);
+            hint_box(c,join_buttons[2*i+1],key_center+40,icon_y,56,40);
+            hint_box(c,join_plus[i],key_center,y,24,50);
+        } else {
+            hint_box(c,keycaps[i],key_center,y-9,keys[i],36);
+            hint_box(c,key_labels[i],key_center,y,keys[i],50);
+            text(c,key_labels[i],keys_text[i]);
+        }
         hint_box(c,action_labels[i],start+keys[i]+8+verbs[i]/2,y,verbs[i],50);
-        text(c,key_labels[i],keys_text[i]);
         text(c,action_labels[i],verbs_text[i]);
         x+=columns[i%per_row]+40;
     }
@@ -304,7 +316,7 @@ static void action_tips(Cpu *c,const char *description,const struct TipAction *a
         const char *label=tips.label[actions[i].action];
         if(*label && strcmp(label,"(none)")) { key[n]=label; verb[n++]=actions[i].verb; }
     }
-    if(keycap_tips(c,description,key,verb,n,n<count && !description && *fallback ? fallback : NULL)) return;
+    if(keycap_tips(c,description,key,verb,n,n<count && !description && *fallback ? fallback : NULL,false)) return;
     uint16_t lines[2][41]={{0}};
     size_t used[2]={0};
     unsigned line=0;
@@ -639,8 +651,9 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
             snprintf(title,sizeof title,"Swap Player %d with...",action_player+1);
             heading=title; help="Select another player to swap inputs."; left="Back";
         } else if(enrolling) {
-            snprintf(title,sizeof title,keycaps[0] ? "Player %d: [L] + [R] to join" :
-                "Player %d: [L] + [R] or SL + SR",listening+1);
+            const char *format=state==MK8_EDIT_LISTEN && join_buttons[0] ? "Player %d: choose how to join" :
+                keycaps[0] ? "Player %d: [L] + [R] to join" : "Player %d: [L] + [R] or SL + SR";
+            snprintf(title,sizeof title,format,listening+1);
             heading=title; left="Back"; right="Use keyboard";
             switch(state) {
             case MK8_EDIT_AMBIGUOUS:
@@ -673,13 +686,15 @@ static void controller_draw(Cpu *c,enum Mk8EditState state,int listening,const u
         else if(controller_required && state==MK8_EDIT_READY) action_tips(c,help,ready,2,"Click Continue or Cancel.");
         else if(state==MK8_EDIT_LISTEN && keycaps[0]) {
             const char *key[]={"SL","SR",keyboard ? "Enter" : tips.label[MK8_TIP_BACK]};
-            const char *verb[]={"+","Join sideways",keyboard ? "Join keyboard" : back_tip.verb};
+            bool chords=join_buttons[0]!=0;
+            const char *verb[]={chords ? "Controller" : "+",chords ? "Sideways Joy-Con" : "Join sideways",
+                                keyboard ? "Join keyboard" : back_tip.verb};
             bool third=keyboard || (tips.source==MK8_TIP_KEYBOARD && *key[2] && strcmp(key[2],"(none)"));
-            keycap_tips(c,help,key,verb,third ? 3 : 2,NULL);
+            keycap_tips(c,help,key,verb,third ? 3 : 2,NULL,chords);
         }
         else if(enrolling && keyboard) {
             const char *key[]={"Enter"}, *verb[]={"Join keyboard"};
-            if(!keycap_tips(c,help,key,verb,1,NULL))
+            if(!keycap_tips(c,help,key,verb,1,NULL,false))
                 action_tips(c,"Enter joins with the keyboard.",&back_tip,1,"Esc cancels.");
         }
         else if(enrolling) action_tips(c,help,&back_tip,1,"Click Back.");
@@ -853,6 +868,18 @@ void mk8_settings_shared_build(uint64_t page) {
         snprintf(name,sizeof name,"P_Key%u",i); keycaps[i]=find(c,help,name);
         snprintf(name,sizeof name,"T_Key%u",i); key_labels[i]=find(c,help,name);
         snprintf(name,sizeof name,"T_Verb%u",i); action_labels[i]=find(c,help,name);
+    }
+    join_buttons[0]=call(c,0x70008ad8e8ull,help,string(c,"P_JoinL"),0,0,0);
+    if(join_buttons[0]) {
+        static const char *const parts[]={"P_JoinL","P_JoinR","P_JoinSL","P_JoinSR"};
+        for(unsigned i=0;i<4;i++) {
+            join_buttons[i]=find(c,help,parts[i]);
+            attach(c,page,help,parts[i]);
+        }
+        for(unsigned i=0;i<2;i++) {
+            join_plus[i]=find(c,help,i ? "T_JoinPlus1" : "T_JoinPlus0");
+            text(c,join_plus[i],"+");
+        }
     }
     float second_line[3]={0,-44,0};
     memcpy((void *)(uintptr_t)(c->sp+320),second_line,sizeof second_line);

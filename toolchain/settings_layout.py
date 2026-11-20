@@ -12,6 +12,7 @@ RELATIVE = Path('settings-menu/romfs/UI/cmn/menu.sarc')
 COMMON_RELATIVE = RELATIVE.with_name('common.sarc')
 CONTROLLER_RELATIVE = Path('controller-menu/romfs/UI/cmn/common.sarc')
 SETTINGS_PAGE = 'cm_Page_SetUI'
+JOIN_BUTTONS = ('L', 'R', 'SL', 'SR')
 LIMIT = 32 * 1024 * 1024
 
 
@@ -212,6 +213,13 @@ def dialog_label(source, *, hints=False):
                                 if prefix=='Key':
                                     label[104:112]=bytes((24,30,38,255))*2
                                 panes.append(label)
+                        for button in JOIN_BUTTONS:
+                            panes.append(join_button_pane(button,s[8:12]))
+                        for i in range(2):
+                            plus=bytearray(s)
+                            plus[8]&=~1
+                            plus[12:36]=f'T_JoinPlus{i}'.encode().ljust(24,b'\0')
+                            panes.append(plus)
                     panes.append(pane)
                     continue
                 if s[:4]==b'wnd1':
@@ -274,6 +282,50 @@ def keycap_pane(index, title_flags):
     out.extend(bytes((245,248,250,255))*2+bytes((167,184,195,255))*2+struct.pack('<HBB',2,0,0))
     struct.pack_into('<I',out,4,len(out))
     return out
+
+
+def join_button_pane(button, title_flags):
+    icon=bytearray(pane(b'prt1','P_Join'+button,reference='cm_L_Join'+button,visible=False))
+    icon[8:12]=title_flags
+    icon[8]&=~1
+    struct.pack_into('<2f',icon,76,56,40)
+    return icon
+
+
+def join_button(source, button):
+    """Show a fixed, neutral button from the stock player-coloured shoulder component."""
+    from ctgp_pack import yaz0_store
+    side=button[-1]
+    original='cm_L_NXBtnIcon'+side+'_00'
+    private='cm_L_Join'+button
+    files={k:v for k,_,v in entries(yaz0(source))}
+    layout=files[name_hash('blyt/'+original+'.bflyt')]
+    (tex_key,tex),=[(k,v) for k,v in files.items() if v[:4]==b'BNTX']
+    name='NXBtnIcon'+button+'_00^t'
+    descriptor,_,_=texture(tex,name)
+    if struct.unpack_from('<2I',tex,descriptor+36)!=(56,40):
+        raise ValueError('Unexpected join button dimensions')
+    parts=[bytearray(s) for _,s in sections(layout)]
+    names,=[s for s in parts if s[:4]==b'txl1']
+    if names[8:16]!=struct.pack('<HHI',1,0,4) or names[16:].rstrip(b'\0')!=('NXBtnIcon'+side+'_00^t').encode():
+        raise ValueError('Unexpected join button texture list')
+    names[16:]=name.encode()+b'\0'
+    names.extend(bytes(-len(names)%4))
+    struct.pack_into('<I',names,4,len(names))
+    pic,=[s for s in parts if s[:4]==b'pic1' and s[8]&1]
+    if len(pic)!=136 or pic[12:36].rstrip(b'\0')!=b'P_BtnIcon_00' or struct.unpack_from('<H',pic,100)[0]!=0:
+        raise ValueError('Unexpected join button picture')
+    struct.pack_into('<2f',pic,68,1,1)
+    pic[84:100]=bytes([255])*16
+    meta,=[s for s in parts if s[:4]==b'lyt1']
+    struct.pack_into('<2f',meta,20,56,40)
+    meta[28:]=private.encode()+b'\0'
+    meta.extend(bytes(-len(meta)%4))
+    struct.pack_into('<I',meta,4,len(meta))
+    fixed=bytearray(layout[:20])+b''.join(parts)
+    struct.pack_into('<I',fixed,12,len(fixed))
+    # The stock pattern animation would switch the selected texture for this material.
+    return yaz0_store(pack_entries([(name_hash('blyt/'+private+'.bflyt'),fixed),(tex_key,tex)]))
 
 
 def yaz0(data):
@@ -530,6 +582,8 @@ def prepare(romfs, output):
         common_parts[destination + '.szs'] = packed
     common_parts['cm_L_SetLabel_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'])
     common_parts['cm_L_SetHints_00.szs'] = dialog_label(common_parts['cm_L_Scroll_ListTitle_00.szs'], hints=True)
+    for button in JOIN_BUTTONS:
+        common_parts['cm_L_Join'+button+'.szs']=join_button(common_parts['cm_L_NXBtnIcon'+button[-1]+'_00.szs'],button)
     common_parts['cm_L_SetBtn_00.szs'] = dialog_button(common_parts['cm_L_WinBtn_00.szs'])
     common = pack_entries(list(common_parts.items()))
     common_target = Path(output)/COMMON_RELATIVE

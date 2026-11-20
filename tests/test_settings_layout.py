@@ -95,6 +95,7 @@ class SettingsLayoutTests(unittest.TestCase):
                           ('mn_CompeInfo_00.szs', archive([(4,b'BNTX-test')]))])
         common = archive([('cm_Page_Dummy.szs', archive([(0xdd954d60, page_layout())])),
                           ('cm_Page_Cursor.szs', archive([(0xaa119e16, page_layout())])), ('other', b'common-keep'),
+                          ('cm_L_NXBtnIconL_00.szs',b'left'),('cm_L_NXBtnIconR_00.szs',b'right'),
                           ('cm_L_Scroll_ListTitle_00.szs',b'base-label'),('cm_L_WinBtn_00.szs',b'base-button')])
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -105,7 +106,8 @@ class SettingsLayoutTests(unittest.TestCase):
             output = root/'build'
             with patch.object(layout, 'MENU_SHA256', hashlib.sha256(source).hexdigest()):
                 with patch.object(layout, 'COMMON_SHA256', hashlib.sha256(common).hexdigest()):
-                    with patch.object(layout, 'settings_icon_button', return_value=b'private-wrench-button'):
+                    with (patch.object(layout, 'settings_icon_button', return_value=b'private-wrench-button'),
+                          patch.object(layout, 'join_button', side_effect=lambda source, button: source+button.encode())):
                         with patch.object(layout, 'dialog_label',return_value=b'private-label'), patch.object(layout, 'dialog_button',return_value=b'private-dialog-button'):
                             target = layout.prepare(root/'romfs', output)
                             again = layout.prepare(root/'romfs', output).read_bytes()
@@ -119,6 +121,9 @@ class SettingsLayoutTests(unittest.TestCase):
             self.assertEqual(derived['cm_L_WinBtn_00.szs'],b'base-button')
             self.assertEqual(derived['cm_L_SetBtn_00.szs'],b'private-dialog-button')
             self.assertEqual(derived['cm_L_SetHints_00.szs'],b'private-label')
+            for button in layout.JOIN_BUTTONS:
+                side=b'left' if button.endswith('L') else b'right'
+                self.assertEqual(derived['cm_L_Join'+button+'.szs'],side+button.encode())
             originals = {k:v for k,_,v in layout.entries(common)}
             self.assertEqual(derived['cm_Page_Dummy.szs'], originals['cm_Page_Dummy.szs'])
             private = dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_SetUI.szs'])))
@@ -266,6 +271,43 @@ class SettingsLayoutTests(unittest.TestCase):
             self.assertEqual(struct.unpack_from('<HBB',cap,100),(2,0,0))
             self.assertEqual(key[104:112],bytes((24,30,38,255))*2)
             self.assertEqual(verb[104:112],title[104:112])
+        icons=[s for s in derived if s[:4]==b'prt1']
+        self.assertEqual([s[12:36].rstrip(b'\0') for s in icons],[('P_Join'+b).encode() for b in layout.JOIN_BUTTONS])
+        for button,icon in zip(layout.JOIN_BUTTONS,icons):
+            self.assertEqual(icon[8:12],bytes((title[8]&~1,))+title[9:12])
+            self.assertEqual(struct.unpack_from('<2f',icon,76),(56,40))
+            self.assertEqual(icon[96:].rstrip(b'\0'),('cm_L_Join'+button).encode())
+        plus=[s for s in derived if s[:4]==b'txt1' and s[12:22]==b'T_JoinPlus']
+        self.assertEqual([s[12:36].rstrip(b'\0') for s in plus],[b'T_JoinPlus0', b'T_JoinPlus1'])
+        self.assertTrue(all(not s[8]&1 and s[84:]==title[84:] for s in plus))
+
+    def test_join_buttons_bind_each_stock_texture_without_its_pattern_animation(self):
+        for button in layout.JOIN_BUTTONS:
+            with self.subTest(button=button):
+                side=button[-1]
+                original='cm_L_NXBtnIcon'+side+'_00'
+                private='cm_L_Join'+button
+                stock_name='NXBtnIcon'+side+'_00^t'
+                chosen='NXBtnIcon'+button+'_00^t'
+                meta=b'lyt1'+struct.pack('<I',48)+bytes(20)+(original.encode()+b'\0').ljust(20,b'\0')
+                names=b'txl1'+struct.pack('<IHHI',32,1,0,4)+stock_name.encode()+b'\0'
+                pic=bytearray(layout.pane(b'pic1','P_BtnIcon_00'))+bytearray(52)
+                struct.pack_into('<I',pic,4,len(pic))
+                header=bytearray(page_layout()[:20])
+                struct.pack_into('<IH',header,12,len(header+meta+names+pic),3)
+                tex=bntx(chosen,56,40,64,123)
+                stock=archive([(layout.name_hash('blyt/'+original+'.bflyt'),header+meta+names+pic),
+                               (10,tex),(11,b'FLAN')])
+                files={k:v for k,_,v in layout.entries(layout.yaz0(layout.join_button(stock,button)))}
+                self.assertEqual(files.pop(10),tex)
+                result,=files.values()
+                self.assertEqual(list(files),[layout.name_hash('blyt/'+private+'.bflyt')])
+                self.assertEqual(struct.unpack_from('<I',result,12)[0],len(result))
+                meta,names,pic=[s for _,s in layout.sections(result)]
+                self.assertEqual(meta[28:].rstrip(b'\0'),private.encode())
+                self.assertEqual(names[16:].rstrip(b'\0'),chosen.encode())
+                self.assertEqual(struct.unpack_from('<2f',pic,68),(1,1))
+                self.assertEqual(pic[84:100],bytes([255])*16)
 
     def test_hint_texture_has_straight_16_pixel_cells_and_a_private_name(self):
         from mii_resource_nx import deswizzle

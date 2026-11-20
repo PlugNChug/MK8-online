@@ -133,11 +133,11 @@ void guest_call(Cpu *c,uint64_t address) {
         else if(!strcmp(name,"L_Btn_LR")) c->x[0]=HEAP_BASE+13200+(c->x[0]-HEAP_BASE-4000-0x30)/512*128;
         else assert(0);
     } else if(address==0x70008ade74ull) {
-        assert(c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+18300);
+        assert(c->x[0]>=HEAP_BASE+12000 && c->x[0]<HEAP_BASE+19100);
         ST8(c->x[0]+0x58,(LD8(c->x[0]+0x58)&~1)|c->x[1]);
     } else if(address==0x70008ade34ull) {
         assert(c->x[0]==HEAP_BASE+12200 || c->x[0]==HEAP_BASE+3500 || c->x[0]==HEAP_BASE+14680 ||
-               (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+18300) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
+               (c->x[0]>=HEAP_BASE+16256 && c->x[0]<HEAP_BASE+19100) || (c->x[0]>=HEAP_BASE+14400 && c->x[0]<=HEAP_BASE+14600) ||
                (c->x[0]>=HEAP_BASE+12400 && c->x[0]<=HEAP_BASE+12400+SETTINGS_VISIBLE*128));
         memcpy((void *)(uintptr_t)(c->x[0]+0x30),(void *)(uintptr_t)c->x[1],12);
     } else if(address==0x70008ade58ull) {
@@ -586,19 +586,34 @@ static void check_controller_footer(uint64_t manager) {
     assert((LD8(HEAP_BASE+12200+0x58)&1) && open_sounds==opens+1);
     assert(!strcmp(rendered[1],"Pro") && (LD8(HEAP_BASE+12400+4*128+0x58)&1));
     assert(LD8(HEAP_BASE+14600+0x58)&1); // Use keyboard.
+    for(unsigned i=0;i<4;i++) join_buttons[i]=HEAP_BASE+18304+128*i;
+    for(unsigned i=0;i<2;i++) join_plus[i]=HEAP_BASE+18816+128*i;
     edit_row=3; join_keyboard=false;
     mk8_settings_page_frame(manager);
     assert(controller_focus==3 && open_sounds==opens+1);
     assert(!(LD8(HEAP_BASE+14600+0x58)&1));
-    check_keycap(0,"SL","+"); check_keycap(1,"SR","Join sideways");
+    assert(!wcscmp(shown_title,L"Player 4: choose how to join"));
+    assert(!strcmp(action_strings[0],"Controller") && !strcmp(action_strings[1],"Sideways Joy-Con"));
+    for(unsigned i=0;i<2;i++) {
+        assert(!(LD8(keycaps[i]+0x58)&1) && !(LD8(key_labels[i]+0x58)&1));
+        assert((LD8(join_buttons[2*i]+0x58)&1) && (LD8(join_buttons[2*i+1]+0x58)&1) && (LD8(join_plus[i]+0x58)&1));
+        assert(pane_float(join_buttons[2*i],0x30)+40==pane_float(join_plus[i],0x30));
+        assert(pane_float(join_buttons[2*i+1],0x30)-40==pane_float(join_plus[i],0x30));
+        assert(pane_float(join_buttons[2*i],0x34)+20==pane_float(join_plus[i],0x34)-9);
+    }
     assert(!(LD8(keycaps[2]+0x58)&1));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
-    check_keycap(0,"SL","+"); check_keycap(1,"SR","Join sideways"); check_keycap(2,"J","Cancel");
+    check_keycap(2,"J","Cancel");
+    join_keyboard=true;
+    mk8_settings_page_frame(manager);
+    check_keycap(2,"Enter","Join keyboard");
     popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y","Minus"}};
     editor_state=MK8_EDIT_READY; edit_row=-1;
     mk8_settings_page_frame(manager);
     assert(controller_focus==5 && (LD8(HEAP_BASE+14600+0x58)&1)); // Continue.
+    for(unsigned i=0;i<4;i++) assert(!(LD8(join_buttons[i]+0x58)&1));
+    for(unsigned i=0;i<2;i++) assert(!(LD8(join_plus[i]+0x58)&1));
     assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 Continue  \ue001 Cancel"));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
