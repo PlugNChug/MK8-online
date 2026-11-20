@@ -51,6 +51,7 @@ static unsigned extra_holds;
 void mk8_controller_hold_extra_inputs(void) { ++extra_holds; }
 static int32_t tx,ty;
 static uint64_t now, revision;
+static bool publish_during_row;
 static char rendered[SETTINGS_VISIBLE+1][80];
 static Mk8Setting catalogue[3][12];
 static int counts[]={11,4,2};
@@ -86,6 +87,7 @@ void input_reset(void) { if(probe_reopen) { probe_reopen=false; request_reopen()
 void mk8_settings_top_forget(void) {}
 int mk8_settings_values_count(unsigned group) { assert(group<3); return counts[group]; }
 bool mk8_settings_values_row(unsigned group,unsigned row,Mk8Setting *out) {
+    if(publish_during_row && row==1) { publish_during_row=false; revision++; }
     if(group>=3 || row>=(unsigned)counts[group]) return false; *out=catalogue[group][row]; return true;
 }
 uint64_t mk8_settings_values_revision(void) { return revision; }
@@ -639,6 +641,9 @@ int main(void) {
     overlay=true; unsigned before=focus; press(1ull<<15); assert(focus==before); overlay=false;
     focus=0; press(1ull<<14); assert(category==2); press(1ull<<15); press(1); assert(capturing);
     press(1ull<<15); assert(focus==1); capturing=false; revision++; sample(0);
+    publish_during_row=true; revision++; sample(0);
+    assert(!publish_during_row && last_revision!=revision);
+    sample(0); assert(last_revision==revision);
     press(1ull<<15); press(1); assert(reset_confirm); press(2); assert(!reset_confirm && !resets && active);
     press(1); press(1); assert(resets==1 && !reset_confirm);
     press(2); assert(exiting && active && !cursor_shown && !returns);

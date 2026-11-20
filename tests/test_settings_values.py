@@ -37,7 +37,8 @@ void menu_notice(const char *message,double seconds) {
     assert(seconds>0); ++notices;
 }
 void rt_request_reboot(int kind) { assert(kind==RT_REBOOT_GAME); reboots++; }
-int input_pad_family(void) { return 0; }
+static int family_queries;
+int input_pad_family(void) { family_queries++; return 0; }
 bool mk8_settings_style_active(void) { return true; }
 void rt_log(const char *fmt,...) { (void)fmt; }
 void mk8_settings_window_changed(void) { windows++; }
@@ -77,7 +78,12 @@ int main(int argc,char **argv) {
     assert(!mk8_settings_values_request(SETTINGS_SET,11,201));
     assert(!mk8_settings_values_request(SETTINGS_SET,1,0));
     assert(!mk8_settings_values_request(SETTINGS_ACTIVATE,999,0));
+    int before=family_queries;
+    assert(before>0);
+    mk8_settings_values_sync();
+    assert(family_queries==before);
     request(SETTINGS_BEGIN,0,0);
+    assert(family_queries>before);
     int aspect=find(0,"Aspect ratio").id;
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ORIGINAL);
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ULTRAWIDE);

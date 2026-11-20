@@ -373,6 +373,7 @@ static void settings_tips(Cpu *c) {
 
 static void draw(Cpu *c) {
     static const char *categories[] = {"Video", "Audio", "Controls"};
+    uint64_t shown_revision=mk8_settings_values_revision();
     unsigned count=(unsigned)mk8_settings_values_count(category);
     if(!count) FATAL("[mk8:settings] settings catalogue unavailable\n");
     if(focus>count) focus=count;
@@ -407,7 +408,7 @@ static void draw(Cpu *c) {
         call(c,0x7000451ff4ull,scrollbar,0,0,0,0);
     }
     settings_tips(c);
-    last_revision=mk8_settings_values_revision();
+    last_revision=shown_revision;
     LOG("[mk8:settings] category=%s focus=%u offset=%u\n",categories[category],focus,offset);
 }
 

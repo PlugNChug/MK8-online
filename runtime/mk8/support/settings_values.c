@@ -181,6 +181,8 @@ void mk8_settings_values_sync(void) {
     if(!boot_set) { boot_settings=g_settings; boot_set=true; }
     Request batch[REQUEST_LIMIT+1]; unsigned n;
     pthread_mutex_lock(&lock); n=requested; memcpy(batch,requests,n*sizeof *batch); requested=0; pthread_mutex_unlock(&lock);
+    // Keep the initial snapshot for menu availability; rebuild it on open or queued work.
+    if (!opened && !n && revision) return;
     int serial,kind=bind_last_result(NULL,NULL,NULL,&serial);
     if(opened && memcmp(&baseline,&g_settings,sizeof baseline)) dirty=true;
     if(opened && seen_binding>=0 && serial!=seen_binding && (kind==1 || kind==2 || kind==5)) dirty=true;
