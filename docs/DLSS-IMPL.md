@@ -142,6 +142,14 @@ dispatch comes first and returns before the FSR4 provider is touched. Without th
 capture variables, DLSS still runs but logs `neutral` depth and `zeros` motion and
 resets every frame, which is not a quality result.
 
+Reaching the hook at all also depends on the upstream present code: `post_process`
+returns before the patched anchor when neither SMAA nor the FSR1 upscaler is enabled
+(`if (!smaa && !fsr) return v;`). So the game must have its upscaler (FSR) or SMAA
+selected. With FSR1 enabled and render smaller than the window, DLSS SR upscales; with
+SMAA at native resolution the same hook gets `rw == ow` and selects DLAA. This is a
+property of the existing anchor, not of the DLSS bridge, and changing it belongs to the
+FSR/toolchain owner.
+
 ## Verified here
 
 - `dlss.cpp` and the edited `fsr.cpp` compile with the runtime's C++17 flags.
