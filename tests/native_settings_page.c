@@ -597,7 +597,7 @@ static void check_controller_footer(uint64_t manager) {
     for(unsigned i=0;i<2;i++) {
         assert(!(LD8(keycaps[i]+0x58)&1) && !(LD8(key_labels[i]+0x58)&1));
         assert((LD8(join_buttons[2*i]+0x58)&1) && (LD8(join_buttons[2*i+1]+0x58)&1) && (LD8(join_plus[i]+0x58)&1));
-        assert(pane_float(join_buttons[2*i],0x30)+40==pane_float(join_plus[i],0x30));
+        assert(pane_float(join_buttons[2*i],0x30)+(i==1 ? 48 : 40)==pane_float(join_plus[i],0x30));
         assert(pane_float(join_buttons[2*i+1],0x30)-40==pane_float(join_plus[i],0x30));
         assert(pane_float(join_buttons[2*i],0x34)+20==pane_float(join_plus[i],0x34)-9);
     }

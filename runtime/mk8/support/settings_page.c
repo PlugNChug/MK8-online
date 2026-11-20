@@ -293,7 +293,9 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
         if(show_chords && i<2) {
             // The stock picture sits half its height above the part origin.
             float icon_y=y-9-20;
-            hint_box(c,join_buttons[2*i],key_center-40,icon_y,56,40);
+            // The SL artwork reaches farther toward the plus than the SR artwork does.
+            float left_offset=i==1 ? 48 : 40;
+            hint_box(c,join_buttons[2*i],key_center-left_offset,icon_y,56,40);
             hint_box(c,join_buttons[2*i+1],key_center+40,icon_y,56,40);
             hint_box(c,join_plus[i],key_center,y,24,50);
         } else {
