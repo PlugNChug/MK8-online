@@ -14,6 +14,22 @@ O mesmo SDK 2.4.0 (MIT) é a fonte de `tools/gen_upscaler_blobs.py`, `tools/fg-l
 SPIR-V gerado no build pelo DXC. Nenhum binário, SPIR-V ou modelo da AMD é distribuído (ver
 `docs/FSR3-UPSCALER.md`).
 
+## Porta nativa FSR 4.1.2 — 20/11/2026
+
+`tools/fsr4-linux/` é a porta nativa Linux FSR 4.1.2 do próprio projeto, GPL-3.0-only, derivada do
+[fsr4-vk](https://github.com/Astyyyyy/fsr4-vk) na revisão `b0125ea9798633750f83ebabbc00279bcb49d8dd`, com a
+base vendorizada em `tools/fsr4-linux/third_party/fsr4-vk/`. O texto integral da GPL-3.0 está em
+`tools/fsr4-linux/LICENSE-GPL-3.0.txt` e os avisos de terceiros (AMD FidelityFX SDK, Vulkan, SPIR-V, zstd,
+dxil-spirv, glslang) em `third_party/fsr4-vk/LICENSES/` e `THIRD_PARTY_NOTICES.md`. A licença do projeto é
+GPL-3.0, então a incorporação é compatível; a licença do código não se estende aos recursos gráficos do jogo.
+
+`tools/build_fsr4_provider.py` compila a biblioteca e extrai localmente, da DLL assinada que acompanha o SDK
+2.4.0 baixado pelo próprio usuário, os módulos SPIR-V e os bancos de modelos do FSR 4.1.2. A DLL, os assets
+gerados e o modelo ML não são commitados, empacotados nem redistribuídos; o cabeçalho e a oferta de fonte
+ficam ao lado da biblioteca instalada (`LICENSE-GPL-3.0.txt`, `LICENSE-AMD-FidelityFX-SDK*.md`,
+`SOURCE-OFFER.md`). O provedor é um componente opcional carregado por `MK8_FSR_LIB`; ver
+`docs/FSR4-UPSCALER.md`.
+
 ## Build e distribuição Linux
 
 O runtime usa a camada Linux da revisão fixada de SMM2Recomp. O bootstrap reutiliza os avisos do SDL 3.4.18, dos headers Vulkan 1.4.363 e do Vulkan Memory Allocator 3.4.0. O loader Vulkan e os drivers são do sistema. [SDL 3.4.18](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18) · [Vulkan-Headers 1.4.363](https://github.com/KhronosGroup/Vulkan-Headers/releases/tag/v1.4.363) · [Vulkan Memory Allocator 3.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/releases/tag/v3.4.0)

@@ -1,0 +1,5 @@
+build/
+*.spv
+*.bin
+__pycache__/
+*.pyc
