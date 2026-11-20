@@ -67,6 +67,7 @@ class LauncherTests(unittest.TestCase):
     def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
         page = self.page()
         try:
+            page.route('**/api/mii/active', lambda route: route.fulfill(json={'ok':True,'data':'Piloto'}))
             page.locator('[data-tab="session"]').click()
             expect(page.locator('#steam-dlc-hint')).to_contain_text('mesma DLC')
             page.route('**/api/steam/friends', lambda route: route.fulfill(json={'ok':True,'data':{

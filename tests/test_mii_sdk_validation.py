@@ -19,11 +19,12 @@ from native import DEFAULT_COMPILER
 
 class MiiSdkTests(unittest.TestCase):
     def test_editor_appearance_passes_actual_sdk_verifier(self):
-        generation = ROOT/'local/generation.json'
+        data = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))
+        generation = data/'generation.json'
         if not generation.is_file() or not DEFAULT_COMPILER.is_file():
             self.skipTest('Private generated MK8 SDK and native compiler required')
         identity = json.loads(generation.read_text(encoding='utf-8'))['identity']
-        source = ROOT/'local/builds'/identity/'generated/sdk/sdk_042.c'
+        source = data/'builds'/identity/'generated/sdk/sdk_042.c'
         if not source.is_file():
             self.skipTest('Generated SDK unit unavailable')
         text = source.read_text(encoding='utf-8')
