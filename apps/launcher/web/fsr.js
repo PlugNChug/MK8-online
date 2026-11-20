@@ -42,12 +42,14 @@
     get('fsr-provider').disabled = off || saving;
     get('fsr-legacy').disabled = off || saving;
     get('fsr-provider').closest('.fsr-path-row').querySelector('button').disabled = off || saving;
-    get('fsr-legacy-row').hidden = off;
+    get('fsr-legacy-row').hidden = off || windows || settings.upscaling !== '4.1.2';
     text('fsr-upscaling-hint', off
       ? 'A ampliação fica desligada e o jogo usa FSR 1/bilinear como antes.'
       : windows
         ? 'O launcher aponta o runtime para a DLL assinada da AMD. Instale os componentes abaixo.'
-        : 'O launcher passa o caminho escolhido ao runtime. O provedor é opcional e não vem no launcher.');
+        : settings.upscaling === '3.1.6'
+          ? 'FSR 3.1.6 é compilado localmente a partir do código MIT da AMD e roda nativamente; nenhum binário é incluído no launcher. O provedor é instalado abaixo.'
+          : 'FSR 4.1.2 usa um provedor externo (.so) escolhido por você; o launcher não inclui nem instala esse provedor.');
 
     const dxcRow = get('fsr-dxc').closest('.fsr-path-row');
     dxcRow.hidden = windows;
@@ -55,7 +57,7 @@
     text('fsr-install-title', windows ? 'Componentes AMD FidelityFX (DLLs assinadas)' : 'Componentes AMD FidelityFX (provedor local)');
     text('fsr-install-intro', windows
       ? 'O launcher baixa somente as DLLs assinadas e oficiais do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e as guarda neste computador. Nada da AMD é distribuído com o launcher e nenhuma compilação é feita no Windows.'
-      : 'O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila o provedor localmente com tools/build_fg_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.');
+      : 'O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py e tools/build_upscaler_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.');
     text('fsr-install', data.state === 'ready' ? 'Atualizar componentes' : windows ? 'Baixar DLLs assinadas' : 'Baixar e compilar');
 
     const state = data.state || 'not-installed';

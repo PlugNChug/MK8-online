@@ -1294,5 +1294,20 @@
   "Preparando o compilador DXC (fonte oficial fixada)…": "Preparing the DXC compiler (pinned official source)…",
   "Baixando o compilador DXC (13 MB, fonte oficial fixada)…": "Downloading the DXC compiler (13 MB, pinned official source)…",
   "DXC {0} verificado e pronto.": "DXC {0} verified and ready.",
-  "O provedor FSR salvo é um arquivo .so de Linux; no Windows escolha uma DLL (.dll) ou deixe o campo vazio para usar a DLL assinada da AMD.": "The saved FSR provider is a Linux .so file; on Windows choose a DLL (.dll) or leave the field empty to use AMD's signed DLL."
+  "O provedor FSR salvo é um arquivo .so de Linux; no Windows escolha uma DLL (.dll) ou deixe o campo vazio para usar a DLL assinada da AMD.": "The saved FSR provider is a Linux .so file; on Windows choose a DLL (.dll) or leave the field empty to use AMD's signed DLL.",
+  "FSR 3.1.6 é compilado localmente a partir do código MIT da AMD e roda nativamente; nenhum binário é incluído no launcher. O provedor é instalado abaixo.": "FSR 3.1.6 is built locally from AMD's MIT source and runs natively; no binary is bundled in the launcher. The provider is installed below.",
+  "FSR 4.1.2 usa um provedor externo (.so) escolhido por você; o launcher não inclui nem instala esse provedor.": "FSR 4.1.2 uses an external (.so) provider chosen by you; the launcher does not bundle or install that provider.",
+  "Nada para instalar: selecione FSR 3.1.6 ou FSR 3 nos componentes locais.": "Nothing to install: select FSR 3.1.6 or FSR 3 in the local components.",
+  "Provedor FSR 3.1.6 pronto ({0}).": "FSR 3.1.6 provider ready ({0}).",
+  "Provedores FSR 3.1.6 (upscaling) e frame generation {0} prontos.": "FSR 3.1.6 (upscaling) and frame generation {0} providers ready.",
+  "O provedor FSR 3.1.6 não está instalado; execute a instalação novamente.": "The FSR 3.1.6 provider is not installed; run the installation again.",
+  "O upscaler instalado reporta {0}; esperado 3.1.6. Recompilando.": "The installed upscaler reports {0}; expected 3.1.6. Rebuilding.",
+  "Compilando o upscaler FSR 3.1.6 (pode levar vários minutos)…": "Building the FSR 3.1.6 upscaler (this can take several minutes)…",
+  "Compilando o upscaler FSR 3.1.6…": "Building the FSR 3.1.6 upscaler…",
+  "Compilando o upscaler FSR 3.1.6… {0}/{1}": "Building the FSR 3.1.6 upscaler… {0}/{1}",
+  "Lendo a versão do upscaler compilado…": "Reading the built upscaler version…",
+  "Upscaler compilado; verificando a versão…": "Upscaler built; verifying its version…",
+  "Provedor de frame generation pronto; compilando o upscaler FSR 3.1.6…": "Frame-generation provider ready; building the FSR 3.1.6 upscaler…",
+  "Provedor FSR 3.1.6 já está instalado.": "FSR 3.1.6 provider is already installed.",
+  "O launcher baixa somente o código-fonte oficial do SDK v2.4.0 (fonte fixada), confere tamanho e SHA-256 e compila os provedores localmente com tools/build_fg_provider.py e tools/build_upscaler_provider.py. Nenhum binário ou SPIR-V da AMD é distribuído com o launcher.": "The launcher downloads only the official SDK v2.4.0 source (pinned source), verifies its size and SHA-256, and builds the providers locally with tools/build_fg_provider.py and tools/build_upscaler_provider.py. No AMD binary or SPIR-V is distributed with the launcher."
 }

@@ -2,12 +2,13 @@
 //! terms-gated AMD FidelityFX SDK download/build flow.
 //!
 //! The launcher stores only user choices and never ships, embeds or mirrors AMD
-//! binaries or SPIR-V. On Linux the provider is built locally by
-//! `tools/build_fg_provider.py` from the pinned, hash-verified SDK source
-//! archive (see `install.rs` for the exact interface contract). On Windows the
-//! same terms-gated step downloads AMD's signed Vulkan DLLs from the same
-//! pinned tag, verifies each pinned size and SHA-256, and points the runtime at
-//! them; nothing is compiled there.
+//! binaries or SPIR-V. On Linux the FSR 3.1.6 upscaler and the FSR 3
+//! frame-generation provider are built locally by
+//! `tools/build_upscaler_provider.py` / `tools/build_fg_provider.py` from the
+//! pinned, hash-verified SDK source archive (see `install.rs` for the exact
+//! interface contract). On Windows the same terms-gated step downloads AMD's
+//! signed Vulkan DLLs from the same pinned tag, verifies each pinned size and
+//! SHA-256, and points the runtime at them; nothing is compiled there.
 
 use mk8_manifest::Result;
 use serde::{Deserialize, Serialize};
@@ -272,7 +273,7 @@ fn upscaler_lib_for(dir: &Path, windows: bool) -> PathBuf {
     if windows {
         dir.join("amd_fidelityfx_upscaler_vk.dll")
     } else {
-        dir.join("provider/libamd_fidelityfx_upscaler_vk.so")
+        dir.join(install::UPSCALER_REL)
     }
 }
 
@@ -336,19 +337,20 @@ fn environment_for(settings: &Settings, dir: &Path, windows: bool) -> Environmen
                 .push(("MK8_FSR_VERSION", settings.upscaling.clone().into()));
             let library = if !settings.provider_lib.is_empty() {
                 PathBuf::from(&settings.provider_lib)
-            } else if windows {
-                // On Windows the terms-gated step installs AMD's signed
-                // upscaler beside the data; the runtime is pointed at it.
+            } else if windows || settings.upscaling == FSR_316 {
+                // Windows uses AMD's signed DLL; on Linux the native FSR 3.1.6
+                // upscaler is built under provider/ by the install flow.
                 upscaler_lib_for(dir, windows)
             } else {
-                // Linux has no bundled upscaler provider: keep the runtime
-                // default unless the user chose a library.
+                // FSR 4.1.2 on Linux stays an external provider path.
                 PathBuf::new()
             };
             if !library.as_os_str().is_empty() {
                 result.set.push(("MK8_FSR_LIB", library.into()));
             }
-            if settings.legacy_abi {
+            // The deprecated 1.x descriptor belongs only to the GPL 4.1.2
+            // provider; the source-built 3.1.6 upscaler uses the current ABI.
+            if !windows && settings.upscaling == FSR_412 && settings.legacy_abi {
                 result.set.push(("MK8_FSR_LEGACY_ABI", "1".into()));
             }
         }
@@ -560,6 +562,27 @@ mod tests {
         assert!(value_of(&windows, "MK8_FSR_FG_LIB")
             .unwrap()
             .ends_with("amd_fidelityfx_framegeneration_vk.dll"));
+        assert_eq!(value_of(&windows, "MK8_FSR_LEGACY_ABI"), None);
+
+        // Linux 3.1.6 uses the source-built upscaler; the deprecated ABI
+        // switch belongs only to the external 4.1.2 provider.
+        let native = Settings {
+            upscaling: FSR_316.into(),
+            provider_lib: String::new(),
+            frame_generation: FG_FSR3.into(),
+            dxc: String::new(),
+            legacy_abi: true,
+        };
+        let env = environment_for(&native, Path::new("/data/fsr"), false);
+        assert_eq!(value_of(&env, "MK8_FSR_VERSION").as_deref(), Some(FSR_316));
+        assert!(value_of(&env, "MK8_FSR_LIB")
+            .unwrap()
+            .ends_with("provider/libamd_fidelityfx_upscaler_vk.so"));
+        assert_eq!(value_of(&env, "MK8_FSR_LEGACY_ABI"), None);
+        assert_eq!(value_of(&env, "MK8_FSR_FG").as_deref(), Some("fsr3"));
+        assert!(value_of(&env, "MK8_FSR_FG_LIB")
+            .unwrap()
+            .ends_with("provider/libamd_fidelityfx_framegeneration_vk.so"));
     }
 
     #[test]

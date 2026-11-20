@@ -1023,6 +1023,15 @@ impl App {
                     );
                 }
                 let settings = crate::fsr::read_settings(&self.local)?;
+                if cfg!(target_os = "linux")
+                    && settings.upscaling != "3.1.6"
+                    && settings.frame_generation != "fsr3"
+                {
+                    return Err(
+                        "Nada para instalar: selecione FSR 3.1.6 ou FSR 3 nos componentes locais."
+                            .into(),
+                    );
+                }
                 if !crate::fsr::terms_accepted(&crate::fsr::data_dir()) {
                     return Err("Leia e aceite a licença da AMD antes de baixar o SDK.".into());
                 }
