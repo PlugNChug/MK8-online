@@ -287,6 +287,30 @@ near-identity and later draws overwrite it), nor that the vectors are correct ev
 quality, pacing/latency, a real 120 Hz presentation, combining with the FSR upscaler and a full race/restart/save
 remain unverified; `gameplay_verified` stays false.
 
+### Validation layer (20/11/2026)
+
+`b464e94` converts the FFX call sites from `VkImageUsageFlagBits`/`VkImageLayout` to
+`FfxApiResourceUsage`/`FfxApiResourceState` (sampled/read-only for colour, depth and motion vectors;
+UAV/unordered-access for the output) and extends `VK_KHR_compute_shader_derivatives` +
+`computeDerivativeGroupLinear` to `MK8_FSR4`, because the FSR 3.1 SPD pyramid shaders declare
+`ComputeDerivativeGroupLinearKHR` too; the extension is still gated on FSR/FG and skipped with a warning
+when unavailable. With the corrected states the provider leaves the colour and depth inputs in a read
+layout, so `fsr.cpp` restores them to `GENERAL` after the dispatch. `db4c239` adds the
+`VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` pool size used by the motion-vector compute (it was previously
+allocated from a pool created without that type).
+
+In-game with `LARECOMP_VK_VALIDATION=1`:
+
+- `fsr316val4`: `MK8_FSR4=1 MK8_FSR_VERSION=3.1.6` with the local
+  `~/.cache/mk8online/fsr-upscaler-build/build/libamd_fidelityfx_upscaler_vk.so`, 300 frames,
+  `[fsr] provider 3.1.6`, `[fsr] upscale active 1920x1080 -> 2560x1440`, **0 Validation Error, 0
+  Validation Warning, 0 VUID**; screenshot `local/qualification/fsr-fg-2026-11-20/fsr316val4-00300.png`.
+- `fgval2`: `MK8_FSR_FG=fsr3` with the fixed 3.1.7 provider, 600 frames, active interpolation swapchain,
+  real depth and camera-derived motion vectors, **0/0/0**; screenshot `fgval2-00600.png`.
+
+Both validation runs abort during teardown after the screenshot (signal 6); the non-validation FG runs
+exit 0. That abort is a separate shutdown issue, not a validation error, and is not claimed fixed here.
+
 ## Reproducing the provider and the checks
 
 ```sh
