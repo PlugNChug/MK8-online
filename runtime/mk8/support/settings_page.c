@@ -1,6 +1,11 @@
 #include "rt.h"
 #include "hle.h"
 #include "settings_values.h"
+#include "../ui/settings_children.h"
+#include "../ui/menu_play.h"
+#include "../ui/menu_nextendo.h"
+#include "../net/social.h"
+#include "../ui/menu_launcher_actions.h"
 #include "controller_edit.h"
 #include "controller_tips.h"
 bool mk8_auto_lan_requested(void);
@@ -26,8 +31,27 @@ static int controller_press=-1;
 static _Atomic bool from_button;
 static _Atomic bool available, requested;
 static _Atomic unsigned shared_race;
-static bool hide_on_return;
+static bool hide_on_return, overlay_wrench;
 static unsigned category, focus, offset;
+enum MenuLevel { MENU_HOME, MENU_OPTIONS, MENU_PLAY_ACTIONS, MENU_ROOMS, MENU_ROOM_DETAILS, MENU_FRIENDS };
+enum PlayAction { PLAY_RESUME, PLAY_NEXTENDO, PLAY_MII, PLAY_ROOMS, PLAY_ENTER, PLAY_LEAVE, PLAY_IDLE };
+static enum PlayAction play_actions[2+MENU_LAUNCHER_ACTION_COUNT], play_pending=PLAY_IDLE;
+static unsigned play_count;
+static uint64_t play_pressed_at, play_checked_at;
+static Mk8PlaySession play_session;
+static bool play_layout,nextendo_layout;
+static enum MenuLevel menu_level;
+static _Atomic bool exit_menu;
+static bool menu_cursor_active;
+static void menu_cursor(Cpu *c,bool show);
+static const enum Mk8MenuGroup category_groups[]={MENU_VIDEO,MENU_AUDIO,MENU_CONTROLS,MENU_QUICK,MENU_ACCOUNT,MENU_MODS,MENU_QUIT};
+static bool settings_from_service;
+static int painted_depth=-1, slide_direction;
+static uint64_t slide_at,pulse_at,pulse_pane;
+static bool incoming;
+static unsigned rich_revision,rich_depth,rich_count;
+static unsigned parent_focus[4],parent_offset[4];
+static bool rich_category(void) { return menu_level==MENU_OPTIONS && category>=SETTINGS_CATEGORIES; }
 static uint64_t previous;
 static bool touched;
 static bool entering, confirming, exiting, reset_confirm;
@@ -58,7 +82,7 @@ static _Atomic bool active, back;
 static _Atomic uint64_t buttons, suppressed, fixed_buttons, raw_buttons;
 static _Atomic int wheel;
 static _Atomic bool editing;
-static int editing_id, edit_max;
+static int editing_id, edit_min, edit_max;
 static char number[4];
 static bool replace_number, invalid;
 static pthread_mutex_t key_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -67,18 +91,24 @@ static bool overflow;
 bool menu_input_captured(void);
 bool touch_first(int32_t *, int32_t *);
 void mk8_settings_button_restore(uint64_t);
+bool mk8_settings_button_decided(uint64_t);
+bool mk8_settings_layout_available(void);
+void mk8_menu_request_overlay(void);
 void mk8_settings_top_forget(void);
 void input_reset(void);
 void mk8_input_race_players(unsigned players);
 
 RT_ON_RESET(settings_page_reset) {
+    mk8_native_rows_close();
+    menu_cursor_active=exit_menu=false;
     if(controller_visible) controller_release();
+    painted_depth=-1; slide_direction=0; pulse_pane=0;
     owner = root = cursor_owner = button = 0; active = back = editing = entering = confirming = exiting = false;
     controller_preview=controller_visible=false;
     controller_applet_players=controller_entry_players=0;
     controller_mouse_down=controller_character_shortcut=false;
     controller_armed=controller_click=-1; controller_hover=-2;
-    top=top_root=restore_nav=scrollbar=0; available=requested=from_button=shared_race=hide_on_return=false;
+    top=top_root=restore_nav=scrollbar=0; available=requested=from_button=shared_race=hide_on_return=overlay_wrench=false;
     dialog=dialog_cursor=cursor_animation=back_animation=0;
     restart_prompt=restart_wait=restart_pressed=exit_pressed=false;
     buttons = suppressed = fixed_buttons = raw_buttons = 0; wheel=0;
@@ -187,6 +217,7 @@ static void reveal_pane(Cpu *c,const char *name,float progress) {
 static void appear(Cpu *c, float progress) {
     reveal=progress;
     reveal_pane(c,"N_Settings",progress);
+    if(menu_cursor_active) reveal_pane(c,"N_SettingsPopup",progress);
 }
 
 // Both the assignment footer and restart dialog use the stock Decide animation before fading.
@@ -200,25 +231,38 @@ static bool popup_fade(Cpu *c,uint64_t *started,bool with_roster) {
     return progress==0;
 }
 
+static size_t utf16_line(uint16_t *dest,size_t limit,const char *value,bool shoulders) {
+    size_t out=0;
+    while(*value && out<limit) {
+        unsigned ch=(unsigned char)*value++;
+        if(shoulders && ch=='[' && (*value=='L' || *value=='R') && value[1]==']') {
+            ch=*value=='L' ? 0xe0a4 : 0xe0a5; value+=2;
+        } else if(ch>=0x80) {
+            unsigned count=ch>=0xf0 && ch<=0xf4 ? 3 : ch>=0xe0 && ch<=0xef ? 2 : ch>=0xc2 && ch<=0xdf ? 1 : 0;
+            unsigned cp=ch & (0x7f >> (count+1)),j=0;
+            for(;j<count && ((unsigned char)*value&0xc0)==0x80;j++) cp=(cp<<6)|((unsigned char)*value++&63);
+            ch=count && j==count && cp>=(count==1 ? 0x80u : count==2 ? 0x800u : 0x10000u) &&
+               cp<=0x10ffff && (cp<0xd800 || cp>0xdfff) ? cp : 0xfffd;
+        }
+        if(ch>=0x10000) {
+            if(out+2>limit) break;
+            ch-=0x10000; dest[out++]=0xd800+(ch>>10); ch=0xdc00+(ch&1023);
+        }
+        dest[out++]=ch;
+    }
+    dest[out]=0;
+    return out;
+}
 static void text(Cpu *c, uint64_t pane, const char *value) {
     size_t n = strlen(value);
     if (n > 79) FATAL("[mk8:settings] selector value too long\n");
-    for (size_t i=0; i<=n; i++) ST16(c->sp+128+i*2,(unsigned char)value[i]);
+    utf16_line((uint16_t *)(uintptr_t)(c->sp+128),79,value,false);
     call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
 }
 
 // The title font supplies the outline shoulders but has no sideways rail glyphs.
 static size_t instruction_line(uint16_t *out,size_t limit,const char *s) {
-    size_t n=0;
-    while(*s && n<limit) {
-        uint16_t ch=(unsigned char)*s++;
-        if(ch=='[' && (*s=='L' || *s=='R') && s[1]==']') {
-            ch=*s=='L' ? 0xe0a4 : 0xe0a5; s+=2;
-        }
-        out[n++]=ch;
-    }
-    out[n]=0;
-    return n;
+    return utf16_line(out,limit,s,true);
 }
 
 static void instruction(Cpu *c,uint64_t pane,size_t limit,const char *s) {
@@ -349,7 +393,7 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
             if(keys[i]>button_columns[i%2]) button_columns[i%2]=keys[i];
         }
         // Use the two join captions' rendered widths so both words start in one column.
-        if(show_chords && i<2) verbs[i]=i ? 264 : 440;
+        if(show_chords && i==0) verbs[i]=440;
     }
     for(unsigned i=0;i<n;i++) {
         widths[i]=(roster ? button_columns[i%2] : keys[i])+8+verbs[i];
@@ -362,7 +406,7 @@ static bool keycap_tips(Cpu *c,const char *description,const char *const keys_te
         total=widths[0]>lower_width ? widths[0] : lower_width;
     }
     hint_background(c,two_lines,total+44>880 ? total+44 : 880);
-    instruction(c,hint,79,description ? description : "");
+    instruction(c,hint,40,description ? description : "");
     call(c,0x70008ade74ull,hint_second,mouse_hint!=NULL,0,0,0);
     if(mouse_hint) text(c,hint_second,mouse_hint);
     float x=0;
@@ -468,16 +512,34 @@ static uint64_t attach(Cpu *c, uint64_t page, uint64_t parent, const char *name)
     return obj+0x30;
 }
 
+// The stock text box limit is in UTF-16 units. Service text can be much longer.
+static void list_text(Cpu *c,uint64_t pane,const char *value,size_t limit) {
+    uint16_t *line=(uint16_t *)(uintptr_t)(c->sp+128);
+    size_t n=utf16_line(line,limit+2,value,false);
+    for(size_t i=0;i<n;i++) if(line[i]<32) line[i]=' ';
+    if(n>limit) {
+        size_t cut=limit-1;
+        if(line[cut]>=0xdc00 && line[cut]<=0xdfff && cut) --cut;
+        line[cut]=0x2026; line[cut+1]=0;
+    }
+    call(c,0x70008adc54ull,pane,c->sp+128,0,0,0);
+}
+
 static Mk8Setting selected(void) {
     Mk8Setting row;
     if(!focus || !mk8_settings_values_row(category,focus-1,&row)) FATAL("[mk8:settings] invalid settings selection\n");
     return row;
 }
 
+static bool nextendo_page(void) { return menu_level==MENU_ROOMS || menu_level==MENU_ROOM_DETAILS || menu_level==MENU_FRIENDS; }
+static const char *nextendo_tip(Mk8MenuLanguage lang);
+static bool friend_row_focused(void);
+static bool service_header;
+static void enter_settings_category(Cpu *c,unsigned group);
 static void settings_tips(Cpu *c) {
     bool stock_back=tips.source==MK8_TIP_NINTENDO && !strcmp(tips.label[MK8_TIP_BACK],"B");
     call(c,0x70008ade74ull,back_icon,stock_back,0,0,0);
-    static const struct TipAction category_tips[]={{MK8_TIP_CONFIRM,"Category"},{MK8_TIP_DOWN,"Options"},{MK8_TIP_BACK,"Close"}};
+    static const struct TipAction category_tips[]={{MK8_TIP_CONFIRM,"Category"},{MK8_TIP_DOWN,"Options"},{MK8_TIP_BACK,"Back"}};
     static const struct TipAction save[]={{MK8_TIP_CONFIRM,"OK"},{MK8_TIP_BACK,"Cancel"}};
     static const struct TipAction reset[]={{MK8_TIP_CONFIRM,"Reset"},{MK8_TIP_BACK,"Cancel"}};
     struct TipAction row_tips[]={{MK8_TIP_CONFIRM,"Change"},{MK8_TIP_BACK,"Back"}};
@@ -487,13 +549,32 @@ static void settings_tips(Cpu *c) {
     else if(mk8_settings_values_saved()<0) help="Save failed. Check folder; Back retries.";
     else if(mk8_settings_values_capturing()) help="Waiting for a new binding...";
     if(help) { action_tips(c,help,NULL,0,""); return; }
+    if(menu_level!=MENU_OPTIONS) {
+        Mk8MenuLanguage lang=mk8_menu_language();
+        struct TipAction actions[]={{MK8_TIP_CONFIRM,mk8_menu_text(lang,"Select","Selecionar","Elegir")},
+            {MK8_TIP_BACK,menu_level==MENU_HOME ? mk8_menu_text(lang,"Close","Fechar","Cerrar") : mk8_menu_text(lang,"Back","Voltar","Volver")}};
+        const char *description=menu_level==MENU_PLAY_ACTIONS ? mk8_menu_play_text(lang,&play_session,PLAY_INSTRUCTION) : NULL;
+        bool detail=menu_level==MENU_ROOM_DETAILS;
+        if(nextendo_page()) description=nextendo_tip(lang);
+        if(nextendo_page() && !detail && service_header) actions[0]=(struct TipAction){MK8_TIP_CONFIRM,
+            menu_level==MENU_ROOMS ? mk8_menu_text(lang,"View friends","Ver amigos","Ver amigos") : mk8_menu_text(lang,"View rooms","Ver salas","Ver salas")};
+        else if(friend_row_focused()) actions[0]=(struct TipAction){MK8_TIP_DOWN,mk8_menu_text(lang,"Scroll","Rolar","Recorrer")};
+        action_tips(c,description,actions+(detail ? 1 : 0),detail ? 1 : 2,""); return;
+    }
     if(editing) {
-        snprintf(range,sizeof range,"Enter a value from 0 to %d.",edit_max);
+        snprintf(range,sizeof range,"Enter a value from %d to %d.",edit_min,edit_max);
         help=invalid ? range : tips.source==MK8_TIP_KEYBOARD ? "Type a value or use the arrow keys." : "Up/down: 1   Left/right: 10";
         action_tips(c,help,save,2,""); return;
     }
     if(reset_confirm) { action_tips(c,"Reset these bindings?",reset,2,""); return; }
     if(!focus) { action_tips(c,NULL,category_tips,3,"Select a category or setting."); return; }
+    if(rich_category()) {
+        Mk8NativeRow row={0};
+        mk8_native_rows_get(focus-1,rich_revision,&row);
+        row_tips[0].verb=mk8_menu_text(mk8_menu_language(),"Select","Selecionar","Elegir");
+        action_tips(c,row.help[0] ? row.help : NULL,row_tips+(row.enabled ? 0 : 1),row.enabled ? 2 : 1,"");
+        return;
+    }
     Mk8Setting row=selected();
     if(row.kind==SETTING_NUMBER) row_tips[0].verb="Edit";
     if(row.kind==SETTING_BINDING) row_tips[0].verb="Remap";
@@ -502,21 +583,160 @@ static void settings_tips(Cpu *c) {
     action_tips(c,row.help,row_tips+first,2-first,"");
 }
 
-static void draw(Cpu *c) {
-    static const char *categories[] = {"Video", "Audio", "Controls"};
+static void controller_place(Cpu *c,uint64_t pane,float x,float y);
+static void pane_scale(uint64_t pane,float scale) {
+    heap(pane,0x60);
+    memcpy((void *)(uintptr_t)(pane+0x48),&scale,sizeof scale);
+    memcpy((void *)(uintptr_t)(pane+0x4c),&scale,sizeof scale);
+    ST8(pane+0x58,LD8(pane+0x58)|0x10);
+}
+
+static void pulse_slot(Cpu *c,unsigned slot) {
+    if(slot>SETTINGS_VISIBLE) return;
+    if(pulse_pane) pane_scale(pulse_pane,1);
+    char name[24]; snprintf(name,sizeof name,"L_SettingsRow%u",slot);
+    pulse_pane=find(c,root,name); pulse_at=plat_now_ns();
+    pane_scale(pulse_pane,1.025f);
+}
+
+static void row_ink(uint64_t pane,bool actionable) {
+    heap(pane,0x60);
+    ST8(pane+0x59,actionable ? 255 : 155);
+    ST8(pane+0x58,LD8(pane+0x58)|2);
+}
+
+static void draw_play_info(Cpu *c,Mk8MenuLanguage lang) {
+    char line[80];
+    snprintf(line,sizeof line,"%s  ·  %s",mk8_menu_play_text(lang,&play_session,PLAY_SESSION),mk8_menu_play_text(lang,&play_session,PLAY_VERSION));
+    text(c,values[0],line);
+    visible(c,rows[0]+0x30,"L_Btn_LR",false);
+    visible(c,root,"L_SettingsRow5",true);
+    controller_place(c,find(c,root,"L_SettingsRow5"),0,-155);
+    call(c,0x700044ee50ull,rows[5],1,0,0,0);
+    row_ink(labels[5],false); row_ink(values[5],false);
+    visible(c,rows[5]+0x30,"L_Btn_LR",false);
+    snprintf(line,sizeof line,"%s: %s",mk8_menu_label(lang,mk8_play_content_label),mk8_menu_play_text(lang,&play_session,PLAY_CONTENT));
+    text(c,labels[5],line);
+    snprintf(line,sizeof line,"%s: %s",mk8_menu_label(lang,mk8_play_account_label),mk8_menu_play_text(lang,&play_session,PLAY_ACCOUNT));
+    // The status column has room for 30 units. Keep an ellipsis clear of UTF-16 surrogate pairs.
+    uint16_t *label=(uint16_t *)(uintptr_t)(c->sp+128);
+    size_t length=utf16_line(label,79,line,false);
+    if(play_session.signed_in) for(size_t i=0;i<length;i++)
+        if(label[i]=='\r' || label[i]=='\n' || label[i]=='\t') label[i]=' ';
+    if(play_session.signed_in && length>30) {
+        size_t cut=29;
+        if(label[cut]>=0xdc00 && label[cut]<=0xdfff) cut--;
+        label[cut]=0x2026; label[cut+1]=0;
+    }
+    call(c,0x70008adc54ull,values[5],c->sp+128,0,0,0);
+}
+
+#include "settings_nextendo.h"
+
+static void enter_settings_category(Cpu *c,unsigned group) {
+    (void)c;
+    if(menu_level!=MENU_OPTIONS) settings_from_service=nextendo_page();
+    if(rich_category()) mk8_native_rows_close();
+    menu_level=MENU_OPTIONS;
+    category=group==MENU_QUICK ? SETTINGS_QUICK : group<=MENU_CONTROLS ? group-MENU_VIDEO : group;
+    focus=offset=rich_depth=rich_revision=rich_count=0;
+    if(rich_category()) mk8_native_rows_open(group);
+}
+
+static void refresh_rich_rows(void) {
+    unsigned depth;
+    int count=mk8_native_rows_count(&rich_revision,&depth);
+    if(depth!=rich_depth) {
+        if(depth>rich_depth) {
+            if(rich_depth<sizeof parent_focus/sizeof *parent_focus) {
+                parent_focus[rich_depth]=focus; parent_offset[rich_depth]=offset;
+            }
+            focus=count ? 1 : 0; offset=0;
+        } else {
+            focus=depth<sizeof parent_focus/sizeof *parent_focus ? parent_focus[depth] : 0;
+            offset=depth<sizeof parent_offset/sizeof *parent_offset ? parent_offset[depth] : 0;
+        }
+        rich_depth=depth;
+    }
+    rich_count=(unsigned)count;
+}
+
+static unsigned option_count(void) {
+    return rich_category() ? rich_count : (unsigned)mk8_settings_values_count(category);
+}
+
+static unsigned menu_action_count(void) {
+    if(nextendo_page()) return menu_level==MENU_ROOM_DETAILS ? room_detail_row_count() : service_count;
+    return menu_level==MENU_HOME ? HOME_COUNT : play_count;
+}
+static void paint(Cpu *c) {
+    bool options=menu_level==MENU_OPTIONS,play=menu_level==MENU_PLAY_ACTIONS;
+    bool rooms=nextendo_page();
+    if(play_layout!=play || nextendo_layout!=rooms) {
+        // Play borrows the category heading and last row for read-only session details.
+        controller_place(c,find(c,root,"L_SettingsRow0"),0,play || rooms ? 174 : 150);
+        visible(c,rows[0]+0x30,"L_Btn_LR",!play && !rooms);
+        pane_scale(values[0],play || rooms ? .70f : 1.f);
+        pane_scale(labels[5],play ? .66f : 1.f);
+        pane_scale(values[5],play ? .66f : 1.f);
+        controller_place(c,values[5],play ? -418 : 0,0);
+        if(play) controller_place(c,labels[5],220,0);
+        play_layout=play; nextendo_layout=rooms;
+    }
+    const char *category_name=mk8_menu_label(mk8_menu_language(),mk8_menu_groups[category_groups[category]]);
+    const char *heading=menu_level==MENU_HOME ? mk8_menu_text(mk8_menu_language(),"Menu","Menu","Menú") :
+        mk8_menu_label(mk8_menu_language(),mk8_menu_pages[play ? MENU_PLAY : MENU_SETTINGS]);
+    if(rooms) heading=mk8_menu_label(mk8_menu_language(),menu_level==MENU_ROOM_DETAILS ? mk8_nx_room : mk8_nx_views[menu_level==MENU_FRIENDS]);
+    if(title_label) text(c,title_label,heading);
     uint64_t shown_revision=mk8_settings_values_revision();
-    unsigned count=(unsigned)mk8_settings_values_count(category);
-    if(!count) FATAL("[mk8:settings] settings catalogue unavailable\n");
-    if(focus>count) focus=count;
-    if(focus && focus<=offset) offset=focus-1;
-    if(focus>offset+SETTINGS_VISIBLE) offset=focus-SETTINGS_VISIBLE;
+    unsigned count=options ? option_count() :
+        menu_action_count();
+    unsigned first=options ? 1 : 0;
+    if(!count && !rich_category()) FATAL("[mk8:settings] settings catalogue unavailable\n");
+    if(focus>=count+first) focus=count+first-1;
+    if(focus>=first && focus-first<offset) offset=focus-first;
+    if(focus>=offset+SETTINGS_VISIBLE+first) offset=focus-SETTINGS_VISIBLE-first+1;
     if(offset+SETTINGS_VISIBLE>count) offset=count>SETTINGS_VISIBLE ? count-SETTINGS_VISIBLE : 0;
-    text(c,values[0],categories[category]);
-    call(c,focus==0 ? 0x700044ed20ull : 0x700044ee50ull,rows[0],1,0,0,0);
+    if(rooms && service_header) offset=0;
+    visible(c,root,"L_SettingsHint",true);
+    visible(c,root,"L_SettingsRow0",options || play || rooms);
+    if(options) text(c,values[0],category_name);
+    call(c,((!play && !rooms && focus==0) || (rooms && service_header)) ? 0x700044ed20ull : 0x700044ee50ull,rows[0],1,0,0,0);
     for (unsigned i=1;i<=SETTINGS_VISIBLE;i++) {
         char name[32]; snprintf(name,sizeof name,"L_SettingsRow%u",i);
         bool shown=offset+i<=count; visible(c,root,name,shown);
         if(!shown) continue;
+        controller_place(c,find(c,root,name),0,options ? 60-(int)(i-1)*60 : play || rooms ? 100-(int)(i-1)*60 : 145-(int)(i-1)*70);
+        // The value pane sits 195 units right of center and holds up to 49 UTF-16 units.
+        controller_place(c,values[i],0,0);
+        if(rooms) { draw_nextendo_row(c,i,offset+i-1); continue; }
+        controller_place(c,labels[i],options ? -245 : 0,0);
+        if(!options) {
+            unsigned index=offset+i-1;
+            Mk8MenuLabel label;
+            if(play) {
+                enum PlayAction action=play_actions[index];
+                label=action==PLAY_RESUME ? mk8_play_back : action==PLAY_NEXTENDO ? mk8_play_open_nextendo :
+                    mk8_menu_launcher_actions[action-PLAY_MII].label;
+            } else label=mk8_menu_pages[mk8_home_pages[index]];
+            text(c,labels[i],mk8_menu_label(mk8_menu_language(),label)); text(c,values[i],"");
+            row_ink(labels[i],true);
+            call(c,index==focus ? 0x700044ed20ull : 0x700044ee50ull,rows[i],1,0,0,0);
+            visible(c,rows[i]+0x30,"L_Btn_LR",false);
+            continue;
+        }
+        if(rich_category()) {
+            Mk8NativeRow row={0};
+            mk8_native_rows_get(offset+i-1,rich_revision,&row);
+            bool paired=row.value[0]!=0;
+            if(!paired) controller_place(c,values[i],-195,0);
+            list_text(c,labels[i],paired ? row.label : "",24);
+            list_text(c,values[i],paired ? row.value : row.label,paired ? 26 : 49);
+            call(c,offset+i==focus ? 0x700044ed20ull : 0x700044ee50ull,rows[i],1,0,0,0);
+            row_ink(labels[i],row.enabled); row_ink(values[i],row.enabled);
+            visible(c,rows[i]+0x30,"L_Btn_LR",row.enabled && row.adjustable);
+            continue;
+        }
         Mk8Setting row;
         if(!mk8_settings_values_row(category,offset+i-1,&row)) FATAL("[mk8:settings] settings row changed\n");
         text(c,labels[i],row.label);
@@ -526,21 +746,79 @@ static void draw(Cpu *c) {
             text(c,values[i],value);
         } else text(c,values[i],reset_confirm && offset+i==focus ? "Confirm reset?" : row.value);
         call(c,offset+i==focus ? 0x700044ed20ull : 0x700044ee50ull,rows[i],1,0,0,0);
-        for(unsigned t=0;t<2;t++) {
-            uint64_t pane=t ? values[i] : labels[i]; heap(pane,0x60);
-            ST8(pane+0x59,row.enabled ? 255 : 100); ST8(pane+0x58,LD8(pane+0x58)|2);
-        }
+        bool actionable=row.enabled && row.kind!=SETTING_INFO;
+        row_ink(labels[i],actionable); row_ink(values[i],actionable);
         visible(c,rows[i]+0x30,"L_Btn_LR",row.enabled && (row.kind==SETTING_CHOICE || row.kind==SETTING_NUMBER));
     }
+    if(play) draw_play_info(c,mk8_menu_language());
+    if(rooms) draw_nextendo_header(c);
     if(scrollbar) {
         visible(c,root,"L_SettingsScroll",count>SETTINGS_VISIBLE);
         float args[5]={0,(float)offset,(float)(count>SETTINGS_VISIBLE ? count-SETTINGS_VISIBLE : 0),SETTINGS_VISIBLE,(float)count};
         for(unsigned i=0;i<5;i++) memcpy(&c->v[i],&args[i],sizeof(float));
         call(c,0x7000451ff4ull,scrollbar,0,0,0,0);
     }
+    menu_cursor(c,!options && menu_level!=MENU_ROOM_DETAILS && !(rooms && service_header));
     settings_tips(c);
     last_revision=shown_revision;
-    LOG("[mk8:settings] category=%s focus=%u offset=%u\n",categories[category],focus,offset);
+    LOG("[mk8:settings] category=%s focus=%u offset=%u\n",options ? mk8_menu_groups[category_groups[category]].en : heading,focus,offset);
+}
+
+// The backdrop and Back button stay fixed while the content and its cursor travel together.
+static void slide_content(Cpu *c,float x) {
+    controller_place(c,find(c,root,"N_Settings"),x,0);
+    controller_place(c,find(c,root,"L_SettingsBG"),-x,0);
+    controller_place(c,find(c,root,"L_SettingsBack"),-460-x,-280);
+    if(menu_cursor_active) controller_place(c,find(c,root,"N_SettingsPopup"),x,0);
+}
+
+static void end_motion(Cpu *c) {
+    if(pulse_pane) { pane_scale(pulse_pane,1); pulse_pane=0; }
+    if(slide_direction) { slide_content(c,0); slide_direction=0; }
+}
+
+static void draw(Cpu *c) {
+    int depth=menu_level==MENU_HOME ? 0 : 1;
+    if(nextendo_page() || (menu_level==MENU_OPTIONS && settings_from_service)) {
+        if(service_parent==MENU_PLAY_ACTIONS) ++depth;
+        if(menu_level==MENU_ROOM_DETAILS || menu_level==MENU_OPTIONS) ++depth;
+    }
+    if(rich_category()) {
+        refresh_rich_rows();
+        if(category_groups[category]!=MENU_QUIT) depth+=(int)rich_depth;
+    }
+    if(painted_depth>=0 && painted_depth!=depth && active && !entering && !exiting && !restart_prompt) {
+        slide_direction=depth>painted_depth ? 1 : -1;
+        slide_at=plat_now_ns(); incoming=false; painted_depth=depth;
+        return; // Keep the outgoing rows until they have left the viewport.
+    }
+    painted_depth=depth;
+    if(!slide_direction) paint(c);
+}
+
+static bool animate_menu(Cpu *c) {
+    uint64_t now=plat_now_ns();
+    if(pulse_pane) {
+        float t=(float)(now-pulse_at)/120000000.f;
+        if(t>=1) { pane_scale(pulse_pane,1); pulse_pane=0; }
+        else pane_scale(pulse_pane,1+.025f*(1-t)*(1+2*t));
+    }
+    if(!slide_direction) return false;
+    uint64_t age=now-slide_at;
+    if(age>=160000000ull) {
+        if(!incoming) paint(c);
+        end_motion(c);
+        return true;
+    }
+    bool arriving=age>=72000000ull;
+    if(arriving && !incoming) {
+        if(pulse_pane) { pane_scale(pulse_pane,1); pulse_pane=0; }
+        paint(c); incoming=true;
+    }
+    float t=arriving ? (age-72000000ull)/88000000.f : age/72000000.f;
+    float eased=t*t*(3-2*t);
+    slide_content(c,1280*slide_direction*(arriving ? 1-eased : -eased));
+    return true;
 }
 
 static bool post(int operation,int id,int value) {
@@ -555,6 +833,11 @@ static void animation_frame(Cpu *c,uint64_t animation,unsigned index,float frame
 static void animation_play(Cpu *c,uint64_t animation,unsigned index,float speed) {
     memcpy(&c->v[0],&speed,sizeof speed);
     call(c,0x70008ad6acull,animation,index,0,1,0);
+}
+
+static void menu_back_feedback(Cpu *c) {
+    animation_play(c,back_animation,2,1);
+    menu_sound(c,0x7000ed87cfull);
 }
 
 static uint64_t button_animations(Cpu *c,uint64_t component) {
@@ -635,10 +918,36 @@ static void controller_place(Cpu *c, uint64_t pane, float x,float y) {
 }
 
 static void controller_cursor_scale(Cpu *c,float scale) {
-    uint64_t pane=find(c,root,"L_SettingsCursor"); heap(pane,0x60);
-    memcpy((void *)(uintptr_t)(pane+0x48),&scale,sizeof scale);
-    memcpy((void *)(uintptr_t)(pane+0x4c),&scale,sizeof scale);
-    ST8(pane+0x58,LD8(pane+0x58)|0x10);
+    pane_scale(find(c,root,"L_SettingsCursor"),scale);
+}
+
+static void position_cursor(Cpu *c,float x,float y,bool row) {
+    // Keep the four native corners apart; shrinking the cursor bounds alone makes them cross.
+    float scale=row ? .5f : 1.f;
+    controller_cursor_scale(c,scale);
+    float position[3]={x,y,0};
+    float size[2]={row ? 1700 : 370,158};
+    memcpy((void *)(uintptr_t)(c->sp+320),size,sizeof size);
+    call(c,0x7000443404ull,dialog_cursor,c->sp+320,0,0,0);
+    memcpy((void *)(uintptr_t)(c->sp+320),position,sizeof position);
+    call(c,0x70008adff0ull,dialog_cursor+0x30,c->sp+320,0,0,0);
+}
+
+static void menu_cursor(Cpu *c,bool show) {
+    if(!dialog_cursor) return;
+    if(menu_cursor_active!=show) {
+        static const char *const panes[]={"L_SettingsDialog","L_SettingsQuestion","L_SettingsYes","L_SettingsNo"};
+        for(unsigned i=0;i<sizeof panes/sizeof *panes;i++) visible(c,root,panes[i],!show);
+        visible(c,root,"N_SettingsPopup",show);
+        menu_cursor_active=show;
+        if(show) {
+            reveal_pane(c,"N_SettingsPopup",reveal);
+            call(c,0x7000442f5cull,dialog_cursor,1,0,0,0);
+            float speed=1; memcpy(&c->v[0],&speed,sizeof speed);
+            call(c,0x70008ad300ull,cursor_animation,1,0,0,0);
+        } else position_cursor(c,0,-195,false);
+    }
+    if(show) position_cursor(c,0,(menu_level==MENU_PLAY_ACTIONS || nextendo_page()) ? 100-(int)(focus-offset)*60 : 145-(int)(focus-offset)*70,true);
 }
 
 static void controller_highlight(Cpu *c) {
@@ -650,15 +959,8 @@ static void controller_highlight(Cpu *c) {
         // Apply the OnOff pose now, including the neutral colors after the previous Decide pulse.
         call(c,0x70008ae0b8ull,dialog_buttons[i],0,0,0,0);
     }
-    // Keep the four native corners apart; shrinking the cursor bounds alone makes them cross.
-    float scale=footer ? 1.f : .5f;
-    controller_cursor_scale(c,scale);
-    float position[3]={footer && !controller_required ? (controller_focus==4 ? -200 : 200) : 0,footer ? -246 : 145-controller_focus*70,0};
-    float size[2]={footer ? 370 : 1700,158};
-    memcpy((void *)(uintptr_t)(c->sp+320),size,sizeof size);
-    call(c,0x7000443404ull,dialog_cursor,c->sp+320,0,0,0);
-    memcpy((void *)(uintptr_t)(c->sp+320),position,sizeof position);
-    call(c,0x70008adff0ull,dialog_cursor+0x30,c->sp+320,0,0,0);
+    position_cursor(c,footer && !controller_required ? (controller_focus==4 ? -200 : 200) : 0,
+                    footer ? -246 : 145-controller_focus*70,!footer);
 }
 
 static bool controller_listening(enum Mk8EditState state) {
@@ -1005,6 +1307,9 @@ static void dialog_draw(Cpu *c,bool instant) {
 
 static void finish_return(Cpu *c,uint64_t page,uint64_t b) {
     (void)page;
+    end_motion(c);
+    mk8_native_rows_close();
+    menu_cursor(c,false);
     visible(c,root,"N_Settings",false);
     if(dialog) visible(c,root,"N_SettingsPopup",false);
     restart_prompt=restart_wait=restart_pressed=exit_pressed=false;
@@ -1021,20 +1326,65 @@ static void finish_return(Cpu *c,uint64_t page,uint64_t b) {
     else LOG("[mk8:settings] native selector closed\n");
 }
 
-static void start_exit(Cpu *c) {
+static void start_exit(Cpu *c,bool resume) {
     if(post(SETTINGS_FINISH,0,1)) {
+        end_motion(c);
         exiting=true; exited_at=plat_now_ns(); exit_from=reveal;
-        exit_pressed=reveal>0;
-        if(exit_pressed) animation_play(c,back_animation,2,1);
-        menu_sound(c,0x7000ed87cfull);
+        exit_pressed=!resume && reveal>0;
+        if(exit_pressed) menu_back_feedback(c);
+        else if(!resume) menu_sound(c,0x7000ed87cfull);
         entering=confirming=false; draw(c);
     }
 }
 
-void mk8_settings_page_build(uint64_t page) { top=page; }
+static void finish_play_action(Cpu *c);
+static void begin_play_action(Cpu *c,enum PlayAction action) {
+    play_pending=action; play_pressed_at=plat_now_ns();
+    if(action!=PLAY_LEAVE) pulse_slot(c,focus-offset+1);
+    if(action==PLAY_LEAVE) menu_back_feedback(c);
+    else {
+        if(dialog_cursor) call(c,0x7000443320ull,dialog_cursor,0,0,0,0);
+        menu_sound(c,0x7000ed87bfull);
+    }
+    if(action==PLAY_ENTER || action==PLAY_LEAVE || action==PLAY_NEXTENDO) finish_play_action(c);
+}
+
+static void finish_play_action(Cpu *c) {
+    enum PlayAction action=play_pending;
+    uint64_t elapsed=plat_now_ns()-play_pressed_at;
+    if(action!=PLAY_ENTER && action!=PLAY_NEXTENDO && action!=PLAY_LEAVE && elapsed<160000000ull) {
+        if(action==PLAY_RESUME) appear(c,1.f-(float)elapsed/160000000.f);
+        return;
+    }
+    play_pending=PLAY_IDLE;
+    if(action==PLAY_RESUME) {
+        start_exit(c,true);
+        if(exiting) { exit_from=0; return; }
+    } else if(action==PLAY_ENTER) {
+        menu_level=MENU_PLAY_ACTIONS; focus=offset=0;
+        play_actions[0]=PLAY_RESUME; play_actions[1]=PLAY_NEXTENDO; play_count=2;
+        for(int i=0;i<MENU_LAUNCHER_ACTION_COUNT;i++)
+            if(mk8_menu_launcher_actions[i].available()) play_actions[play_count++]=(enum PlayAction)(PLAY_MII+i);
+        mk8_menu_play_session(&play_session); play_checked_at=plat_now_ns();
+    } else if(action==PLAY_LEAVE) {
+        menu_level=MENU_HOME; focus=MENU_PLAY; offset=0;
+    } else if(action==PLAY_NEXTENDO) {
+        enter_service(MENU_PLAY_ACTIONS,MENU_ROOMS);
+    } else {
+        const Mk8MenuLauncherAction *launcher=&mk8_menu_launcher_actions[action-PLAY_MII];
+        if(launcher->available()) launcher->open();
+    }
+    // The Decide animation collapses the chevrons. Re-arm them even when staying on Play.
+    menu_cursor(c,false); appear(c,1); draw(c);
+}
+
+void mk8_settings_page_build(uint64_t page) { top=page; overlay_wrench=false; }
 
 void mk8_settings_shared_build(uint64_t page) {
-    if(!mk8_controller_layout_available() && !mk8_settings_style_active()) return;
+    mk8_native_rows_close();
+    menu_cursor_active=exit_menu=false;
+    overlay_wrench=false;
+    if(!mk8_controller_layout_available()) { top=0; return; }
     heap(page,0x1f8);
     if(controller_visible) controller_release();
     if(active) (void)post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
@@ -1042,7 +1392,8 @@ void mk8_settings_shared_build(uint64_t page) {
     Cpu *c=kernel_current_cpu();
     if (!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid selector construction context\n");
     Cpu saved=*c; c->sp-=512;
-    owner=page; cursor_owner=0; hide_on_return=false;
+    painted_depth=-1; slide_direction=0; pulse_pane=0;
+    owner=page; cursor_owner=0; hide_on_return=play_layout=nextendo_layout=false; play_pending=PLAY_IDLE;
     active=back=editing=entering=confirming=exiting=reset_confirm=restart_prompt=restart_wait=restart_pressed=exit_pressed=false; category=focus=offset=0;
     root=0; available=false; requested=false; top_root=restore_nav=0;
     controller_visible=false;
@@ -1140,12 +1491,13 @@ void mk8_settings_shared_build(uint64_t page) {
 bool mk8_settings_page_active(void) { return requested || active || mk8_controller_layout_active(); }
 bool mk8_settings_page_toggle(void) {
     if(shared_race) return false;
-    if(!mk8_settings_style_active() || !available) return false;
     if(mk8_controller_layout_active()) return true;
-    if(active) back=true;
-    else { from_button=false; requested=true; }
+    if(active) { exit_menu=true; return true; }
+    if(!mk8_settings_style_active() || !available) return false;
+    from_button=false; requested=true;
     return true;
 }
+void mk8_native_menu_exit(void) { if(active) exit_menu=true; }
 void mk8_settings_page_back(void) { if (active) back=true; }
 
 bool mk8_settings_page_key(int key) {
@@ -1158,11 +1510,11 @@ bool mk8_settings_page_key(int key) {
 
 static void begin_number(Mk8Setting row) {
     pthread_mutex_lock(&key_lock); key_count=0; overflow=false; pthread_mutex_unlock(&key_lock);
-    editing_id=row.id; edit_max=row.maximum;
+    editing_id=row.id; edit_min=row.minimum; edit_max=row.maximum;
     snprintf(number,sizeof number,"%d",row.current); replace_number=true; invalid=false; editing=true;
 }
 
-static bool edit_number(uint64_t edge, bool cancel) {
+static bool edit_number(Cpu *c,uint64_t edge, bool cancel) {
     int batch[32], count; bool lost;
     pthread_mutex_lock(&key_lock);
     count=key_count; memcpy(batch,keys,count*sizeof *keys); key_count=0; lost=overflow; overflow=false;
@@ -1189,12 +1541,12 @@ static bool edit_number(uint64_t edge, bool cancel) {
     if (edge&((1ull<<14)|(1ull<<18))) step=10;
     if (edge&((1ull<<12)|(1ull<<16))) step=-10;
     if (step) {
-        int value=atoi(number)+step; value=value<0 ? 0 : value>edit_max ? edit_max : value;
+        int value=atoi(number)+step; value=value<edit_min ? edit_min : value>edit_max ? edit_max : value;
         snprintf(number,sizeof number,"%d",value); replace_number=true; invalid=false;
     }
-    if (cancel) { editing=false; LOG("[mk8:settings] numeric edit cancelled\n"); }
+    if (cancel) { editing=false; menu_back_feedback(c); LOG("[mk8:settings] numeric edit cancelled\n"); }
     else if (commit) {
-        if (!*number || atoi(number)>edit_max || invalid) invalid=true;
+        if (!*number || atoi(number)<edit_min || atoi(number)>edit_max || invalid) invalid=true;
         else if(post(SETTINGS_SET,editing_id,atoi(number))) { editing=false; LOG("[mk8:settings] numeric value applied: %s\n",number); }
     }
     return count || edge || cancel;
@@ -1215,7 +1567,18 @@ uint64_t mk8_settings_page_input(uint64_t b, int32_t st[4],uint64_t scripted) {
 
 // All engine calls stay on the guest's UI thread; render/input threads only publish requests.
 void mk8_settings_page_tick(uint64_t page, bool open) {
-    if(page==top && page!=owner) { if(open) { from_button=true; requested=true; } return; }
+    if(page==top && page!=owner) {
+        if(open) {
+            if(available && mk8_settings_style_active()) { from_button=true; requested=true; }
+            else overlay_wrench=true;
+        }
+        if(overlay_wrench && mk8_settings_button_decided(page)) {
+            overlay_wrench=false;
+            mk8_settings_button_restore(page);
+            mk8_menu_request_overlay();
+        }
+        return;
+    }
     if (page!=owner || (!active && !open)) return;
     Cpu *c=kernel_current_cpu();
     if (!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid selector update context\n");
@@ -1227,6 +1590,8 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
     if(source_changed && active && !restart_prompt) settings_tips(c);
     if (open && !active) {
         if(!post(SETTINGS_BEGIN,0,0)) FATAL("[mk8:settings] settings request queue full before opening\n");
+        end_motion(c); painted_depth=-1; settings_from_service=false;
+        menu_level=MENU_HOME; category=focus=offset=0; exit_menu=false; play_pending=PLAY_IDLE;
         entering=true; confirming=from_button; back=false; previous=b; touched=touch; active=true;
         input_reset(); reset_confirm=false; atomic_store(&wheel,0); repeat_at=0;
         animation_frame(c,back_animation,0,0);
@@ -1266,6 +1631,7 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
         else if(elapsed>=160000000ull || exit_from==0) {
             if(result==2) finish_return(c,page,b);
             else if(result==3) {
+                menu_cursor(c,false);
                 exiting=false; restart_prompt=true; restart_yes=false; back=false; restart_pressed=false; restart_fade_at=0;
                 reveal_pane(c,"N_SettingsPopup",1);
                 visible(c,root,"N_SettingsPopup",true); dialog_draw(c,true);
@@ -1278,7 +1644,7 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
         previous=b; touched=touch; *c=saved; return;
     }
     if (entering) {
-        bool cancel=back || ((b&~previous)&2);
+        bool cancel=atomic_exchange(&exit_menu,false) || back || ((b&~previous)&2);
         if (!cancel) {
             // Keep the original button visible until its native Decide pulse finishes.
             if (confirming) {
@@ -1295,8 +1661,28 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
             previous=b; touched=touch;
             if (elapsed<160000000ull) { *c=saved; return; }
             LOG("[mk8:settings] native selector opened\n");
-        } else { start_exit(c); previous=b; touched=touch; *c=saved; return; }
+        } else { start_exit(c,false); previous=b; touched=touch; *c=saved; return; }
         entering=confirming=false;
+    }
+    if(!exiting && !restart_prompt && atomic_exchange(&exit_menu,false)) {
+        play_pending=PLAY_IDLE;
+        editing=reset_confirm=false; start_exit(c,false); previous=b; touched=touch; *c=saved; return;
+    }
+    if(animate_menu(c)) {
+        atomic_store(&wheel,0); previous=b; touched=touch; *c=saved; return;
+    }
+    if(play_pending!=PLAY_IDLE) {
+        finish_play_action(c); previous=b; touched=touch; *c=saved; return;
+    }
+    if(nextendo_page() && plat_now_ns()-service_checked_at>=1000000000ull) {
+        if(update_service()) {
+            // Consume edges sampled against the old rows before a refreshed target can receive them.
+            draw(c); previous=b; touched=touch; *c=saved; return;
+        }
+    }
+    if(menu_level==MENU_PLAY_ACTIONS && plat_now_ns()-play_checked_at>=1000000000ull) {
+        Mk8PlaySession next={0}; mk8_menu_play_session(&next); play_checked_at=plat_now_ns();
+        if(memcmp(&play_session,&next,sizeof next)) { play_session=next; draw(c); }
     }
     if (!menu_input_captured()) {
         uint64_t edge=b&~previous;
@@ -1340,7 +1726,53 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
         bool close=atomic_exchange(&back,false) || (edge&2);
         unsigned old_focus=focus;
         bool change=false, confirm=(edge&1)!=0; int direction=0;
-        unsigned count=(unsigned)mk8_settings_values_count(category);
+        if(menu_level!=MENU_OPTIONS) {
+            if(nextendo_page()) {
+                nextendo_input(c,edge,close,confirm,touch && !touched,x,y);
+                previous=b; touched=touch; *c=saved; return;
+            }
+            bool play=menu_level==MENU_PLAY_ACTIONS;
+            unsigned count=menu_action_count();
+            int scroll=atomic_exchange(&wheel,0);
+            if(scroll) { int next=(int)focus+scroll; focus=next<0 ? 0 : next>=(int)count ? count-1 : (unsigned)next; }
+            if(edge&((1ull<<13)|(1ull<<17))) focus=(focus+count-1)%count;
+            if(edge&((1ull<<15)|(1ull<<19))) focus=(focus+1)%count;
+            if(touch && !touched) {
+                if(x>=20 && x<=340 && y>=600 && y<=680) close=true;
+                int first_y=play ? 230 : 180, height=play ? 60 : 70;
+                if(x>=200 && x<=1080 && y>=first_y && y<first_y+height*SETTINGS_VISIBLE) {
+                    unsigned index=offset+(unsigned)(y-first_y)/height;
+                    if(index<count) { focus=index; confirm=true; }
+                }
+            }
+            if(close && menu_level==MENU_HOME) start_exit(c,false);
+            else if((play && (close || confirm)) || (menu_level==MENU_HOME && focus==MENU_PLAY && confirm)) {
+                // Move the pointer selection before its confirmation pulse.
+                if(focus!=old_focus) draw(c);
+                begin_play_action(c,play ? (close ? PLAY_LEAVE : play_actions[focus]) : PLAY_ENTER);
+            } else {
+                if(close) { menu_level=MENU_HOME; focus=HOME_SETTINGS; offset=0; }
+                else if(confirm) {
+                    pulse_slot(c,focus-offset+1);
+                    if(focus==HOME_SETTINGS) enter_settings_category(c,MENU_QUICK);
+                    else if(focus==HOME_NEXTENDO) enter_service(MENU_HOME,MENU_ROOMS);
+                }
+                if(close || confirm || old_focus!=focus) {
+                    if(close) menu_back_feedback(c);
+                    else menu_sound(c,confirm ? 0x7000ed87bfull : 0x7000ee9492ull);
+                    draw(c);
+                } else if(last_revision!=mk8_settings_values_revision()) draw(c);
+            }
+            previous=b; touched=touch; *c=saved; return;
+        }
+        if(rich_category()) {
+            unsigned revision,depth;
+            mk8_native_rows_count(&revision,&depth);
+            if(revision!=rich_revision || depth!=rich_depth) {
+                draw(c); previous=b; touched=touch; *c=saved; return;
+            }
+        }
+        unsigned count=option_count();
         if(mk8_settings_values_capturing()) { previous=b; touched=touch; if(last_revision!=mk8_settings_values_revision()) draw(c); *c=saved; return; }
         int scroll=atomic_exchange(&wheel,0);
         if(!editing && !reset_confirm && scroll) { int next=(int)focus+scroll; focus=next<0 ? 0 : next>(int)count ? count : (unsigned)next; change=true; }
@@ -1350,18 +1782,20 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
                y>=270+(int)(focus-offset-1)*60 && y<=330+(int)(focus-offset-1)*60) confirm=true;
             if(!editing && !reset_confirm && x>=200 && x<=1080 && y>=175 && y<=245) {
                 focus=0; change=true;
-                if(x<=270) direction=-1; else if(x>=1010) direction=1;
+                if(x<=270) direction=-1; else if(x>=1010) direction=1; else confirm=true;
             }
             for (unsigned i=0;i<SETTINGS_VISIBLE;i++) if (!editing && !reset_confirm && offset+i<count && x>=200 && x<=1080 && y>=270+(int)i*60 && y<=330+(int)i*60) {
                 focus=offset+i+1; change=true;
-                if (x>=590 && x<=650) direction=-1;
+                Mk8NativeRow row;
+                if(rich_category() && mk8_native_rows_get(focus-1,rich_revision,&row) && !row.adjustable) confirm=true;
+                else if (x>=590 && x<=650) direction=-1;
                 else if (x>=1010) direction=1;
                 else if (x>650) confirm=true;
             }
         }
-        if (editing) { change=edit_number(edge,close); close=false; }
+        if (editing) { change=edit_number(c,edge,close); close=false; }
         else if(reset_confirm) {
-            if(close) { reset_confirm=false; close=false; change=true; }
+            if(close) { menu_back_feedback(c); reset_confirm=false; close=false; change=true; }
             else if(confirm) { Mk8Setting row=selected(); change=post(SETTINGS_ACTIVATE,row.id,0); reset_confirm=false; }
         }
         else {
@@ -1369,19 +1803,35 @@ void mk8_settings_page_tick(uint64_t page, bool open) {
             if (edge&((1ull<<15)|(1ull<<19))) { focus=focus<count ? focus+1 : 0; change=true; }
             if (edge&((1ull<<12)|(1ull<<16))) direction=-1;
             if (edge&((1ull<<14)|(1ull<<18))) direction=1;
-            if(focus) {
+            if(focus && rich_category()) {
+                if((confirm || direction) && mk8_native_rows_activate(focus-1,rich_revision,direction)) {
+                    if(confirm) pulse_slot(c,focus-offset);
+                    change=true;
+                }
+            } else if(focus) {
                 Mk8Setting row=selected();
+                if(row.enabled && confirm && row.kind!=SETTING_INFO) pulse_slot(c,focus-offset);
                 if(row.enabled && confirm && row.kind==SETTING_NUMBER) { begin_number(row); change=true; }
                 else if(row.enabled && confirm && row.kind==SETTING_RESET) { reset_confirm=true; change=true; }
                 else if(row.enabled && confirm && row.kind==SETTING_BINDING) change|=post(SETTINGS_ACTIVATE,row.id,0);
                 else if(row.enabled && (direction || confirm) && row.kind==SETTING_CHOICE) change|=post(SETTINGS_STEP,row.id,direction ? direction : 1);
                 else if(row.enabled && direction && row.kind==SETTING_NUMBER) change|=post(SETTINGS_STEP,row.id,direction);
             } else if(direction || confirm) {
-                category=(category+(direction<0 ? SETTINGS_CATEGORIES-1 : 1))%SETTINGS_CATEGORIES; offset=0; change=true;
+                if(confirm) pulse_slot(c,0);
+                unsigned group=(category_groups[category]+(direction<0 ? MENU_GROUP_COUNT-1 : 1))%MENU_GROUP_COUNT;
+                enter_settings_category(c,group); change=true;
             }
         }
         if (close) {
-            start_exit(c);
+            if(mk8_settings_values_saved()<0) start_exit(c,false);
+            else {
+                if(!rich_category() || !mk8_native_rows_back()) {
+                    if(rich_category()) mk8_native_rows_close();
+                    if(settings_from_service) return_to_service();
+                    else { menu_level=MENU_HOME; focus=HOME_SETTINGS; offset=0; }
+                }
+                menu_back_feedback(c); draw(c);
+            }
         } else if (change || last_revision!=mk8_settings_values_revision()) {
             draw(c);
             if (direction || confirm || old_focus!=focus)
@@ -1403,14 +1853,10 @@ void mk8_settings_page_frame(uint64_t manager) {
         mk8_input_race_players(players);
         shared_race=players;
     }
-    if(shared_race) requested=false;
-    bool style=mk8_settings_style_active();
+    if(shared_race) { requested=false; if(active) exit_menu=false; }
+    bool layout=mk8_settings_layout_available();
     unsigned joining=mk8_controller_join_players();
-    if(!style && (!owner || !mk8_controller_layout_available())) {
-        controller_entry_players=0;
-        if(mk8_controller_layout_active()) controller_release();
-        return;
-    }
+    if(!layout && !owner && !top) { mk8_settings_values_context(false); return; }
     heap(manager,0xb60);
     unsigned count=LD32(manager+0xb50);
     if(count>32) FATAL("[mk8:settings] unexpected active page count\n");
@@ -1432,7 +1878,12 @@ void mk8_settings_page_frame(uint64_t manager) {
         }
     }
     mk8_settings_values_context(main_menu);
-    available=style && present && mk8_settings_values_count(0)>0;
+    if(!layout && (!owner || !mk8_controller_layout_available())) {
+        controller_entry_players=0;
+        if(mk8_controller_layout_active()) controller_release();
+        return;
+    }
+    available=layout && present && mk8_settings_values_count(0)>0;
     unsigned edit_players=0;
     if(present && !shared_race) {
         if(parts==0x16 && drivers==4) edit_players=atomic_load(&controller_applet_players);
@@ -1448,6 +1899,8 @@ void mk8_settings_page_frame(uint64_t manager) {
         if(!active && !hide_on_return) cursor_owner=0;
         if(mk8_controller_layout_active()) controller_release();
         if(active) {
+            mk8_native_rows_close();
+            exit_menu=false;
             post(SETTINGS_FINISH,0,SETTINGS_DETACHED);
             hide_on_return=true;
             // This owner can reappear. Its edit state and previous scene's navigation cannot.
@@ -1464,6 +1917,7 @@ void mk8_settings_page_frame(uint64_t manager) {
         Cpu *c=kernel_current_cpu();
         if(!c || c->sp<GUEST_LO+512 || c->sp>=GUEST_HI) FATAL("[mk8:settings] invalid return context\n");
         Cpu saved=*c; c->sp-=512;
+        menu_cursor(c,false);
         visible(c,root,"N_Settings",false);
         if(dialog) visible(c,root,"N_SettingsPopup",false);
         stock_cursors(c,RESTORE_CURSORS);

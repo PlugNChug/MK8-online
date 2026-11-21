@@ -8,6 +8,24 @@ static void mk8_settings_style_extras(ImGuiStyle &s) {
     s.Colors[ImGuiCol_TableRowBgAlt] = ImVec4(1,1,1,0.30f);
     s.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.33f,0.47f,0.56f,0.8f);
 }
+// Keep the dark theme's geometry, including the pixel font and stepped NES controls.
+static ThemePalette mk8_light_palette(ThemePalette p, bool nes) {
+    p.window = nes ? ImVec4(.92f,.94f,.97f,1) : ImVec4(.99f,.98f,.97f,1);
+    p.child = nes ? ImVec4(1,1,1,1) : p.window;
+    p.popup = p.window;
+    p.text = {.11f,.13f,.16f,1};
+    p.muted = p.text_dim = {.29f,.31f,.35f,1};
+    p.frame = p.button = p.tab = nes ? ImVec4(.88f,.91f,.94f,1) : ImVec4(.93f,.91f,.89f,1);
+    p.hover = nes ? ImVec4(.77f,.89f,1,1) : ImVec4(1,.87f,.80f,1);
+    p.active = p.tab_selected = nes ? ImVec4(.64f,.83f,.99f,1) : ImVec4(1,.78f,.67f,1);
+    p.pressed = p.active;
+    p.tab_alt = p.hover;
+    p.line = {.55f,.57f,.59f,1};
+    p.accent = nes ? ImVec4(.05f,.23f,.42f,1) : ImVec4(.44f,.16f,.07f,1);
+    p.accent_dim = nes ? ImVec4(.13f,.36f,.58f,1) : ImVec4(.64f,.28f,.13f,1);
+    return p;
+}
+
 static const ThemePalette &mk8_settings_palette(const ThemePalette &base) {
     static ThemePalette p = base;
     p.window = {0.96f,0.98f,1,0.97f}; p.child = {0.88f,0.94f,0.98f,0.94f}; p.popup = {0.97f,0.98f,1,1};

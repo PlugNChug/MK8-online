@@ -9,15 +9,11 @@ static _Atomic uint64_t policy;
 void mk8_settings_top_forget(void) { pending = false; policy = 0; }
 RT_ON_RESET(settings_menu_reset) { mk8_settings_top_forget(); }
 
-bool mk8_settings_style_active(void) {
-    const char *value = getenv("MK8_SETTINGS_EXPERIMENT");
-    return value && !strcmp(value, "1");
-}
+bool mk8_settings_layout_available(void);
 
 const char *mk8_settings_romfs_overlay(void) {
     static char path[4096];
-    if (!mk8_settings_style_active()) return NULL;
-    if (!plat_exe_path(path, sizeof path)) FATAL("[mk8:settings] executable path unavailable\n");
+    if (!plat_exe_path(path, sizeof path)) return NULL;
     char *end = strrchr(path, '/'), *back = strrchr(path, '\\');
     if (!end || (back && back > end)) end = back;
     if (!end || sizeof path - (size_t)(end-path) < 32) FATAL("[mk8:settings] layout path too long\n");
@@ -31,7 +27,11 @@ const char *mk8_settings_romfs_overlay(void) {
     char check[4200];
     snprintf(check, sizeof check, "%s/UI/cmn/menu.sarc", path);
     FILE *file = fopen(check, "rb");
-    if (!file) FATAL("[mk8:settings] build the private Settings layout before enabling the experiment\n");
+    if (file) { fclose(file); snprintf(check, sizeof check, "%s/UI/cmn/common.sarc", path); file=fopen(check,"rb"); }
+    if (!file) {
+        if (combined && *combined) FATAL("[mk8:settings] combined Menu layout is incomplete\n");
+        return NULL;
+    }
     fclose(file);
     return path;
 }
@@ -43,10 +43,15 @@ void mk8_settings_page_tick(uint64_t page, bool open);
 
 // Called only by hash-verified MK8 4.0.1 construction and top-menu event boundaries.
 bool mk8_settings_top_event(uint64_t page, uint64_t event) {
-    if (!mk8_settings_style_active()) return false;
+    bool layout = mk8_settings_layout_available();
+    if (!layout && event) return false;
     if (page < HEAP_BASE || page >= HEAP_BASE + HEAP_MAX || 0x700 > HEAP_BASE + HEAP_MAX - page)
         FATAL("[mk8:settings] unexpected top-menu object\n");
-    if (!event) { mk8_settings_button_build(page); mk8_settings_page_build(page); policy = page+0x420; return false; }
+    if (!event) {
+        mk8_settings_page_build(page);
+        if (layout) { mk8_settings_button_build(page); policy = page+0x420; }
+        return false;
+    }
     if (event == 1) {
         if (policy == page+0x420) mk8_settings_page_tick(page, atomic_exchange(&pending,false));
         return false;
@@ -64,7 +69,7 @@ bool mk8_settings_top_event(uint64_t page, uint64_t event) {
 
 // Extend the native row's fixed wrap points; all other moves use the original policy.
 uint64_t mk8_settings_navigation(uint64_t owner, uint64_t index, uint64_t direction) {
-    if (!mk8_settings_style_active() || !policy || owner != policy) return 0;
+    if (!policy || owner != policy) return 0;
     uint32_t next;
     if (index == 11) {
         if (direction & 0x20) next=3;
