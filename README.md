@@ -29,17 +29,19 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
+> **0.5.0 is available as a local test build on `fix-chore`.** The release links below point to the published 0.4.0. For the 0.5.0 installer, reuse your data folder and follow **Installation → Tools → Build the game** if prompted.
+>
 > **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
 
-The 0.4.1 test installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
+The 0.5.0 test installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
 
-## Playing with your Mii in 0.4.1
+## Playing with your Mii in 0.5.0
 
-In 0.4.1, Solo, Steam rooms and Nextendo use the active Mii. On first play, name your Mii, customize it and choose **Save and continue** to resume the mode you selected. For Nextendo, verify your account email and link Discord. Authorize once in the browser while the launcher is open. The game shows your Nextendo account and local Mii when it starts. Closing the launcher or revoking access requires a new sign-in. [Manage your Nextendo account](https://nextendo.network/account)
+In 0.5.0, Solo, Steam rooms and Nextendo use the active Mii. On first play, name your Mii, customize it and choose **Save and continue** to resume the mode you selected. For Nextendo, verify your account email and link Discord. Authorize once in the browser while the launcher is open. The game shows your Nextendo account and local Mii when it starts. Closing the launcher or revoking access requires a new sign-in. [Manage your Nextendo account](https://nextendo.network/account)
 
-## Testing graphics options in 0.4.1
+## Testing graphics options in 0.5.0
 
-In the 0.4.1 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from an earlier 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
+In the 0.5.0 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from a 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
 
 In the game, open **F1 → Settings → Video** to choose a built-in scaler or an installed provider available on this PC. The optional native settings page uses the same list. Reopen the game through the launcher to load a different temporal provider. With the launcher open, settled in-game edits also update its settings and Play language picker.
 
@@ -119,9 +121,9 @@ The [0.3.0 release notes](docs/releases/0.3.0.md) cover the original CTGP integr
 
 ## Where it stands
 
-**Local 0.4.1 test build on `fix-chore`.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
+**Local 0.5.0 test build on `fix-chore`.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
 
-Rebuild the game after installing the updated 0.4.1 test setup to apply the track-voting fix for missing Mii models. During game preparation, the generator now retries when Windows temporarily blocks the rename of a completed module.
+Rebuild the game after installing the updated 0.5.0 test setup to apply the track-voting fix for missing Mii models. During game preparation, the generator now retries when Windows temporarily blocks the rename of a completed module.
 
 The runtime compensates slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 

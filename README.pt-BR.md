@@ -29,17 +29,19 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
+> **A 0.5.0 está disponível como build local de teste na `fix-chore`.** Os links de download abaixo apontam para a 0.4.0 publicada. Ao instalar a 0.5.0, reutilize a pasta de dados e siga **Instalação → Ferramentas → Build do jogo** se o launcher solicitar.
+>
 > **Já usa a primeira 0.4.0?** Baixe manualmente o novo instalador ou ZIP portátil. O atualizador compara os números de versão. Mantenha sua pasta de dados, abra **Instalação → Ferramentas** e atualize a build do jogo.
 
-O instalador de teste 0.4.1 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
+O instalador de teste 0.5.0 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
 
-## Jogar com seu Mii na 0.4.1
+## Jogar com seu Mii na 0.5.0
 
-Na 0.4.1, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira partida, dê um nome ao Mii, personalize e escolha **Salvar e continuar** para seguir no modo escolhido. Para o Nextendo, confirme o e-mail e vincule o Discord à conta. Autorize uma vez no navegador enquanto o launcher estiver aberto. Ao abrir, o jogo mostra a conta Nextendo e o Mii local. Fechar o launcher ou revogar o acesso exige um novo login. [Gerenciar conta Nextendo](https://nextendo.network/account)
+Na 0.5.0, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira partida, dê um nome ao Mii, personalize e escolha **Salvar e continuar** para seguir no modo escolhido. Para o Nextendo, confirme o e-mail e vincule o Discord à conta. Autorize uma vez no navegador enquanto o launcher estiver aberto. Ao abrir, o jogo mostra a conta Nextendo e o Mii local. Fechar o launcher ou revogar o acesso exige um novo login. [Gerenciar conta Nextendo](https://nextendo.network/account)
 
-## Opções gráficas na 0.4.1 de teste
+## Opções gráficas na 0.5.0 de teste
 
-No launcher 0.4.1, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao trocar uma edição de teste anterior da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
+No launcher 0.5.0, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao atualizar uma instalação de teste da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
 
 No jogo, abra **F1 → Ajustes → Vídeo** para escolher a ampliação integrada ou um provedor instalado e disponível neste PC. O menu nativo opcional usa a mesma lista. Para carregar outro provedor temporal, reabra o jogo pelo launcher. Com o launcher aberto, as alterações feitas no jogo também aparecem em Configurações e no seletor de idioma da tela Jogar.
 
@@ -109,9 +111,9 @@ O histórico do CTGP e do redesenho do launcher está nas [notas da 0.3.0](docs/
 
 ## Onde estamos
 
-**Build local de teste 0.4.1 na `fix-chore`.** Recompilar o runtime do Windows habilita caminhos com caracteres não ASCII para o jogo, os saves e as configurações. Se o jogo fechar com erro, o launcher mostra a última mensagem fatal disponível e guarda um ZIP de diagnóstico em **Suporte**. Isso também funciona com `Launcher.exe --play`. A integração Steam tenta a próxima DLL instalada quando uma candidata carrega, mas falha ao inicializar as interfaces necessárias. A branch também aceita o Booster Course Pass v65536 verificado em NSP ou NSZ.
+**Build local de teste 0.5.0 na `fix-chore`.** Recompilar o runtime do Windows habilita caminhos com caracteres não ASCII para o jogo, os saves e as configurações. Se o jogo fechar com erro, o launcher mostra a última mensagem fatal disponível e guarda um ZIP de diagnóstico em **Suporte**. Isso também funciona com `Launcher.exe --play`. A integração Steam tenta a próxima DLL instalada quando uma candidata carrega, mas falha ao inicializar as interfaces necessárias. A branch também aceita o Booster Course Pass v65536 verificado em NSP ou NSZ.
 
-Recompile o jogo depois de instalar o novo setup de teste 0.4.1 para aplicar a correção da votação de pistas quando faltam modelos Mii. Durante a preparação do jogo, o gerador agora tenta novamente se o Windows bloquear temporariamente a renomeação de um módulo concluído.
+Recompile o jogo depois de instalar o novo setup de teste 0.5.0 para aplicar a correção da votação de pistas quando faltam modelos Mii. Durante a preparação do jogo, o gerador agora tenta novamente se o Windows bloquear temporariamente a renomeação de um módulo concluído.
 
 **Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime da 0.3.0 também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
 

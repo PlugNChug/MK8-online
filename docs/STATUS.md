@@ -1,10 +1,14 @@
 # Estado técnico — 20/11/2026
 
-## Busca de DLL da Steam na 0.5.0 de teste
+## Steam e recusas de conta Nextendo na 0.5.0 de teste
 
 O launcher tenta a DLL configurada, a pasta de dados e a pasta do executável antes de consultar as bibliotecas de jogos. Uma DLL local que inicializa as interfaces necessárias dispensa a varredura. Se as interfaces falharem, a próxima candidata é testada.
 
 Quando o Nextendo encerra a sessão com código 2 por uma recusa de conta, o launcher usa o log daquela partida para mostrar a orientação no aviso e na tela Jogar. As mensagens incluem vínculo com Discord, verificação de e-mail, conta desativada e sessão em outro aparelho. Outros códigos válidos aparecem como informados pelo serviço. Falhas fatais do runtime mantêm prioridade no diagnóstico.
+
+No Windows, o setup local informa 0.5.0 nos metadados do executável, na API e na interface. Reconheceu dados preparados na 0.4.1 e ofereceu a atualização. A troca isolada do runtime instalou o executável contido no pacote e preservou os hashes das quatro DLLs do jogo. Com uma DLL de teste sem as interfaces Steam na pasta de dados, a API do launcher listou os amigos usando a cópia instalada com Cuphead. No jogo e no launcher empacotados, um serviço Nextendo de teste em loopback respondeu `discord_unlinked`. O aviso, a orientação na tela Jogar e o ZIP de diagnóstico foram verificados. Quando o serviço liberou a conta, uma nova tentativa reutilizou a autorização, chegou à tela de título e limpou a mensagem anterior. O teste público de corrida entre PCs permanece separado.
+
+Na 0.5.0 passaram 109 testes Rust e 35 testes de navegador do launcher e instalador, incluindo o relay local. A formatação e o Clippy passaram. O teste Rust optativo que cria uma sala Steam real ficou pendente. O setup de teste tem SHA-256 `433d5ff7173ec6e68d4cf01afa47adc186d2a938a6545e72effa4829a88430fe`.
 
 ## Validação local para a próxima versão — menu, imagem e Miis
 
