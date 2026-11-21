@@ -1,0 +1,3 @@
+[submodule "platforms/linux"]
+	path = platforms/linux
+	url = https://github.com/Vnnc1/MK8-online.git

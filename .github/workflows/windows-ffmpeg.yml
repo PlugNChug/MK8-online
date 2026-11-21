@@ -1,0 +1,25 @@
+name: Windows FFmpeg inputs
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/build-ffmpeg.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-ffmpeg
+          path: |
+            prebuilt/ffmpeg/
+            target/prebuilt-ffmpeg/ffmpeg-9.0.2.tar.xz
+            target/prebuilt-ffmpeg/build-ffmpeg.sh
+          if-no-files-found: error

@@ -1,5 +1,11 @@
 # Estado técnico — 20/11/2026
 
+## Distribuição da 0.5.0
+
+O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
+
+O AppImage e o tar.gz amd64 usam o porte Linux de mitch030504, com a versão do workspace, launcher e manifesto ajustada para 0.5.0. No CI da 0.5.0 em Ubuntu 24.04, passaram os testes Rust e de ELF, a geração dos dois pacotes, a inicialização do launcher e do importador empacotados e a atualização e reversão headless do tar.gz. Na PR, a preparação do jogo e os testes de renderização cobriram uma Intel Iris Xe. A distribuição Linux tem fontes e resultados próprios. SteamOS em Steam Deck físico e partidas entre duas máquinas permanecem em validação. [Fonte exata](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f) · [PR #83](https://github.com/Vnnc1/MK8-online/pull/83) · [Empacotamento 0.5.0](https://github.com/Vnnc1/MK8-online/actions/runs/44856523053) · [Notas bilíngues](releases/0.5.0.md)
+
 ## Reteste de dois crashes da 0.4.0 na candidata 0.5.0
 
 Os relatórios `1795197270` (automático) e `1795197286` (manual) contêm os mesmos arquivos de diagnóstico, exceto pelos metadados do relatório. No log atual e em dois anteriores, o Nextendo autorizou a conta na RTX 5070 Ti. A votação, com a preparação dos modelos desabilitada, tentou escrever em `0x4ac` na rotina `f_7000428838`. Na recompilação 0.5.0, executei as duas rotinas de notificação preparadas com 72 combinações de estado, contagem, armazenamento e índice. Listas vazias foram ignoradas e listas válidas atualizaram o modelo esperado. O teste local cobre a assinatura da falha. A votação pública na máquina do jogador ainda precisa de reteste.

@@ -99,13 +99,9 @@ def build(args):
     (DIST / "release-title.txt").write_text(title + "\n", encoding="utf-8")
     notes.write_text(
         body +
-        f"## Download — MK8-online {version} (experimental)\n\n"
-        f"Install `{setup.name}`, or use **Support → Update now / Suporte → Atualizar agora**. "
-        "Each PC prepares the game from its owner's files; no game content is distributed.\n\n"
-        "The setup includes FFmpeg 9.0.2 DLLs (LGPL 2.1) built with `build-ffmpeg.sh`. "
-        "The corresponding source (`ffmpeg-9.0.2.tar.xz`) and build script are attached.\n\n"
-        f"Known issues / Limitações: [docs/STATUS.md](https://github.com/{os.environ.get('MK8_UPDATE_REPO', 'Vnnc1/MK8-online')}/blob/v{version}/docs/STATUS.md). "
-        "Attach the ZIP from **Support → Generate report / Suporte → Gerar relatório** when reporting a bug.\n\n"
+        "## Checksums / Somas de verificação\n\n"
+        "SHA-256 files accompany the downloads. Arquivos SHA-256 acompanham os downloads.\n\n"
+        "Windows FFmpeg 9.0.2 (LGPL 2.1): `ffmpeg-9.0.2.tar.xz` · `build-ffmpeg.sh`.\n\n"
         f"| Windows x64 | SHA-256 |\n| --- | --- |\n"
         f"| `{setup.name}` | `{digest}` |\n"
         f"| `{portable.name}` | `{portable_digest}` |\n",

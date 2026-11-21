@@ -4,27 +4,24 @@ Este é o fluxo para o mantenedor e para agentes de IA que preparam uma release.
 
 O atualizador consulta a API pública do GitHub sem autenticação. O repositório e os anexos precisam estar públicos; enquanto estiverem privados, a consulta falha. A versão 0.1.6 foi empacotada com `MK8_UPDATE_REPO=Vnnc1/MK8-online`: mudar a visibilidade desse mesmo repositório para público não exige recompilar nem configurar o PC do jogador. Não embuta tokens no launcher.
 
-Para as versões seguintes, aumente a versão compilada e publique a tag correspondente com `MK8-online-<versão>-setup.exe` e o ZIP portátil versionado, cada um acompanhado do seu `.sha256`. O SHA-256 deve ser calculado **depois** de qualquer mudança ou assinatura do executável. Anexe também os fontes/scripts FFmpeg exigidos abaixo. Drafts não são oferecidos; pré-releases publicadas são. A atualização é acionada pelo jogador, sem instalação automática ao abrir o launcher.
+Para as versões seguintes, aumente a versão compilada e publique a tag correspondente com `MK8-online-<versão>-setup.exe` e os pacotes portátil Windows, AppImage e tar.gz Linux, cada um acompanhado do seu `.sha256`. O SHA-256 deve ser calculado **depois** de qualquer mudança ou assinatura do executável. Anexe também os fontes/scripts FFmpeg exigidos abaixo. Drafts não são oferecidos; pré-releases publicadas são. A atualização é acionada pelo jogador, sem instalação automática ao abrir o launcher.
 
 ## Versões
 
-O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.3.0-alpha.1`). A 0.4.0 usa a tag sem sufixo `v0.4.0` e é uma release pública experimental. O workflow mantém a exceção histórica para a tag `v0.3.0`. Seu estado experimental e as limitações CTGP/Steam permanecem explícitos no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
+O projeto usa `MAJOR.MINOR.PATCH`, com sufixo quando a publicação for uma pré-release (por exemplo `0.3.0-alpha.1`). A 0.5.0 usa a tag sem sufixo `v0.5.0` e é uma release pública experimental. O workflow mantém a exceção histórica para a tag `v0.3.0`. Seu estado experimental e as limitações CTGP/Steam permanecem explícitos no título e nas notas. A versão fica em `Cargo.toml` (`[workspace.package]`) e em `apps/launcher/tauri.conf.json`; `scripts/release.py` mantém as duas iguais. O Launcher só oferece atualização quando a tag do Release é **maior** que a versão compilada.
 
 ## Pelo GitHub Actions (recomendado)
 
 ```powershell
-python scripts/release.py --bump 0.4.0   # altera Cargo.toml, tauri.conf.json e Cargo.lock
-git commit -am "Release 0.4.0"
-git tag v0.4.0
-git push origin master v0.4.0
+python scripts/release.py --bump 0.5.0   # altera Cargo.toml, tauri.conf.json e Cargo.lock
+git commit -am "Release 0.5.0"
+git tag v0.5.0
+git push origin master v0.5.0
 ```
 
-A tag dispara `.github/workflows/release.yml`, que:
+A tag dispara `.github/workflows/release.yml`. O Windows compila o FFmpeg em um runner Linux, monta o instalador e o ZIP no Windows e abre a edição portátil para verificar a chave do runtime extraído. O job Linux compila o AppImage e o tar.gz, inicia o launcher e exercita o importador e a recuperação do atualizador. O job de publicação depende das duas plataformas e verifica os arquivos SHA-256. Uma tag com sufixo ou a tag histórica `v0.3.0` é publicada como pré-release.
 
-1. roda `cargo fmt`, Clippy e os testes Rust;
-2. empacota o Launcher com `MK8_UPDATE_REPO` igual ao repositório, para que a build saiba onde procurar atualizações. Se a variável de repositório `MK8_RELAY_URL` existir, ela também entra na build;
-3. gera `MK8-online-<versão>-setup.exe`, `MK8-online-<versão>-portable.zip`, os dois arquivos `.sha256` e as notas;
-4. publica o Release. Uma tag com `-` (por exemplo `-alpha.1`) ou a tag `v0.3.0` vira pré-release.
+O código Linux desta versão está fixado por SHA no submódulo `platforms/linux`. Use `git submodule update --init platforms/linux` para compilar o porte localmente. Ao preparar uma nova versão, atualize o workspace na linha Linux, publique a revisão no mesmo repositório e registre o novo commit do submódulo na branch principal. O empacotador confere a versão com a tag. [Fonte Linux 0.5.0](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f)
 
 Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
 
@@ -40,7 +37,7 @@ python scripts/release.py --skip-package   # só copia de novo target/portable/L
 
 Os scripts resolvem a pasta de saída por `cargo metadata`: `target/` nos comandos acima significa o `target_directory` configurado, inclusive quando fica em outro disco. Não mova nem limpe builds para seguir um caminho literal de exemplo.
 
-Para publicar uma build local, crie o Release `v<versão>` e anexe o `setup.exe`, o ZIP portátil e os dois arquivos `.sha256`, além dos fontes/scripts FFmpeg. Sem SHA-256 (o `digest` do GitHub ou o arquivo `.sha256`), o Launcher recusa a atualização. Se a tag disparar uma build automática duplicada, cancele somente essa execução antes de publicar o pacote local validado, para evitar substituição posterior dos anexos.
+Para publicar os binários já testados, prepare um rascunho com a revisão de `master`, o título e as notas bilíngues. Anexe o setup, o ZIP portátil, o AppImage amd64 e o tar.gz, cada um com seu SHA-256, além do código-fonte e do script de compilação do FFmpeg. Confira os hashes do rascunho antes de torná-lo público. Quando a tag já tem uma release publicada, o workflow confere os anexos existentes e preserva os binários testados.
 
 ## O que vai no instalador
 

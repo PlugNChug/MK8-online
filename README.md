@@ -11,14 +11,15 @@
 **English** · [Português (Brasil)](README.pt-BR.md)
 
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
+![Linux](https://img.shields.io/badge/Linux-amd64%20AppImage%20%7C%20experimental-5c6647)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.4.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.5.0-ef795d)
 ![Status](https://img.shields.io/badge/Status-Public_test-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
-An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows,
+An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows x64 and Linux amd64 (experimental),
 with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and Steam rooms with friends.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Report an issue](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roadmap](docs/ROADMAP.md)
@@ -29,17 +30,17 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **0.5.0 is available as a local test build on `fix-chore`.** The release links below point to the published 0.4.0. For the 0.5.0 installer, reuse your data folder and follow **Installation → Tools → Build the game** if prompted.
+> **Download 0.5.0** · [Windows installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-setup.exe) · [Windows portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-portable.zip) · [Linux amd64 AppImage](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-linux-x86_64.AppImage)
 >
-> **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
+> On Windows, keep your data folder and complete **Installation → Tools → Build the game** if prompted. On Linux, the launcher and recompiled game run natively. See the guide for Ubuntu 24.04 dependencies and the experimental Steam Deck Desktop Mode path. [Linux guide](docs/LINUX.md) · [Release notes](docs/releases/0.5.0.md)
 
-The 0.5.0 test installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
+The 0.5.0 Windows installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
 
-## Playing with your Mii in 0.5.0
+## Windows 0.5.0 · Play with your Mii
 
 In 0.5.0, Solo, Steam rooms and Nextendo use the active Mii. On first play, name your Mii, customize it and choose **Save and continue** to resume the mode you selected. For Nextendo, verify your account email and link Discord. Authorize once in the browser while the launcher is open. The game shows your Nextendo account and local Mii when it starts. Closing the launcher or revoking access requires a new sign-in. [Manage your Nextendo account](https://nextendo.network/account)
 
-## Testing graphics options in 0.5.0
+## Windows 0.5.0 · Graphics settings
 
 In the 0.5.0 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from a 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
 
@@ -53,7 +54,6 @@ FSR 1 and bilinear filtering work out of the box. A rejected provider falls back
 
 The portable edition can move between Windows drives. An already prepared game can start directly with `Launcher.exe --play`. Controller updates add motion steering, HD Rumble and horizontal Joy-Con pairs for local multiplayer. Grand Prix saves and temporary replays are separated, and the Shell Cup trophy survived a restart in testing. Graphics fixes cover cup colours, countdown numbers and lighting in split-screen. After upgrading, keep your data folder and run **Installation → Tools → Game build**.
 
-[Download the installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-setup.exe) · [Download the portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-portable.zip) · [Release notes and known issues](docs/releases/0.4.0.md)
 
 New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
 
@@ -105,9 +105,9 @@ Version 0.4.0 includes a Vulkan shader workaround for the desktop GTX 1070 (PCI 
 Version 0.4.0 supports two additional ways to start the game.
 
 - **Direct play:** `Launcher.exe --play` opens an already prepared solo game without the launcher window. Use `Launcher.exe --play --data-dir "D:\\MK8\\data"` to select existing data. It still validates files, Vulkan and resource locks; it does not install tools or build the game. Errors return a nonzero exit code. Steam rooms still use the launcher.
-- **Portable Windows package:** extract `MK8-online-0.4.0-portable.zip` to a writable folder. Keep `portable.txt` beside `Launcher.exe`; sources, tools and data are stored under the adjacent `portable` folder. `--data-dir` overrides only the game-data location. Existing installed data is not moved automatically. To update, replace the executable and keep `portable/`; the setup-based updater is disabled in this mode.
+- **Portable Windows package:** extract `MK8-online-0.5.0-portable.zip` to a writable folder. Keep `portable.txt` beside `Launcher.exe`; sources, tools and data are stored under the adjacent `portable` folder. `--data-dir` overrides only the game-data location. Existing installed data is not moved automatically. To update, replace the executable and keep `portable/`; the setup-based updater is disabled in this mode.
 
-The portable package avoids setup/registry installation. Open this version once before moving it, close the game and launcher, then copy/move the **whole folder**, including `portable/`. On the next start, internal game/build/Mii/font paths and the Python environment are rebased automatically; original metadata is retained under `portable/.relocation-backups/`. Saves and binary game assets are not rewritten. Files selected outside the portable tree remain external dependencies; include required resources inside the tree when preparing a self-contained copy. Windows x64 and compatible Vulkan drivers are still required; this does not add Linux/AppImage/Steam Deck support or guarantee performance on another GPU.
+The portable package avoids setup/registry installation. Open this version once before moving it, close the game and launcher, then copy/move the **whole folder**, including `portable/`. On the next start, internal game/build/Mii/font paths and the Python environment are rebased automatically; original metadata is retained under `portable/.relocation-backups/`. Saves and binary game assets are not rewritten. Files selected outside the portable tree remain external dependencies; include required resources inside the tree when preparing a self-contained copy. The portable ZIP requires Windows x64 and compatible Vulkan drivers. Linux users can download the AppImage linked above.
 
 ### Included since 0.3.0
 
@@ -121,9 +121,9 @@ The [0.3.0 release notes](docs/releases/0.3.0.md) cover the original CTGP integr
 
 ## Where it stands
 
-**Local 0.5.0 test build on `fix-chore`.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The working branch also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
+**Windows fixes in 0.5.0.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The launcher also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
 
-Rebuild the game after installing the updated 0.5.0 test setup to apply the track-voting fix for missing Mii models. During game preparation, the generator now retries when Windows temporarily blocks the rename of a completed module.
+Rebuild the game after installing the 0.5.0 installer to apply the track-voting fix for missing Mii models. During game preparation, the generator now retries when Windows temporarily blocks the rename of a completed module.
 
 The runtime compensates slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 
@@ -159,13 +159,13 @@ Historical cube-map fallback now reuses only an existing GPU-rendered image. A r
 
 ## What this project does
 
-The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
+The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64 or native Linux amd64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
 
 RatOne develops and maintains the MK8 adaptation, launcher and integration. The translation/runtime foundation comes from **SMM2Recomp and LASRecomp**, with additional credited work from other projects. See [third-party sources and licenses](docs/THIRD_PARTY.md).
 
 ## Get on track
 
-### Requirements
+### Windows requirements
 
 - **Windows x64** and WebView2. The Launcher installs a private **Python 3.12 x64** by itself.
 - A GPU and driver exposing **Vulkan 1.3 or newer**. A general minimum CPU/GPU specification has not been qualified.
@@ -177,7 +177,7 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 
 ### Install and play
 
-1. Download `MK8-online-0.4.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
+1. Download `MK8-online-0.5.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
 2. Open **Install**. Complete **Tools**, then select the base game and the update in **Game files** (the Launcher finds keys next to the game, or select your own).
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
@@ -254,7 +254,7 @@ sessions use the game's cups (each machine would otherwise decide on its own whi
 
 ## Build and contribute
 
-The build accepts MK8 4.0.1 generated C units with Windows (CRLF) or Unix (LF) line endings. Both must reproduce the same pinned SHA-256 before a guest hook is applied. The launcher release targets Windows x64.
+The build accepts MK8 4.0.1 generated C units with Windows (CRLF) or Unix (LF) line endings. Both must reproduce the same pinned SHA-256 before a guest hook is applied. The Windows package targets x64.
 
 Feedback snapshots now retry device-memory exhaustion after collecting GPU-completed retired images, then try host-preferred compatible memory without changing image format or masking allocation errors. The launcher's isolated Vulkan probe now initializes SDL video and actually loads Vulkan through SDL rather than checking exports alone. These mitigations need retesting on the machines affected by issues #52 and #47.
 
