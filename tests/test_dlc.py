@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from zstandard import ZstdCompressor
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "toolchain"))
@@ -118,12 +119,15 @@ class DlcImportTests(unittest.TestCase):
             (local / "candidate.json").write_text(json.dumps(candidate))
             (local / "generation.json").write_text(json.dumps({"identity": "a" * 64}))
             (local / "config.json").write_text('{"fixture":true}')
+            (root / "fixture.keys").write_bytes(b"authored keys fixture")
             profile = root / "games/mk8d/profiles"
             profile.mkdir(parents=True)
             (profile / "4.0.1.json").write_text(json.dumps({"input_sha256": inputs}))
             authored = root / "authored"
             files = fixture_files(authored)
-            contents = {"data.nca": b"NCA autoral", "meta.cnmt.nca": b"CNMT autoral"}
+            header = b"H" * 0x4000
+            body = b"NCA autoral" * 128
+            contents = {"data.nca": header + body, "meta.cnmt.nca": b"CNMT autoral"}
             hashes = {name: (len(payload), hashlib.sha256(payload).hexdigest()) for name, payload in contents.items()}
             archive = {name.encode(): payload for name, payload in contents.items()}
             archive[b"0100152000023001.fixture.tik"] = b"ticket autoral"
@@ -140,6 +144,7 @@ class DlcImportTests(unittest.TestCase):
                     stage = Path(args[-1]).parent
                     self.assertEqual({p.name for p in stage.iterdir()}, set(contents) | {"content.tik"})
                     self.assertEqual((stage / "content.tik").read_bytes(), b"ticket autoral")
+                    self.assertEqual((stage / "data.nca").read_bytes(), contents["data.nca"])
                     shutil.copytree(authored, Path(args[-1]) / "romfs")
                 return subprocess.CompletedProcess(args, 0)
 
@@ -148,8 +153,12 @@ class DlcImportTests(unittest.TestCase):
                 missing = dict(archive)
                 del missing[b"meta.cnmt.nca"]
                 package_path.write_bytes(package(missing))
-                with self.assertRaisesRegex(ValueError, "Booster Course Pass"):
+                with self.assertRaisesRegex(ValueError, "0100152000023001 v65536"):
                     import_dlc.install(package_path, root / "fixture.keys", local)
+                empty_keys = root / "empty.keys"
+                empty_keys.touch()
+                with self.assertRaisesRegex(ValueError, "prod.keys.*ausente ou vazio"):
+                    import_dlc.install(package_path, empty_keys, local)
                 ambiguous = dict(archive)
                 ambiguous[b"0100152000023001.second.tik"] = b"ambiguous"
                 package_path.write_bytes(package(ambiguous))
@@ -206,10 +215,26 @@ class DlcImportTests(unittest.TestCase):
                         import_dlc.install(package_path, root / "fixture.keys", local)
                 self.assertEqual(content_path.read_bytes(), b"danificado")
                 self.assertEqual(json.loads((local / "candidate.json").read_text()), installed)
+                with patch.object(import_dlc, "atomic_json", side_effect=PermissionError("locked candidate")):
+                    with self.assertRaisesRegex(PermissionError, "locked candidate"):
+                        import_dlc.install(package_path, root / "fixture.keys", local)
+                self.assertEqual(content_path.read_bytes(), b"danificado")
+                self.assertEqual(json.loads((local / "candidate.json").read_text()), installed)
+                self.assertEqual(len(list(local.glob("dlc-backup-*"))), 1)
+                section = struct.pack("<8sQQQQQ16s16s", b"NCZSECTN", 1, len(header), len(body), 1, 0,
+                                      bytes(16), bytes(16))
+                archive[b"data.ncz"] = header + section + ZstdCompressor().compress(body)
+                package_path = root / "dlc.nsz"
+                package_path.write_bytes(package(archive))
+                with self.assertRaisesRegex(ValueError, "uma cópia"):
+                    import_dlc.install(package_path, root / "fixture.keys", local)
+                del archive[b"data.nca"]
+                package_path.write_bytes(package(archive))
                 import_dlc.install(package_path, root / "fixture.keys", local)
                 self.assertEqual(content_path.read_bytes(), (authored / "contents.dat").read_bytes())
                 backups = list(local.glob("dlc-backup-*"))
                 self.assertEqual(len(backups), 2)
+                self.assertEqual(list(local.glob("dlc-stage-*")), [])
                 self.assertIn(b"danificado", [(backup / "0100152000023001/romfs/contents.dat").read_bytes() for backup in backups])
                 installed["data_root"] = str(local / "../fora")
                 (local / "candidate.json").write_text(json.dumps(installed))

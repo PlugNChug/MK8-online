@@ -104,9 +104,9 @@
                 </div>
                 <div class="file-tile" id="tile-dlc">
                   <span class="ft-icon" aria-hidden="true">D</span>
-                  <span class="ft-text"><strong>DLC (opcional)</strong><small>Booster Course Pass v65536 · arquivo .nsp</small></span>
+                  <span class="ft-text"><strong>DLC (opcional)</strong><small>Booster Course Pass v65536 · arquivo .nsp/.nsz</small></span>
                   <input id="prepare-dlc-package" aria-label="DLC opcional" spellcheck="false" placeholder="Deixe vazio para preparar sem importar DLC" />
-                  <button type="button" class="ghost" data-browse="prepare-dlc-package" data-kind="package" aria-label="Escolher DLC" hidden>Escolher</button>
+                  <button type="button" class="ghost" data-browse="prepare-dlc-package" data-kind="dlc" aria-label="Escolher DLC" hidden>Escolher</button>
                 </div>
                 <div class="file-tile" id="tile-keys">
                   <span class="ft-icon" aria-hidden="true">K</span>
@@ -174,13 +174,13 @@
               <span id="dlc-state" class="pill">Não instalado</span>
             </div>
             <p>Booster Course Pass</p>
-            <p class="hint">Opcional. Importe o NSP do DLC do seu console após preparar o jogo.</p>
+            <p class="hint">Opcional. Importe o NSP/NSZ do DLC do seu console após preparar o jogo.</p>
             <div id="dlc-files" class="files">
               <div class="file-tile" id="tile-dlc-package">
                 <span class="ft-icon" aria-hidden="true">D</span>
-                <span class="ft-text"><strong>NSP do DLC</strong><small>Arquivo .nsp do Booster Course Pass</small></span>
-                <input id="dlc-package" aria-label="NSP do DLC" spellcheck="false" placeholder="Caminho do arquivo" />
-                <button type="button" class="ghost" data-browse="dlc-package" data-kind="dlc" aria-label="Escolher NSP do DLC" hidden>Escolher</button>
+                <span class="ft-text"><strong>NSP/NSZ do DLC</strong><small>Arquivo .nsp/.nsz do Booster Course Pass</small></span>
+                <input id="dlc-package" aria-label="NSP/NSZ do DLC" spellcheck="false" placeholder="Caminho do arquivo" />
+                <button type="button" class="ghost" data-browse="dlc-package" data-kind="dlc" aria-label="Escolher NSP/NSZ do DLC" hidden>Escolher</button>
               </div>
               <div class="file-tile" id="tile-dlc-keys">
                 <span class="ft-icon" aria-hidden="true">K</span>
@@ -191,8 +191,8 @@
             </div>
             <div class="row">
               <button type="button" class="ghost" data-goto="settings">Configurar conteúdo adicional</button>
-              <button type="button" id="dlc-change" class="ghost" hidden>Reinstalar ou selecionar outro NSP</button>
-              <button type="button" id="dlc-import" class="ghost" disabled>Importar DLC NSP…</button>
+              <button type="button" id="dlc-change" class="ghost" hidden>Reinstalar ou selecionar outro NSP/NSZ</button>
+              <button type="button" id="dlc-import" class="ghost" disabled>Importar DLC NSP/NSZ…</button>
               <button type="button" class="ghost" data-log="dlc-log">Ver log</button>
             </div>
             <p id="dlc-hint" class="hint">Prepare o jogo antes de importar DLC.</p>
@@ -203,6 +203,10 @@
         </section>
 
         <section id="miis" class="panel" hidden>
+          <div id="mii-play-prompt" hidden role="status">
+            <span>Crie seu Mii, personalize e salve para continuar jogando.</span>
+            <button type="button" class="ghost" id="mii-play-cancel">Cancelar</button>
+          </div>
           <div class="mii-head-row">
             <h1>Mii</h1>
             <div id="mii-saved" class="mii-saved" role="list" aria-label="Seus Miis"></div>
@@ -329,17 +333,19 @@
                 <button id="play-nextendo" class="ghost big" disabled>Jogar no Nextendo</button>
               </div>
               <p class="fine" id="nextendo-rebuild" hidden>Atualize a build do jogo para usar o Nextendo.</p>
+              <p class="fine">Para jogar no Nextendo, crie uma conta em nextendo.network, confirme seu e-mail e vincule o Discord à conta.</p>
+              <p class="fine" id="nextendo-account-links"><a href="https://nextendo.network/register" target="_blank" rel="noopener noreferrer">Criar conta Nextendo</a> · <a href="https://nextendo.network/account" target="_blank" rel="noopener noreferrer">Gerenciar conta e Discord</a></p>
               <dialog id="nextendo-consent" aria-labelledby="nextendo-heading">
                 <h2 id="nextendo-heading">Conectar ao Nextendo</h2>
                 <p>O servidor de corrida usa um certificado próprio. Esta é a chave observada nos testes do projeto. A confirmação pelo Nextendo está pendente.</p>
                 <code id="nextendo-key" dir="ltr"></code>
-                <p>Ao confiar nesta chave neste PC, o launcher abre o login no navegador. Depois, selecione Online Play no jogo.</p>
+                <p>Autorize o acesso no navegador. Enquanto o launcher estiver aberto, você poderá reabrir o jogo com a mesma conta. No jogo, selecione Online Play.</p>
                 <div class="cta"><button class="ghost" id="nextendo-cancel" autofocus>Cancelar</button><button class="primary" id="nextendo-accept">Confiar e entrar</button></div>
               </dialog>
               <p class="fine">Build experimental: espere falhas. Se algo der errado, gere um relatório em Suporte.</p>
             </div>
           </div>
-          <div class="play-shortcuts"><button type="button" data-goto="miis"><span>Perfil Mii</span><small>Crie e personalize seu piloto</small></button><button type="button" data-goto="session"><span>Multijogador</span><small>Encontre sua próxima sala</small></button><button type="button" data-goto="settings" data-anchor="ctgp-title"><span>CTGP Deluxe</span><small>Configure suas pistas e copas</small></button></div>
+          <div class="play-shortcuts"><button type="button" id="play-graphics" data-goto="settings" data-anchor="config-field-upscaler"><span>Gráficos</span><small>Resolução, FSR e DLSS</small></button><button type="button" data-goto="miis"><span>Perfil Mii</span><small>Crie e personalize seu piloto</small></button><button type="button" data-goto="session"><span>Multijogador</span><small>Encontre sua próxima sala</small></button><button type="button" data-goto="settings" data-anchor="ctgp-title"><span>CTGP Deluxe</span><small>Configure suas pistas e copas</small></button></div>
           <article class="card"><h2>Booster Course Pass</h2><p class="hint">Você pode importar ou reparar o Booster Course Pass sem repetir a build.</p><button type="button" class="ghost" id="play-dlc-manage">Abrir importação de DLC</button></article>
           <details class="drawer">
             <summary>Log do jogo</summary>

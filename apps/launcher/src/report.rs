@@ -203,6 +203,7 @@ fn fill(
         ("game.log".into(), local.join("game.log")),
         ("build.log".into(), local.join("build.log")),
         ("setup.log".into(), local.join("setup.log")),
+        ("dlc.log".into(), local.join("dlc.log")),
         ("candidate.json".into(), local.join("candidate.json")),
         ("config.json".into(), local.join("config.json")),
         ("vulkan-check.log".into(), local.join("vulkan-check.log")),
@@ -311,6 +312,13 @@ mod tests {
         let local = std::env::temp_dir().join(format!("mk8-report-{}", std::process::id()));
         fs::create_dir_all(local.join("user-no-mii/save")).unwrap();
         fs::write(local.join("game.log"), "FATAL: test crash\n").unwrap();
+        let profile = std::env::var("USERPROFILE").unwrap();
+        fs::write(
+            local.join("dlc.log"),
+            format!("ValueError: invalid DLC in {profile}\\Downloads\n"),
+        )
+        .unwrap();
+        fs::write(local.join("prod.keys"), "private key fixture").unwrap();
         fs::write(local.join("vulkan-check.log"), "DLL dependency failed\n").unwrap();
         fs::write(local.join("user-no-mii/save/save_0"), "private save").unwrap();
         let runtime = local.join("builds/test/host-optimized");
@@ -345,6 +353,19 @@ mod tests {
         assert!(names.contains("mk8drecomp.previous.log"));
         assert!(!names.contains("private-save.bin"));
         assert!(!names.contains("save_0"));
+        assert!(!names.contains("prod.keys"));
+        let dlc =
+            Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
+                .arg("-xOf")
+                .arg(&zip)
+                .arg("dlc.log")
+                .output()
+                .unwrap();
+        assert!(dlc.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&dlc.stdout),
+            "ValueError: invalid DLC in %USERPROFILE%\\Downloads\n"
+        );
         let content =
             Command::new(Path::new(&std::env::var("SystemRoot").unwrap()).join("System32/tar.exe"))
                 .args(["-xOf"])

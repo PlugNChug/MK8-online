@@ -17,6 +17,21 @@ def sha(path):
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
+def rename_generated_directory(source, destination):
+    # Windows readers can temporarily deny a directory rename after generation.
+    # Keep the validated stage in place until the atomic rename succeeds.
+    for attempt, delay in enumerate((0.2, 0.4, 0.8, 1.6, 2, 2, 2, 2, 0)):
+        try:
+            source.rename(destination)
+            return
+        except OSError as error:
+            if not delay or getattr(error, "winerror", None) not in (5, 32, 33):
+                raise
+            if not attempt:
+                print(f"Windows: aguardando a liberação da pasta {source.name} para renomear.", flush=True)
+            time.sleep(delay)
+
+
 def validate_nso(path, window):
     import lz4.block
     raw = Path(path).read_bytes()
@@ -79,8 +94,8 @@ def generate(source, exefs, output, profile):
         if not match or int(match.group(1)) == 0:
             raise ValueError(f"{name}: no discovered functions; unsupported module layout")
         if target.exists():
-            target.rename(output / f"{name}-previous-{time.time_ns()}")
-        stage.rename(target)
+            rename_generated_directory(target, output / f"{name}-previous-{time.time_ns()}")
+        rename_generated_directory(stage, target)
         files = {p.name:sha(p) for p in target.glob("*.c")}
         temp = receipt.with_suffix(".pending")
         temp.write_text(json.dumps({"input": identity,"files":files},indent=2),encoding="utf-8")

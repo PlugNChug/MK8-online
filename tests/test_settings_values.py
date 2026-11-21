@@ -31,9 +31,15 @@ class SettingsValuesTests(unittest.TestCase):
 #include <string.h>
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={"Default"};
 const char *const g_heart_colours[N_HEART_COLOURS]={"Default"};
-static int windows,pads,reboots;
+static int windows,pads,reboots,notices;
+void mk8_publish_settings(bool overlay,uint64_t ticks);
+void menu_notice(const char *message,double seconds) {
+    assert(!strcmp(message,"Settings could not be saved. Check the settings folder, then reopen Settings and go Back to retry."));
+    assert(seconds>0); ++notices;
+}
 void rt_request_reboot(int kind) { assert(kind==RT_REBOOT_GAME); reboots++; }
-int input_pad_family(void) { return 0; }
+static int family_queries;
+int input_pad_family(void) { family_queries++; return 0; }
 bool mk8_settings_style_active(void) { return true; }
 void rt_log(const char *fmt,...) { (void)fmt; }
 void mk8_settings_window_changed(void) { windows++; }
@@ -69,12 +75,54 @@ int main(int argc,char **argv) {
     assert(mk8_settings_values_count(0)==11 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
     check_tips();
     assert(!strcmp(find(0,"Aspect ratio").value,"Stretch"));
+    // The launcher may read the INI while the overlay remains open. A drag
+    // publishes its settled value, and an idle menu never rewrites the file.
+    mk8_publish_settings(true,100);
+    g_settings.volume=1.50f;
+    mk8_publish_settings(true,120);
+    g_settings.volume=1.75f;
+    mk8_publish_settings(true,200);
+    mk8_publish_settings(true,550);
+    FILE *live=fopen(argv[1],"rb"); assert(live);
+    char live_text[4096]={0}; assert(fread(live_text,1,sizeof live_text-1,live)>0);
+    fclose(live); assert(strstr(live_text,"volume = 1.75"));
+    g_settings.volume=1.0f;
+    mk8_publish_settings(false,570);
     assert(!mk8_settings_values_row(3,0,&(Mk8Setting){0}));
     assert(!mk8_settings_values_request(SETTINGS_SET,11,201));
     assert(!mk8_settings_values_request(SETTINGS_SET,1,0));
     assert(!mk8_settings_values_request(SETTINGS_ACTIVATE,999,0));
+    int before=family_queries;
+    assert(before>0);
+    mk8_settings_values_sync();
+    assert(family_queries==before);
     request(SETTINGS_BEGIN,0,0);
+    assert(family_queries>before);
     int aspect=find(0,"Aspect ratio").id;
+    int scaler=find(0,"Upscaler").id;
+    assert(find(0,"Upscaler").maximum==1);
+    assert(!_putenv_s("MK8_READY_FSR3","1"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!strcmp(find(0,"Upscaler").value,"AMD FSR 3.1.6"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_DLSS","1"));
+    mk8_publish_settings(true,1000);
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_DLSS);
+    mk8_publish_settings(true,1010);
+    mk8_publish_settings(true,1400);
+    live=fopen(argv[1],"rb"); assert(live);
+    memset(live_text,0,sizeof live_text); assert(fread(live_text,1,sizeof live_text-1,live)>0);
+    fclose(live); assert(strstr(live_text,"upscaler = dlss"));
+    assert(!_putenv_s("MK8_READY_DLSS",""));
+    mk8_settings_values_sync();
+    assert(!strcmp(find(0,"Upscaler").value,"NVIDIA DLSS SR"));
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_FSR4","1"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR4);
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_FSR4",""));
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR1);
+    assert(!_putenv_s("MK8_READY_FSR3",""));
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ORIGINAL);
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ULTRAWIDE);
     assert(find(0,"Aspect ratio").maximum==2 && !strcmp(find(0,"Aspect ratio").value,"Ultrawide (experimental)"));
@@ -106,9 +154,13 @@ int main(int argc,char **argv) {
     assert(g_settings.joycon_mode==0);
     request(SETTINGS_STEP,joycons,1);
     assert(g_settings.joycon_mode==1 && !SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,true));
+    assert(pads==2);
+    assert(mk8_set_joycon_mode(1) && pads==2);
     assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS,true));
     request(SETTINGS_STEP,joycons,-1);
     assert(g_settings.joycon_mode==0 && SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,false));
+    assert(pads==3);
+    assert(mk8_set_joycon_mode(0) && pads==3);
     request(SETTINGS_STEP,joycons,1);
     request(SETTINGS_STEP,find(2,"Game language").id,1); assert(g_settings.language==1);
     request(SETTINGS_STEP,find(2,"Button icons").id,1); assert(g_settings.prompts==1);
@@ -135,6 +187,27 @@ int main(int argc,char **argv) {
     for(int i=0;i<32;i++) assert(mk8_settings_values_request(SETTINGS_STEP,find(2,"Mapping device").id,1));
     assert(!mk8_settings_values_request(SETTINGS_FINISH,0,0));
     mk8_settings_values_sync(); request(SETTINGS_FINISH,0,0); assert(mk8_settings_values_saved()==2);
+    // Start Race can end a lobby edit while every ordinary queue slot is occupied.
+    assert(!notices);
+    request(SETTINGS_BEGIN,0,0);
+    int volume=find(1,"Master Volume").id;
+    for(int i=0;i<32;i++) assert(mk8_settings_values_request(SETTINGS_SET,volume,69));
+    assert(!mk8_settings_values_request(SETTINGS_FINISH,0,0));
+    assert(mk8_settings_values_request(SETTINGS_FINISH,0,SETTINGS_DETACHED));
+    assert(mk8_settings_values_request(SETTINGS_FINISH,0,SETTINGS_DETACHED));
+    assert(mk8_settings_values_saved()==1);
+    held=fopen(argv[1],"rb"); assert(held);
+    mk8_settings_values_sync();
+    assert(mk8_settings_values_saved()==-1 && notices==1 && g_settings.volume==.69f);
+    memset(previous,0,sizeof previous);
+    assert(fread(previous,1,sizeof previous-1,held)>0 && strstr(previous,"volume = 0.65"));
+    fclose(held);
+    // The retry must persist the unsaved value even without another edit.
+    request(SETTINGS_BEGIN,0,0); request(SETTINGS_FINISH,0,0);
+    assert(mk8_settings_values_saved()==2 && notices==1);
+    held=fopen(argv[1],"rb"); assert(held); memset(previous,0,sizeof previous);
+    assert(fread(previous,1,sizeof previous-1,held)>0 && strstr(previous,"volume = 0.69"));
+    fclose(held);
     request(SETTINGS_BEGIN,0,0);
     request(SETTINGS_SET,find(1,"Master Volume").id,66);
     assert(!_putenv_s("LARECOMP_SETTINGS",argv[2]));
@@ -163,7 +236,9 @@ int main(int argc,char **argv) {
             self.assertEqual(result.returncode,0,result.stderr[-4000:])
             ini=root/'settings.ini'
             ini.write_text('bind_key_zl = Left Alt\r\nbind_key_zr = Space\r\n',encoding='utf-8',newline='')
-            env=dict(os.environ,LARECOMP_SETTINGS=str(ini),PATH=str(deps/'bin')+os.pathsep+os.environ.get('PATH',''))
+            env=dict(os.environ,LARECOMP_SETTINGS=str(ini),
+                     PATH=str(deps/'bin')+os.pathsep+os.environ.get('PATH',''))
+            env.pop('MK8_GAMEPAD_LAYOUT', None)
             result=subprocess.run([str(exe),str(ini),str(root/'missing/settings.ini')],env=env,capture_output=True,text=True,timeout=25)
             self.assertEqual(result.returncode,0,result.stderr[-2000:])
             reload=subprocess.run([str(exe),str(ini),str(root/'missing/settings.ini'),'reload'],env=env,capture_output=True,text=True,timeout=25)

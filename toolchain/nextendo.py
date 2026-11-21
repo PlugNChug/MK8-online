@@ -92,7 +92,7 @@ def prepare(runtime):
     edit('ui/online_rows.mm', '    if (e && *e == \'1\' && !nextendo_signed_in()) sign_in();',
          '    if (mk8_nextendo_enabled() && e && *e == \'1\' && !nextendo_signed_in()) sign_in();')
     edit('ui/online_rows.mm', 'it "\n             "keeps a sign-in token for this device.',
-         'tokens "\n             "stay in memory until this game closes. MK8 matchmaking is not yet qualified.')
+         'the launcher remembers "\n             "this sign-in while it is open.')
     edit('ui/online_rows.mm', '    if (st.state == NX_SIGNED_IN &&', '''    if (st.state == NX_WAITING_BROWSER && opt_action("Cancel sign-in", "Cancel", "Close the local login listener."))
         nextendo_sign_out();
     if (st.state == NX_SIGNED_IN &&''')

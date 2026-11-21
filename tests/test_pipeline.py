@@ -66,6 +66,22 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual((path/'Course/Gu_Menu/course.szs').read_bytes(), b'v2')
             self.assertFalse((path/'Old.bin').exists())
 
+    def test_same_drive_without_hard_links_names_the_file_system(self):
+        # exFAT/FAT32 answer os.link with ERROR_INVALID_FUNCTION (WinError 1), though it is the same drive.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            romfs = root/'imports/romfs'
+            (romfs/'Course').mkdir(parents=True)
+            (romfs/'Course/course.szs').write_bytes(b'v1')
+            refused = OSError(22, 'Incorrect function')
+            refused.winerror = 1
+            with patch.object(pipeline.os, 'link', side_effect=refused):
+                with self.assertRaises(ValueError) as error:
+                    pipeline.mirror(root/'game-data/extracted/romfs', romfs)
+            self.assertIn('não aceita hard links', str(error.exception))
+            self.assertIn('NTFS', str(error.exception))
+            self.assertFalse((root/'game-data/extracted/romfs/Course/course.szs').exists())
+
 def synthetic_nso(path):
     # A hand-authored function returns 42. NSO metadata describes a single export.
     text = bytearray(0x30)
@@ -228,6 +244,9 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             layout.write_bytes(b'authored settings menu')
             common_layout = layout.with_name('common.sarc')
             common_layout.write_bytes(b'authored settings common layout')
+            controller_layout = output/'controller-menu/romfs/UI/cmn/common.sarc'
+            controller_layout.parent.mkdir(parents=True)
+            controller_layout.write_bytes(common_layout.read_bytes())
             (local/'candidate.json').write_text(json.dumps({'executable': pipeline.file_record(exe),
                 'files': {'gamelib': pipeline.file_record(game)}, 'data_root': str(local/'game-data/test'),
                 'gameplay_verified': False}))
@@ -244,6 +263,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(candidate['files']['settings-layout'], pipeline.file_record(layout))
             self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
+            self.assertEqual(candidate['files']['controller-layout'], pipeline.file_record(controller_layout))
             self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertEqual(native.read_bytes(), b'{"identity": "fixture", "object_files": []}')

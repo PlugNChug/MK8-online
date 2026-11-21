@@ -17,6 +17,8 @@ pub struct Request {
     pub auto_lan: Option<String>,
     #[serde(default)]
     pub nextendo: bool,
+    #[serde(default)]
+    pub nextendo_session: Option<String>,
 }
 
 pub fn spawn(request: &Request) -> Result<Child> {
@@ -37,6 +39,12 @@ pub fn run() -> Result<i32> {
         std::env::current_exe().map_err(|e| e.to_string())?,
     );
 
+    // The in-game panel (F1) follows the language the launcher shows.
+    std::env::set_var(
+        "MK8_UI_LANGUAGE",
+        crate::language::effective(&request.local),
+    );
+    crate::graphics::configure(&request.local)?;
     crate::fonts::configure(&request.local)?;
     crate::debug_options::configure(&request.local)?;
     std::env::remove_var("MK8_SETTINGS_ROMFS");
@@ -88,6 +96,11 @@ pub fn run() -> Result<i32> {
         return Err("Nextendo não pode usar uma sala LAN/Steam.".into());
     }
     let mut game = if request.nextendo {
+        if let Some(name) = request.nextendo_session.as_ref() {
+            std::env::set_var("MK8_NEXTENDO_SESSION", name);
+        } else {
+            std::env::remove_var("MK8_NEXTENDO_SESSION");
+        }
         mk8_installer::launch_nextendo(
             &request.install,
             &request.local,
@@ -95,6 +108,7 @@ pub fn run() -> Result<i32> {
             request.candidate,
         )?
     } else {
+        std::env::remove_var("MK8_NEXTENDO_SESSION");
         launch(
             &request.install,
             &request.local,
@@ -106,4 +120,149 @@ pub fn run() -> Result<i32> {
     let _ = supervisor::ready();
     let exit = game.wait().map_err(|e| e.to_string())?;
     Ok(exit.code().unwrap_or(1))
+}
+
+/// What to do when Nextendo refused online play for the account; the reason is the one the
+/// runtime logs (`[nextendo] online status: refused: <reason>`, runtime net/nextendo.c).
+pub fn nextendo_refusal_code(log: &str) -> Option<&str> {
+    let status = log
+        .lines()
+        .rev()
+        .find_map(|line| line.strip_prefix("[nextendo] online status: "))?;
+    if status == "refused" {
+        return Some("");
+    }
+    let code = status.strip_prefix("refused: ")?.trim();
+    (code.len() <= 64
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'))
+    .then_some(code)
+}
+
+pub fn nextendo_message(reason: &str, language: &str) -> String {
+    let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
+    match reason {
+        "discord_unlinked" => pick(
+            "O Nextendo recusou o jogo online desta conta: vincule uma conta do Discord em nextendo.network (página da conta) e tente de novo.",
+            "Nextendo refused online play for this account: link a Discord account at nextendo.network (account page) and try again.",
+            "Nextendo rechazó el juego en línea de esta cuenta: vincula una cuenta de Discord en nextendo.network (página de la cuenta) e inténtalo de nuevo.",
+        ),
+        "unverified" => pick(
+            "O Nextendo recusou o jogo online desta conta: confirme o e-mail pela mensagem do Nextendo ou em nextendo.network.",
+            "Nextendo refused online play for this account: verify its e-mail address (Nextendo's message or nextendo.network).",
+            "Nextendo rechazó el juego en línea de esta cuenta: verifica el correo electrónico (mensaje de Nextendo o nextendo.network).",
+        ),
+        "elsewhere" => pick(
+            "O Nextendo recusou o jogo online desta conta: ela está jogando em outro dispositivo agora.",
+            "Nextendo refused online play for this account: it is playing on another device right now.",
+            "Nextendo rechazó el juego en línea de esta cuenta: está jugando en otro dispositivo ahora.",
+        ),
+        "disabled" => pick(
+            "O Nextendo recusou o jogo online: a conta está desativada.",
+            "Nextendo refused online play: the account is disabled.",
+            "Nextendo rechazó el juego en línea: la cuenta está desactivada.",
+        ),
+        "unknown" => pick(
+            "O Nextendo não reconhece esta conta: entre novamente pelo navegador.",
+            "Nextendo does not know this account: sign in again through the browser.",
+            "Nextendo no reconoce esta cuenta: vuelve a iniciar sesión en el navegador.",
+        ),
+        "" => pick(
+            "O Nextendo recusou o jogo online desta conta.",
+            "Nextendo refused online play for this account.",
+            "Nextendo rechazó el juego en línea de esta cuenta.",
+        ),
+        code => return format!("{} {code}", pick("O Nextendo recusou o acesso online:", "Nextendo refused online access:", "Nextendo rechazó el acceso en línea:")),
+    }.to_owned()
+}
+
+pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<String> {
+    let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
+    if let Some(fatal) = log.lines().rev().find_map(|line| {
+        line.strip_prefix("FATAL:")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }) {
+        return Some(fatal.chars().take(400).collect());
+    }
+    let reason = match code.map(|n| n as u32) {
+        Some(0xc0000135) => pick(
+            "O Windows não encontrou uma DLL necessária para iniciar o jogo.",
+            "Windows could not find a DLL required to start the game.",
+            "Windows no encontró una DLL necesaria para iniciar el juego.",
+        ),
+        Some(0xc000007b) => pick(
+            "O Windows recusou o formato de um executável ou de uma DLL do jogo.",
+            "Windows rejected the format of a game executable or DLL.",
+            "Windows rechazó el formato de un ejecutable o una DLL del juego.",
+        ),
+        _ => return None,
+    };
+    Some(reason.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{exit_reason, nextendo_message, nextendo_refusal_code};
+
+    #[test]
+    fn reports_the_last_fatal_or_windows_loader_status_without_guessing() {
+        let refusal = "[nextendo] online status: refused: discord_unlinked\n";
+        let log = format!(
+            "{refusal}FATAL: older error\nFATAL: SDL_Vulkan_CreateSurface: VK_KHR_win32_surface\n"
+        );
+        assert_eq!(
+            exit_reason(&log, Some(1), "en").unwrap(),
+            "SDL_Vulkan_CreateSurface: VK_KHR_win32_surface"
+        );
+        assert!(exit_reason("", Some(0xc0000135u32 as i32), "en")
+            .unwrap()
+            .contains("DLL"));
+        assert!(exit_reason("", Some(0xc000007bu32 as i32), "es")
+            .unwrap()
+            .contains("formato"));
+        assert_eq!(exit_reason(refusal, Some(1), "en"), None);
+        assert_eq!(
+            exit_reason(
+                &format!("{refusal}[nextendo] online status: allowed"),
+                Some(1),
+                "en"
+            ),
+            None
+        );
+        assert_eq!(exit_reason("[vk] loader initialized", Some(1), "en"), None);
+    }
+
+    #[test]
+    fn explains_nextendo_refusal_from_the_game_log() {
+        let nextendo_refusal =
+            |log, lang| nextendo_refusal_code(log).map(|code| nextendo_message(code, lang));
+        let log = "[nextendo] game token ok (87 chars, 86400s)\n\
+                   [nextendo] online status: refused: discord_unlinked\n\
+                   BAAS adapter unavailable or online access refused.\n";
+        assert!(nextendo_refusal(log, "en")
+            .unwrap()
+            .contains("link a Discord account"));
+        assert!(nextendo_refusal(log, "pt-BR")
+            .unwrap()
+            .contains("vincule uma conta do Discord"));
+        assert!(nextendo_refusal(log, "es")
+            .unwrap()
+            .contains("vincula una cuenta de Discord"));
+        let unverified = "[nextendo] online status: refused: unverified\n";
+        assert!(nextendo_refusal(unverified, "en")
+            .unwrap()
+            .contains("e-mail"));
+        let bare = "[nextendo] online status: refused\n";
+        assert_eq!(
+            nextendo_refusal(bare, "en"),
+            Some("Nextendo refused online play for this account.".to_owned())
+        );
+        assert_eq!(
+            nextendo_refusal("[nextendo] online status: allowed\n", "en"),
+            None
+        );
+        assert_eq!(nextendo_refusal("", "en"), None);
+    }
 }

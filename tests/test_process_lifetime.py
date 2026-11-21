@@ -216,6 +216,7 @@ class LifetimeTests(unittest.TestCase):
         (self.fixture.parent/'vulkan-1.dll').rename(self.fixture.parent/'vulkan-1.hidden')
         (data/'candidate.json').write_text(json.dumps(manifest))
         first, post = self.launcher(data)
+        self.assertTrue(post('/api/mii/create', {'name':'Pilot','color':0,'gender':0})['ok'])
         self.assertFalse(post('/api/play')['ok'])
         self.assertFalse((saves/'game.pid').exists())
         self.assertEqual((saves/'existing-save.bin').read_bytes(), b'original save')

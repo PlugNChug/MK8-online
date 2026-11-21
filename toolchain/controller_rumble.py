@@ -52,6 +52,8 @@ def prepare(runtime):
     service = replace(service, marker, 'extern void mk8_hid_rumble(IpcReq *req, IpcResp *resp);\n\n' + marker)
     marker = 'static void quick_exit_handler(void) {'
     device = replace(device, marker, marker + '\n    extern void mk8_joycon_shutdown(void);\n    mk8_joycon_shutdown();')
+    marker = '        SDL_Event e;\n        while (SDL_WaitEventTimeout(&e, 16)) {'
+    device = replace(device, marker, '        extern void mk8_rumble_pump(void);\n        mk8_rumble_pump();\n' + marker)
     input_path.write_text(text, encoding='utf-8')
     service_path.write_text(service, encoding='utf-8')
     device_path.write_text(device, encoding='utf-8')

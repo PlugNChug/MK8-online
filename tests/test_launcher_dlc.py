@@ -57,7 +57,7 @@ class LauncherDlcTests(unittest.TestCase):
         self.assertFalse((self.folder / "dlc.json").exists())
 
     def test_file_tiles_show_green_only_for_files_found_by_the_api(self):
-        package = self.folder / "fixture.nsp"
+        package = self.folder / "fixture.NsZ"
         keys = self.folder / "fixture.keys"
         package.write_bytes(b"pacote autoral")
         keys.write_bytes(b"chaves autorais")

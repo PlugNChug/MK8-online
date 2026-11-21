@@ -8,11 +8,13 @@ mod debug_web;
 mod fonts;
 mod game_session;
 mod game_settings;
+mod graphics;
 mod installer;
 mod language;
 mod managed;
 mod manual;
 mod mii_download;
+mod nextendo_session;
 mod portable;
 mod python_setup;
 mod relay;
@@ -81,6 +83,13 @@ fn main() {
             fatal(&error.to_string());
             std::process::exit(1);
         }
+        return;
+    }
+    if args.get(1).is_some_and(|arg| arg == "--graphics-gpu") {
+        let Some(local) = args.get(2) else {
+            std::process::exit(1)
+        };
+        println!("{}", serde_json::json!(graphics::probe(Path::new(local))));
         return;
     }
     if args.get(1).is_some_and(|arg| arg == "--setup-python") {
@@ -193,7 +202,6 @@ fn project_root() -> Result<PathBuf, Error> {
 /// start), with the shared tool folder set up.
 #[cfg(mk8_portable)]
 pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
-    use std::{os::windows::process::CommandExt, process::Command};
     const PAYLOAD: &[u8] = include_bytes!(env!("MK8_LAUNCHER_PAYLOAD"));
     let root = base.join(&env!("MK8_LAUNCHER_PAYLOAD_ID")[..16]);
     if root.is_dir() {
@@ -208,15 +216,29 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
     fs::create_dir(&stage)?;
     let archive = stage.join("payload.zip");
     fs::write(&archive, PAYLOAD)?;
+    let extracted = extract_payload(&archive, &stage);
+    fs::remove_file(archive)?;
+    extracted?;
+    publish_payload(&stage, &root, std::time::Duration::from_secs(15))?;
+    std::env::set_var("MK8_NATIVE_TOOLS", share_tools(base, &root)?);
+    Ok(root)
+}
+
+/// Extracts the payload ZIP into `stage` with Windows' tar. `-m` leaves the extraction time on
+/// the files: the payload's entries carry the ZIP default date (1980-01-01 local time), the
+/// FAT/exFAT minimum, and east of UTC tar's "Can't restore time: Invalid argument" failed the
+/// setup on exFAT drives.
+#[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
+fn extract_payload(archive: &Path, stage: &Path) -> Result<(), Error> {
+    use std::{os::windows::process::CommandExt, process::Command};
     let tar = Path::new(&std::env::var_os("SystemRoot").ok_or("SystemRoot ausente")?)
         .join("System32/tar.exe");
     let output = Command::new(tar)
-        .arg("-xf")
-        .arg(&archive)
-        .current_dir(&stage)
+        .arg("-xmf")
+        .arg(archive)
+        .current_dir(stage)
         .creation_flags(0x08000000)
         .output()?;
-    fs::remove_file(archive)?;
     if !output.status.success() {
         return Err(format!(
             "Falha ao preparar o launcher: {}",
@@ -224,9 +246,7 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
         )
         .into());
     }
-    publish_payload(&stage, &root, std::time::Duration::from_secs(15))?;
-    std::env::set_var("MK8_NATIVE_TOOLS", share_tools(base, &root)?);
-    Ok(root)
+    Ok(())
 }
 
 #[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
@@ -333,9 +353,13 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     if let Some(home) = portable_home {
         portable::relocate(&home, &root, &local)?;
     }
-    let parent = (!headless).then(|| Arc::new(OnceLock::new()));
+    let direct = args.iter().any(|arg| arg == "--play");
+    let needs_editor = direct
+        && (local.join("active.json").is_file() || local.join("candidate.json").is_file())
+        && mk8_installer::mii::read(&local)?.is_none();
+    let parent = (!headless || needs_editor).then(|| Arc::new(OnceLock::new()));
     let mut app = launcher_app(root, &local, parent.clone())?;
-    if args.iter().any(|arg| arg == "--play") {
+    if direct && !needs_editor {
         return app.play_direct().map_err(Into::into);
     }
     let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
@@ -344,7 +368,10 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
         server::serve(app, server, authority, page, token);
         return Ok(());
     };
-    let target: tauri::Url = page.parse()?;
+    let mut target: tauri::Url = page.parse()?;
+    if needs_editor {
+        target.set_fragment(Some("create-mii-to-play"));
+    }
     std::thread::spawn(move || server::serve(app, server, authority, page, token));
     let origin = target.origin();
     tauri::Builder::default()
@@ -518,5 +545,69 @@ mod tests {
         assert_eq!(fs::read(root.join("keep.txt")).unwrap(), b"prepared");
         assert!(!stage.exists());
         fs::remove_dir_all(base).unwrap();
+    }
+
+    /// A stored ZIP entry with the DOS date 1980-01-01 00:00, as `ZipInfo(name)` writes the payload.
+    fn zip_1980(name: &str, data: &[u8]) -> Vec<u8> {
+        let crc = data.iter().fold(!0u32, |mut crc, &byte| {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+            crc
+        }) ^ !0;
+        let (time, date) = (0u16, (1 << 5) | 1); // 00:00:00, 1980-01-01
+        let fields = |out: &mut Vec<u8>| {
+            for value in [20u16, 0, 0, time, date] {
+                out.extend(value.to_le_bytes());
+            }
+            out.extend(crc.to_le_bytes());
+            out.extend((data.len() as u32).to_le_bytes());
+            out.extend((data.len() as u32).to_le_bytes());
+            out.extend((name.len() as u16).to_le_bytes());
+            out.extend(0u16.to_le_bytes());
+        };
+        let mut zip = 0x0403_4b50u32.to_le_bytes().to_vec();
+        fields(&mut zip);
+        zip.extend(name.as_bytes());
+        zip.extend(data);
+        let central = zip.len() as u32;
+        zip.extend(0x0201_4b50u32.to_le_bytes());
+        zip.extend(20u16.to_le_bytes());
+        fields(&mut zip);
+        zip.extend([0u8; 10]); // comment length, disk, internal and external attributes
+        zip.extend(0u32.to_le_bytes()); // local header offset
+        zip.extend(name.as_bytes());
+        let size = zip.len() as u32 - central;
+        zip.extend(0x0605_4b50u32.to_le_bytes());
+        zip.extend([0u8; 4]);
+        zip.extend(1u16.to_le_bytes());
+        zip.extend(1u16.to_le_bytes());
+        zip.extend(size.to_le_bytes());
+        zip.extend(central.to_le_bytes());
+        zip.extend(0u16.to_le_bytes());
+        zip
+    }
+
+    #[test]
+    fn payload_extraction_does_not_restore_the_1980_zip_date() {
+        let stage = std::env::temp_dir().join(format!("mk8-payload-time-{}", std::process::id()));
+        std::fs::create_dir_all(&stage).unwrap();
+        let archive = stage.join("payload.zip");
+        std::fs::write(&archive, zip_1980("LICENSE", b"payload")).unwrap();
+        super::extract_payload(&archive, &stage).unwrap();
+        let file = stage.join("LICENSE");
+        assert_eq!(std::fs::read(&file).unwrap(), b"payload");
+        // Restoring the 1980 date is what FAT/exFAT refused east of UTC.
+        let modified = std::fs::metadata(&file).unwrap().modified().unwrap();
+        let age = std::time::SystemTime::now()
+            .duration_since(modified)
+            .unwrap_or_default();
+        assert!(age < std::time::Duration::from_secs(3600), "{modified:?}");
+        std::fs::remove_dir_all(stage).unwrap();
     }
 }

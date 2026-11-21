@@ -55,6 +55,15 @@ pub struct Installation {
     /// This host verifies community TLS by hostname and supports the default in-game hub.
     #[serde(default)]
     pub nextendo_supported: bool,
+    /// This runtime can apply the launcher-selected temporal upscaler during presentation.
+    #[serde(default)]
+    pub temporal_upscaling_supported: bool,
+    #[serde(default)]
+    pub romfs_long_paths_supported: bool,
+    #[serde(default)]
+    pub nextendo_session_supported: bool,
+    #[serde(default)]
+    pub live_settings_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

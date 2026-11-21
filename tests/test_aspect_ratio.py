@@ -189,6 +189,18 @@ bool input_user_blocked(const SDL_Event *event) {
     assert(published==event_step+1);  // publication precedes even a consumed resize event
     return event_step<=2;
 }
+// This fixture exercises drawable publication with ordinary window events and no controllers.
+void mk8_title_pump(void) {}
+bool menu_input_captured(void) { return false; }
+bool mk8_settings_page_active(void) { return false; }
+bool mk8_controller_layout_active(void) { return false; }
+bool mk8_title_event(const SDL_Event *event, bool captured) { return false; }
+void mk8_tip_event(const SDL_Event *event, bool settings) {}
+void mk8_poll_steam_gamepads(void) {}
+bool mk8_steam_gamepad_event(const SDL_Event *) { return false; }
+void mk8_rumble_pump(void) {}
+void mk8_edit_pump(void) {}
+void mk8_tip_sync(void) {}
 static bool menu_handle_event(const SDL_Event *event) { (void)event; return event_step==3; }
 static void input_handle_event(const SDL_Event *event) { (void)event; assert(event_step==4); input_events++; }
 static void menu_apply_window_requests(struct SDL_Window *w) {

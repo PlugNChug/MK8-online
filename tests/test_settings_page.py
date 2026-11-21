@@ -25,6 +25,7 @@ class SettingsPageTests(unittest.TestCase):
 extern unsigned char memory[32768];
 #define HEAP_BASE ((uint64_t)(uintptr_t)memory)
 #define HEAP_MAX 32768ull
+#define MAIN_BASE 0x7000000000ull
 #define GUEST_LO HEAP_BASE
 #define GUEST_HI (HEAP_BASE+HEAP_MAX)
 #define LOG(...) ((void)0)

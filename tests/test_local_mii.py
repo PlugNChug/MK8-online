@@ -132,6 +132,7 @@ static Service *service_new(const char *n,void (*fn)(void),void *state) {
     static Service s; s.state=state; return &s;
 }
 // (toolchain/dlc.py declares this before the extracted function; neither title here is the DLC's)
+#include "mk8_romfs_paths.h"
 static int mk8_dlc_storage_path(uint64_t title,char *path,size_t size) { return 0; }
 ''' + body + r'''
 int main(int argc,char **argv) {
@@ -145,7 +146,7 @@ int main(int argc,char **argv) {
 }
 ''',encoding='utf-8')
             exe=out/'mount.exe'
-            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O1','-UNDEBUG',str(source),'-o',str(exe)],check=True,env=compiler_env(),capture_output=True)
+            subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O1','-UNDEBUG','-I'+str(runtime),str(source),'-o',str(exe)],check=True,env=compiler_env(),capture_output=True)
             subprocess.run([str(exe),str(out)],cwd=out,check=True,timeout=15)
 
     def test_editor_persists_profile_and_cancel_preserves_it(self):

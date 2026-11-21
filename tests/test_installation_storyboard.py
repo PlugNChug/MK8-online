@@ -18,7 +18,8 @@ class InstallationStoryboardTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='mk8-storyboard-')
         cls.local = Path(cls.temp.name)
-        env = dict(os.environ, MK8_WEB_ROOT=str(ROOT/'apps/launcher/web'))
+        # Keep the release update check out of this offline simulation, including on reload.
+        env = dict(os.environ, MK8_WEB_ROOT=str(ROOT/'apps/launcher/web'), MK8_UPDATE_REPO='')
         cls.process = subprocess.Popen([os.environ['MK8_LAUNCHER_EXE'], '--headless', '--data-dir', str(cls.local)],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)

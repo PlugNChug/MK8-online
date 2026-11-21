@@ -1,5 +1,6 @@
 """Bounded hooks for the verified MK8 4.0.1 diagnostic build."""
-import hashlib
+
+from guest_source import verified_bytes
 
 UNIT = 'main_177.c'
 SOURCE_SHA256 = 'b8217ac591523fc1c2433dc9306a60a7947ab7bd0d767fd174d250bd66848726'
@@ -32,9 +33,8 @@ HEAP_SELECT ='c->x[8] = (uint32_t)((COND_NE(c)) ? (uint32_t)c->x[9] : (uint32_t)
 
 def patch_setjmp_unit(src, output):
     expected, resumes = SETJMP_SITES[src.name]
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected:
-        raise ValueError('Guest setjmp sites require the verified MK8 4.0.1 generated sdk unit')
+    raw = verified_bytes(src, expected,
+                         'Guest setjmp sites require the verified MK8 4.0.1 generated sdk unit')
     text = raw.decode('utf-8').replace('\r\n', '\n')
     header = '#include "cpu.h"\n'
     if not text.startswith(header):
@@ -50,7 +50,7 @@ def patch_setjmp_unit(src, output):
     text = header + '#include <setjmp.h>\nextern jmp_buf *mk8_setjmp_arm(Cpu *c, uint64_t resume, void *frame);\n' + text[len(header):]
     target = output/'experimental'/'sdk'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
+    target.write_text(text, encoding='utf-8', newline='\r\n')
     return target
 
 
@@ -58,9 +58,8 @@ def patch_no_mii_unit(src, output):
     if src.parent.name == 'sdk' and src.name in SETJMP_SITES:
         return patch_setjmp_unit(src, output)
     if src.name == LAN_VOTE_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != LAN_VOTE_SHA256:
-            raise ValueError('LAN vote policy requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, LAN_VOTE_SHA256,
+                             'LAN vote policy requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8').replace('\r\n', '\n')
         # Omit the absent model's request and animation waits together. The vote's
         # received/valid-slot/busy checks and normal completion bookkeeping stay intact.
@@ -100,12 +99,11 @@ def patch_no_mii_unit(src, output):
             raise ValueError('LAN vote completion boundary changed')
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == 'main_026.c' and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != PORTRAIT_SCREEN_SHA256:
-            raise ValueError('Portrait screen requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, PORTRAIT_SCREEN_SHA256,
+                             'Portrait screen requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8').replace('\r\n', '\n')
         for old, new in PORTRAIT_SCREEN_PATCHES:
             if text.count(old) != 1:
@@ -113,12 +111,11 @@ def patch_no_mii_unit(src, output):
             text = text.replace(old, new)
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == MII_CONFIRM_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MII_CONFIRM_SHA256:
-            raise ValueError('Mii confirmation requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, MII_CONFIRM_SHA256,
+                             'Mii confirmation requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8').replace('\r\n', '\n')
         request = 'c->x[30] = 0x70004d7530ull; f_70008104d4(c);'
         wait = 'L_70004d7694:;\n    if (((c->x[0] >> 0) & 1) == 0) { goto L_70004d76a4; }'
@@ -129,12 +126,11 @@ def patch_no_mii_unit(src, output):
         text = text.replace(wait, wait.replace('if (', 'if (!mk8_no_mii_renderer() && ', 1))
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == MII_SELECTION_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MII_SELECTION_SHA256:
-            raise ValueError('Mii selection wait requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, MII_SELECTION_SHA256,
+                             'Mii selection wait requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8').replace('\r\n', '\n')
         request = 'c->x[30] = 0x70004afd2cull; f_700080f47c(c);'
         if text.count(request) != 1:
@@ -149,12 +145,11 @@ def patch_no_mii_unit(src, output):
             text = text.replace(boundary, boundary.replace('if (', 'if (!mk8_no_mii_renderer() && ', 1))
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == MII_DIALOG_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MII_DIALOG_SHA256:
-            raise ValueError('Mii dialog wait requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, MII_DIALOG_SHA256,
+                             'Mii dialog wait requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8')
         boundary = 'L_70004018a0:;'
         if text.count(boundary) != 1 or text.count('L_700040194c:;') != 1:
@@ -163,12 +158,11 @@ def patch_no_mii_unit(src, output):
         text = text.replace(boundary, boundary+'\n    if (mk8_no_mii_renderer() && (uint32_t)c->x[8] == 0x21) { c->x[0] = 0; goto L_700040194c; }')
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == MII_WORKER_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MII_WORKER_SHA256:
-            raise ValueError('Mii worker policy requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, MII_WORKER_SHA256,
+                             'Mii worker policy requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8')
         entry = 'void f_700041a6b0(Cpu *c) {'
         if text.count(entry) != 1:
@@ -201,12 +195,11 @@ def patch_no_mii_unit(src, output):
     }''')
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == MII_HEAP_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MII_HEAP_SHA256:
-            raise ValueError('Mii heap preparation requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, MII_HEAP_SHA256,
+                             'Mii heap preparation requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8')
         entry = 'void f_70003e0ea0(Cpu *c) {'
         if text.count(entry) != 1:
@@ -215,12 +208,11 @@ def patch_no_mii_unit(src, output):
         text = text.replace(entry, entry+'\n    if (mk8_no_mii_renderer()) return;')
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == UI_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != UI_SHA256:
-            raise ValueError('Mii UI policy requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, UI_SHA256,
+                             'Mii UI policy requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8')
         # Vtable +0x08/+0x10 count Mii instances; +0x20 enables their model resources.
         # Counts must also be zero: otherwise 0x3e10e8 still creates heaps for absent models.
@@ -234,9 +226,17 @@ def patch_no_mii_unit(src, output):
         if text.count(entry) != 1:
             raise ValueError('Mii UI readiness boundary changed')
         text = text.replace(entry, entry+'\n    if (mk8_no_mii_renderer() && LD32(c->x[0] + 0x18) == 0 && LD32(c->x[0] + 0x28) == 0) { c->x[0] = 1; return; }')
+        # Both vote notifications write a flag in the primary model array, even
+        # when only the secondary array is populated. There is no slot-zero
+        # fallback until the primary array has storage and at least one model.
+        for address in ('7000428838', '70004289d0'):
+            entry = f'void f_{address}(Cpu *c) {{'
+            if text.count(entry) != 1:
+                raise ValueError('Mii vote notification boundary changed')
+            text = text.replace(entry, entry+'\n    if (!c->x[0] || !LD32(c->x[0] + 0x18) || !LD64(c->x[0] + 0x20)) return;')
         # LAN transitions animate or configure absent models despite both counts being zero.
         for address in ('7000428a34', '7000428880', '70004288a0', '7000428900',
-                        '70004289ac', '70004289d0', '7000428a18',
+                        '70004289ac', '7000428a18',
                         '7000428d94', '7000428f80', '7000428fb0'):
             entry = f'void f_{address}(Cpu *c) {{'
             if text.count(entry) != 1:
@@ -249,12 +249,11 @@ def patch_no_mii_unit(src, output):
         text = text.replace(entry, entry+'\n    if (mk8_no_mii_renderer() && LD32(c->x[0] + 0x18) == 0 && LD32(c->x[0] + 0x28) == 0) { c->x[0] = 0; return; }')
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8')
+        target.write_text('extern int mk8_no_mii_renderer(void);\n'+text, encoding='utf-8', newline='\r\n')
         return target
     if src.name == HEAP_UNIT and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != HEAP_SHA256:
-            raise ValueError('SEAD heap locking requires the verified MK8 4.0.1 generated unit')
+        raw = verified_bytes(src, HEAP_SHA256,
+                             'SEAD heap locking requires the verified MK8 4.0.1 generated unit')
         text = raw.decode('utf-8').replace('\r\n', '\n')
         if text.count(HEAP_SELECT) != 1:
             raise ValueError('SEAD heap constructor changed')
@@ -262,13 +261,12 @@ def patch_no_mii_unit(src, output):
         text = text.replace(HEAP_SELECT, HEAP_SELECT.replace('((COND_NE(c)) ? (uint32_t)c->x[9] : (uint32_t)((uint32_t)c->x[8]))', 'c->x[9]'))
         target = output/'experimental'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding='utf-8')
+        target.write_text(text, encoding='utf-8', newline='\r\n')
         return target
     if src.name != UNIT or src.parent.name != 'main':
         return src
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
-        raise ValueError('No-Mii hook requires the verified MK8 4.0.1 generated unit')
+    raw = verified_bytes(src, SOURCE_SHA256,
+                         'No-Mii hook requires the verified MK8 4.0.1 generated unit')
     text = raw.decode('utf-8')
     # Mii manager preparation and its periodic update, both void virtual methods.
     for address in ('700080fa44', '7000810278'):
@@ -288,7 +286,7 @@ def patch_no_mii_unit(src, output):
     text = 'extern int mk8_no_mii_renderer(void);\n'+text
     target = output/'experimental'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
+    target.write_text(text, encoding='utf-8', newline='\r\n')
     return target
 
 # Skip the absent portrait allocation and its two consumers together. The screen's

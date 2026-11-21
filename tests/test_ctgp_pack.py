@@ -559,9 +559,17 @@ class CtgpPackTests(unittest.TestCase):
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 int fatal_calls; char logged[2048];
 static const char *settings;
 const char *mk8_settings_romfs_overlay(void) { return settings; }
+static bool prepared;
+bool plat_exe_path(char *out, size_t size) {
+    const char path[]="./harness.exe";
+    if (!prepared || size < sizeof path) return false;
+    memcpy(out,path,sizeof path); return true;
+}
+bool mk8_controller_layout_available(void);
 const char *mk8_romfs_overlay_from(const char *value);
 const char *game_romfs_overlay(void);
 int main(int argc, char **argv) {
@@ -585,6 +593,19 @@ int main(int argc, char **argv) {
     _putenv_s("MK8_SETTINGS_ROMFS", "");
     game_romfs_overlay();
     if (fatal_calls != 1) return 9;
+    settings=NULL; prepared=true; fatal_calls=0;
+    _putenv_s("MK8_ROMFS_OVERLAY", "");
+    _putenv_s("RECOMP_MOD_DIR", "");
+    const char *roster="./controller-menu/romfs";
+    if (strcmp(game_romfs_overlay(),roster) || !mk8_controller_layout_available()) return 10;
+    _putenv_s("MK8_ROMFS_OVERLAY", argv[1]);
+    snprintf(expected,sizeof expected,"%s\n%s",roster,argv[1]);
+    if (strcmp(game_romfs_overlay(),expected) || !mk8_controller_layout_available()) return 11;
+    _putenv_s("MK8_ROMFS_OVERLAY", "custom-pack");
+    if (strcmp(game_romfs_overlay(),"custom-pack") || mk8_controller_layout_available()) return 12;
+    _putenv_s("MK8_ROMFS_OVERLAY", "");
+    _putenv_s("RECOMP_MOD_DIR", "custom-mod");
+    if (game_romfs_overlay() || mk8_controller_layout_available() || fatal_calls) return 13;
     return 0;
 }''', encoding='utf-8')
             exe = out/'harness.exe'
@@ -593,7 +614,11 @@ int main(int argc, char **argv) {
                            env=compiler_env(), check=True, capture_output=True)
             (out/'pack').mkdir()
             (out/'file.bin').write_bytes(b'x')
-            result = subprocess.run([str(exe), str(out/'pack'), str(out/'file.bin')], capture_output=True, timeout=60)
+            for overlay in ('controller-menu/romfs', 'custom-pack', 'custom-mod/romfs'):
+                common = out/overlay/'UI/cmn/common.sarc'
+                common.parent.mkdir(parents=True)
+                common.write_bytes(b'test')
+            result = subprocess.run([str(exe), str(out/'pack'), str(out/'file.bin')], cwd=out, capture_output=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 

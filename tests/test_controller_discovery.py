@@ -22,10 +22,14 @@ static SDL_Gamepad devices[]={{0},{1},{2},{3},{4}};
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
 static bool p2;
 static unsigned opens, refreshes, styles;
-static bool real_gamepad(unsigned id) { return id != 0; }
+static unsigned deferred;
+static bool mk8_steam_pad_deferred(unsigned id) { return id && id == deferred; }
+static bool real_gamepad(unsigned id) { return id && !mk8_steam_pad_deferred(id); }
 static unsigned SDL_GetGamepadID(SDL_Gamepad *p) { return p->id; }
 static SDL_Gamepad *SDL_OpenGamepad(unsigned id) { opens++; return id==1 ? NULL : &devices[id]; }
-static SDL_Gamepad *mk8_rumble_open(int player, unsigned id) { assert(player==0); return SDL_OpenGamepad(id); }
+static SDL_Gamepad *mk8_rumble_open(int player, unsigned id) { assert(player>=0 && player<=EXTRA_PADS); return SDL_OpenGamepad(id); }
+static void mk8_rumble_close(int player, SDL_Gamepad *p) { assert(p); }
+static void recompute_extra(int i) { assert(i>=0 && i<EXTRA_PADS); }
 static bool pads_from_p2(void) { return p2; }
 static void open_extra(unsigned id) {
     for (unsigned i=0;i<EXTRA_PADS;i++) if (!extra_pad[i]) { extra_pad[i]=SDL_OpenGamepad(id); return; }
@@ -45,6 +49,12 @@ int main(void) {
     mk8_open_gamepad(4); assert(pad==&devices[4]);
     pad=NULL; extra_pad[0]=NULL; p2=true;
     mk8_open_gamepad(2); assert(!pad && extra_pad[0]==&devices[2]);
+    deferred=3;
+    mk8_open_gamepad(3); assert(!extra_pad[1]);
+    deferred=0;
+    mk8_move_gamepad(2,3); assert(!pad && extra_pad[0]==&devices[3]);
+    mk8_open_gamepad(3); assert(!extra_pad[1]);
+    mk8_move_gamepad(3,0); assert(!extra_pad[0]);
     return 0;
 }
 '''

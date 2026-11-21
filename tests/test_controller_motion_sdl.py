@@ -19,7 +19,8 @@ HARNESS = r'''
 #include <stdint.h>
 #include <string.h>
 #define EXTRA_PADS 3
-static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
+static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS], *mk8_partner[1 + EXTRA_PADS];
+static SDL_Gamepad **mk8_primary_slot(unsigned player) { return player ? &extra_pad[player - 1] : &pad; }
 static bool blocked;
 static bool input_user_blocked(const SDL_Event *e) { return blocked; }
 static bool legacy, settings, overlay, replay;

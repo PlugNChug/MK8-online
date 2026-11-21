@@ -53,7 +53,10 @@ pub struct App {
     steam_room: Option<SteamRoom>,
     gateway: Option<Gateway>,
     game: Option<Child>,
+    nextendo_session: crate::nextendo_session::Session,
     game_exit: Option<String>,
+    nextendo_log: Option<fs::File>,
+    nextendo_refusal: Option<String>,
     username: String,
     prepare_after_setup: bool,
     prepare_dlc: Option<PathBuf>,
@@ -71,11 +74,14 @@ pub struct App {
     resources_state: &'static str,
     resources_detail: String,
     mii_download: crate::mii_download::Download,
+    graphics: crate::graphics::Components,
     /// Steam lobby invites received from friends (lobby, friend), until accepted or the room is gone.
     steam_invites: Vec<(u64, u64)>,
     /// After creating or entering a Steam room: open the game in it as soon as the transport connects.
     pending_play: Option<PendingPlay>,
     steam_auto_join: bool,
+    /// Invite opened in Steam before a first Mii exists; claimed once by the editor.
+    steam_join_after_mii: Option<String>,
     /// The last Steam failure that happened outside a request (an accepted invite that could not be joined).
     steam_error: Option<String>,
     /// Steam was used before on this PC: connect again at start, so invites reach the launcher.
@@ -108,12 +114,18 @@ fn dlc_keys(config: &Config, package: &str, keys: &str) -> Option<PathBuf> {
     detect_keys(&config)
 }
 
+fn is_dlc_package(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp") || ext.eq_ignore_ascii_case("nsz"))
+}
+
 fn dlc_files(config: &Config, package: &str, keys: &str) -> Value {
     let selected = dlc_keys(config, package, keys);
     let package_path = Path::new(package);
     json!({
-        "package_ok": !package.is_empty() && package_path.is_file()
-            && package_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("nsp")),
+        "package_ok": is_dlc_package(package_path),
         "keys_ok": selected.as_ref().is_some_and(|path| path.is_file()),
         "keys_detected": keys.is_empty(),
         "keys": selected.map(|path| path.to_string_lossy().into_owned()),
@@ -178,7 +190,10 @@ impl App {
             steam_room: None,
             gateway: None,
             game: None,
+            nextendo_session: Default::default(),
             game_exit: None,
+            nextendo_log: None,
+            nextendo_refusal: None,
             username,
             prepare_after_setup: false,
             prepare_dlc: None,
@@ -195,9 +210,11 @@ impl App {
             resources_state: "idle",
             resources_detail: String::new(),
             mii_download: Default::default(),
+            graphics: Default::default(),
             steam_invites: Vec::new(),
             pending_play: None,
             steam_auto_join,
+            steam_join_after_mii: None,
             steam_error: None,
             steam_retry: None,
         }
@@ -206,7 +223,7 @@ impl App {
     /// Rooms are entered as the player's Mii: its name is the name other players see.
     fn mii_name(&mut self) -> Result<String> {
         let profile = mk8_installer::mii::read(&self.local)?
-            .ok_or("Crie seu Mii em Perfil Mii antes de abrir ou entrar em uma sala.")?;
+            .ok_or("Crie um Mii em Perfil Mii para continuar.")?;
         let name = profile.appearance.name;
         if valid_username(&name) && name != self.username {
             save(&self.local.join("username.json"), &name)?;
@@ -282,8 +299,8 @@ impl App {
 
     fn steam_join(&mut self, lobby: &str) -> Result<()> {
         self.check_room_preparation()?;
-        self.prepare_steam_join()?;
         self.mii_name()?;
+        self.prepare_steam_join()?;
         let identity = self.identity();
         let (room, gateway) = SteamRoom::join_live(
             &self.local,
@@ -358,10 +375,7 @@ impl App {
         for event in steam::take_events() {
             match event {
                 SteamEvent::Join { lobby } => {
-                    match self.steam_join(&lobby.to_string()) {
-                        Ok(()) => self.room_menu += 1,
-                        Err(error) => self.steam_error = Some(error),
-                    }
+                    self.auto_join_steam_lobby(&lobby.to_string());
                     if let Some(window) = self.window.as_ref().and_then(|parent| parent.get()) {
                         let _ = window.show();
                         let _ = window.unminimize();
@@ -393,15 +407,17 @@ impl App {
         self.start_game(false, None, false)?;
         let mut child = self.game.take().ok_or("O jogo não iniciou")?;
         let status = child.wait().map_err(|e| e.to_string())?;
+        let shown = self.finish_game(status);
         if !status.success() {
             return Err(format!(
-                "O jogo encerrou com erro: {status}. Consulte game.log na pasta de dados."
+                "O jogo encerrou com erro: {shown}. Consulte game.log na pasta de dados."
             ));
         }
         Ok(())
     }
 
     fn start_game(&mut self, online: bool, auto_lan: Option<&str>, nextendo: bool) -> Result<u32> {
+        let pilot = self.mii_name()?;
         if nextendo
             && (!mk8_installer::nextendo_trusted(&self.local) || online || auto_lan.is_some())
         {
@@ -445,18 +461,34 @@ impl App {
             local: self.local.clone(),
             install,
             network: net,
-            username: self.username.clone(),
+            username: pilot,
             candidate,
             auto_lan: auto_lan.map(str::to_owned),
             nextendo,
+            nextendo_session: if nextendo {
+                self.nextendo_session.name()?
+            } else {
+                None
+            },
         })?;
         let pid = child.id();
         self.game_exit = None;
+        self.nextendo_refusal = None;
+        // Keep this session's log even if another launcher later rotates game.log.
+        self.nextendo_log = if nextendo {
+            fs::File::open(self.local.join("game.log")).ok()
+        } else {
+            None
+        };
         self.game = Some(child);
         Ok(pid)
     }
 
     pub fn auto_join_steam_lobby(&mut self, lobby_id: &str) {
+        if matches!(mk8_installer::mii::read(&self.local), Ok(None)) {
+            self.steam_join_after_mii = Some(lobby_id.to_owned());
+            return;
+        }
         match self.steam_join(lobby_id) {
             Ok(()) => self.room_menu += 1,
             Err(error) => self.steam_error = Some(error),
@@ -627,18 +659,21 @@ impl App {
     }
 
     fn log_tail(&self, name: &str) -> Result<String> {
-        let mut text = String::new();
-        if let Ok(mut file) = fs::File::open(self.local.join(name)) {
-            let size = file.metadata().map_err(|e| e.to_string())?.len();
-            file.seek(SeekFrom::Start(size.saturating_sub(32000)))
-                .map_err(|e| e.to_string())?;
-            let mut bytes = Vec::new();
-            file.take(32000)
-                .read_to_end(&mut bytes)
-                .map_err(|e| e.to_string())?;
-            text = String::from_utf8_lossy(&bytes).into_owned();
+        match fs::File::open(self.local.join(name)) {
+            Ok(file) => Self::read_log_tail(file),
+            Err(_) => Ok(String::new()),
         }
-        Ok(text)
+    }
+
+    fn read_log_tail(mut file: fs::File) -> Result<String> {
+        let size = file.metadata().map_err(|e| e.to_string())?.len();
+        file.seek(SeekFrom::Start(size.saturating_sub(32000)))
+            .map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        file.take(32000)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     fn installation(&self) -> Option<Installation> {
@@ -674,22 +709,49 @@ impl App {
     }
     fn poll_game(&mut self) {
         if let Some(exit) = self.game.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
-            self.game_exit = Some(exit.to_string());
             self.game = None;
-            if self.steam_room.is_some() {
-                self.clear_steam_session();
-            }
-            if !exit.success() {
-                // A crash leaves its report ready to send, before the next launch rotates the log.
-                let summary =
-                    json!({"game_exit": exit.to_string(), "build": self.build.poll().state});
-                let install = self.installation().or_else(|| self.candidate());
-                let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
-                self.last_report = report::create(&self.local, runtime, "game-exit", summary)
-                    .ok()
-                    .map(|p| p.display().to_string());
-            }
+            self.finish_game(exit);
         }
+    }
+
+    fn finish_game(&mut self, exit: std::process::ExitStatus) -> String {
+        if self.steam_room.is_some() {
+            self.clear_steam_session();
+        }
+        let session_log = self.nextendo_log.take();
+        self.nextendo_refusal = None;
+        let mut shown = exit.to_string();
+        if !exit.success() {
+            let nextendo = session_log.is_some();
+            let log = match session_log {
+                Some(file) => Self::read_log_tail(file),
+                None => self.log_tail("game.log"),
+            }
+            .unwrap_or_default();
+            let language = crate::language::effective(&self.local);
+            let detail =
+                crate::game_session::exit_reason(&log, exit.code(), &language).or_else(|| {
+                    if !nextendo {
+                        return None;
+                    }
+                    let code = crate::game_session::nextendo_refusal_code(&log)?;
+                    if exit.code() == Some(2) {
+                        self.nextendo_refusal = Some(code.to_owned());
+                    }
+                    Some(crate::game_session::nextendo_message(code, &language))
+                });
+            if let Some(reason) = &detail {
+                shown = format!("{shown}. {reason}");
+            }
+            let summary = json!({"game_exit": exit.to_string(), "game_exit_detail": detail, "build": self.build.poll().state});
+            let install = self.installation().or_else(|| self.candidate());
+            let runtime = install.as_ref().and_then(|i| i.executable.path.parent());
+            self.last_report = report::create(&self.local, runtime, "game-exit", summary)
+                .ok()
+                .map(|p| p.display().to_string());
+        }
+        self.game_exit = Some(shown.clone());
+        shown
     }
 
     fn status(&mut self) -> Value {
@@ -756,8 +818,23 @@ impl App {
             .as_ref()
             .or(candidate.as_ref())
             .is_some_and(|game| game.nextendo_supported);
+        let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
+            // An existing host can predate the capability fields within the same test version.
+            (!game.temporal_upscaling_supported
+                || !game.romfs_long_paths_supported
+                || !game.nextendo_session_supported
+                || !game.live_settings_supported)
+                && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
+                    |host| {
+                        host["files"]["mk8drecomp.exe"].as_str()
+                            == Some(game.executable.sha256.as_str())
+                    },
+                )
+        });
         let candidate_stale = candidate_exists
-            && (candidate_version.as_deref() != Some(update::CURRENT) || !nextendo_supported);
+            && (candidate_version.as_deref() != Some(update::CURRENT)
+                || !nextendo_supported
+                || runtime_upgrade);
         let dlc =
             mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
         let ctgp = mk8_installer::ctgp::status(
@@ -792,6 +869,10 @@ impl App {
             .or(p2p_code);
         let mut status = json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()});
         status["nextendo_trusted"] = json!(mk8_installer::nextendo_trusted(&self.local));
+        status["nextendo_refusal_message"] = json!(self.nextendo_refusal.as_deref().map(|code| {
+            crate::game_session::nextendo_message(code, &crate::language::effective(&self.local))
+        }));
+        status["steam_join_after_mii"] = json!(self.steam_join_after_mii.is_some());
         status["nextendo_supported"] =
             json!(nextendo_supported || mk8_installer::nextendo_test_configured());
         status["nextendo_game_key"] = json!(mk8_installer::NEXTENDO_GAME_KEY);
@@ -814,6 +895,15 @@ impl App {
                     value["package"].as_str().unwrap_or(""),
                     value["keys"].as_str().unwrap_or(""),
                 ))
+            }
+            ("GET", "/api/graphics") => self.graphics.status(&self.local),
+            ("POST", "/api/graphics/license") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                crate::graphics::license(&self.local, value["vendor"].as_str().unwrap_or(""))
+            }
+            ("POST", "/api/graphics/install") => {
+                let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                self.graphics.start(&self.local, &value)
             }
             ("GET", "/api/settings") => crate::game_settings::read(&self.local),
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
@@ -867,6 +957,9 @@ impl App {
                 }
                 if path == "/api/settings" {
                     let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    if let Some(mode) = value["upscaler"].as_str() {
+                        crate::graphics::validate(&self.local, mode)?;
+                    }
                     crate::game_settings::write(&self.local, &value)?;
                     return Ok(
                         json!({"message":"Configurações salvas. As alterações valem ao iniciar o jogo."}),
@@ -939,17 +1032,13 @@ impl App {
                 let package = value["package"]
                     .as_str()
                     .filter(|s| !s.is_empty())
-                    .ok_or("Selecione o NSP do DLC.")?;
+                    .ok_or("Selecione o NSP/NSZ do DLC.")?;
                 if !install.dlc_supported {
                     return Err("Atualize a build para usar DLC.".into());
                 }
                 let package = Path::new(package);
-                if !package.is_file()
-                    || !package
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("nsp"))
-                {
-                    return Err("Selecione o NSP do DLC.".into());
+                if !is_dlc_package(package) {
+                    return Err("Selecione o NSP/NSZ do DLC.".into());
                 }
                 let keys = dlc_keys(
                     &self.config,
@@ -974,6 +1063,9 @@ impl App {
             ("GET", "/api/status") => Ok(self.status()),
             ("GET", "/api/config") => Ok(serde_json::to_value(&self.config).unwrap()),
             ("GET", "/api/username") => Ok(json!(self.username)),
+            ("GET", "/api/mii/active") => Ok(json!(
+                mk8_installer::mii::read(&self.local)?.map(|profile| profile.appearance.name)
+            )),
             ("GET", "/api/mii") => Ok(json!({"active":mk8_installer::mii::read(&self.local)?,
                 "profiles":mk8_installer::mii::list(&self.local)?, "menu":self.mii_menu})),
             ("GET", "/api/mii/menu") => Ok(json!({"menu":self.mii_menu})),
@@ -1203,9 +1295,9 @@ impl App {
                 let dlc = if package.is_empty() {
                     None
                 } else {
-                    if !Path::new(package).is_file() {
+                    if !is_dlc_package(Path::new(package)) {
                         return Err(
-                            "Selecione um NSP válido para a DLC opcional ou deixe o campo vazio."
+                            "Selecione um NSP/NSZ válido para a DLC opcional ou deixe o campo vazio."
                                 .into(),
                         );
                     }
@@ -1407,6 +1499,7 @@ impl App {
                 steam::invite(&self.local, room.lobby_id, friend)?;
                 Ok(json!({"message":"Convite enviado pela Steam."}))
             }
+            ("POST", "/api/steam/claim-join") => Ok(json!(self.steam_join_after_mii.take())),
             ("POST", "/api/steam/join") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 let lobby = value["lobby"].as_str().ok_or("Sala inválida.")?.to_owned();
@@ -1521,7 +1614,7 @@ impl App {
                     self.start_game(value["online"].as_bool().unwrap_or(false), None, nextendo)?;
                 if nextendo {
                     return Ok(
-                        json!({"message":"Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão."}),
+                        json!({"message":"Abrindo o Nextendo. No jogo, selecione Online Play."}),
                     );
                 }
                 Ok(
@@ -1556,12 +1649,20 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 Ok(json!({"message":"Pasta aberta."}))
             }
-            ("POST", "/api/support/github") => {
+            ("POST", "/api/support/github" | "/api/nextendo/account") => {
                 if self.window.is_none() {
-                    return Err("Na prévia web, use o link do GitHub diretamente.".into());
+                    return Err("Na prévia web, use o link diretamente.".into());
                 }
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
-                let url = if value["list"] == true {
+                let nextendo = path == "/api/nextendo/account";
+                let url = if nextendo {
+                    tauri::Url::parse(if value["register"] == true {
+                        "https://nextendo.network/register"
+                    } else {
+                        "https://nextendo.network/account"
+                    })
+                    .map_err(|e| e.to_string())?
+                } else if value["list"] == true {
                     tauri::Url::parse("https://github.com/Vnnc1/MK8-online/issues")
                         .map_err(|e| e.to_string())?
                 } else {
@@ -1582,6 +1683,9 @@ impl App {
                     command.creation_flags(0x08000000);
                 }
                 command.spawn().map_err(|e| e.to_string())?;
+                if nextendo {
+                    return Ok(json!({}));
+                }
                 Ok(json!({"message":"Abrindo o GitHub no navegador. Revise antes de publicar."}))
             }
             ("POST", "/api/update/check") => update::check(),
@@ -1634,8 +1738,13 @@ fn browse(req: Request, body: &str, parent: &DialogParent) {
     let current = value["current"].as_str().unwrap_or("").to_string();
     let filter = match value["kind"].as_str() {
         Some("dlc") => Some((
-            crate::language::pick(&language, "NSP do DLC", "DLC NSP", "NSP del DLC"),
-            &["nsp"][..],
+            crate::language::pick(
+                &language,
+                "NSP/NSZ do DLC",
+                "DLC NSP/NSZ",
+                "NSP/NSZ del DLC",
+            ),
+            &["nsp", "nsz"][..],
         )),
         Some("nacp") => Some((
             crate::language::pick(
@@ -2060,6 +2169,36 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn failed_game_keeps_the_reason_in_status_and_a_report() {
+        let root = std::env::temp_dir().join(format!("mk8-failed-game-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let fatal = "SDL_Vulkan_CreateSurface: VK_KHR_win32_surface extension is not enabled";
+        fs::write(
+            root.join("game.log"),
+            format!("{}\nFATAL: {fatal}\n", "x".repeat(40_000)),
+        )
+        .unwrap();
+        let exit = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "exit 1"])
+            .status()
+            .unwrap();
+        assert!(app.finish_game(exit).contains(fatal));
+        assert!(app.game_exit.as_deref().unwrap().contains(fatal));
+        let extracted = std::process::Command::new("tar.exe")
+            .arg("-xOf")
+            .arg(app.last_report.as_ref().unwrap())
+            .arg("report.json")
+            .output()
+            .unwrap();
+        assert!(extracted.status.success());
+        let report: Value = serde_json::from_slice(&extracted.stdout).unwrap();
+        assert_eq!(report["launcher"]["game_exit_detail"], fatal);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn dlc_file_readiness_uses_real_files_and_the_importers_key_selection() {
         let root = std::env::temp_dir().join(format!("mk8-dlc-fields-{}", std::process::id()));
@@ -2096,6 +2235,42 @@ mod tests {
         assert_eq!(state["keys_ok"], false);
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(windows)]
+    #[test]
+    fn nextendo_exit_reports_only_the_current_login_refusal() {
+        let root = std::env::temp_dir().join(format!("mk8-nextendo-exit-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        let path = root.join("game.log");
+        let denied = "[nextendo] online status: refused: discord_unlinked\r\n";
+        for (nextendo, exit, log, expected) in [
+            (true, "2", denied, Some("discord_unlinked")),
+            (true, "2", "[nextendo] online status: refused: maintenance\n", Some("maintenance")),
+            (true, "2", "[nextendo] online status: refused: discord_unlinked\n[nextendo] online status: ok\n", None),
+            (true, "2", "BAAS adapter unavailable or online access refused.\n", None),
+            (true, "2", "[nextendo] online status: refused: discord_unlinked\nFATAL: runtime failed\n", None),
+            (true, "2", "[nextendo] online status: refused: invalid text", None),
+            (true, "1", denied, None),
+            (false, "2", denied, None),
+        ] {
+            fs::write(&path, log).unwrap();
+            app.nextendo_log = nextendo.then(|| fs::File::open(&path).unwrap());
+            if nextendo {
+                // Another launcher can rotate the file after this game releases its lock.
+                mk8_installer::rotate_game_log(&root).unwrap();
+                fs::write(&path, "[nextendo] online status: refused: unrelated\n").unwrap();
+            }
+            let mut child = std::process::Command::new("cmd")
+                .args(["/d", "/c", "exit", exit]).spawn().unwrap();
+            child.wait().unwrap();
+            app.game = Some(child);
+            app.poll_game();
+            assert_eq!(app.nextendo_refusal.as_deref(), expected);
+            assert!(app.nextendo_log.is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn dlc_changes_refuse_resources_owned_by_another_session() {
         let root = std::env::temp_dir().join(format!("mk8-dlc-lock-{}", std::process::id()));
@@ -2340,6 +2515,10 @@ mod tests {
             pack_supported: false,
             cups_supported: false,
             nextendo_supported: false,
+            temporal_upscaling_supported: false,
+            romfs_long_paths_supported: false,
+            nextendo_session_supported: false,
+            live_settings_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

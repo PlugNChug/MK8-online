@@ -27,7 +27,7 @@ class LauncherTests(unittest.TestCase):
             refused = page.request.post(self.urls[0]+'/api/play', headers=headers,
                                         data=json.dumps({'online':False, 'nextendo':True})).json()
             self.assertFalse(refused['ok'])
-            self.assertIn('Nextendo', refused['error'])
+            self.assertRegex(refused['error'], 'Mii|Nextendo')
             status = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
             key = status['nextendo_game_key']
             self.assertFalse(status['nextendo_trusted'])
@@ -35,8 +35,16 @@ class LauncherTests(unittest.TestCase):
                                         data=json.dumps({'key':'0'*64})).json()
             self.assertFalse(invalid['ok'])
             status.update(nextendo_supported=False, candidate=True, game_pid=None)
-            page.route('**/api/status', lambda route: route.fulfill(json={'ok':True,'data':status}))
+            pending_status = []
+            hold_status = False
+            def send_status(route):
+                if hold_status:
+                    pending_status.append(route)
+                else:
+                    route.fulfill(json={'ok':True,'data':status})
+            page.route('**/api/status', send_status)
             calls = []
+            page.route('**/api/mii/active', lambda route: route.fulfill(json={'ok':True,'data':'Piloto'}))
             def play(route):
                 calls.append(route.request.post_data_json)
                 route.fulfill(json={'ok':True,'data':{'message':'Entre no Nextendo pelo navegador. No jogo, escolha Online Play. CTGP fica desativado nesta sessão.'}})
@@ -44,14 +52,20 @@ class LauncherTests(unittest.TestCase):
             expect(page.locator('#nextendo-rebuild')).to_be_visible()
             status['nextendo_supported'] = True
             expect(page.locator('#play-nextendo')).to_be_enabled()
+            # A background status poll may take longer than cancelling and reopening consent.
+            hold_status = True
             page.locator('#play-nextendo').click()
             expect(page.locator('#nextendo-key')).to_have_text(key)
             page.locator('#nextendo-cancel').click()
             self.assertFalse(calls)
             page.locator('#play-nextendo').click()
+            expect(page.locator('#nextendo-consent')).to_be_visible()
             with page.expect_response('**/api/play'):
                 page.locator('#nextendo-accept').click()
             self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+            hold_status = False
+            for request in pending_status:
+                send_status(request)
             actual = page.request.get(self.urls[0]+'/api/status', headers=headers).json()['data']
             self.assertTrue(actual['nextendo_trusted'])
             status['nextendo_trusted'] = True
@@ -60,12 +74,21 @@ class LauncherTests(unittest.TestCase):
             expect(page.locator('#play-nextendo')).to_have_text('Play on Nextendo')
             status['game_pid'] = 123
             expect(page.locator('#play-nextendo')).to_be_disabled()
+            message = 'Nextendo refused online play for this account: link a Discord account at nextendo.network (account page) and try again.'
+            status.update(game_pid=None, game_exit='exit code: 2', nextendo_refusal_message=message)
+            expect(page.locator('#notice')).to_have_text(message)
+            expect(page.locator('#game-state')).to_have_text(message)
+            status.update(nextendo_refusal_message='Nextendo refused online access: maintenance', last_report='report-2.zip')
+            expect(page.locator('#notice')).to_have_text('Nextendo refused online access: maintenance')
+            status.update(nextendo_refusal_message=None, last_report='report-3.zip')
+            expect(page.locator('#notice')).to_have_text('The game exited with an error. A report was saved in Support.')
         finally:
             page.close()
 
     def test_dlc_mismatch_is_visible_before_game_launch_and_translated(self):
         page = self.page()
         try:
+            page.route('**/api/mii/active', lambda route: route.fulfill(json={'ok':True,'data':'Piloto'}))
             page.locator('[data-tab="session"]').click()
             expect(page.locator('#steam-dlc-hint')).to_contain_text('mesma DLC')
             page.route('**/api/steam/friends', lambda route: route.fulfill(json={'ok':True,'data':{
@@ -579,8 +602,8 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
         refused = api("steam/host", {})
         self.assertFalse(refused["ok"])
-        self.assertIn("Crie seu Mii", refused["error"])
-        self.assertIn("Crie seu Mii", api("steam/join", {"lobby": "123"})["error"])
+        self.assertIn("Mii", refused["error"])
+        self.assertIn("Mii", api("steam/join", {"lobby": "123"})["error"])
         self.assertFalse(api("steam/join", {"lobby": "12a"})["ok"])
         page.get_by_role("button", name="Criar Mii agora", exact=True).click()
         expect(page.locator("#miis")).to_be_visible()

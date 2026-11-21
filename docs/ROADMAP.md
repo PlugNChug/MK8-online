@@ -4,6 +4,12 @@ O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rod
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
 
+## Após a 0.5.0
+
+- Validar no Steam Deck físico a preparação em modo desktop, uma corrida completa, áudio, controles e recarga de saves. O AppImage amd64 e a lista de dependências do Ubuntu estão no [guia Linux](LINUX.md).
+- Repetir o solo sem DLC na RTX 4090 do relato, validar DLSS e FSR 4 nas GPUs correspondentes e registrar conexão, resultado e reconexão entre dois PCs no Nextendo e na Steam.
+- Acompanhar os engasgos com cache frio e o aviso de cubemap nas pistas identificadas. [Estado da 0.5.0](STATUS.md) · [Notas da versão](releases/0.5.0.md)
+
 ## Ultrawide e menu nativo — entrega experimental
 
 - **Implementado e revisado no candidato isolado:** opção Original/Esticar/Ultrawide no launcher e no jogo; câmeras solo validadas entre 16:9 e 32:9, HUD proporcional nas bordas, transições e banner de classe. Menu nativo opt-in, recursos derivados privados, persistência e integração CTGP. A integração está incluída na 0.4.0.

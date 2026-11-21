@@ -158,6 +158,77 @@ class NextendoTests(unittest.TestCase):
     def test_login_play_stops_on_denial(self): self.run_flow('denied', login_play=True)
     def test_login_play_stops_without_nex(self): self.run_flow('no_nex', login_play=True)
 
+    def test_session_reuse_rotation_expiry_and_transient_error_across_game_processes(self):
+        import mmap
+        import uuid
+        exe = os.environ.get('MK8_NEXTENDO_TEST_EXE') or json.loads((ROOT/'local/candidate.json').read_text())['executable']['path']
+        grants = []
+        fault = None
+
+        class Service(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def reply(self, code, value):
+                payload = json.dumps(value).encode()
+                self.send_response(code)
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            def do_POST(self):
+                form = parse_qs(self.rfile.read(int(self.headers['Content-Length'])).decode())
+                kind = form['grant_type'][0]
+                grants.append((kind, form.get('refresh_token', [''])[0]))
+                if kind == 'refresh_token' and fault:
+                    return self.reply(fault, {'error': 'invalid_grant' if fault == 400 else 'temporarily_unavailable'})
+                self.reply(200, {'access_token':'test-access', 'refresh_token':f'test-refresh-{len(grants)}', 'expires_in':3600})
+            def do_GET(self):
+                # Stop before game initialization, after proving whether the refresh succeeded.
+                self.reply(503, {})
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Service)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with tempfile.TemporaryDirectory() as tmp:
+            def launch(name, browser):
+                env = dict(os.environ, MK8_NEXTENDO_SESSION=name, MK8_NEXTENDO_TEST='1',
+                           RECOMP_NEXTENDO_API=f'http://127.0.0.1:{server.server_port}')
+                with subprocess.Popen([exe, '--nextendo-login-play'], cwd=tmp, env=env, text=True,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
+                    try:
+                        if browser:
+                            urls = queue.Queue()
+                            def read_url():
+                                urls.put(next((line for line in proc.stdout if '/oauth/authorize?' in line), ''))
+                            threading.Thread(target=read_url, daemon=True).start()
+                            url = urls.get(timeout=15)
+                            self.assertIn('http://', url)
+                            params = parse_qs(urlsplit(url[url.index('http://'):].strip()).query)
+                            with urlopen(params['redirect_uri'][0]+'?'+urlencode({'state':params['state'][0], 'code':'fixture'}), timeout=10) as reply:
+                                self.assertEqual(reply.status, 200)
+                        output = proc.communicate(timeout=18)[0]
+                        self.assertNotIn('/oauth/authorize?', output)
+                        self.assertNotIn('test-refresh-', output)
+                        self.assertEqual(proc.returncode, 2, output)
+                    finally:
+                        if proc.poll() is None: proc.kill()
+            name = 'Local\\MK8-Nextendo-' + uuid.uuid4().hex
+            with mmap.mmap(-1, 600, tagname=name):
+                launch(name, True)
+                launch(name, False)
+                fault = 503
+                launch(name, False)
+                fault = None
+                launch(name, False)
+                fault = 400
+                launch(name, True)
+            self.assertEqual(grants, [('authorization_code',''), ('refresh_token','test-refresh-1'),
+                                      ('refresh_token','test-refresh-2'), ('refresh_token','test-refresh-2'),
+                                      ('refresh_token','test-refresh-4'), ('authorization_code','')])
+            with mmap.mmap(-1, 600, tagname=name):
+                launch(name, True)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
     def test_per_host_tls_pin_separation(self):
         import sys
         sys.path.insert(0, str(ROOT / 'toolchain'))

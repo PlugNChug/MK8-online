@@ -14,8 +14,9 @@ cannot be followed to its computation is refused. main_082.c and main_115.c arri
 (its Mii dialog and LAN vote hooks, in other functions) and are accepted by those copies' SHA-256. The game's behaviour
 does not change until cups are added.
 """
-import hashlib
 import re
+
+from guest_source import verified_bytes
 
 BUILDER = '70003f96b0'
 # unit -> (SHA-256 of the generated unit, {function: (clamps, entry computations)})
@@ -299,18 +300,16 @@ def patch_sdk(text, unit):
 def patch_unit(src, output):
     """The build copy of a cup or path unit with the relocation; any other unit unchanged."""
     if src.name in SDK_UNITS and src.parent.name == 'sdk':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != SDK_UNITS[src.name][0]:
-            raise ValueError(f'Course music hook requires the verified MK8 4.0.1 generated unit {src.name}')
+        raw = verified_bytes(src, SDK_UNITS[src.name][0],
+                             f'Course music hook requires the verified MK8 4.0.1 generated unit {src.name}')
         target = output/'cups'/'sdk'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, 'w', encoding='utf-8', newline='\n') as handle:
             handle.write(patch_sdk(re.sub(r'\r+\n', '\n', raw.decode('utf-8')), src.name))
         return target
     if src.name in PATHS and src.parent.name == 'main':
-        raw = src.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != PATHS[src.name][0]:
-            raise ValueError(f'Course folder hook requires the verified MK8 4.0.1 generated unit {src.name}')
+        raw = verified_bytes(src, PATHS[src.name][0],
+                             f'Course folder hook requires the verified MK8 4.0.1 generated unit {src.name}')
         target = output/'cups'/src.name
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, 'w', encoding='utf-8', newline='\n') as handle:
@@ -319,9 +318,8 @@ def patch_unit(src, output):
     if src.name not in UNITS or src.parent.name not in ('main', 'experimental'):
         return src
     expected = UNITS[src.name][0] if src.parent.name == 'main' else AFTER_EXPERIMENTAL.get(src.name)
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected:
-        raise ValueError(f'Cup relocation requires the verified MK8 4.0.1 generated unit {src.name}')
+    raw = verified_bytes(src, expected,
+                         f'Cup relocation requires the verified MK8 4.0.1 generated unit {src.name}')
     text = re.sub(r'\r+\n', '\n', raw.decode('utf-8'))  # (generated with CRLF; the experimental copy with CR CR LF)
     target = output/'cups'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)

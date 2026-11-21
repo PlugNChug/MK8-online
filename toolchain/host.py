@@ -297,6 +297,10 @@ def prepare_host_sources(source, output):
     prepare_shader_budget(runtime)
     from shader_storage import prepare as prepare_shader_storage
     prepare_shader_storage(runtime)
+    from fsr import prepare as prepare_fsr
+    from dlss import prepare as prepare_dlss
+    prepare_fsr(runtime)
+    prepare_dlss(runtime)
     from async_submit import prepare as prepare_async_submit
     prepare_async_submit(runtime)
     from texture_release_thread import prepare as prepare_texture_release_thread
@@ -373,6 +377,10 @@ def prepare_host_sources(source, output):
     if text.count(boundary) != 1:
         raise ValueError('MK8 hub declaration boundary changed')
     text = text.replace(boundary, '#include "mk8_hub.h"\n' + boundary)
+    boundary = '    const uint8_t *ov_img = game_overlay_image(&ov_w, &ov_h, &ov_full, &ov_seq);'
+    if text.count(boundary) != 1:
+        raise ValueError('Nextendo startup notice boundary changed')
+    text = text.replace(boundary, '    mk8_nextendo_start_notice();\n' + boundary)
     boundary = '    if (open) {\n        // dim the game behind the menu'
     if text.count(boundary) != 1:
         raise ValueError('MK8 hub render boundary changed')
@@ -415,16 +423,28 @@ def prepare_host_sources(source, output):
     boundary = 'static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
     if text.count(boundary) != 1:
         raise ValueError('Windows exception handler boundary changed')
-    text = text.replace(boundary, boundary + '''    // The legacy debugger thread-name notification can escape SDL's fallback on Windows.
-    if (er->ExceptionCode == 0x406D1388 && !(er->ExceptionFlags & EXCEPTION_NONCONTINUABLE) &&
-        er->NumberParameters >= 2 && (DWORD)er->ExceptionInformation[0] == 0x1000)
-        return EXCEPTION_CONTINUE_EXECUTION;
-''')
+    notification = '''static bool mk8_thread_name_notification(const EXCEPTION_RECORD *er) {
+    return er->ExceptionCode == 0x406D1388 && !(er->ExceptionFlags & EXCEPTION_NONCONTINUABLE) &&
+           er->NumberParameters >= 2 && (DWORD)er->ExceptionInformation[0] == 0x1000;
+}
+
+'''
+    resume = '    if (mk8_thread_name_notification(er)) return EXCEPTION_CONTINUE_EXECUTION;\n'
+    text = text.replace(boundary, notification + boundary + resume)
+    # SDL's legacy thread-name notification can also reach the top-level Windows crash filter.
+    terminal = 'static LONG WINAPI unhandled_filter(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
+    if text.count(terminal) != 1:
+        raise ValueError('Windows crash filter boundary changed')
+    text = text.replace(terminal, terminal + resume)
     windows.write_text(text, encoding='utf-8')
     from settings_menu import prepare as prepare_settings_menu
     prepare_settings_menu(runtime)
     from joycon_modes import prepare as prepare_joycon_modes
     prepare_joycon_modes(runtime)
+    from mixed_gamepads import prepare as prepare_mixed_gamepads
+    prepare_mixed_gamepads(runtime)
+    from romfs_paths import prepare as prepare_romfs_paths
+    prepare_romfs_paths(runtime)
     return runtime
 
 
@@ -451,6 +471,7 @@ def build_host(source, output, workers=None):
     (inc/'smaa_hlsl.inc').write_text('\n'.join(json.dumps(line+'\n', ensure_ascii=True) for line in hlsl.splitlines()), encoding='utf-8')
     shim = output/'vk_shim.c'
     run([sys.executable, source/'tools/gen_vk_shim.py', DEPS/'include', source/'runtime/platform/vulkan-1.exports', shim], output/'vk-shim.log', env)
+    patch_vk_shim(shim)
     # Export only the shared runtime ABI used by the generated game code.
     exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
     exports = output/'exports.def'
@@ -481,6 +502,7 @@ def build_host(source, output, workers=None):
         sources.extend(sorted(source.glob(pattern)))
     sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
     sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.c')))
+    sources.extend(sorted((ROOT/'runtime/mk8').rglob('*.cpp')))
     sources += [source/'runtime/platform/windows.c', export_source]
     sources += [source/'third_party/imgui'/name for name in ['imgui.cpp', 'imgui_draw.cpp', 'imgui_tables.cpp', 'imgui_widgets.cpp', 'backends/imgui_impl_sdl3.cpp', 'backends/imgui_impl_vulkan.cpp']]
     sources.append(shim)
@@ -494,7 +516,10 @@ def build_host(source, output, workers=None):
     def relative_of(src):
         return Path('runtime')/src.relative_to(runtime) if src.is_relative_to(runtime) else src.relative_to(source) if src.is_relative_to(source) else Path(src.name)
 
-    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc')}, common, sources, source, output)
+    manifest = ROOT/'runtime/mk8/windows.manifest'
+    resource = manifest.with_suffix('.rc')
+    key = host_key({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'),
+                    'windows_manifest': digest(manifest), 'resource': digest(resource)}, common, sources, source, output)
     prebuilt = use_prebuilt(key, output)
     if prebuilt:
         copy_runtime_dlls(output)
@@ -527,10 +552,11 @@ def build_host(source, output, workers=None):
     rsp = output/'host.rsp'
     rsp.write_text('\n'.join('"'+str(p).replace('\\','/')+'"' for p in objects), encoding='utf-8')
     exe = output/'mk8drecomp.exe'
-    run([DEFAULT_COMPILER, 'c++', '-target', 'x86_64-windows-gnu', '@'+str(rsp), '-o', exe,
+    run([DEFAULT_COMPILER, 'c++', '-target', 'x86_64-windows-gnu', '@'+str(rsp), resource,
+         '-o', exe,
          '-L'+str(DEPS/'lib'), '-Wl,--stack,268435456', '-Wl,--export-all-symbols',
          *(DEPS/'lib'/('lib'+lib+'.dll.a') for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']),
-         *('-l'+lib for lib in ['winmm', 'ole32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt'])], output/'host-link.log', env)
+         *('-l'+lib for lib in ['winmm', 'ole32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt', 'advapi32'])], output/'host-link.log', env)
     run([DEFAULT_COMPILER, 'dlltool', '-m', 'i386:x86-64', '-d', exports, '-l', output/'mk8drecomp.dll.a'], output/'exports.log', env)
     copy_runtime_dlls(output)
     (output/'host-key.json').write_text(json.dumps({'key': key, 'files': {name: digest(output/name) for name in HOST_FILES}}, indent=2), encoding='utf-8')
@@ -570,6 +596,30 @@ def copy_runtime_dlls(output):
         target = output/dll.name
         if not target.is_file() or digest(target) != digest(dll):
             shutil.copy2(dll, target)
+
+
+def patch_vk_shim(shim):
+    """Issue #78: a vulkan-1.dll that another module (an overlay) loaded first answers the bare name, and the
+    instance then belongs to a loader SDL does not use: SDL_Vulkan_CreateSurface finds no vkCreateWin32SurfaceKHR.
+    The shim loads the library SDL is given (SDL_VULKAN_LIBRARY, set by the launcher) first."""
+    text = shim.read_text(encoding='utf-8')
+    boundary = '    if (!vk_shim_dll) vk_shim_dll = LoadLibraryA("vulkan-1.dll");\n'
+    if text.count(boundary) != 1:
+        raise ValueError('Vulkan loader shim boundary changed')
+    shim.write_text(text.replace(boundary, '''    if (!vk_shim_dll) {
+        static wchar_t path[32768];  // The loader SDL uses (SDL_VULKAN_LIBRARY, set by the launcher).
+        DWORD n = GetEnvironmentVariableW(L"SDL_VULKAN_LIBRARY", path, 32768);
+        if (n) {
+            if (n < 32768) vk_shim_dll = LoadLibraryW(path);
+            if (!vk_shim_dll) fprintf(stderr, "FATAL: Vulkan: could not load SDL_VULKAN_LIBRARY (Win32 %lu)\\n",
+                                      n < 32768 ? GetLastError() : ERROR_INSUFFICIENT_BUFFER);
+        } else {
+            vk_shim_dll = LoadLibraryA("vulkan-1.dll");
+        }
+        if (vk_shim_dll && (n = GetModuleFileNameW(vk_shim_dll, path, 32768)) && n < 32768)
+            fprintf(stderr, "[vk] loader %ls\\n", path);
+    }
+'''), encoding='utf-8')
 
 
 def host_key(inputs, flags, sources, source, output):

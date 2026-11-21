@@ -276,6 +276,10 @@ mod tests {
             pack_supported: supported,
             cups_supported: supported,
             nextendo_supported: false,
+            temporal_upscaling_supported: false,
+            romfs_long_paths_supported: false,
+            nextendo_session_supported: false,
+            live_settings_supported: false,
             files: BTreeMap::new(),
         }
     }

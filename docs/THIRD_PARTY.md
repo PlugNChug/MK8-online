@@ -1,5 +1,11 @@
 # Dependências e atribuições
 
+A atribuição de controles dentro do jogo e a recuperação da posição dos jogadores vêm da contribuição de PlugNChug. A verificação das unidades C geradas com terminações LF ou CRLF foi adaptada da contribuição de DieMitchell. [PR #75](https://github.com/Vnnc1/MK8-online/pull/75) · [PR #83](https://github.com/Vnnc1/MK8-online/pull/83)
+
+## Distribuição nativa para Linux
+
+O AppImage amd64 e o tarball vêm do porte de mitch030504 (DieMitchell). O empacotamento fixa o SHA-256 do appimagetool e do runtime AppImage Type 2 e inclui a licença MIT do runtime no AppImage. As licenças e os créditos do porte acompanham a revisão Linux. [PR #83](https://github.com/Vnnc1/MK8-online/pull/83) · [Licenças e dependências do porte](https://github.com/Vnnc1/MK8-online/blob/edfc423697977594b49db64b67c433c73086664f/docs/THIRD_PARTY.md)
+
 ## Controles Steam no Windows
 
 A integração usa a interface GameInput v0 fornecida pelo Windows e a API pública de controles virtuais da SDL 3. As assinaturas COM e os formatos de leitura e vibração foram conferidos com o Windows SDK 10.0.26100.0. [Windows SDK — GameInput.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/GameInput.h) · [SDL — controles virtuais](https://wiki.libsdl.org/SDL3/SDL_AttachVirtualJoystick)
@@ -248,3 +254,7 @@ Referências de comportamento do renderer Ryujinx, consultadas no histórico pub
 As tentativas de baixar os arquivos inteiros receberam HTML de desafio anti-bot e não foram usadas como fonte C#. Os trechos consultados são os históricos indexados acima. Recursos `Ground_Tcroad.bars`, WAVs e coeficientes comerciais analisados permanecem privados em `local/`; os testes públicos usam somente PCM/ADPCM sintéticos. Avisos/licenças dos fontes upstream existentes foram preservados.
 
 SDL/Vulkan preflight diagnosis (2026-11-18): consulted [SDL Windows thread naming](https://github.com/libsdl-org/SDL/blob/main/src/thread/windows/SDL_systhread.c) to identify the legacy debugger notification `0x406d1388`. The launcher uses its own restricted handler based on the existing runtime treatment. Existing SDL and dependency licenses are preserved.
+
+### Ampliação temporal no Vulkan
+
+A integração Windows de Super Resolution deriva do trabalho de DieMitchell na [PR #83](https://github.com/Vnnc1/MK8-online/pull/83), revisão `93b817d`. Os cabeçalhos da API AMD em `runtime/mk8/graphics/ffx` acompanham o aviso e a licença do [FidelityFX SDK 2.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/v2.4.0). A interface NGX usada pelo runtime está em `runtime/mk8/graphics/ngx`. O launcher obtém os componentes opcionais dos repositórios dos fabricantes mediante aceite dos termos. [Licença do componente AMD](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/blob/v2.4.0/docs/license.md) · [Licença do componente NVIDIA](https://github.com/NVIDIA/DLSS/blob/v310.9.16/LICENSE.txt)

@@ -1,6 +1,7 @@
 """Opt-in Settings entry experiment for the verified MK8 4.0.1 top menu."""
-import hashlib
 from pathlib import Path
+
+from guest_source import verified_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = 'main_114.c'
@@ -17,8 +18,7 @@ def patch_guest(source, original, output):
     if original.parent.name != 'main' or original.name not in (UNIT, 'main_113.c', 'main_082.c', 'main_115.c', *SHARED_HASHES):
         return source
     expected = {UNIT: SOURCE_SHA256, 'main_113.c': BUILD_SHA256, 'main_082.c': NAV_SHA256, 'main_115.c': TICK_SHA256, **SHARED_HASHES}[original.name]
-    if hashlib.sha256(original.read_bytes()).hexdigest() != expected:
-        raise ValueError('Settings experiment requires verified MK8 4.0.1 top-menu code')
+    verified_bytes(original, expected, 'Settings experiment requires verified MK8 4.0.1 top-menu code')
     text = source.read_text(encoding='utf-8').replace('\r\n', '\n')
     if original.name in SHARED_HASHES:
         function, marker, hook = ('f_700049a8fc', '    { uint64_t ea = c->x[19] + 0x1f0ull; ST32(ea, 0u); }', 'mk8_settings_shared_build') if original.name == 'main_100.c' else (
@@ -52,7 +52,7 @@ def patch_guest(source, original, output):
             'extern uint64_t mk8_settings_navigation(uint64_t, uint64_t, uint64_t);\n') + text
     target = output / 'experimental' / original.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
+    target.write_text(text, encoding='utf-8', newline='\r\n')
     return target
 
 
@@ -108,6 +108,7 @@ def prepare(runtime):
         text = '#include <stdbool.h>\nextern bool mk8_settings_page_active(void);\n' + text
         text = replace(text, 'bool hidden = game_overlay_captured();',
                        'bool hidden = game_overlay_captured() || mk8_settings_page_active();')
+        text += '\n' + (ROOT / 'runtime/mk8/ui/controller_pointer.inc').read_text(encoding='utf-8')
         path.write_text(text,encoding='utf-8')
     # Windows runtime defaults to binary I/O; explicitly translate CRLF in user INIs.
     settings = runtime / 'settings.c'
@@ -143,21 +144,58 @@ bool settings_ahead_fast''')
     own = (ROOT / 'runtime/mk8/ui/settings_entry.inc').read_text(encoding='utf-8')
     own += '\n' + (ROOT / 'runtime/mk8/ui/settings_controls.inc').read_text(encoding='utf-8')
     text = replace(text, marker, own + '\n' + marker)
+    text = replace(text, 'static void set_open(bool open);',
+                   'extern "C" bool mk8_settings_shared_race(void);\nstatic bool mk8_block_shared_settings(void);\n'
+                   'static void set_open(bool open);')
+    text = replace(text, '    if (open == g_open.load()) return;',
+                   '    if (open == g_open.load() || (open && mk8_block_shared_settings())) return;')
+    marker = 'static double notice_until;'
+    text = replace(text, marker, 'static Uint64 notice_started;\nstatic bool notice_fades;\n' + marker)
+    marker = '    notice_until = SDL_GetTicks() / 1000.0 + seconds;'
+    text = replace(text, marker, '    notice_fades = false;\n' + marker)
+    marker = 'static bool notice_active(void) { return SDL_GetTicks() / 1000.0 < notice_until; }'
+    text = replace(text, marker, (ROOT / 'runtime/mk8/ui/race_settings_notice.inc').read_text(encoding='utf-8') +
+                   '\nstatic bool notice_active(void) {\n'
+                   '    pthread_mutex_lock(&notice_lock);\n    bool active=SDL_GetTicks()/1000.0 < notice_until;\n'
+                   '    pthread_mutex_unlock(&notice_lock);\n    return active;\n}')
+    marker = '        snprintf(t, sizeof t, "%s", notice_text);'
+    text = replace(text, marker, marker +
+                   '\n        bool fading=notice_fades;\n        float alpha=fading ? mk8_race_notice_alpha(SDL_GetTicks()-notice_started) : 1.f;')
+    marker = '#ifdef __APPLE__\nvoid menu_render('
+    text = replace(text, marker, (ROOT / 'runtime/mk8/ui/race_settings_tip.inc').read_text(encoding='utf-8') + '\n' + marker)
+    start = text.index('        float w = fminf(io.DisplaySize.x * 0.8f, 1100 * scale);', text.index('    if (!open && notice_active()) {'))
+    end = text.index('        ImGui::End();', start) + len('        ImGui::End();')
+    ordinary = text[start:end]
+    text = replace(text, ordinary, '        if (fading) {\n            mk8_draw_race_settings_tip(io.DisplaySize, scale, t, alpha);\n'
+                   '        } else {\n' + '\n'.join('    '+line for line in ordinary.splitlines()) + '\n        }')
     marker = 'bool menu_handle_event(const SDL_Event *e) {'
-    text = replace(text, marker, 'static bool mk8_hub_enabled();\n' + marker + '\n    if (mk8_settings_event(e, g_open.load())) return true;')
+    text = replace(text, marker, 'extern "C" bool mk8_controller_pointer_event(const SDL_Event *);\n'
+                   'extern "C" bool mk8_controller_layout_active(void);\n'
+                   'static bool mk8_hub_enabled();\n' + marker + '\n    bool settings_chord = mk8_settings_chord(e, capturing() || mk8_settings_page_active() || mk8_controller_layout_active());\n    if (mk8_controller_pointer_event(e)) return true;'
+                   '\n    if (mk8_controller_layout_active()) return false;'
+                   '\n    if (mk8_settings_event(e, g_open.load())) return true;')
     text = replace(text, '            if (!typing) set_open(!g_open.load());',
+                   '            if (!typing && !g_open.load() && mk8_block_shared_settings()) return true;\n'
                    '            if (!typing && !g_open.load() && !mk8_hub_enabled() && !(e->key.mod & SDL_KMOD_SHIFT) && mk8_settings_page_toggle()) return true;\n'
                    '            if (!typing) set_open(!g_open.load());')
+    text = replace(text, '    static bool back_down, start_down;\n', '')
+    text = replace(text, '        if (e->gbutton.button == SDL_GAMEPAD_BUTTON_BACK) back_down = down;\n'
+                         '        if (e->gbutton.button == SDL_GAMEPAD_BUTTON_START) start_down = down;\n', '')
+    text = replace(text, '(back_down && start_down)', 'settings_chord')
     text = replace(text, '            set_open(!g_open.load());\n            return true;',
+                   '            if (!g_open.load() && mk8_block_shared_settings()) {\n'
+                   '                uint32_t mask = settings_chord ? (1u << SDL_GAMEPAD_BUTTON_BACK) | (1u << SDL_GAMEPAD_BUTTON_START) : 1u << SDL_GAMEPAD_BUTTON_GUIDE;\n'
+                   '                mk8_suppress_settings_buttons(e->gbutton.which, mask);\n                return true;\n            }\n'
                    '            if (!g_open.load() && !mk8_hub_enabled() && mk8_settings_page_toggle()) return true;\n'
                    '            set_open(!g_open.load());\n            return true;')
     marker = 'void menu_apply_window_requests(void *win) {'
     text = replace(text, marker, '''static std::atomic<bool> mk8_pads_apply{false};
 extern "C" void mk8_settings_window_changed(void) { g_want_fullscreen_apply.store(true); }
 extern "C" void mk8_settings_pads_changed(void) { mk8_pads_apply.store(true); }
-''' + marker + '\n    if (mk8_pads_apply.exchange(false)) input_pads_reassign();\n    mk8_settings_poll(g_open.load());')
+''' + marker + '\n    if (g_open.load() && mk8_settings_shared_race()) set_open(false);'
+                   '\n    if (mk8_pads_apply.exchange(false)) input_pads_reassign();\n    mk8_settings_poll(g_open.load());')
     marker = '    bool open = g_open.load();\n    bool kbd = g_kbd.load() == 1;'
-    text = replace(text, marker, '    mk8_settings_values_sync();\n' + marker + '\n    float mk8_phase = mk8_settings_phase(open);')
+    text = replace(text, marker, '    mk8_publish_settings(g_open.load() || mk8_settings_page_active(), SDL_GetTicks());\n    mk8_settings_values_sync();\n' + marker + '\n    float mk8_phase = mk8_settings_phase(open);')
     marker = 'static const ThemePalette &theme_palette(void) {'
     theme = (ROOT / 'runtime/mk8/ui/settings_theme.inc').read_text(encoding='utf-8')
     text = replace(text, marker, theme + '\n' + marker + '\n    if (mk8_settings_overlay_style_active()) return mk8_settings_palette(kThemes[0]);')

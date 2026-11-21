@@ -11,14 +11,15 @@
 **English** · [Português (Brasil)](README.pt-BR.md)
 
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6)
+![Linux](https://img.shields.io/badge/Linux-amd64%20AppImage%20%7C%20experimental-5c6647)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
 ![Stack](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.4.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.5.0-ef795d)
 ![Status](https://img.shields.io/badge/Status-Public_test-e6a23c)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
-An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows,
+An experimental **Mario Kart 8 Deluxe 4.0.1** static recompilation project for Windows x64 and Linux amd64 (experimental),
 with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and Steam rooms with friends.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Report an issue](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roadmap](docs/ROADMAP.md)
@@ -29,7 +30,23 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 > Bring your own game files and console keys. This repository and its releases do not include ROMs, game assets, keys, saves or recompiled game code. The game is compiled locally from your own files.
 
 > [!NOTE]
-> **Already using the first 0.4.0?** Download the new installer or portable ZIP manually. The updater compares version numbers. Keep your data folder, open **Installation → Tools** and update the game build.
+> **Download 0.5.0** · [Windows installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-setup.exe) · [Windows portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-portable.zip) · [Linux amd64 AppImage](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-linux-x86_64.AppImage)
+>
+> On Windows, keep your data folder and complete **Installation → Tools → Build the game** if prompted. On Linux, the launcher and recompiled game run natively. See the guide for Ubuntu 24.04 dependencies and the experimental Steam Deck Desktop Mode path. [Linux guide](docs/LINUX.md) · [Release notes](docs/releases/0.5.0.md)
+
+The 0.5.0 Windows installer supports extracted RomFS files whose Windows paths reach or exceed 260 characters, including Unicode names. If a previous build stopped with the RomFS `MAX_PATH` message, keep the same data folder, install the updated launcher and retry **Installation → Build the game**. Completed compilation work can be reused.
+
+## Windows 0.5.0 · Play with your Mii
+
+In 0.5.0, Solo, Steam rooms and Nextendo use the active Mii. On first play, name your Mii, customize it and choose **Save and continue** to resume the mode you selected. For Nextendo, verify your account email and link Discord. Authorize once in the browser while the launcher is open. The game shows your Nextendo account and local Mii when it starts. Closing the launcher or revoking access requires a new sign-in. [Manage your Nextendo account](https://nextendo.network/account)
+
+## Windows 0.5.0 · Graphics settings
+
+In the 0.5.0 launcher, open **Play → Graphics** or **Settings → Video and controls → Image**. If Install offers **Update the build**, run it first, including when upgrading from a 0.4.1 test installer. Choose a lower internal resolution such as **75%**, then select **FSR 3.1.6**, **FSR 4.1.2** (compatible RDNA 4), or **DLSS Super Resolution** (compatible RTX). Read and accept the vendor terms in the launcher to install its optional component. Save and launch the updated game runtime. The panel shows the method and dimensions reported by the game. Actual input dimensions can be rounded to fit the game's render targets.
+
+In the game, open **F1 → Settings → Video** to choose a built-in scaler or an installed provider available on this PC. The optional native settings page uses the same list. Reopen the game through the launcher to load a different temporal provider. With the launcher open, settled in-game edits also update its settings and Play language picker.
+
+FSR 1 and bilinear filtering work out of the box. A rejected provider falls back to built-in scaling. The separate frame generation setting uses the runtime's own interpolation. Enable the FPS counter to compare game FPS, output FPS and milliseconds per game frame.
 
 ## What's new in 0.4.0
 
@@ -37,7 +54,6 @@ with a Vulkan runtime, a Mii creator, native Online Play through Nextendo and St
 
 The portable edition can move between Windows drives. An already prepared game can start directly with `Launcher.exe --play`. Controller updates add motion steering, HD Rumble and horizontal Joy-Con pairs for local multiplayer. Grand Prix saves and temporary replays are separated, and the Shell Cup trophy survived a restart in testing. Graphics fixes cover cup colours, countdown numbers and lighting in split-screen. After upgrading, keep your data folder and run **Installation → Tools → Game build**.
 
-[Download the installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-setup.exe) · [Download the portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-portable.zip) · [Release notes and known issues](docs/releases/0.4.0.md)
 
 New audio voices start at zero previous volume and use the mixer’s existing first-block gain ramp. This addresses popping with repeated road sound effects; it requires a game/runtime rebuild. Other sound effects and full audio qualification remain open.
 
@@ -49,11 +65,21 @@ If cup emblems and countdown numbers appear blue in 0.3.0, the 0.4.0 runtime cor
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
 
+**Controller assignment in development builds.** At the title screen, press a button on the controller you want as player 1. A keyboard key, mouse click or tap selects the keyboard. Press **SL** or **SR** for a sideways Joy-Con. With one left and one right Joy-Con, a face button selects the pair. When several halves are connected, hold **L** on the left half and **R** on the right half you want to pair, then release both. Return to the title to choose again.
+
+To play with a keyboard, a Pro Controller and two sideways Joy-Cons, set Joy-Con mode to **Individual (horizontal)**. Press **K** on the keyboard at the title to use it as P1. To use the Pro Controller as P1, press **A** on it at the title, choose four players, then press **Enter** on the keyboard when prompted to join as P4. Confirm with **A** on the Pro Controller.
+
+In a local split-screen race, a disconnected player’s controls go neutral and the other players can keep racing. On reconnect, an identifiable controller returns to that slot even if Windows lists the devices in a different order. A combined pair resumes when both Joy-Cons are back. If matching controllers have no distinguishing identity, register them again at character selection.
+
+When players are missing on the way to character selection, **Controller assignment** highlights the first empty player slot. With only P1 assigned, it starts at P2 and advances as each player joins. The footer shows the game's button icons for **L + R** on a controller and **SL + SR** on a sideways Joy-Con. Press both buttons together to join, or press **Enter** on an available keyboard. Existing assignments keep their places. While a slot is empty, the centered **Cancel** button, **Esc**, or P1’s Back button cancels registration. When everyone has joined, the same button turns into **OK** and P1 confirms to continue. Older builds and mods that supply their own shared menu layout can show the text prompt with the same controls.
+
+The standalone controller menu works at character selection even when experimental in-game Settings are off. With two to four local players, use the **+** button on the P1 controller or the mapped keyboard Start key. In local multiplayer you can also click or tap **−/+**. The two-player LAN screen hides that on-screen button. Select a row to assign a spare controller or swap two players, or clear the rows and register players in order. If another active player owns the controller, a notice identifies them. **Apply** saves the assignments and **Cancel** keeps the previous ones. During shared-screen races and battles, the Settings shortcut shows a brief notice so everyone can keep driving. Settings remain available in menus and to a single local racer.
+
 Open **F1 → Ajustes → Controle → Joy-Con mode**. Choose **Combined** to use both halves as one controller or **Individual (horizontal)** to give each player a sideways Joy-Con. The choice applies to all connected Joy-Cons and is saved for the next launch. A Pro Controller can be used alongside either layout.
 
 The original Switch Pro Controller, individual Joy-Cons and a single identifiable pair of official Bluetooth Joy-Cons support HD Rumble. In combined mode the game can vary each grip’s pitch and strength independently. With one sideways Joy-Con, both vibration channels go to that player’s grip. Other compatible controllers use SDL rumble. Opening Settings or switching away stops vibration.
 
-The DLC importer can select the verified Booster Course Pass from a combined NSP containing other content. Only the pinned DLC files and its matching ticket are extracted; all existing hash and content checks remain. Other DLC revisions and compressed DLC are not enabled by this change.
+On `fix-chore`, the DLC importer accepts NSP and NSZ, including combined packages, for the Booster Course Pass (title `0100152000023001`, v65536). It verifies the full hashes of the restored contents and uses only the matching ticket. A failed reinstall preserves the previous installation and its build record.
 
 
 Press **F1** or **Back + Start** to open the in-game menu. Play resumes the game or opens your Mii profile. Settings includes video, audio, controls and mods. The panel uses the menu theme selected in the launcher. In a mod’s details, Back returns to the mod list. After signing in, Nextendo shows live MK8 rooms and Social shows friends and presence with the `friends` permission. Select a room to inspect it. To race, use **Online Play** in Mario Kart.
@@ -79,9 +105,9 @@ Version 0.4.0 includes a Vulkan shader workaround for the desktop GTX 1070 (PCI 
 Version 0.4.0 supports two additional ways to start the game.
 
 - **Direct play:** `Launcher.exe --play` opens an already prepared solo game without the launcher window. Use `Launcher.exe --play --data-dir "D:\\MK8\\data"` to select existing data. It still validates files, Vulkan and resource locks; it does not install tools or build the game. Errors return a nonzero exit code. Steam rooms still use the launcher.
-- **Portable Windows package:** extract `MK8-online-0.4.0-portable.zip` to a writable folder. Keep `portable.txt` beside `Launcher.exe`; sources, tools and data are stored under the adjacent `portable` folder. `--data-dir` overrides only the game-data location. Existing installed data is not moved automatically. To update, replace the executable and keep `portable/`; the setup-based updater is disabled in this mode.
+- **Portable Windows package:** extract `MK8-online-0.5.0-portable.zip` to a writable folder. Keep `portable.txt` beside `Launcher.exe`; sources, tools and data are stored under the adjacent `portable` folder. `--data-dir` overrides only the game-data location. Existing installed data is not moved automatically. To update, replace the executable and keep `portable/`; the setup-based updater is disabled in this mode.
 
-The portable package avoids setup/registry installation. Open this version once before moving it, close the game and launcher, then copy/move the **whole folder**, including `portable/`. On the next start, internal game/build/Mii/font paths and the Python environment are rebased automatically; original metadata is retained under `portable/.relocation-backups/`. Saves and binary game assets are not rewritten. Files selected outside the portable tree remain external dependencies; include required resources inside the tree when preparing a self-contained copy. Windows x64 and compatible Vulkan drivers are still required; this does not add Linux/AppImage/Steam Deck support or guarantee performance on another GPU.
+The portable package avoids setup/registry installation. Open this version once before moving it, close the game and launcher, then copy/move the **whole folder**, including `portable/`. On the next start, internal game/build/Mii/font paths and the Python environment are rebased automatically; original metadata is retained under `portable/.relocation-backups/`. Saves and binary game assets are not rewritten. Files selected outside the portable tree remain external dependencies; include required resources inside the tree when preparing a self-contained copy. The portable ZIP requires Windows x64 and compatible Vulkan drivers. Linux users can download the AppImage linked above.
 
 ### Included since 0.3.0
 
@@ -95,11 +121,15 @@ The [0.3.0 release notes](docs/releases/0.3.0.md) cover the original CTGP integr
 
 ## Where it stands
 
+**Windows fixes in 0.5.0.** Rebuilding the Windows runtime enables game, save and settings paths with non-ASCII characters. If the game exits unexpectedly, the launcher shows the last fatal runtime message when available and saves a diagnostic ZIP under **Support**. This also works with `Launcher.exe --play`. Steam tries the next installed candidate if a DLL loads but cannot initialize the required interfaces. The launcher also accepts a verified Booster Course Pass v65536 in NSP or NSZ format.
+
+Rebuild the game after installing the 0.5.0 installer to apply the track-voting fix for missing Mii models. During game preparation, the generator now retries when Windows temporarily blocks the rename of a completed module.
+
 The runtime compensates slope-based depth bias for uniform internal-resolution scaling. The user confirmed that Mount Wario’s broad snow/ice bands are gone at 2×, 3× and 4×; a 2× frame dump also passed independent visual review. Other courses and GPUs still need testing. Rebuild the runtime to apply the change.
 
 **120 FPS presentation:** the existing experimental frame-generation option interpolates one image between real frames while the game remains at 60 Hz. It needs a high-refresh display and GPU headroom; it does not unlock native simulation or remove shader stutters. Local investigation measured about 120 presented frames per second in a stable solo section on an RX 580 2048SP / 180 Hz display. This is not full-race or multiplayer qualification. The 0.3.0 runtime also fixes CRLF INI parsing, which could silently disable `frame_gen = 120` and misread other text settings. Details and limitations are in [STATUS.md](docs/STATUS.md).
 
-Performance fixes in 0.3.0 use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. For keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
+Performance fixes in 0.3.0 use the Windows high-resolution timer for bounded shader waits, apply that budget to the two-player split-screen scene, and cancel controller setup when fewer players are connected than requested. Rebuild the game/runtime to apply them. In the 0.3.0 release, for keyboard plus one gamepad in local multiplayer, enable **Controllers start at player 2** in Video and controls. First-use shader compilation can still cause pauses; these fixes do not qualify every CTGP track or multiplayer between PCs.
 
 Version 0.3.0 integrates PRs #27–31 and #33: the local manual, replay readback, texture lifetime fixes, bounded shader support, private font imports, and Steam/Mii/DLC improvements. Commit `8202c32` also merged CTGP phase B (additional cups and its guest hooks). Integration checks and remaining limits are recorded in [STATUS.md](docs/STATUS.md).
 
@@ -111,7 +141,7 @@ The launcher prevents a Windows child process from keeping the gateway's UDP por
 
 Multiplayer offers **Create Room (Automatic)** and **Play (Manual Room)**. Both create a Steam host lobby; guests accept an invite and can choose automatic or manual in-game navigation. Automatic entry keeps the active Mii selected. The Mii converter corrects the glasses texture channels: regenerate derived Mii resources and rebuild the runtime for these Mii fixes.
 
-**Install → Game files** accepts an optional Booster Course Pass NSP. It is imported after a successful build in the same preparation flow, using the existing verified importer. An empty field preserves existing DLC. Later import remains under **Install → Additional content**, with a shortcut from **Play**; enabling/disabling DLC remains under **Settings**. Steam still requires matching DLC and CTGP states. No Valve DLL or game assets are distributed.
+**Install → Game files** accepts an optional Booster Course Pass NSP or NSZ. It is imported after a successful build in the same preparation flow, using the existing verified importer. An empty field preserves existing DLC. Later import remains under **Install → Additional content**, with a shortcut from **Play**; enabling/disabling DLC remains under **Settings**. Steam still requires matching DLC and CTGP states. No Valve DLL or game assets are distributed.
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
@@ -129,13 +159,13 @@ Historical cube-map fallback now reuses only an existing GPU-rendered image. A r
 
 ## What this project does
 
-The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
+The pipeline translates the supported game's AArch64 executable to C and compiles it for Windows x64 or native Linux amd64. A C/C++ runtime supplies graphics, audio, input and system services; the Rust/Tauri launcher manages preparation, builds, updates, Miis and rooms.
 
 RatOne develops and maintains the MK8 adaptation, launcher and integration. The translation/runtime foundation comes from **SMM2Recomp and LASRecomp**, with additional credited work from other projects. See [third-party sources and licenses](docs/THIRD_PARTY.md).
 
 ## Get on track
 
-### Requirements
+### Windows requirements
 
 - **Windows x64** and WebView2. The Launcher installs a private **Python 3.12 x64** by itself.
 - A GPU and driver exposing **Vulkan 1.3 or newer**. A general minimum CPU/GPU specification has not been qualified.
@@ -143,11 +173,11 @@ RatOne develops and maintains the MK8 adaptation, launcher and integration. The 
 - About **28 GiB free** for extraction and preparation (including a 4 GiB safety reserve), plus room for tools and caches. An SSD is recommended.
 - Internet for the first tool download (about 0.4 GiB) and for updates.
 - **For Miis:** opening the creator downloads `AFLResHigh_2_3.dat` from an Internet Archive copy of the former Miitomo CDN. The Launcher verifies the ZIP and library by size and SHA-256, then caches the file privately for offline use. It is not bundled in GitHub or the installer. If the archive is unavailable, retry or select a compatible local file; without the library, options remain numbered and faces are not drawn.
-- **For multiplayer:** sign in to Steam and use a compatible 64-bit Steamworks DLL from a game you have installed. If the launcher reports a missing `SteamAPI_SteamFriends_v017`, set `MK8_STEAM_DLL` to the full path of a compatible `steam_api64.dll`, restart the launcher and open **Multiplayer** to check the friends list. The copy tested from Brawlhalla worked with 0.3.0. The copies tested from Counter-Strike 2 and Deadlock export `v018` and are rejected by 0.3.0. No Valve file is bundled.
+- **For multiplayer:** sign in to Steam and use a compatible 64-bit Steamworks DLL from a game you have installed. In this branch, the launcher tries the configured and local DLLs first, then searches installed Steam libraries if none provides the required exports. If the launcher reports a missing `SteamAPI_SteamFriends_v017`, set `MK8_STEAM_DLL` to the full path of a compatible `steam_api64.dll`, restart the launcher and open **Multiplayer** to check the friends list. The copy tested from Brawlhalla worked with 0.3.0. The copies tested from Counter-Strike 2 and Deadlock export `v018` and are rejected by 0.3.0. No Valve file is bundled.
 
 ### Install and play
 
-1. Download `MK8-online-0.4.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
+1. Download `MK8-online-0.5.0-setup.exe` from [Releases](https://github.com/Vnnc1/MK8-online/releases) and choose the application and data folders. Installation is per user, without administrator rights. Already on an earlier version? Use **Support → Update now**: your data folder and saves are kept.
 2. Open **Install**. Complete **Tools**, then select the base game and the update in **Game files** (the Launcher finds keys next to the game, or select your own).
 3. Run **Build the game**. After updating from an earlier version, build again: the game is recompiled with the new runtime.
 4. Choose **Play solo**.
@@ -166,7 +196,7 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 2. Type a name and choose **Create Mii**. Then go through the tabs and tap the option you like: each button shows your Mii with that option. **Body** has type, height, build and favorite color, and the preview shows the whole body (or just the face).
 3. Choose **Save Mii**. The Launcher prepares the in-game Mii models the first time; the game uses your Mii the next time it opens.
 
-**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. You can leave Steam Input enabled for Spacewar when playing solo or in a Steam room. If SDL cannot detect a controller at startup, MK8 listens for controllers through Windows GameInput. If your controller does not respond, include its model and connection type with the report from **Support → Generate report**.
+**Play** shows when Mii preparation is running and enables the button when it finishes. Existing prepared resources are reused. You can leave Steam Input enabled for Spacewar when playing solo or in a Steam room. On `fix-chore`, an idle virtual Steam controller leaves the player slot available for a physical controller detected through Windows GameInput. If your controller does not respond, include its model and connection type with the report from **Support → Generate report**.
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 
@@ -197,7 +227,7 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 ## Help improve the next lap
 
-In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
+In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. In `fix-chore`, reports also include `dlc.log` after a DLC import attempt. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
 ## CTGP Deluxe course pack (optional, experimental)
 
@@ -223,6 +253,8 @@ sessions use the game's cups (each machine would otherwise decide on its own whi
 [STATUS.md](docs/STATUS.md).
 
 ## Build and contribute
+
+The build accepts MK8 4.0.1 generated C units with Windows (CRLF) or Unix (LF) line endings. Both must reproduce the same pinned SHA-256 before a guest hook is applied. The Windows package targets x64.
 
 Feedback snapshots now retry device-memory exhaustion after collecting GPU-completed retired images, then try host-preferred compatible memory without changing image format or masking allocation errors. The launcher's isolated Vulkan probe now initializes SDL video and actually loads Vulkan through SDL rather than checking exports alone. These mitigations need retesting on the machines affected by issues #52 and #47.
 
@@ -268,7 +300,9 @@ The earlier installation simulation is available only in the live debug preview 
 
 Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a verified build copy. Do not edit upstream snapshots or generated game code. Follow [AGENTS.md](AGENTS.md) and run the tests for the area you change. Developer-only paths (LAN/relay/P2P transports through the API, the static Mii head converter) are documented in the [technical status](docs/STATUS.md).
 
-To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. Tokens expire with the process. CTGP is disabled for this session. Reconnection remains experimental.
+To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. The test launcher keeps the refresh token in memory while its window is open. CTGP is disabled for this session. Reconnection remains experimental.
+
+If Nextendo returns `discord_unlinked` after sign-in, link Discord to the same Nextendo account, then select **Play on Nextendo** again.
 
 | Location | Responsibility |
 | --- | --- |
