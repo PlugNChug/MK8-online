@@ -20,5 +20,5 @@ bool mk8_controller_join_keyboard(void);
 bool mk8_controller_join_back_pressed(void);
 bool mk8_controller_join_visible(void);
 bool mk8_controller_layout_available(void);
-enum Mk8TitlePhase { MK8_TITLE_INACTIVE, MK8_TITLE_ENTRANCE, MK8_TITLE_PROMPT };
+enum Mk8TitlePhase { MK8_TITLE_INACTIVE, MK8_TITLE_PRELUDE, MK8_TITLE_ENTRANCE, MK8_TITLE_PROMPT };
 void mk8_title_input_phase(enum Mk8TitlePhase phase);

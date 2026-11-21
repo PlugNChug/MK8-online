@@ -37,7 +37,8 @@ void mk8_menu_tip(const char *text) {
     SDL_strlcpy(assignment_tip,text,sizeof assignment_tip);
     ++assignment_tips;
 }
-static bool host_captures;
+static bool host_captures, fixture_f1_capture;
+static unsigned fixture_event_limit=~0u;
 bool menu_input_captured(void) { return host_captures; }
 bool menu_is_open(void) { return false; }
 bool mk8_settings_page_active(void) { return false; }
@@ -120,11 +121,14 @@ static void pump(void) {
     mk8_title_pump();
     SDL_UpdateJoysticks();
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    unsigned events=0;
+    while (events++<fixture_event_limit && SDL_PollEvent(&event)) {
         extern bool mk8_steam_gamepad_event(const SDL_Event *);
         if (mk8_steam_gamepad_event(&event)) continue;
         mk8_tip_event(&event,fixed_navigation);
         if(mk8_title_event(&event,host_captures)) continue;
+        if(fixture_f1_capture && event.type==SDL_EVENT_KEY_DOWN && event.key.scancode==SDL_SCANCODE_F1)
+            host_captures=true;
         extern bool settings_test_chord(const SDL_Event *,bool);
         if(settings_test_chord(&event,host_captures) && shared_race) {
             mk8_suppress_settings_buttons(event.gbutton.which,(1u<<SDL_GAMEPAD_BUTTON_BACK)|(1u<<SDL_GAMEPAD_BUTTON_START));
@@ -134,6 +138,7 @@ static void pump(void) {
     }
     mk8_edit_pump();
     mk8_tip_sync();
+    mk8_title_after_events();
 }
 static void set_extra_inputs(bool down) {
     // Guest P2 uses the right Joy-Con upright; its physical A arrives as sideways South.

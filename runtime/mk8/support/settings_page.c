@@ -1400,7 +1400,8 @@ void mk8_settings_page_frame(uint64_t manager) {
     enum Mk8TitlePhase title_input=MK8_TITLE_INACTIVE;
     if(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 && !mk8_auto_lan_requested()) {
         unsigned phase=LD32(page+0x120),step=LD32(page+0x124);
-        if (phase==3 && step>=1 && step<=3) title_input=MK8_TITLE_ENTRANCE;
+        if (phase==3 && step==0) title_input=MK8_TITLE_PRELUDE;
+        else if (phase==3 && step>=1 && step<=3) title_input=MK8_TITLE_ENTRANCE;
         else if (phase==4 && step==0) title_input=MK8_TITLE_PROMPT;
     }
     mk8_title_input_phase(title_input);

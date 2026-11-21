@@ -62,6 +62,7 @@ static bool menu_handle_event(const SDL_Event *event) { return mk8_settings_even
 static void input_handle_event(const SDL_Event *) {}
 void mk8_edit_pump() { editor_polls++; }
 void mk8_title_pump() { ++title_polls; }
+void mk8_title_after_events() {}
 bool menu_input_captured() { return false; }
 bool mk8_title_event(const SDL_Event *,bool captured) { assert(captured && !physical_blocked); ++title_events; return false; }
 bool mk8_controller_layout_active() { return false; }

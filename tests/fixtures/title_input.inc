@@ -203,6 +203,66 @@ static void check_title_hotplug(void) {
 
 static void check_title_confirm(void) {
     attach(PRO); pump();
+    // An earlier held input stays ordinary prelude input and cannot take P1.
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    assert(guest_buttons(0)==(1ull<<BIND_X));
+    mk8_title_input_phase(MK8_TITLE_PRELUDE);
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    assert(!guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    assert(!guest_buttons(0));
+    title_ready(false);
+
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump(); // Last observed title frame, 3/0.
+    title_key(SDL_SCANCODE_K,false);
+    assert(SDL_GetGamepadID(pad)==ids[PRO]); // No assignment during 3/0.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump(); // The guest has entered 3/1.
+    assert(!pad && mk8_assigned_keyboard()==0 && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
+    // Focus loss, an intervening overlay, and leaving the page discard an
+    // otherwise valid fresh press, including one from a detached title visit.
+    for (int cancel=0;cancel<5;cancel++) {
+        mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+        button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+        button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+        if (cancel==0 || cancel==4) {
+            if (cancel==4) {
+                SDL_Event queued={.type=SDL_EVENT_USER};
+                fixture_event_limit=64;
+                for (int i=0;i<64;i++) assert(SDL_PushEvent(&queued));
+            }
+            SDL_Event focus={.type=SDL_EVENT_WINDOW_FOCUS_LOST};
+            assert(SDL_PushEvent(&focus));
+            focus.type=SDL_EVENT_WINDOW_FOCUS_GAINED; assert(SDL_PushEvent(&focus));
+        } else if (cancel==1) { host_captures=true; pump(); host_captures=false; }
+        else if (cancel==2) mk8_title_input_phase(MK8_TITLE_INACTIVE);
+        else {
+            SDL_Event open={.type=SDL_EVENT_KEY_DOWN};
+            open.key.scancode=SDL_SCANCODE_F1;
+            fixture_f1_capture=true; assert(SDL_PushEvent(&open));
+        }
+        mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+        if (cancel==4) {
+            assert(!pad); // The queued focus loss is in the next event batch.
+            fixture_event_limit=~0u; pump();
+        }
+        fixture_f1_capture=false; host_captures=false;
+        assert(!guest_buttons(0));
+        mk8_title_input_phase(MK8_TITLE_PROMPT);
+        assert(!pad && !guest_buttons(0));
+        title_ready(false);
+    }
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    title_key(SDL_SCANCODE_K,false); // The first eligible device keeps the claim.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    assert(SDL_GetGamepadID(pad)==ids[PRO] && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
     // An entrance claim can precede the title's interactive wait. The guest
     // must get a new confirm edge in that wait even if the player let go.
     mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();

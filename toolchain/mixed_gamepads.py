@@ -187,8 +187,8 @@ static void mk8_signal_styles(void) {''')
     marker = '        unsigned events = 0;'
     text = replace(text, marker, '        extern void mk8_title_pump(void);\n        mk8_title_pump();\n' + marker)
     marker = '        menu_apply_window_requests(window);'
-    text = replace(text, marker, '        extern void mk8_edit_pump(void), mk8_tip_sync(void);\n'
-                   '        mk8_edit_pump();\n        mk8_tip_sync();\n' + marker)
+    text = replace(text, marker, '        extern void mk8_edit_pump(void), mk8_tip_sync(void), mk8_title_after_events(void);\n'
+                   '        mk8_edit_pump();\n        mk8_tip_sync();\n        mk8_title_after_events();\n' + marker)
     marker = '            if (menu_handle_event(&e)) continue;'
     text = replace(text, marker, '            extern bool mk8_controller_layout_active(void), mk8_settings_page_active(void);\n'
                    '            extern bool mk8_title_event(const SDL_Event *, bool), menu_input_captured(void);\n'

@@ -191,6 +191,7 @@ bool input_user_blocked(const SDL_Event *event) {
 }
 // This fixture exercises drawable publication with ordinary window events and no controllers.
 void mk8_title_pump(void) {}
+void mk8_title_after_events(void) {}
 bool menu_input_captured(void) { return false; }
 bool mk8_settings_page_active(void) { return false; }
 bool mk8_controller_layout_active(void) { return false; }
