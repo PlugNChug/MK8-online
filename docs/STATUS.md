@@ -1,5 +1,11 @@
 # Estado técnico — 20/11/2026
 
+## Reteste de dois crashes da 0.4.0 na candidata 0.5.0
+
+Os relatórios `1795197270` (automático) e `1795197286` (manual) contêm os mesmos arquivos de diagnóstico, exceto pelos metadados do relatório. No log atual e em dois anteriores, o Nextendo autorizou a conta na RTX 5070 Ti. A votação, com a preparação dos modelos desabilitada, tentou escrever em `0x4ac` na rotina `f_7000428838`. Na recompilação 0.5.0, executei as duas rotinas de notificação preparadas com 72 combinações de estado, contagem, armazenamento e índice. Listas vazias foram ignoradas e listas válidas atualizaram o modelo esperado. O teste local cobre a assinatura da falha. A votação pública na máquina do jogador ainda precisa de reteste.
+
+O relatório `1795218451` descreve outra falha, ao abrir o solo sem DLC na RTX 4090. A 0.4.0 concluiu a build, indexou os 6.597 arquivos de RomFS e selecionou a GPU. O último registro foi `occlusion counts: precise`; a saída `0xc0000005` chegou antes da mensagem posterior à criação do dispositivo Vulkan. O ZIP não identifica o módulo ou a instrução que falhou. Usando o executável empacotado 0.5.0 e uma pasta de dados sem DLC instalado ou ativado, duas aberturas por **Jogar solo** na RX 580 2048SP chegaram à tela de título, capturaram o quadro 240 e encerraram com código zero. Fica pendente a confirmação na RTX 4090 com o driver 621.24 informado pelo jogador.
+
 ## Steam e recusas de conta Nextendo na 0.5.0 de teste
 
 O launcher tenta a DLL configurada, a pasta de dados e a pasta do executável antes de consultar as bibliotecas de jogos. Uma DLL local que inicializa as interfaces necessárias dispensa a varredura. Se as interfaces falharem, a próxima candidata é testada.
