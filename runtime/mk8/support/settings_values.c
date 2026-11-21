@@ -6,55 +6,16 @@
 #include "settings_values.h"
 #include "mk8_upscaler_choices.h"
 #include <math.h>
+#include "../ui/menu_language.h"
 #include <stdatomic.h>
+#include <SDL3/SDL.h>
 #include <string.h>
 
-typedef struct {
-    const char *label, *help;
-    bool *toggle;
-    int *choice;
-    const char *const *names;
-    const int *values;
-    int count;
-} Option;
-static const char *const aspects[]={"Stretch","Original 16:9","Ultrawide (experimental)"};
-static const char *const resolutions[]={"25%","50%","75%","Match display","Dynamic","1x (1080p)","2x","3x","4x"};
-static const int resolution_values[]={RES_Q25,RES_Q50,RES_Q75,RES_MATCH,RES_DYNAMIC,1,2,3,4};
-static const char *const antialias[]={"Off","SMAA"}, *const framegen[]={"Off","120 FPS"};
-static const char *const prompts[]={"Auto","Nintendo","Xbox","PlayStation"};
-static const char *const devices[]={"Controller","Keyboard"};
+#include "settings_catalog.h"
+
+enum { VOLUME=MK8_MENU_VOLUME, SHADERS=MK8_MENU_SHADERS, DEVICE=MK8_MENU_DEVICE, RESET=MK8_MENU_RESET,
+       BINDING=MK8_MENU_FIELD_COUNT, MAX_ROWS=BINDING+BIND_KEY_COUNT };
 static int mapping_device;
-#define TOGGLE(label,field,help) {label,help,&g_settings.field,NULL,NULL,NULL,2}
-#define CHOICE(label,field,names,values,n,help) {label,help,NULL,&g_settings.field,names,values,n}
-static const Option options[]={
-    CHOICE("Aspect ratio",aspect,aspects,NULL,3,"Solo 16:9-32:9; FG/other views: 16:9."),
-    TOGGLE("Fullscreen",fullscreen,"F11 also toggles fullscreen."),
-    TOGGLE("Show FPS",show_fps,"Show FPS in the screen corner."),
-    TOGGLE("Show memory use",show_memory,"Show runtime memory usage."),
-    CHOICE("Internal resolution",res_mode,resolutions,resolution_values,9,"Higher values use more GPU memory."),
-    {"Upscaler","Install FSR 3/4 or DLSS in the launcher."},
-    CHOICE("Anti-aliasing",antialias,antialias,NULL,2,"Smooth jagged edges with SMAA."),
-    CHOICE("Frame generation",frame_gen,framegen,NULL,2,"High refresh; game stays at 60."),
-    TOGGLE("Skip intro",skip_intro,"Skip logos on the next launch."),
-    {"Shader preparation","Prepares shaders in background."},
-    TOGGLE("Full-speed shaders",ahead_fast,"All CPU cores; next launch."),
-    {"Master Volume","Adjust the game audio level."},
-    TOGGLE("Reverb",reverb,"Enable the game's room reverb."),
-    TOGGLE("Movie audio",movie_audio,"Used by the next movie."),
-    TOGGLE("Mute in background",mute_in_background,"Mute while another app has focus."),
-    CHOICE("Game language",language,g_language_names,NULL,N_LANGUAGES,"Applies after restarting the game."),
-    CHOICE("Button icons",prompts,prompts,NULL,4,"Choose controller button icons."),
-    TOGGLE("Controllers start at P2",pads_from_p2,"Keyboard P1; controllers from P2."),
-    CHOICE("Joy-Con mode",joycon_mode,mk8_joycon_modes,NULL,2,"One pair or two sideways controllers."),
-    {"Mapping device","Choose bindings to edit.",NULL,&mapping_device,devices,NULL,2},
-    {"Reset these bindings","Restore this device's defaults."}
-};
-#undef TOGGLE
-#undef CHOICE
-enum { VOLUME=11, SHADERS=9, JOYCONS=18, DEVICE=19, RESET=20, BINDING=21, OPTIONS=21, MAX_ROWS=40 };
-static const int bind_order[]={BIND_A,BIND_B,BIND_X,BIND_Y,BIND_L,BIND_R,BIND_ZL,BIND_ZR,BIND_PLUS,BIND_MINUS,
-    BIND_UP,BIND_DOWN,BIND_LEFT,BIND_RIGHT,BIND_LSTICK,BIND_RSTICK,BIND_LS_UP,BIND_LS_DOWN,BIND_LS_LEFT,BIND_LS_RIGHT,
-    BIND_RS_UP,BIND_RS_DOWN,BIND_RS_LEFT,BIND_RS_RIGHT};
 typedef struct { int operation,id,value; } Request;
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
 enum { REQUEST_LIMIT=32 };
@@ -74,7 +35,10 @@ static int seen_binding=-1;
 bool mk8_settings_save_checked(void);
 void mk8_settings_window_changed(void);
 void mk8_settings_pads_changed(void);
-bool mk8_settings_style_active(void);
+void renderer_get_scale(float *,float *);
+double output_scale_dynamic_factor(void);
+static _Atomic bool native_theme;
+bool mk8_settings_style_active(void) { return native_theme; }
 void menu_notice(const char *,double);
 
 // Sample on the renderer thread, including after a controller binding finishes.
@@ -122,15 +86,11 @@ int mk8_settings_values_saved(void) { return saved; }
 bool mk8_settings_values_capturing(void) { return capturing; }
 void mk8_settings_values_context(bool value) { main_menu=value; }
 bool mk8_settings_values_main_menu(void) { return main_menu; }
-static bool needs_main_menu(int id) { return id==8 || id==10 || id==15; }
-static bool needs_restart(void) {
-    return boot_settings.language!=g_settings.language || boot_settings.skip_intro!=g_settings.skip_intro || boot_settings.ahead_fast!=g_settings.ahead_fast;
-}
 bool mk8_settings_values_request(int operation,int id,int value) {
     if(operation<SETTINGS_STEP || operation>SETTINGS_RESTART ||
        ((operation==SETTINGS_STEP || operation==SETTINGS_SET || operation==SETTINGS_ACTIVATE) && (id<0 || id>=BINDING+2*BIND_KEY_COUNT))) return false;
-    if(operation==SETTINGS_SET && (id!=VOLUME || value<0 || value>200)) return false;
-    if(operation==SETTINGS_STEP && (id>=OPTIONS || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
+    if(operation==SETTINGS_SET && !(id==VOLUME && mk8_settings_volume_valid(value))) return false;
+    if(operation==SETTINGS_STEP && (id>=BINDING || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
     if(operation==SETTINGS_ACTIVATE && id!=RESET && id<BINDING) return false;
     bool detached=operation==SETTINGS_FINISH && value==SETTINGS_DETACHED;
     if((operation==SETTINGS_FINISH || operation==SETTINGS_RESTART) && (id || (value!=0 && value!=1 && !detached))) return false;
@@ -150,56 +110,57 @@ static void apply(Request r) {
     if(r.operation==SETTINGS_FINISH) {
         bind_capture_cancel(); capturing=false;
         saved=!dirty || mk8_settings_save_checked() ? 2 : -1;
-        if(saved==2) { dirty=false; opened=false; if(r.value==1 && main_menu && needs_restart()) saved=3; }
+        if(saved==2) { dirty=false; opened=false; if(r.value==1 && main_menu && mk8_menu_restart_needed(&boot_settings)) saved=3; }
         else if(r.value==SETTINGS_DETACHED)
-            menu_notice("Settings could not be saved. Check the settings folder, then reopen Settings and go Back to retry.",8.0);
+            menu_notice(mk8_menu_save_error(),8.0);
         return;
     }
     if(r.operation==SETTINGS_RESTART) {
         if(saved!=3) return;
-        if(r.value && main_menu && needs_restart()) { saved=4; rt_request_reboot(RT_REBOOT_GAME); }
+        if(r.value && main_menu && mk8_menu_restart_needed(&boot_settings)) { saved=4; rt_request_reboot(RT_REBOOT_GAME); }
         else saved=2;
         return;
     }
     if(!opened) return;
-    if(needs_main_menu(r.id) && !main_menu) return;
+    if(r.id<BINDING && !mk8_menu_option_enabled(r.id,main_menu)) return;
     if(r.id>=BINDING) {
         int dev=(r.id-BINDING)/BIND_KEY_COUNT, slot=(r.id-BINDING)%BIND_KEY_COUNT;
         if(r.operation==SETTINGS_ACTIVATE && slot<(dev==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)) bind_capture_begin(dev,slot);
         return;
     }
     if(r.id==RESET) { if(r.operation==SETTINGS_ACTIVATE) { bind_reset(mapping_device); dirty=true; } return; }
-    if(r.id==5) {
+    if(r.id==MK8_MENU_UPSCALER) {
         Mk8Upscalers list=mk8_upscaler_choices(g_settings.upscaler);
         int next=list.selected+r.value;
         if(next>=0 && next<list.count) { g_settings.upscaler=list.values[next]; dirty=true; }
         return;
     }
     if(r.id==SHADERS) return;
+    if(r.id==DEVICE) { mapping_device=r.value<0 ? BIND_DEV_PAD : BIND_DEV_KEY; return; }
     if(r.id==VOLUME) {
-        int pct=(int)lroundf(g_settings.volume*100);
-        int next=r.operation==SETTINGS_SET ? r.value : pct+(r.value<0 ? -5 : 5);
-        if(next<0 || next>200) return;
-        g_settings.volume=next/100.0f; dirty|=next!=pct; return;
+        int pct=mk8_settings_volume_percent();
+        int next=r.operation==SETTINGS_SET ? r.value : pct+MK8_VOLUME_STEP*r.value;
+        if(next<MK8_VOLUME_MIN) next=MK8_VOLUME_MIN;
+        if(next>MK8_VOLUME_MAX) next=MK8_VOLUME_MAX;
+        mk8_settings_set_volume_percent(next); dirty|=next!=pct; return;
     }
-    const Option *o=&options[r.id];
+    const Mk8MenuOption *o=mk8_menu_option(r.id);
     if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
     else if(o->choice) {
-        int index=0;
-        for(int i=0;i<o->count;i++) if(*o->choice==(o->values ? o->values[i] : i)) index=i;
+        int index=mk8_menu_choice_index(r.id);
+        if(index<0) index=o->default_index;
         int next=index+(r.value<0 ? -1 : 1);
         next=next<0 ? 0 : next>=o->count ? o->count-1 : next;
-        if(r.id==JOYCONS && next!=index && !mk8_set_joycon_mode(next)) return;
-        *o->choice=o->values ? o->values[next] : next;
-        dirty|=r.id!=DEVICE && next!=index;
+        if(r.id==MK8_MENU_JOYCON_MODE && next!=index && !mk8_set_joycon_mode(next)) return;
+        if(next!=index) { *o->choice=o->values ? o->values[next] : next; dirty=true; }
     }
-    if(r.id==1) mk8_settings_window_changed();
-    if(r.id==17) mk8_settings_pads_changed();
+    if(r.id==MK8_MENU_FULLSCREEN) mk8_settings_window_changed();
+    if(r.id==MK8_MENU_PADS_FROM_P2) mk8_settings_pads_changed();
 }
 
 // Called by the existing menu renderer: all real settings writes share its thread.
 void mk8_settings_values_sync(void) {
-    if(!mk8_settings_style_active()) return;
+    native_theme=g_settings.theme==THEME_NATIVE;
     if(!boot_set) { boot_settings=g_settings; boot_set=true; }
     Request batch[REQUEST_LIMIT+1]; unsigned n;
     pthread_mutex_lock(&lock); n=requested; memcpy(batch,requests,n*sizeof *batch); requested=0; pthread_mutex_unlock(&lock);
@@ -210,49 +171,80 @@ void mk8_settings_values_sync(void) {
     if(opened && seen_binding>=0 && serial!=seen_binding && (kind==1 || kind==2 || kind==5)) dirty=true;
     seen_binding=serial;
     for(unsigned i=0;i<n;i++) apply(batch[i]);
+    if(n) native_theme=g_settings.theme==THEME_NATIVE;
     int cd,cs,ms;
     capturing=bind_capture_active(&cd,&cs,&ms);
     Mk8Setting next[SETTINGS_CATEGORIES][MAX_ROWS]={0};
-    int sizes[]={11,4,6+(mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)};
+    Mk8Setting *fields[MK8_MENU_FIELD_COUNT];
+    // Native Video reserves its first row for the theme choice; the shared field IDs stay stable.
+    int sizes[SETTINGS_CATEGORIES]={[MK8_MENU_VIDEO]=1};
+    int binding_count=mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT;
     int family=mapping_device==BIND_DEV_PAD ? bind_label_family() : 0;
-    for(unsigned g=0;g<SETTINGS_CATEGORIES;g++) for(int row=0;row<sizes[g];row++) {
-        Mk8Setting *v=&next[g][row];
-        v->enabled=true;
-        v->id=g==0 ? row : g==1 ? VOLUME+row : 15+row;
-        if(g==2 && row>=6) {
-            int slot=bind_order[row-6]; v->id=BINDING+mapping_device*BIND_KEY_COUNT+slot; v->kind=SETTING_BINDING;
+    static char device[41];
+    static uint64_t refresh_device;
+    uint64_t now=SDL_GetTicks();
+    if (opened && (!refresh_device || now>=refresh_device)) {
+        int count=0;
+        SDL_JoystickID *ids=SDL_GetGamepads(&count);
+        const char *name=ids && count ? SDL_GetGamepadNameForID(ids[0]) : NULL;
+        SDL_utf8strlcpy(device,name ? name : "No controller connected",sizeof device);
+        SDL_free(ids);
+        refresh_device=now+1000;
+    }
+    for(int i=0;i<BINDING+binding_count;i++) {
+        const Mk8MenuOption *o=mk8_menu_option(i);
+        int group=o ? o->group : MK8_MENU_CONTROLS;
+        Mk8Setting *v=i==MK8_MENU_THEME ? &next[group][0] : &next[group][sizes[group]++];
+        if(o) fields[i]=v;
+        v->id=i;
+        v->enabled=!o || mk8_menu_option_enabled(i,main_menu);
+        if(!o) {
+            int slot=mk8_menu_bind_order[i-BINDING]; v->id=BINDING+mapping_device*BIND_KEY_COUNT+slot; v->kind=SETTING_BINDING;
             snprintf(v->label,sizeof v->label,"%s",bind_input_name(slot));
             if(capturing && cd==mapping_device && cs==slot) snprintf(v->value,sizeof v->value,"Press %s... %d",mapping_device==BIND_DEV_PAD ? "a button" : "a key",(ms+999)/1000);
             else snprintf(v->value,sizeof v->value,"%s",mapping_device==BIND_DEV_PAD ? bind_pad_label(g_bind_pad[slot],family) : bind_key_label(g_bind_key[slot]));
-            snprintf(v->help,sizeof v->help,"Conflicting bindings swap positions.");
+            snprintf(v->help,sizeof v->help,"%s binding. Conflicts swap.",
+                     bind_is_default_slot(mapping_device,slot) ? "Default" : "Custom");
             continue;
         }
-        const Option *o=&options[v->id];
         snprintf(v->label,sizeof v->label,"%s",o->label); snprintf(v->help,sizeof v->help,"%s",o->help);
         if(v->id==SHADERS) {
             AheadStatus a=shader_ahead_status(); v->kind=SETTING_INFO; v->enabled=false;
             snprintf(v->value,sizeof v->value,a.state==2 ? "Prepared" : a.state==1 ? "Preparing (%d)" : "Starts with the game",a.items);
-        } else if(v->id==5) {
+        } else if(v->id==MK8_MENU_UPSCALER) {
             Mk8Upscalers list=mk8_upscaler_choices(g_settings.upscaler);
             v->maximum=list.count-1; v->current=list.selected;
             snprintf(v->value,sizeof v->value,"%s",list.names[list.selected]);
             if (list.count>2) snprintf(v->help,sizeof v->help,"Reopen game to load a new provider.");
         } else if(v->id==VOLUME) {
-            v->kind=SETTING_NUMBER; v->current=(int)lroundf(g_settings.volume*100); v->maximum=200;
+            v->kind=SETTING_NUMBER; v->current=mk8_settings_volume_percent(); v->minimum=MK8_VOLUME_MIN; v->maximum=MK8_VOLUME_MAX;
             snprintf(v->value,sizeof v->value,"%d%%",v->current);
+        } else if(v->id==DEVICE) {
+            v->current=mapping_device; v->maximum=1;
+            if (*device) snprintf(v->help,sizeof v->help,"%s",device);
+            snprintf(v->value,sizeof v->value,"%s",mapping_device==BIND_DEV_PAD ? "Controller" : "Keyboard");
         } else if(v->id==RESET) {
             v->kind=SETTING_RESET; snprintf(v->value,sizeof v->value,"Restore defaults");
         } else if(o->toggle) {
             v->maximum=1; v->current=*o->toggle; snprintf(v->value,sizeof v->value,*o->toggle ? "On" : "Off");
         } else {
-            v->maximum=o->count-1; bool found=false;
-            for(int i=0;i<o->count;i++) if(*o->choice==(o->values ? o->values[i] : i)) { v->current=i; snprintf(v->value,sizeof v->value,"%s",o->names[i]); found=true; }
-            if(!found) snprintf(v->value,sizeof v->value,"Custom (%d)",*o->choice);
+            int index=mk8_menu_choice_index(v->id);
+            v->maximum=o->count-1;
+            if(index>=0) { v->current=index; snprintf(v->value,sizeof v->value,"%s",o->names[index]); }
+            else snprintf(v->value,sizeof v->value,"Custom (%d)",*o->choice);
         }
-        if(needs_main_menu(v->id) && !main_menu) {
-            v->enabled=false; snprintf(v->help,sizeof v->help,"Exit the race to modify.");
+        if (v->id==MK8_MENU_RESOLUTION && opened) {
+            float sx,sy; renderer_get_scale(&sx,&sy);
+            if (g_settings.res_mode==RES_DYNAMIC)
+                snprintf(v->help,sizeof v->help,"Rendering %.0fx%.0f (%.0f%%).",1920.f*sx,1080.f*sy,100.0*output_scale_dynamic_factor());
+            else snprintf(v->help,sizeof v->help,"Rendering %.0fx%.0f.",1920.f*sx,1080.f*sy);
+        }
+        if(!v->enabled && o->availability==MK8_MENU_ON_RESTART) {
+            snprintf(v->help,sizeof v->help,"Exit the race to modify.");
         }
     }
+    for (unsigned i=0;i<sizeof mk8_menu_quick/sizeof *mk8_menu_quick;i++)
+        next[SETTINGS_QUICK][sizes[SETTINGS_QUICK]++]=*fields[mk8_menu_quick[i].id];
     pthread_mutex_lock(&lock);
     if(memcmp(cached,next,sizeof cached) || memcmp(counts,sizes,sizeof counts)) { memcpy(cached,next,sizeof cached); memcpy(counts,sizes,sizeof counts); revision++; }
     pthread_mutex_unlock(&lock);

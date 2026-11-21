@@ -16,6 +16,18 @@ import settings_menu
 
 
 class SettingsMenuTests(unittest.TestCase):
+    def test_changing_an_included_menu_fragment_invalidates_the_host_build(self):
+        from host import prepared_headers
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Path(folder)
+            ui = runtime / 'ui'
+            ui.mkdir()
+            fragment = ui / 'menu_controls.inc'
+            fragment.write_text('first', encoding='utf-8')
+            first = prepared_headers(runtime)
+            fragment.write_text('second', encoding='utf-8')
+            self.assertNotEqual(first, prepared_headers(runtime))
+
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
     def test_light_palette_has_readable_text_and_selected_rows(self):
         menu = (ROOT / 'upstream/smm2recomp/recomp/runtime/ui/menu.mm').read_text(encoding='utf-8')
@@ -23,7 +35,7 @@ class SettingsMenuTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / 'palette.cpp'
-            source.write_text('#include "imgui.h"\n#include <math.h>\n#include <assert.h>\n'
+            source.write_text('#include "imgui.h"\n#include <initializer_list>\n#include <math.h>\n#include <assert.h>\n'
                               'static bool hub, native_settings;\n'
                               'static bool mk8_hub_enabled() { return hub; }\n'
                               'extern "C" bool mk8_settings_style_active() { return native_settings; }\n' + palette + '\n' +
@@ -41,6 +53,15 @@ int main() {
     assert(contrast(p.text_dim,p.child)>4.5f && contrast(p.accent,p.window)>4.5f);
     assert(p.hover.x>.9f && p.hover.y>.7f && p.hover.z<.2f);
     assert(!p.row_notch && p.window_round>0);
+    for (bool nes : { false, true }) {
+        base.row_notch=nes ? 4 : 0; base.window_round=nes ? 0 : 14;
+        ThemePalette v=mk8_light_palette(base,nes);
+        assert(light(v.window)>.8f && v.row_notch==base.row_notch && v.window_round==base.window_round);
+        for (ImVec4 bg : {v.window,v.child,v.frame,v.button,v.hover,v.active,v.pressed,v.tab_selected}) {
+            assert(contrast(v.text,bg)>4.5f && contrast(v.muted,bg)>4.5f && contrast(v.accent,bg)>4.5f);
+        }
+        assert(contrast(v.accent_dim,v.frame)>3);
+    }
 }
 ''', encoding='utf-8')
             exe = root / 'palette.exe'
@@ -98,6 +119,7 @@ uint8_t memory[4096];
 static int constructions, openings, hovers;
 bool mk8_settings_top_event(uint64_t, uint64_t);
 uint64_t mk8_settings_navigation(uint64_t, uint64_t, uint64_t);
+bool mk8_settings_layout_available(void) { return getenv("TEST_LAYOUT")!=NULL; }
 void settings_menu_reset(void);
 void mk8_settings_button_build(uint64_t page) { assert(page==HEAP_BASE); constructions++; }
 void mk8_settings_button_hover(uint64_t page, unsigned instant) { assert(page==HEAP_BASE && !instant); hovers++; }
@@ -109,8 +131,7 @@ int main(int argc, char **argv) {
     if (argc>1 && !strcmp(argv[1],"bad-page")) page=GUEST_HI-8;
     if (argc>1 && !strcmp(argv[1],"bad-event")) event=GUEST_HI-8;
     if (argc>1) { mk8_settings_top_event(page,event); return 99; }
-    const char *flag=getenv("MK8_SETTINGS_EXPERIMENT");
-    bool on=flag && !strcmp(flag,"1");
+    bool on=mk8_settings_layout_available();
     assert(!mk8_settings_top_event(page,0));
     assert(constructions==(int)on);
     const uint64_t handled=1ull<<32, owner=page+0x420;
@@ -155,9 +176,10 @@ int main(int argc, char **argv) {
             env.pop('MK8_SETTINGS_EXPERIMENT', None)
             for value in (None, '0', '1x', '1'):
                 current = env if value is None else dict(env, MK8_SETTINGS_EXPERIMENT=value)
-                subprocess.run([str(exe)], env=current, check=True, timeout=10)
+                for sample in (current, dict(current, TEST_LAYOUT='1')):
+                    subprocess.run([str(exe)], env=sample, check=True, timeout=10)
             for invalid in ('bad-event', 'bad-page'):
-                result = subprocess.run([str(exe), invalid], env=dict(env, MK8_SETTINGS_EXPERIMENT='1'),
+                result = subprocess.run([str(exe), invalid], env=dict(env, TEST_LAYOUT='1'),
                                         capture_output=True, timeout=10)
                 self.assertNotIn(result.returncode, (0, 99))
 

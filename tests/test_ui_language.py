@@ -39,7 +39,7 @@ class UiLanguageTest(unittest.TestCase):
         import re
         hub = (ROOT / 'runtime/mk8/ui/hub.h').read_text(encoding='utf-8')
         accented = [line.strip() for line in hub.splitlines()
-                    if re.search(r'"[^"]*[ãçéáíóúõêâ][^"]*"', line) and 'hub_text(' not in line
+                    if re.search(r'"[^"]*[ãçéáíóúõêâ][^"]*"', line) and not re.search(r'\b(?:hub_text|tr)\(', line)
                     and not line.strip().startswith('"')]
         self.assertEqual(accented, [])
 

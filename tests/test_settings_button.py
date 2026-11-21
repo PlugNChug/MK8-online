@@ -50,6 +50,7 @@ uint64_t test_read(uint64_t p) {
 }
 Cpu *kernel_current_cpu(void) { return &cpu; }
 void mk8_settings_button_build(uint64_t);
+bool mk8_settings_button_decided(uint64_t);
 void mk8_settings_button_restore(uint64_t);
 void mk8_settings_button_hover(uint64_t,unsigned);
 void guest_call(Cpu *c, uint64_t address) {
@@ -76,8 +77,10 @@ void guest_call(Cpu *c, uint64_t address) {
         assert(c->x[0]==widget+0x30 && LD32(widget+0x48)==107);
         assert(!strcmp((char *)(uintptr_t)LD64(c->x[1]+8),"T_Btn_00")); c->x[0]=text;
     } else if(address==0x70008adc54ull) {
-        static const uint16_t expected[]={'S','e','t','t','i','n','g','s',0};
+        static const uint16_t expected[]={'M','e','n','u',0};
         assert(c->x[0]==text && !memcmp((void *)(uintptr_t)c->x[1],expected,sizeof expected));
+    } else if(address==0x7000435cc0ull) {
+        assert(c->x[0]==widget); c->x[0]=1;
     } else if(address==0x7000435d2cull) {
         assert(c->x[0]==widget && c->x[1]==0xffffffffu);
         assert(LD8(widget+0x3ca)==0);
@@ -118,6 +121,7 @@ int main(int argc, char **argv) {
     uint64_t result=LD64(nav+0x18);
     assert(LD64(result)==111 && LD64(result+8)==222 && LD64(result+88)==widget+0x30);
     assert(LD8(widget+0x3ca)==1 && LD32(widget+0x48)==107);
+    assert(mk8_settings_button_decided(page) && !memcmp(&saved,&cpu,sizeof cpu));
     unsigned before=calls;
     mk8_settings_button_restore(page);
     assert(calls==before+4 && !memcmp(&saved,&cpu,sizeof cpu) && LD8(widget+0x3ca)==1);

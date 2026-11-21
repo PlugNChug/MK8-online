@@ -1,5 +1,6 @@
 // Included in the verified nextendo.c build copy to keep OAuth secrets private.
 #include "mk8_social.h"
+#include "../ui/menu_nextendo.h"
 
 static pthread_mutex_t social_lock = PTHREAD_MUTEX_INITIALIZER;
 static Mk8Social social;
@@ -8,22 +9,7 @@ static bool social_running;
 static time_t social_attempt;
 
 static void social_error(char *out, size_t cap, int status) {
-    const char *message = status == 401 ? mk8_ui_text("Sessão expirada. Entre novamente na conta.",
-                                                      "Session expired. Sign in to your account again.",
-                                                      "Sesión caducada. Vuelve a iniciar sesión en tu cuenta.") :
-        status == 403 ? mk8_ui_text("Permissão social indisponível. Autorize friends no aplicativo Nextendo.",
-                                    "Social permission unavailable. Authorize friends in the Nextendo app.",
-                                    "Permiso social no disponible. Autoriza friends en la aplicación Nextendo.") :
-        status == 429 ? mk8_ui_text("Limite do serviço. Aguarde antes de atualizar.",
-                                    "Service limit reached. Wait before refreshing.",
-                                    "Límite del servicio. Espera antes de actualizar.") :
-        status == 200 ? mk8_ui_text("Resposta do serviço em formato inesperado.",
-                                    "The service answered in an unexpected format.",
-                                    "Respuesta del servicio en un formato inesperado.") :
-        mk8_ui_text("Não foi possível consultar o serviço. Tente atualizar.",
-                    "Could not reach the service. Try refreshing.",
-                    "No se pudo consultar el servicio. Intenta actualizar.");
-    snprintf(out,cap,"%s",message);
+    snprintf(out,cap,"%s",mk8_nx_service_error(mk8_menu_language(),status));
 }
 
 static bool social_friends(Json *root, Mk8Social *out) {
@@ -56,12 +42,13 @@ static bool social_lobby(Json *root, Mk8Social *out) {
     Json *lobby=json_get(root,"lobby"), *id=json_get(lobby,"id");
     double count=json_num(json_get(lobby,"count"),-1), max=json_num(json_get(lobby,"max"),-1);
     if (!id || count<0 || max<1 || max>64 || count>max || count!=(int)count || max!=(int)max) return false;
-    if (id->type==JSON_STR && id->str[0]) snprintf(out->lobby_id,sizeof out->lobby_id,"%s",id->str);
+    if (id->type==JSON_STR && id->str[0] && strlen(id->str)<sizeof out->lobby_id)
+        snprintf(out->lobby_id,sizeof out->lobby_id,"%s",id->str);
     else if (id->type==JSON_NUM && id->num>=0 && id->num<=9007199254740991.0 && (double)(uint64_t)id->num==id->num)
         snprintf(out->lobby_id,sizeof out->lobby_id,"%llu",(unsigned long long)id->num);
     else return false;
     out->players=(int)count; out->capacity=(int)max;
-    snprintf(out->lobby_mode,sizeof out->lobby_mode,"%s",json_str(json_get(lobby,"mode"),"Modo não informado"));
+    snprintf(out->lobby_mode,sizeof out->lobby_mode,"%s",json_str(json_get(lobby,"mode"),mk8_menu_text(mk8_menu_language(), "Unknown mode", "Modo não informado", "Modo desconocido")));
     return true;
 }
 
@@ -90,10 +77,10 @@ static bool social_listings(Json *root, Mk8Social *out) {
         if (count<0 || max<1 || max>64 || count>max || count!=(int)count || max!=(int)max) return false;
         Mk8Lobby *room=&out->lobbies[out->lobby_count++];
         room->count=(int)count; room->capacity=(int)max;
-        snprintf(room->mode,sizeof room->mode,"%s",json_str(json_get(entry,"mode"),"Modo não informado"));
+        snprintf(room->mode,sizeof room->mode,"%s",json_str(json_get(entry,"mode"),mk8_menu_text(mk8_menu_language(), "Unknown mode", "Modo não informado", "Modo desconocido")));
         snprintf(room->kind,sizeof room->kind,"%s",json_str(json_get(entry,"kind"),""));
-        snprintf(room->state,sizeof room->state,"%s",json_str(json_get(entry,"state"),"Não informado"));
-        if (id && id->type==JSON_STR) snprintf(room->id,sizeof room->id,"%s",id->str);
+        snprintf(room->state,sizeof room->state,"%s",json_str(json_get(entry,"state"),mk8_menu_text(mk8_menu_language(), "Unknown", "Não informado", "Desconocido")));
+        if (id && id->type==JSON_STR && strlen(id->str)<sizeof room->id) snprintf(room->id,sizeof room->id,"%s",id->str);
         else if (id && id->type==JSON_NUM && id->num>=0 && id->num<=9007199254740991.0 && (double)(uint64_t)id->num==id->num)
             snprintf(room->id,sizeof room->id,"%llu",(unsigned long long)id->num);
         // The display index must never be used as a NEX gathering ID.

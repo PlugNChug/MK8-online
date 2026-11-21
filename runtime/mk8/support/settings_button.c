@@ -71,19 +71,15 @@ void mk8_settings_button_build(uint64_t page) {
     memcpy((void *)(uintptr_t)(scratch+32), "T_Btn_00", 9);
     uint64_t text = invoke(c, 0x70008ad8e8ull, widget+0x30, scratch, 0, 0, 0);
     if (!text) FATAL("[mk8:settings] Settings label missing\n");
-    static const uint16_t label[] = {'S','e','t','t','i','n','g','s',0};
+    static const uint16_t label[] = {'M','e','n','u',0};
     memcpy((void *)(uintptr_t)(scratch+64), label, sizeof label);
     invoke(c, 0x70008adc54ull, text, scratch+64, 0, 0, 0);
     LOG("[mk8:settings] native widget created: id=107 page=%llx widget=%llx\n", page, widget);
     *c = saved;
 }
 
-// Return on the guest UI thread using the native button/navigation reset routines.
-void mk8_settings_button_restore(uint64_t page) {
+static uint64_t wrench_widget(uint64_t page) {
     heap(page, 0x700);
-    Cpu *c = kernel_current_cpu();
-    if (!c) FATAL("[mk8:settings] invalid return context\n");
-    Cpu saved = *c;
     uint64_t navigation = LD64(page+0x1b0);
     heap(navigation, 0xb8);
     if (LD32(navigation+0x10) != 12) FATAL("[mk8:settings] navigation changed before return\n");
@@ -94,6 +90,23 @@ void mk8_settings_button_restore(uint64_t page) {
     uint64_t widget = component-0x30;
     heap(widget, 0x3d8);
     if (LD32(widget+0x48) != 107) FATAL("[mk8:settings] Settings return widget changed\n");
+    return widget;
+}
+
+bool mk8_settings_button_decided(uint64_t page) {
+    Cpu *c=kernel_current_cpu();
+    if (!c) FATAL("[mk8:settings] invalid confirmation context\n");
+    Cpu saved=*c;
+    bool done=invoke(c,0x7000435cc0ull,wrench_widget(page),0,0,0,0)!=0;
+    *c=saved; return done;
+}
+
+// Return on the guest UI thread using the native button/navigation reset routines.
+void mk8_settings_button_restore(uint64_t page) {
+    Cpu *c = kernel_current_cpu();
+    if (!c) FATAL("[mk8:settings] invalid return context\n");
+    Cpu saved = *c;
+    uint64_t widget=wrench_widget(page), navigation=LD64(page+0x1b0);
     if (LD32(page+0x120) != 4) FATAL("[mk8:settings] top menu left before pop-up return\n");
     uint8_t sound = LD8(widget+0x3ca);
     if (sound > 1) FATAL("[mk8:settings] native button sound flag changed\n");

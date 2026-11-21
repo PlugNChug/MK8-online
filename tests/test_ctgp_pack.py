@@ -569,6 +569,7 @@ bool plat_exe_path(char *out, size_t size) {
     if (!prepared || size < sizeof path) return false;
     memcpy(out,path,sizeof path); return true;
 }
+bool mk8_settings_layout_available(void);
 bool mk8_controller_layout_available(void);
 const char *mk8_romfs_overlay_from(const char *value);
 const char *game_romfs_overlay(void);
@@ -585,14 +586,15 @@ int main(int argc, char **argv) {
     _putenv_s("MK8_ROMFS_OVERLAY", "");
     if (game_romfs_overlay()) return 6;
     settings = "combined-settings";
-    if (strcmp(game_romfs_overlay(), settings)) return 7;
+    if (strcmp(game_romfs_overlay(), settings) || !mk8_settings_layout_available()) return 7;
     _putenv_s("MK8_ROMFS_OVERLAY", argv[1]);
     _putenv_s("MK8_SETTINGS_ROMFS", settings);
     char expected[8192]; snprintf(expected, sizeof expected, "%s\n%s", argv[1], settings);
     if (strcmp(game_romfs_overlay(), expected) || fatal_calls) return 8;
     _putenv_s("MK8_SETTINGS_ROMFS", "");
-    game_romfs_overlay();
-    if (fatal_calls != 1) return 9;
+    if (strcmp(game_romfs_overlay(),expected) || !mk8_settings_layout_available()) return 9;
+    _putenv_s("MK8_ROMFS_OVERLAY", "custom-pack");
+    if (strcmp(game_romfs_overlay(),"custom-pack") || mk8_settings_layout_available()) return 14;
     settings=NULL; prepared=true; fatal_calls=0;
     _putenv_s("MK8_ROMFS_OVERLAY", "");
     _putenv_s("RECOMP_MOD_DIR", "");

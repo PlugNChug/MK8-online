@@ -88,11 +88,20 @@ def prepare(runtime):
     edit('ui/online_rows.mm', 'extern "C" bool online_rows_available(void) { return true; }',
          'extern "C" bool mk8_nextendo_enabled(void);\nextern "C" bool online_rows_available(void) { return mk8_nextendo_enabled(); }')
     edit('ui/online_rows.mm', '    opt_section("Online");',
-         '    if (!mk8_nextendo_enabled()) return;\n    opt_section("Nextendo - experimental / session only");')
+         '    if (!mk8_nextendo_enabled()) return;\n    opt_heading("Nextendo");')
     edit('ui/online_rows.mm', '    if (e && *e == \'1\' && !nextendo_signed_in()) sign_in();',
          '    if (mk8_nextendo_enabled() && e && *e == \'1\' && !nextendo_signed_in()) sign_in();')
-    edit('ui/online_rows.mm', 'it "\n             "keeps a sign-in token for this device.',
-         'the launcher remembers "\n             "this sign-in while it is open.')
+    edit('ui/online_rows.mm', '''    static char ad[400];
+    snprintf(ad, sizeof ad, "%s%sSign in on nextendo.network in your browser. The game never sees your password; it "
+             "keeps a sign-in token for this device.", st.state == NX_ERROR ? st.message : "",
+             st.state == NX_ERROR && st.message[0] ? "\\n\\n" : "");''', '''    const auto language=mk8_menu_language();
+    const char *ad=mk8_menu_text(language,"Sign in through your browser","Faça login pelo navegador","Inicia sesión en el navegador");
+    if (st.state==NX_SIGNED_IN)
+        ad=mk8_menu_text(language,"Your Nextendo username","Seu nome de usuário no Nextendo","Tu nombre de usuario en Nextendo");
+    else if (st.state==NX_WAITING_BROWSER)
+        ad=mk8_menu_text(language,"Finish signing in through your browser","Conclua o login no navegador","Completa el acceso en el navegador");
+    else if (st.state==NX_ERROR && st.message[0]) ad=st.message;''')
+    edit('ui/online_rows.mm', '#include "option_rows.h"', '#include "option_rows.h"\n#include "menu_language.h"')
     edit('ui/online_rows.mm', '    if (st.state == NX_SIGNED_IN &&', '''    if (st.state == NX_WAITING_BROWSER && opt_action("Cancel sign-in", "Cancel", "Close the local login listener."))
         nextendo_sign_out();
     if (st.state == NX_SIGNED_IN &&''')
