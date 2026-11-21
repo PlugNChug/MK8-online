@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Menu do jogo no Windows
+
+F1, Home e a chave inglesa do menu principal abrem o tema escolhido no launcher. Perfis novos usam Nativo. Os temas Simples escuro, Simples claro, NES escuro e NES claro compartilham os ajustes com o Nativo. O idioma acompanha o launcher. No tema Nativo, a lista de salas abre os detalhes e mantém a seleção ao voltar.
+
+Perfis existentes mantêm a aparência e os valores salvos. O launcher reconhece builds anteriores da 0.5.0 que precisam ser recompiladas para oferecer os cinco temas. A distribuição Linux segue a revisão própria descrita abaixo.
+
+Na build isolada, F1 abriu o tema Nativo e o volume passou de 145% para 150%. Após reiniciar o jogo, a chave inglesa mostrou 150%. Passaram os 26 testes de launcher, navegador e ciclo de vida do jogo e os 32 testes de preparação, DLC, empacotamento e runtime do Windows.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
