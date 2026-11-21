@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'toolchain'))
-from host import DEPS
+from host import DEPS, prepare_host_sources
 from native import DEFAULT_COMPILER, compiler_env
 
 
@@ -16,9 +16,15 @@ from native import DEFAULT_COMPILER, compiler_env
 class SteamGamepadTests(unittest.TestCase):
     def test_two_controllers_hotplug_and_native_precedence(self):
         with tempfile.TemporaryDirectory() as folder:
-            exe = Path(folder) / 'test.exe'
+            out = Path(folder)
+            runtime = prepare_host_sources(ROOT / 'upstream/smm2recomp/recomp', out / 'host')
+            source = (runtime / 'hle/input.c').read_text(encoding='utf-8')
+            start = source.index('static void mk8_open_gamepad(SDL_JoystickID id) {')
+            end = source.index('void input_handle_event(', start)
+            (out / 'slots.inc').write_text(source[start:end], encoding='utf-8')
+            exe = out / 'test.exe'
             subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-UNDEBUG',
-                            '-I' + str(DEPS / 'include'), '-I' + str(ROOT / 'runtime/mk8/support'),
+                            '-I' + str(out), '-I' + str(DEPS / 'include'), '-I' + str(ROOT / 'runtime/mk8/support'),
                             ROOT / 'tests/steam_gamepads_harness.c', DEPS / 'lib/libSDL3.dll.a', '-o', exe],
                            env=compiler_env(), check=True)
             env = dict(os.environ, PATH=str(DEPS / 'bin') + os.pathsep + os.environ['PATH'],

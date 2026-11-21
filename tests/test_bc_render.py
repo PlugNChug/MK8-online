@@ -20,8 +20,13 @@ class BcRenderTests(unittest.TestCase):
             out = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out)
             execute = (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8')
-            for _, new in (bc_render.TARGET, bc_render.EXTENT, bc_render.END_PASS):
+            for _, new in (bc_render.TARGET, bc_render.EXTENT):
                 self.assertIn(new, execute)
+            # The temporal renderer may capture depth between ending the render
+            # pass and copying the colour blocks. Both commands must be outside it.
+            closing = execute.split('static void vk_end_pass_at(int line) {', 1)[1].split('\n}', 1)[0]
+            self.assertLess(closing.index('vkCmdEndRendering(vk_cmd());'), closing.index('in_pass = false;'))
+            self.assertLess(closing.index('in_pass = false;'), closing.index('mk8_bc_copy_back(vk_cmd());'))
             start = execute.index('// MK8 (toolchain/bc_render.py): colour targets')
             helpers = execute[start:execute.index('static void vk_end_pass_at(int line) {', start)]
             source = out/'bc.c'

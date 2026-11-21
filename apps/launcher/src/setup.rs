@@ -73,6 +73,22 @@ impl State {
     }
 }
 
+/// The message of the last Python exception a failed step printed (`ValueError: DLC: ...`),
+/// so the launcher shows why a step failed and not only its exit code (issue #79).
+fn python_error(log: &str) -> Option<String> {
+    let line = log.lines().rev().find(|line| {
+        line.split_once(": ").is_some_and(|(kind, _)| {
+            !kind.is_empty()
+                && kind
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+                && (kind.ends_with("Error") || kind.ends_with("Exception"))
+        })
+    })?;
+    let message = line.split_once(": ")?.1.trim();
+    (!message.is_empty()).then(|| message.chars().take(400).collect())
+}
+
 pub struct Setup {
     steps: Vec<Step>,
     clean_after_setup: bool,
@@ -281,8 +297,13 @@ impl Setup {
                 let total = self.steps.len();
                 if !exit.success() {
                     let name = self.steps[self.current].name.clone();
+                    let reason = std::fs::read(&self.log)
+                        .ok()
+                        .and_then(|log| python_error(&String::from_utf8_lossy(&log)))
+                        .map(|reason| format!(" {reason}"))
+                        .unwrap_or_default();
                     self.fail(format!(
-                        "Etapa {}/{total} ({name}) falhou ({exit}). Consulte o log, corrija e tente de novo.",
+                        "Etapa {}/{total} ({name}) falhou ({exit}).{reason} Consulte o log, corrija e tente de novo.",
                         self.current + 1
                     ));
                     return true;
@@ -644,6 +665,31 @@ mod tests {
         assert_eq!(status["steps"][2]["state"], "pending");
         assert!(status["detail"].as_str().unwrap().contains("2/3"));
         assert!(!fs::read_to_string(&log).unwrap().contains("tres"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_step_shows_the_python_error_message() {
+        let log = temp("python-error");
+        let mut setup = Setup::default();
+        let step = Step::new(
+            "dlc",
+            "cmd.exe",
+            &[
+                &"/C",
+                &"echo Traceback (most recent call last):& echo ValueError: DLC: ticket ausente ou incompatível.& exit 1",
+            ],
+        );
+        setup.start(vec![step], &log).unwrap();
+        wait(&mut setup);
+        let detail = setup.status()["detail"].as_str().unwrap().to_owned();
+        assert!(detail.contains("DLC: ticket ausente"), "{detail}");
+        assert!(!detail.contains("ValueError"), "{detail}");
+        assert_eq!(
+            python_error("x\nsubprocess.CalledProcessError: Command 'a' returned 1.\n").as_deref(),
+            Some("Command 'a' returned 1.")
+        );
+        assert_eq!(python_error("== Etapa 1/1: dlc ==\nexit: 1\n"), None);
     }
 
     #[test]

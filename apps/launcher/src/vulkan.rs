@@ -281,3 +281,170 @@ mod tests {
         assert_eq!(check(&mut record), 0);
     }
 }
+
+/// A Vulkan physical device, reduced to what the FSR page needs.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GpuInfo {
+    pub api_version: u32,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub device_type: u32,
+    pub device_name: String,
+}
+
+impl GpuInfo {
+    /// AMD's native FSR 4 path is gated to RDNA 4. The shipped Windows DLLs
+    /// also hide 4.1.2 on other hardware. Device names are the only stable
+    /// signal exposed by both AMD's Windows driver and RADV.
+    pub fn is_amd_rdna4(&self) -> bool {
+        let name = self.device_name.to_ascii_lowercase();
+        self.vendor_id == 0x1002
+            && ["rx 9", "radeon 9", "rdna 4", "gfx12"]
+                .iter()
+                .any(|marker| name.contains(marker))
+    }
+}
+
+#[repr(C)]
+struct VkApplicationInfo {
+    s_type: u32,
+    p_next: *const std::ffi::c_void,
+    p_application_name: *const std::ffi::c_char,
+    application_version: u32,
+    p_engine_name: *const std::ffi::c_char,
+    engine_version: u32,
+    api_version: u32,
+}
+
+#[repr(C)]
+struct VkInstanceCreateInfo {
+    s_type: u32,
+    p_next: *const std::ffi::c_void,
+    flags: u32,
+    p_application_info: *const VkApplicationInfo,
+    enabled_layer_count: u32,
+    pp_enabled_layer_names: *const *const std::ffi::c_char,
+    enabled_extension_count: u32,
+    pp_enabled_extension_names: *const *const std::ffi::c_char,
+}
+
+#[repr(C, align(8))]
+struct VkPhysicalDevicePropertiesRaw {
+    bytes: [u8; 1024],
+}
+
+pub(crate) fn probe_gpu() -> Result<GpuInfo> {
+    use std::ffi::c_void;
+    unsafe {
+        let loader = libloading::os::windows::Library::load_with_flags(
+            "vulkan-1.dll",
+            windows_sys::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_SYSTEM32,
+        )
+        .map(libloading::Library::from)
+        .map_err(|error| format!("Vulkan indisponível: {error}"))?;
+        let create: libloading::Symbol<
+            unsafe extern "system" fn(
+                *const VkInstanceCreateInfo,
+                *const c_void,
+                *mut *mut c_void,
+            ) -> i32,
+        > = loader
+            .get(b"vkCreateInstance\0")
+            .map_err(|error| error.to_string())?;
+        let enumerate: libloading::Symbol<
+            unsafe extern "system" fn(*mut c_void, *mut u32, *mut *mut c_void) -> i32,
+        > = loader
+            .get(b"vkEnumeratePhysicalDevices\0")
+            .map_err(|error| error.to_string())?;
+        let properties: libloading::Symbol<
+            unsafe extern "system" fn(*mut c_void, *mut VkPhysicalDevicePropertiesRaw),
+        > = loader
+            .get(b"vkGetPhysicalDeviceProperties\0")
+            .map_err(|error| error.to_string())?;
+        let destroy: libloading::Symbol<unsafe extern "system" fn(*mut c_void, *const c_void)> =
+            loader
+                .get(b"vkDestroyInstance\0")
+                .map_err(|error| error.to_string())?;
+        let app_name = b"MK8-online\0";
+        let app = VkApplicationInfo {
+            s_type: 0,
+            p_next: std::ptr::null(),
+            p_application_name: app_name.as_ptr().cast(),
+            application_version: 0,
+            p_engine_name: std::ptr::null(),
+            engine_version: 0,
+            api_version: 1 << 22,
+        };
+        let create_info = VkInstanceCreateInfo {
+            s_type: 1,
+            p_next: std::ptr::null(),
+            flags: 0,
+            p_application_info: &app,
+            enabled_layer_count: 0,
+            pp_enabled_layer_names: std::ptr::null(),
+            enabled_extension_count: 0,
+            pp_enabled_extension_names: std::ptr::null(),
+        };
+        let mut instance = std::ptr::null_mut();
+        let rc = create(&create_info, std::ptr::null(), &mut instance);
+        if rc != 0 || instance.is_null() {
+            return Err(format!("vkCreateInstance retornou {rc}."));
+        }
+        let mut count = 0u32;
+        let rc = enumerate(instance, &mut count, std::ptr::null_mut());
+        if rc != 0 || count == 0 {
+            destroy(instance, std::ptr::null());
+            return Err(format!("Nenhum dispositivo Vulkan (código {rc})."));
+        }
+        let mut devices = vec![std::ptr::null_mut(); count as usize];
+        let rc = enumerate(instance, &mut count, devices.as_mut_ptr());
+        if rc != 0 {
+            destroy(instance, std::ptr::null());
+            return Err(format!("vkEnumeratePhysicalDevices retornou {rc}."));
+        }
+        let mut best: Option<(GpuInfo, u8)> = None;
+        let want = std::env::var("LARECOMP_GPU")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok());
+        for (index, device) in devices.into_iter().take(count as usize).enumerate() {
+            let mut raw = VkPhysicalDevicePropertiesRaw { bytes: [0; 1024] };
+            properties(device, &mut raw);
+            let read = |offset: usize| {
+                u32::from_ne_bytes(
+                    raw.bytes[offset..offset + 4]
+                        .try_into()
+                        .expect("quatro bytes"),
+                )
+            };
+            let name_end = raw.bytes[20..276]
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(256);
+            let info = GpuInfo {
+                api_version: read(0),
+                vendor_id: read(8),
+                device_id: read(12),
+                device_type: read(16),
+                device_name: String::from_utf8_lossy(&raw.bytes[20..20 + name_end]).into_owned(),
+            };
+            if info.api_version < (1 << 22 | 3 << 12) {
+                continue;
+            }
+            let rank = if Some(index) == want {
+                100
+            } else {
+                match info.device_type {
+                    2 => 3, // discrete
+                    1 => 2, // integrated
+                    _ => 1,
+                }
+            };
+            if best.as_ref().is_none_or(|(_, current)| rank > *current) {
+                best = Some((info, rank));
+            }
+        }
+        destroy(instance, std::ptr::null());
+        best.map(|(info, _)| info)
+            .ok_or_else(|| "Nenhum dispositivo Vulkan utilizável.".into())
+    }
+}

@@ -360,3 +360,8 @@
   .mii-workshop-footer span { flex-basis: 100%; }
   .mii-workshop-footer button { flex: 1; font-size: .8rem; padding: .65rem; }
 }
+
+.graphics-components { grid-column: 1 / -1; color: var(--muted); }
+.graphics-components small { display:block; }
+.graphics-components pre { max-height:12rem; overflow:auto; white-space:pre-wrap; }
+#graphics-install-row label { display:flex; align-items:center; gap:.5rem; margin:.5rem 0; }

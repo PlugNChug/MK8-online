@@ -164,6 +164,7 @@ static SDL_JoystickID mk8_unique_grip(const struct Mk8Grip *grip) {
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     for (int i=0; i<count; ++i) {
+        if (!real_gamepad(ids[i])) continue;
         SDL_GUID guid = SDL_GetJoystickGUIDForID(ids[i]);
         if (memcmp(&guid, &grip->guid, sizeof guid)) continue;
         SDL_Gamepad *g = SDL_OpenGamepad(ids[i]);
@@ -213,7 +214,7 @@ static void mk8_restore_seat(unsigned p) {
     struct Mk8Grip *grips = mk8_seat_grips[p];
     for (int side=0; side<2 && grips[side].attached; ++side) {
         struct Mk8Grip *grip = &grips[side];
-        SDL_Gamepad *g = SDL_OpenGamepad(grip->attached);
+        SDL_Gamepad *g = real_gamepad(grip->attached) ? SDL_OpenGamepad(grip->attached) : NULL;
         if (!g || !SDL_GamepadConnected(g)) {
             if (g) SDL_CloseGamepad(g);
             SDL_JoystickID id = grip->unique ? mk8_unique_grip(grip) : 0;
@@ -278,6 +279,7 @@ static void mk8_forget_moved_grip(SDL_Gamepad *g) {
 }
 
 static void mk8_route_gamepad(SDL_JoystickID added) {
+    if (!real_gamepad(added)) return;
     // SDL may deliver the replacement ADD before the old REMOVE.
     for (unsigned p=0; p<=EXTRA_PADS; ++p) {
         SDL_Gamepad *g = *mk8_primary_slot(p);

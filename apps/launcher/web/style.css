@@ -209,7 +209,7 @@ pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-ra
 .circuit-lane { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 9; opacity: .6; }
 .circuit-marker { fill: var(--accent); stroke: var(--surface); stroke-width: 4; }
 .circuit-marker.secondary { fill: var(--text); }
-.play-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); padding-bottom: var(--space); gap: 1rem; }
+.play-shortcuts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); padding-bottom: var(--space); gap: 1rem; }
 .play-shortcuts button { text-align: left; border: 0; border-radius: 8px; background: transparent; padding: 1rem; }
 .play-shortcuts button:hover { background: var(--surface); }
 .play-shortcuts span { display: block; font: 600 1.1rem var(--heading); }

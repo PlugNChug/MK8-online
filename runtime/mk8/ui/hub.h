@@ -10,6 +10,22 @@ static bool mk8_hub_enabled() {
     return !value || strcmp(value, "0");
 }
 
+static const char *hub_text(const char *pt, const char *en, const char *es) { return mk8_ui_text(pt, en, es); }
+
+static void mk8_nextendo_start_notice() {
+    static bool checked;
+    if (checked) return;
+    checked = true;
+    const char *mii = getenv("MK8_MII_NAME");
+    char account[64], message[256];
+    if (!mii || !*mii || !nextendo_pid() || net_backend() != NET_BACKEND_NEXTENDO) return;
+    bool named = nextendo_username(account, sizeof account);
+    snprintf(message, sizeof message, "%s%s%s  ·  Mii: %s",
+             hub_text("Jogando via Nextendo", "Playing on Nextendo", "Jugando en Nextendo"),
+             named ? "  ·  " : "", named ? account : "", mii);
+    menu_notice(message, 7);
+}
+
 static void mk8_hub_icon(ImDrawList *d, ImVec2 p, float s, int kind, ImU32 ink) {
     const float t = 2 * s;
     if (kind == 0) {
@@ -90,11 +106,16 @@ static void mk8_hub_draw(float scale) {
         if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1,false) || ImGui::IsKeyPressed(ImGuiKey_Q,false)) page = (page+3)%4;
     }
     const float body_h = ImGui::GetContentRegionAvail().y - 72 * scale;
+    const char *signin_hint = hub_text("No launcher, selecione Jogar no Nextendo e faça login pelo navegador.",
+                                       "In the launcher, select Play on Nextendo and sign in through the browser.",
+                                       "En el launcher, selecciona Jugar en Nextendo e inicia sesión en el navegador.");
+    // Fixed ID: the popup title changes with the language.
+    const char *room_popup = hub_text("Sala Nextendo###hub-room","Nextendo room###hub-room","Sala Nextendo###hub-room");
     NxStatus account; nextendo_status(&account);
     const bool connected = account.state == NX_SIGNED_IN && net_backend() == NET_BACKEND_NEXTENDO;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(10*scale,8*scale));
     ImGui::BeginChild("hub-navigation", ImVec2(fminf(280 * scale,w*.24f),body_h),ImGuiChildFlags_AlwaysUseWindowPadding);
-    const char *tabs[] = {"Jogar", "Nextendo", "Social", "Ajustes"};
+    const char *tabs[] = {hub_text("Jogar","Play","Jugar"), "Nextendo", "Social", hub_text("Ajustes","Settings","Ajustes")};
     for (int i=0; i<4; ++i) {
         ImGui::PushID(i);
         ImGui::PushStyleColor(ImGuiCol_Button,page==i ? style.Colors[ImGuiCol_Header] : ImVec4(0,0,0,0));
@@ -112,8 +133,8 @@ static void mk8_hub_draw(float scale) {
     }
     ImGui::Spacing(); ImGui::Separator();
     ImGui::SetCursorPosY(fmaxf(ImGui::GetCursorPosY(),body_h-180*scale));
-    ImGui::TextColored(connected ? ImVec4(.48f,.82f,.65f,1) : muted,connected ? "Nextendo ativo" : "Sessão local");
-    ImGui::TextWrapped("%s",account.state == NX_SIGNED_IN ? account.username : "Seu piloto");
+    ImGui::TextColored(connected ? ImVec4(.48f,.82f,.65f,1) : muted,connected ? hub_text("Nextendo ativo","Nextendo active","Nextendo activo") : hub_text("Sessão local","Local session","Sesión local"));
+    ImGui::TextWrapped("%s",account.state == NX_SIGNED_IN ? account.username : hub_text("Seu piloto","Your racer","Tu piloto"));
     ImGui::PushTextWrapPos(0);
     ImGui::TextColored(muted,"MK8 Deluxe 4.0.1");
     ImGui::PopTextWrapPos();
@@ -128,40 +149,41 @@ static void mk8_hub_draw(float scale) {
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, reveal);
     ImGui::PushFont(nes_theme() ? menu_font_big() : g_font_big); ImGui::TextUnformatted(tabs[page]); ImGui::PopFont();
     if (page == 0) {
-        ImGui::TextWrapped(connected ? "Para disputar uma corrida no Nextendo, volte ao jogo e selecione Online Play." : "Para jogar online no Nextendo, selecione Jogar no Nextendo ao iniciar pelo launcher.");
+        ImGui::TextWrapped("%s", connected ? hub_text("Para disputar uma corrida no Nextendo, volte ao jogo e selecione Online Play.","To race on Nextendo, return to the game and select Online Play.","Para correr en Nextendo, vuelve al juego y selecciona Online Play.")
+            : hub_text("Para jogar online no Nextendo, selecione Jogar no Nextendo ao iniciar pelo launcher.","To play online on Nextendo, select Play on Nextendo when starting from the launcher.","Para jugar en línea en Nextendo, selecciona Jugar en Nextendo al iniciar desde el launcher."));
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, accent);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.08f,.08f,.08f,1));
-        if (ImGui::Button("Voltar ao jogo", ImVec2(300*scale,64*scale))) set_open(false);
+        if (ImGui::Button(hub_text("Voltar ao jogo","Back to game","Volver al juego"), ImVec2(300*scale,64*scale))) set_open(false);
         ImGui::PopStyleColor(2);
         if (ImGui::GetContentRegionAvail().x > 630*scale) ImGui::SameLine();
-        if (ImGui::Button("Abrir Nextendo", ImVec2(300*scale,64*scale))) page=1;
+        if (ImGui::Button(hub_text("Abrir Nextendo","Open Nextendo","Abrir Nextendo"), ImVec2(300*scale,64*scale))) page=1;
         ImGui::Spacing(); ImGui::Separator();
-        ImGui::TextColored(muted,"Nesta sessão");
-        ImGui::Text("Conta: %s", account.state == NX_SIGNED_IN ? account.username : "sem login Nextendo");
-        ImGui::Text("Conteúdo: %s", getenv("MK8_ROMFS_OVERLAY") && *getenv("MK8_ROMFS_OVERLAY") ? "CTGP / mod local" : "jogo original");
-        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();
-        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();
+        ImGui::TextColored(muted,"%s",hub_text("Nesta sessão","This session","En esta sesión"));
+        ImGui::Text("%s %s", hub_text("Conta:","Account:","Cuenta:"), account.state == NX_SIGNED_IN ? account.username : hub_text("sem login Nextendo","not signed in to Nextendo","sin sesión en Nextendo"));
+        ImGui::Text("%s %s", hub_text("Conteúdo:","Content:","Contenido:"), getenv("MK8_ROMFS_OVERLAY") && *getenv("MK8_ROMFS_OVERLAY") ? hub_text("CTGP / mod local","CTGP / local mod","CTGP / mod local") : hub_text("jogo original","original game","juego original"));
+        if (mk8_mii_menu_available() && ImGui::Button(hub_text("Perfil Mii","Mii profile","Perfil Mii"))) mk8_open_mii_menu();
+        if (mk8_room_menu_available() && ImGui::Button(hub_text("Salas com amigos","Rooms with friends","Salas con amigos"))) mk8_open_room_menu();
     } else if (page == 1 || page == 2) {
         static Mk8Social social_state;
         if (connected) mk8_social_refresh();
         mk8_social_snapshot(&social_state);
-        if (!connected) ImGui::TextWrapped(online_rows_available() ? "Abra Conta Nextendo para consultar sua conexão." : "No launcher, selecione Jogar no Nextendo e faça login pelo navegador.");
-        else if (social_state.busy) ImGui::TextColored(muted,"Atualizando dados do Nextendo...");
-        else ImGui::TextColored(muted,"Dados do serviço. Atualização a cada 30 segundos nesta tela.");
+        if (!connected) ImGui::TextWrapped("%s", online_rows_available() ? hub_text("Abra Conta Nextendo para consultar sua conexão.","Open Nextendo account to check your connection.","Abre Cuenta Nextendo para consultar tu conexión.") : signin_hint);
+        else if (social_state.busy) ImGui::TextColored(muted,"%s",hub_text("Atualizando dados do Nextendo...","Updating Nextendo data...","Actualizando datos de Nextendo..."));
+        else ImGui::TextColored(muted,"%s",hub_text("Dados do serviço. Atualização a cada 30 segundos nesta tela.","Service data. Refreshed every 30 seconds on this screen.","Datos del servicio. Se actualizan cada 30 segundos en esta pantalla."));
         ImGui::Spacing();
         if (page == 1 && connected) {
             if (!social_state.listings_ok) ImGui::TextWrapped("%s",social_state.listings_error);
             else {
-                ImGui::Text("%d jogadores online   |   %d salas",social_state.online_players,social_state.lobby_count);
-                if (!social_state.lobby_count) ImGui::TextUnformatted("Nenhuma sala publicada neste momento.");
+                ImGui::Text(hub_text("%d jogadores online   |   %d salas","%d players online   |   %d rooms","%d jugadores en línea   |   %d salas"),social_state.online_players,social_state.lobby_count);
+                if (!social_state.lobby_count) ImGui::TextUnformatted(hub_text("Nenhuma sala publicada neste momento.","No rooms are published right now.","No hay salas publicadas en este momento."));
                 static Mk8Lobby selected_room;
                 bool details=false;
                 if (social_state.lobby_count && ImGui::BeginTable("live-lobbies",3,
                     ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY,ImVec2(0,210*scale))) {
-                    ImGui::TableSetupColumn("Modo",ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableSetupColumn("Estado",ImGuiTableColumnFlags_WidthFixed,220*scale);
-                    ImGui::TableSetupColumn("Jogadores",ImGuiTableColumnFlags_WidthFixed,180*scale);
+                    ImGui::TableSetupColumn(hub_text("Modo","Mode","Modo"),ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn(hub_text("Estado","State","Estado"),ImGuiTableColumnFlags_WidthFixed,220*scale);
+                    ImGui::TableSetupColumn(hub_text("Jogadores","Players","Jugadores"),ImGuiTableColumnFlags_WidthFixed,180*scale);
                     ImGui::TableHeadersRow();
                     for (int i=0;i<social_state.lobby_count;++i) {
                         const Mk8Lobby &room=social_state.lobbies[i];
@@ -176,59 +198,62 @@ static void mk8_hub_draw(float scale) {
                     }
                     ImGui::EndTable();
                 }
-                if (details) ImGui::OpenPopup("Sala Nextendo");
-                if (ImGui::BeginPopupModal("Sala Nextendo",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
+                if (details) ImGui::OpenPopup(room_popup);
+                if (ImGui::BeginPopupModal(room_popup,nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
                     ImGui::TextUnformatted(selected_room.mode);
-                    ImGui::Text("%d / %d jogadores",selected_room.count,selected_room.capacity);
-                    ImGui::TextUnformatted("Listagem informativa. Para jogar, use Online Play no MK8.");
-                    if (ImGui::Button("Fechar") || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight,false) || ImGui::IsKeyPressed(ImGuiKey_Escape,false)) ImGui::CloseCurrentPopup();
+                    ImGui::Text(hub_text("%d / %d jogadores","%d / %d players","%d / %d jugadores"),selected_room.count,selected_room.capacity);
+                    ImGui::TextUnformatted(hub_text("Listagem informativa. Para jogar, use Online Play no MK8.","Listing for reference only. To play, use Online Play in MK8.","Lista solo informativa. Para jugar, usa Online Play en MK8."));
+                    if (ImGui::Button(hub_text("Fechar","Close","Cerrar")) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight,false) || ImGui::IsKeyPressed(ImGuiKey_Escape,false)) ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
             }
             ImGui::Separator();
             if (!social_state.lobby_ok) ImGui::TextWrapped("%s",social_state.lobby_error);
-            else if (!social_state.in_lobby) ImGui::TextUnformatted("Você ainda não está em uma sala.");
+            else if (!social_state.in_lobby) ImGui::TextUnformatted(hub_text("Você ainda não está em uma sala.","You are not in a room yet.","Todavía no estás en una sala."));
             else {
-                ImGui::TextColored(accent,"Sua sala atual");
-                ImGui::Text("Sala %s",social_state.lobby_id);
+                ImGui::TextColored(accent,"%s",hub_text("Sua sala atual","Your current room","Tu sala actual"));
+                ImGui::Text(hub_text("Sala %s","Room %s","Sala %s"),social_state.lobby_id);
                 ImGui::Text("%s",social_state.lobby_mode);
-                ImGui::Text("Jogadores: %d / %d",social_state.players,social_state.capacity);
+                ImGui::Text(hub_text("Jogadores: %d / %d","Players: %d / %d","Jugadores: %d / %d"),social_state.players,social_state.capacity);
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram,accent);
                 ImGui::ProgressBar((float)social_state.players/social_state.capacity,ImVec2(360*scale,8*scale),"");
                 ImGui::PopStyleColor();
             }
             ImGui::Spacing(); ImGui::Separator();
-            ImGui::TextWrapped("Nextendo conectado: volte ao MK8 e escolha Online Play para encontrar uma corrida. Este painel permite consultar as salas e sua conta.");
+            ImGui::TextWrapped("%s",hub_text("Nextendo conectado: volte ao MK8 e escolha Online Play para encontrar uma corrida. Este painel permite consultar as salas e sua conta.",
+                "Nextendo connected: return to MK8 and choose Online Play to find a race. This panel lets you check the rooms and your account.",
+                "Nextendo conectado: vuelve a MK8 y elige Online Play para encontrar una carrera. Este panel permite consultar las salas y tu cuenta."));
         } else if (page == 2 && connected) {
             if (!social_state.friends_ok) ImGui::TextWrapped("%s",social_state.friends_error);
             else {
-                ImGui::Text("%d amigos   |   %d pedidos recebidos   |   %d enviados",social_state.count,social_state.requests,social_state.sent);
-                if (!social_state.count) ImGui::TextUnformatted("Sua lista de amigos está vazia.");
+                ImGui::Text(hub_text("%d amigos   |   %d pedidos recebidos   |   %d enviados","%d friends   |   %d requests received   |   %d sent","%d amigos   |   %d solicitudes recibidas   |   %d enviadas"),social_state.count,social_state.requests,social_state.sent);
+                if (!social_state.count) ImGui::TextUnformatted(hub_text("Sua lista de amigos está vazia.","Your friend list is empty.","Tu lista de amigos está vacía."));
                 if (ImGui::BeginTable("friends",2,ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY,ImVec2(0,300*scale))) {
-                    ImGui::TableSetupColumn("Piloto",ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableSetupColumn("Presença",ImGuiTableColumnFlags_WidthFixed,260*scale);
+                    ImGui::TableSetupColumn(hub_text("Piloto","Racer","Piloto"),ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn(hub_text("Presença","Presence","Presencia"),ImGuiTableColumnFlags_WidthFixed,260*scale);
                     ImGui::TableHeadersRow();
                     for (int i=0;i<social_state.count;++i) {
                         const Mk8Friend &f=social_state.friends[i];
                         ImGui::TableNextRow(0,72*scale); ImGui::TableSetColumnIndex(0);
                         ImGui::TextUnformatted(f.name);
                         ImGui::TableSetColumnIndex(1);
-                        const char *presence=f.presence==0?"Offline":f.presence==1?"Online":f.presence==2?"Jogando":"Não informada";
+                        const char *presence=f.presence==0?"Offline":f.presence==1?"Online":f.presence==2?hub_text("Jogando","Playing","Jugando"):hub_text("Não informada","Unknown","No informada");
                         ImGui::TextColored(f.presence>0?ImVec4(.48f,.82f,.65f,1):muted,"%s",presence);
                     }
                     ImGui::EndTable();
                 }
-                ImGui::TextWrapped("Convites de corrida e entrada na partida de um amigo ainda não estão integrados ao MK8.");
+                ImGui::TextWrapped("%s",hub_text("Convites de corrida e entrada na partida de um amigo ainda não estão integrados ao MK8.","Race invitations and joining a friend's match are not integrated into MK8 yet.","Las invitaciones a carreras y unirse a la partida de un amigo todavía no están integradas en MK8."));
             }
         }
         ImGui::Spacing();
         if (online_rows_available()) {
-            if (ImGui::Button("Conta Nextendo")) settings_page=4, page=3;
+            if (ImGui::Button(hub_text("Conta Nextendo","Nextendo account","Cuenta Nextendo"))) settings_page=4, page=3;
             ImGui::SameLine();
         }
-        if (ImGui::Button("Voltar ao MK8")) set_open(false);
+        if (ImGui::Button(hub_text("Voltar ao MK8","Back to MK8","Volver a MK8"))) set_open(false);
     } else {
-        const char *groups[] = {"Rápidos", "Vídeo", "Áudio", "Controle", "Conta", "Mods", "Sair"};
+        const char *groups[] = {hub_text("Rápidos","Quick","Rápidos"), hub_text("Vídeo","Video","Vídeo"), hub_text("Áudio","Audio","Audio"),
+                                hub_text("Controle","Controls","Control"), hub_text("Conta","Account","Cuenta"), "Mods", hub_text("Sair","Quit","Salir")};
         for (int i=0;i<7;++i) {
             if (i && ImGui::GetItemRectMax().x + style.ItemSpacing.x + ImGui::CalcTextSize(groups[i]).x + 2*style.FramePadding.x <
                 ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine();
@@ -241,28 +266,30 @@ static void mk8_hub_draw(float scale) {
             ImGui::PopID();
         }
         ImGui::Separator();
-        ImGui::TextColored(muted,"Ajustes reais · salvos ao fechar o painel");
+        ImGui::TextColored(muted,"%s",hub_text("As alterações aparecem também no launcher.","Changes also appear in the launcher.","Los cambios también aparecen en el launcher."));
         if (settings_page == 0) {
-            ImGui::Checkbox("Mostrar FPS", &g_settings.show_fps);
-            ImGui::Checkbox("Mostrar memória utilizada", &g_settings.show_memory);
-            if (ImGui::Checkbox("Tela cheia", &g_settings.fullscreen)) g_want_fullscreen_apply = true;
-            ImGui::Checkbox("Silenciar em segundo plano", &g_settings.mute_in_background);
+            ImGui::Checkbox(hub_text("Mostrar FPS","Show FPS","Mostrar FPS"), &g_settings.show_fps);
+            ImGui::Checkbox(hub_text("Mostrar memória utilizada","Show memory usage","Mostrar memoria utilizada"), &g_settings.show_memory);
+            if (ImGui::Checkbox(hub_text("Tela cheia","Fullscreen","Pantalla completa"), &g_settings.fullscreen)) g_want_fullscreen_apply = true;
+            ImGui::Checkbox(hub_text("Silenciar em segundo plano","Mute in background","Silenciar en segundo plano"), &g_settings.mute_in_background);
             float volume = g_settings.volume * 100;
             ImGui::SetNextItemWidth(400*scale);
-            if (ImGui::SliderFloat("Volume", &volume,0,100,"%.0f%%")) g_settings.volume=volume/100;
-            ImGui::TextWrapped("Vídeo, áudio e controle preservam os ajustes completos do menu atual.");
+            if (ImGui::SliderFloat(hub_text("Volume","Volume","Volumen"), &volume,0,200,"%.0f%%")) g_settings.volume=volume/100;
+            ImGui::TextWrapped("%s",hub_text("Vídeo, áudio e controle preservam os ajustes completos do menu atual.","Video, audio and controls keep the full settings of the current menu.","Vídeo, audio y control conservan los ajustes completos del menú actual."));
         } else if (settings_page == 1) tab_display();
         else if (settings_page == 2) tab_audio();
         else if (settings_page == 3) tab_about();
         else if (settings_page == 5) tab_mods();
         else if (settings_page == 6) tab_quit(scale,true);
         else if (online_rows_available()) tab_online();
-        else ImGui::TextWrapped("No launcher, selecione Jogar no Nextendo e faça login pelo navegador.");
+        else ImGui::TextWrapped("%s", signin_hint);
     }
     ImGui::PopStyleVar();
     ImGui::EndChild();
     ImGui::Separator();
-    ImGui::TextColored(muted,"LB / RB ou Q / E: abas     A: selecionar     B / Esc: voltar ao jogo");
+    ImGui::TextColored(muted,"%s",hub_text("LB / RB ou Q / E: abas     A: selecionar     B / Esc: voltar ao jogo",
+                                        "LB / RB or Q / E: tabs     A: select     B / Esc: back to game",
+                                        "LB / RB o Q / E: pestañas     A: seleccionar     B / Esc: volver al juego"));
     const bool back_used = mods_page_used_back();
     if (!popup && !typing && !ui_text_busy() && !back_used && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
         && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight,false) || ImGui::IsKeyPressed(ImGuiKey_Escape,false))) set_open(false);

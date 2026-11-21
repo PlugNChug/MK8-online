@@ -18,6 +18,11 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'toolchain'))
+from ctgp_pack import BASE_CUPS
+
+# The selector uses different names for the crossover cups and the Lightning Cup.
+CUP_KEYS = {'egg': 'DLC02', 'triforce': 'DLC03', 'crossing': 'DLC04', 'bell': 'DLC05', 'lightning': 'Thunder'}
 CUPS = {
     'mushroom': ('Mario Kart Stadium', 'Water Park', 'Sweet Sweet Canyon', 'Thwomp Ruins'),
     'flower': ('Mario Circuit', 'Toad Harbor', 'Twisted Mansion', 'Shy Guy Falls'),
@@ -80,19 +85,45 @@ def powershell(script, *args):
         path.unlink(missing_ok=True)
 
 
+def capture_courses(log):
+    courses = {}
+    current = None
+    for line in log.splitlines():
+        model = re.match(r'\[fs\] read Course[/\\]([^/\\]+)[/\\]course_model\.', line)
+        if model:
+            current = model[1]
+        shot = re.match(r'\[vk\] saved .*[/\\](frame-\d+\.png) \(', line)
+        if shot:
+            courses[shot[1]] = current
+    return courses
+
+
+def matches_course(cup, index, actual):
+    key = CUP_KEYS.get(cup, cup.capitalize())
+    expected = next(tracks[index][0] for _, name, tracks in BASE_CUPS if name == key)
+    return actual in expected if isinstance(expected, tuple) else actual == expected
+
+
 def run_track(cup, index, args):
     command = [sys.executable, str(ROOT / 'scripts/test-race.py'), 'time-trial', '--cup', cup, '--track', str(index),
                '--last-frame', str(args.last_frame), '--shots', '3', '--shot-step', '500', '--timeout', '420',
                '--cache-from', str(args.cache)]
     for pair in args.env:
         command += ['--env', pair]
+    command += ['--env', 'LARECOMP_LOG_FILES=1']
     done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     session = re.search(r'Test output: (.+)', done.stdout)
-    result = {'cup': cup, 'track': index, 'name': CUPS[cup][index], 'ok': done.returncode == 0,
+    result = {'cup': cup, 'track': index, 'name': CUPS[cup][index], 'ok': False,
               'session': session.group(1).strip() if session else None, 'error': done.stdout[-400:] if done.returncode else None}
     if result['session']:
         session = Path(result['session'])
         log = (session / 'game.log').read_text(encoding='utf-8', errors='replace') if (session / 'game.log').is_file() else ''
+        courses = capture_courses(log)
+        final = f'frame-{args.last_frame:05d}.png'
+        result['course_at_capture'] = courses.get(final)
+        result['ok'] = done.returncode == 0 and (session / final).is_file() and matches_course(cup, index, courses.get(final))
+        if not result['ok'] and not result['error']:
+            result['error'] = f"Pista na captura final: {courses.get(final) or 'sem identificação'}."
         rows = [(int(f), float(fps), int(peak)) for f, fps, peak in PERF.findall(log)]
         race = [row for row in rows if row[0] > 2900]
         result['fps_min'] = min((fps for _, fps, _ in race), default=None)
@@ -130,6 +161,8 @@ def write_report(out, results):
         if any(s['magenta'] > 0.5 for s in shots):
             flags.append('**magenta**')
         state = 'ok' if r['ok'] else 'falhou'
+        if r['ok'] and 'course_at_capture' not in r:
+            state = 'sem confirmação'
         problems = '; '.join(f'{n}× {k}' for k, n in (r.get('problems') or [])[:3]) or '—'
         lines.append(f"| {r['cup']} | {r['track'] + 1} | {r['name']} | {state} {' '.join(flags)} | "
                      f"{r.get('fps_min') or '—'}/{r.get('fps_avg') or '—'} | {r.get('peak_ms') or '—'} ms | {fmt('mean')} | "
@@ -168,7 +201,7 @@ def main():
         for cup in args.cups:
             for index in args.tracks:
                 key = f'{cup}-{index}'
-                if key in results and not args.again:
+                if results.get(key, {}).get('ok') and results[key].get('course_at_capture') and not args.again:
                     continue
                 print(f'{key}: {CUPS[cup][index]}…', flush=True)
                 results[key] = run_track(cup, index, args)

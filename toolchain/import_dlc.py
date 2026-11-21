@@ -7,11 +7,12 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 from build import atomic_json, file_record, sha
 from build_lock import exclusive_build
-from import_mk8 import Entry, entries
+from import_mk8 import Entry, entries, write_verified_member
 from repair import is_link
 from storage import GIB, require_space
 
@@ -128,22 +129,29 @@ def install(package, keys, local, *, reinstall=False):
             valid = True
         except (ValueError, FileNotFoundError):
             pass
-    if not valid or reinstall:
-        stage = local / f"dlc-stage-{time.time_ns()}"
-        stage.mkdir()
+    generation = json.loads((local / "generation.json").read_text(encoding="utf-8"))["identity"]
+
+    def save_candidate():
+        attach(candidate, local)
+        candidate["identity"] = hashlib.sha256(json.dumps({"generation": generation, "files": candidate["files"],
+                                                         "exe": candidate["executable"]}, sort_keys=True).encode()).hexdigest()
+        atomic_json(candidate_path, candidate)
+
+    if valid and not reinstall:
+        save_candidate()
+        return
+    if not keys.is_file() or keys.stat().st_size == 0:
+        raise ValueError("DLC: selecione o prod.keys do seu console. O arquivo de chaves está ausente ou vazio.")
+    with tempfile.TemporaryDirectory(dir=local, prefix="dlc-stage-") as folder:
+        stage = Path(folder)
         with package.open("rb") as stream:
             index = entries(stream, package.stat().st_size)
-            wanted = {name.encode() for name in CONTENTS}
-            if not wanted.issubset(index):
-                raise ValueError("DLC: pacote não corresponde ao Booster Course Pass verificado.")
             for name, (size, expected) in CONTENTS.items():
-                member = Entry(stream, *index[name.encode()])
-                if member.size != size:
-                    raise ValueError("DLC: tamanho do NCA divergente.")
-                payload = member.read()
-                if hashlib.sha256(payload).hexdigest() != expected:
-                    raise ValueError("DLC: tamanho ou hash do NCA divergente.")
-                (stage / name).write_bytes(payload)
+                matches = [n.encode() for n in (name, name.removesuffix(".nca") + ".ncz") if n.encode() in index]
+                if len(matches) != 1:
+                    raise ValueError(f"DLC: selecione o NSP ou NSZ do Booster Course Pass {TITLE:016X} v65536. "
+                                     "O pacote deve conter uma cópia de cada arquivo dessa edição.")
+                write_verified_member(stream, index, matches[0], size, expected, stage / name)
             # Combined NSPs may contain other titles; extract only this pinned DLC and its ticket.
             tickets = [name for name in index if name.endswith(b".tik") and name.startswith(b"0100152000023001")]
             if len(tickets) != 1 or index[tickets[0]][1] > 16384:
@@ -167,15 +175,15 @@ def install(package, keys, local, *, reinstall=False):
             destination.rename(backup)
         try:
             publish.rename(destination)
-        except OSError:
+            try:
+                save_candidate()
+            except Exception:
+                destination.rename(publish)
+                raise
+        except Exception:
             if backup.exists():
                 backup.rename(destination)
             raise
-    attach(candidate, local)
-    generation = json.loads((local / "generation.json").read_text(encoding="utf-8"))["identity"]
-    candidate["identity"] = hashlib.sha256(json.dumps({"generation": generation, "files": candidate["files"],
-                                                     "exe": candidate["executable"]}, sort_keys=True).encode()).hexdigest()
-    atomic_json(candidate_path, candidate)
     print("DLC importado e verificado. Requer runtime com suporte a conteúdo adicional.")
 
 

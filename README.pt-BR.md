@@ -11,14 +11,15 @@
 [English](README.md) · **Português (Brasil)**
 
 ![Plataforma](https://img.shields.io/badge/Windows-x64-0078D6)
+![Linux](https://img.shields.io/badge/Linux-amd64%20AppImage%20%7C%20experimental-5c6647)
 ![Gráficos](https://img.shields.io/badge/Gráficos-Vulkan-AC162C)
 ![Linguagens](https://img.shields.io/badge/Rust-C%2FC%2B%2B-555555)
-![Release](https://img.shields.io/badge/Release-0.4.0-ef795d)
+![Release](https://img.shields.io/badge/Release-0.5.0-ef795d)
 ![Estado](https://img.shields.io/badge/Estado-Teste_público-e6a23c)
 [![Licença](https://img.shields.io/badge/Licença-GPL--3.0--or--later-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Entrar-5865F2?logo=discord&logoColor=white)](https://discord.gg/4Yg4Axpkb6)
 
-Projeto experimental de recompilação estática de **Mario Kart 8 Deluxe 4.0.1** para Windows,
+Projeto experimental de recompilação estática de **Mario Kart 8 Deluxe 4.0.1** para Windows x64 e Linux amd64 (experimental),
 com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com amigos pela Steam.
 
 [Download / Releases](https://github.com/Vnnc1/MK8-online/releases) · [Relatar um problema](https://github.com/Vnnc1/MK8-online/issues) · [Discord](https://discord.gg/4Yg4Axpkb6) · [Roteiro](docs/ROADMAP.md)
@@ -29,7 +30,23 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 > Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
 
 > [!NOTE]
-> **Já usa a primeira 0.4.0?** Baixe manualmente o novo instalador ou ZIP portátil. O atualizador compara os números de versão. Mantenha sua pasta de dados, abra **Instalação → Ferramentas** e atualize a build do jogo.
+> **Baixe a versão 0.5.0** · [Instalador Windows](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-setup.exe) · [ZIP portátil Windows](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-portable.zip) · [AppImage Linux amd64](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-linux-x86_64.AppImage)
+>
+> No Windows, mantenha a pasta de dados e conclua **Instalação → Ferramentas → Build do jogo** se solicitado. No Linux, o launcher e o jogo recompilado executam nativamente. O guia explica como instalar as dependências no Ubuntu 24.04 e como experimentar no modo desktop do Steam Deck. [Guia Linux](docs/LINUX.md) · [Notas da versão](docs/releases/0.5.0.md)
+
+O instalador Windows 0.5.0 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
+
+## Windows 0.5.0 · Jogue com seu Mii
+
+Na 0.5.0, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira partida, dê um nome ao Mii, personalize e escolha **Salvar e continuar** para seguir no modo escolhido. Para o Nextendo, confirme o e-mail e vincule o Discord à conta. Autorize uma vez no navegador enquanto o launcher estiver aberto. Ao abrir, o jogo mostra a conta Nextendo e o Mii local. Fechar o launcher ou revogar o acesso exige um novo login. [Gerenciar conta Nextendo](https://nextendo.network/account)
+
+## Windows 0.5.0 · Opções gráficas
+
+No launcher 0.5.0, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao atualizar uma instalação de teste da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
+
+No jogo, abra **F1 → Ajustes → Vídeo** para escolher a ampliação integrada ou um provedor instalado e disponível neste PC. O menu nativo opcional usa a mesma lista. Para carregar outro provedor temporal, reabra o jogo pelo launcher. Com o launcher aberto, as alterações feitas no jogo também aparecem em Configurações e no seletor de idioma da tela Jogar.
+
+FSR 1 e bilinear já vêm disponíveis. Se o provedor recusar o recurso, o jogo usa a ampliação integrada. A opção separada de geração de quadros usa a interpolação própria do runtime. Ative o contador para comparar os FPS do jogo, os FPS de saída e os milissegundos por quadro do jogo.
 
 ## Novidades da 0.4.0
 
@@ -37,7 +54,6 @@ com runtime Vulkan, criador de Mii, Online Play nativo pelo Nextendo e salas com
 
 A edição portátil pode ser movida entre unidades do Windows. Com o jogo preparado, `Launcher.exe --play` abre o modo solo diretamente. Os controles ganharam direção por movimento, vibração HD e a opção de usar cada Joy-Con na horizontal no multijogador local. Saves e replays temporários do Grand Prix ficam separados, e o troféu da Copa Casco permaneceu após reiniciar nos testes. As correções gráficas abrangem as cores das copas, a contagem da largada e a iluminação em tela dividida. Ao atualizar, mantenha sua pasta de dados e siga **Instalação → Ferramentas → Build do jogo**.
 
-[Baixar o instalador](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-setup.exe) · [Baixar o ZIP portátil](https://github.com/Vnnc1/MK8-online/releases/download/v0.4.0/MK8-online-0.4.0-portable.zip) · [Notas da versão e limitações](docs/releases/0.4.0.md)
 
 Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
 
@@ -76,9 +92,9 @@ O runtime da 0.4.0 inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo 
 
 **Inicialização direta:** `Launcher.exe --play` abre o jogo solo já preparado sem a janela do launcher. Para selecionar seus dados: `Launcher.exe --play --data-dir "D:\\MK8\\data"`. Mantém validações, bloqueios e logs; não instala ferramentas nem recompila. Salas Steam continuam pelo launcher.
 
-**Modo portátil Windows:** extraia `MK8-online-0.4.0-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
+**Modo portátil Windows:** extraia `MK8-online-0.5.0-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
 
-**Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. Requer Windows x64 e drivers Vulkan compatíveis; não acrescenta suporte a Linux/AppImage/Steam Deck.
+**Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. O ZIP portátil requer Windows x64 e drivers Vulkan compatíveis. No Linux, use o AppImage indicado acima.
 
 
 Pressione **F1** ou **Menos + Mais** para abrir o menu do jogo. Em Jogar, volte à partida ou abra o Perfil Mii. Ajustes reúne vídeo, áudio, controles e mods. O painel usa o tema de menu escolhido no launcher. Nos detalhes de um mod, Voltar retorna à lista de mods. Após o login, Nextendo mostra as salas reais do MK8 e Social consulta os amigos e a presença com a permissão `friends`. Selecionar uma sala abre os detalhes. Para disputar uma corrida, use **Online Play** no Mario Kart.
@@ -95,6 +111,10 @@ O histórico do CTGP e do redesenho do launcher está nas [notas da 0.3.0](docs/
 
 ## Onde estamos
 
+**Correções no Windows na 0.5.0.** Recompilar o runtime do Windows habilita caminhos com caracteres não ASCII para o jogo, os saves e as configurações. Se o jogo fechar com erro, o launcher mostra a última mensagem fatal disponível e guarda um ZIP de diagnóstico em **Suporte**. Isso também funciona com `Launcher.exe --play`. A integração Steam tenta a próxima DLL instalada quando uma candidata carrega, mas falha ao inicializar as interfaces necessárias. O launcher também aceita o Booster Course Pass v65536 verificado em NSP ou NSZ.
+
+Recompile o jogo depois de instalar o instalador 0.5.0 para aplicar a correção da votação de pistas quando faltam modelos Mii. Durante a preparação do jogo, o gerador agora tenta novamente se o Windows bloquear temporariamente a renomeação de um módulo concluído.
+
 **Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime da 0.3.0 também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
 
 As correções de desempenho da 0.3.0 usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Na versão 0.3.0, para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.
@@ -105,7 +125,7 @@ Melhorias Steam da 0.3.0: descoberta da DLL Steam em bibliotecas adicionais e pa
 
 O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. Ambos criam a sala Steam do anfitrião; convidados aceitam um convite e escolhem navegação automática ou manual dentro do jogo. A automação mantém o Mii ativo selecionado. O conversor corrige os canais da textura dos óculos: regenere os recursos Mii derivados e recompile o runtime para aplicar essas correções Mii.
 
-**Instalar → Arquivos do jogo** aceita um NSP opcional do Booster Course Pass, importado após a build bem-sucedida na mesma preparação pelo importador verificado existente. Campo vazio preserva a DLC atual. A importação posterior continua em **Instalar → Conteúdo adicional**, com atalho em **Jogar**; ativar/desativar continua em **Configurações**. A Steam continua exigindo DLC e CTGP equivalentes. Nenhuma DLL Valve ou arquivo do jogo é distribuído.
+Na `fix-chore`, **Instalar → Arquivos do jogo** aceita um NSP ou NSZ opcional do Booster Course Pass, importado após a build bem-sucedida na mesma preparação pelo importador verificado existente. Campo vazio preserva a DLC atual. A importação posterior continua em **Instalar → Conteúdo adicional**, com atalho em **Jogar**; ativar/desativar continua em **Configurações**. A Steam continua exigindo DLC e CTGP equivalentes. Nenhuma DLL Valve ou arquivo do jogo é distribuído.
 
 | Área | Progresso atual | Próxima etapa |
 | --- | --- | --- |
@@ -121,13 +141,13 @@ A leitura de miniaturas do MKTV agora copia a imagem renderizada pela GPU ao gra
 
 ## O que este projeto faz
 
-O pipeline traduz o executável AArch64 do jogo para C e o compila para Windows x64. Um runtime C/C++ fornece gráficos, áudio, entrada e serviços de sistema; o launcher em Rust/Tauri cuida da preparação, builds, atualizações, Miis e salas.
+O pipeline traduz o executável AArch64 do jogo para C e o compila para Windows x64 ou Linux amd64 nativo. Um runtime C/C++ fornece gráficos, áudio, entrada e serviços de sistema; o launcher em Rust/Tauri cuida da preparação, builds, atualizações, Miis e salas.
 
 RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A base de tradução/runtime vem do **SMM2Recomp e do LASRecomp**, com outros trabalhos creditados. Veja [fontes de terceiros e licenças](docs/THIRD_PARTY.md).
 
 ## Entre na pista
 
-### Requisitos
+### Requisitos no Windows
 
 - **Windows x64** e WebView2. O launcher instala sozinho um **Python 3.12 x64** privado.
 - GPU e driver com **Vulkan 1.3 ou mais novo**. Não há especificação mínima geral de CPU/GPU qualificada.
@@ -135,11 +155,11 @@ RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A
 - Cerca de **28 GiB livres** para extração e preparação (incluindo 4 GiB de reserva de segurança), além de espaço para ferramentas e caches. SSD recomendado.
 - Internet para o primeiro download das ferramentas (cerca de 0,4 GiB) e para atualizações.
 - **Para Miis:** ao abrir o criador, o launcher baixa `AFLResHigh_2_3.dat` de uma cópia do antigo CDN Miitomo no Internet Archive. Confere tamanho e SHA-256 do ZIP e da biblioteca, depois guarda o arquivo na pasta de dados para uso offline. O arquivo não acompanha o GitHub nem o instalador. Se o arquivo online estiver indisponível, tente novamente ou selecione uma cópia local compatível; sem a biblioteca, as opções ficam numeradas e os rostos não são desenhados.
-- **Para multijogador:** entre na Steam e use uma DLL Steamworks compatível de 64 bits de um jogo já instalado. Se o launcher informar que falta `SteamAPI_SteamFriends_v017`, aponte `MK8_STEAM_DLL` para o caminho completo de uma `steam_api64.dll` compatível, reabra o launcher e entre em **Multijogador** para conferir a lista de amigos. A cópia testada de Brawlhalla funcionou na 0.3.0. As cópias testadas de Counter-Strike 2 e Deadlock exportam `v018` e são recusadas pela 0.3.0. Nenhum arquivo da Valve é distribuído.
+- **Para multijogador:** entre na Steam e use uma DLL Steamworks compatível de 64 bits de um jogo já instalado. Nesta branch, o launcher tenta primeiro as DLLs configuradas e locais e procura nas bibliotecas Steam se nenhuma fornecer as funções necessárias. Se o launcher informar que falta `SteamAPI_SteamFriends_v017`, aponte `MK8_STEAM_DLL` para o caminho completo de uma `steam_api64.dll` compatível, reabra o launcher e entre em **Multijogador** para conferir a lista de amigos. A cópia testada de Brawlhalla funcionou na 0.3.0. As cópias testadas de Counter-Strike 2 e Deadlock exportam `v018` e são recusadas pela 0.3.0. Nenhum arquivo da Valve é distribuído.
 
 ### Instalar e jogar
 
-1. Baixe `MK8-online-0.4.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
+1. Baixe `MK8-online-0.5.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
 2. Abra **Instalar**. Conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo** (o launcher encontra as chaves junto do jogo, ou selecione as suas).
 3. Rode a etapa **Build do jogo**. Depois de atualizar de uma versão anterior, rode de novo: o jogo é recompilado com o runtime novo.
 4. Escolha **Jogar solo**.
@@ -160,7 +180,7 @@ Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e sobrevivem a atualiz
 2. Digite um nome e toque em **Criar Mii**. Passe pelas abas e toque na opção que quiser: cada botão mostra seu Mii com aquela opção. Em **Corpo** ficam tipo, altura, porte e cor favorita, e a prévia mostra o corpo inteiro (ou só o rosto).
 3. Toque em **Salvar Mii**. Na primeira vez o launcher prepara os modelos Mii do jogo; o jogo usa seu Mii na próxima vez que abrir.
 
-**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Você pode manter a Entrada Steam ativada para o Spacewar ao jogar solo ou em uma sala Steam. Se a SDL não detectar o controle na inicialização, o MK8 passa a procurá-lo pelo GameInput do Windows. Se o seu controle não responder, informe o modelo e o tipo de conexão junto com o relatório de **Suporte → Gerar relatório**.
+**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Você pode manter a Entrada Steam ativada para o Spacewar ao jogar solo ou em uma sala Steam. Na `fix-chore`, um controle virtual inativo da Steam deixa a vaga do jogador disponível para o controle físico detectado pelo GameInput do Windows. Se o seu controle não responder, informe o modelo e o tipo de conexão junto com o relatório de **Suporte → Gerar relatório**.
 
 Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente.
 
@@ -195,7 +215,7 @@ As medições excluem as janelas de captura e não garantem 60 FPS em toda cena 
 
 ## Ajude a melhorar a próxima volta
 
-Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
+Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Na `fix-chore`, incluem também `dlc.log` após uma tentativa de importação do DLC. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
 
 ## Pacote de pistas CTGP Deluxe (opcional, experimental)
 
@@ -222,6 +242,8 @@ as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha
 
 ## Compilar e contribuir
 
+A build aceita unidades C geradas do MK8 4.0.1 com quebras de linha do Windows (CRLF) ou do Unix (LF). Nos dois casos, os bytes precisam reproduzir o mesmo SHA-256 registrado antes de aplicar os hooks do jogo. O pacote Windows usa x64.
+
 O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Ajustes → Controle. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
 
 Para experimentar a direção por movimento na 0.4.0, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
@@ -247,7 +269,9 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 - transportes LAN/relay/P2P pela API;
 - o conversor estático de cabeça Mii.
 
-Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Os tokens ficam em memória e o CTGP é desativado nessa sessão. A reconexão continua experimental.
+Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Na versão de teste, a autorização fica na memória enquanto o launcher estiver aberto. O CTGP é desativado nessa sessão. A reconexão continua experimental.
+
+Se o Nextendo retornar `discord_unlinked` após o login, vincule o Discord à mesma conta Nextendo e selecione **Jogar no Nextendo** novamente.
 
 | Local | Responsabilidade |
 | --- | --- |
@@ -270,11 +294,11 @@ As configurações não podem ser salvas enquanto o jogo ou uma preparação usa
 
 ### Conteúdo adicional no launcher
 
-Após preparar o jogo, abra **Instalar → Conteúdo adicional**. Selecione o NSP do Booster Course Pass e, quando necessário, as chaves do seu console; clique em **Importar DLC NSP…**. O launcher mostra o estado da operação e seu log. Uma build antiga precisa ser atualizada antes de habilitar esses controles.
+Após preparar o jogo, abra **Instalar → Conteúdo adicional**. Selecione o NSP ou NSZ do Booster Course Pass v65536 e, quando necessário, as chaves do seu console; clique em **Importar DLC NSP/NSZ…**. O launcher mostra o estado da operação e seu log. Uma build antiga precisa ser atualizada antes de habilitar esses controles.
 
 O controle **Ativar Booster Course Pass** fica em **Configurações → Conteúdo adicional** e vale ao iniciar o jogo. Importação e reparo permanecem em **Instalar**. Desativar mantém os arquivos importados e os saves. A preferência é salva por pasta de dados e permanece após reiniciar o launcher ou reconstruir o jogo. Importação e alterações ficam bloqueadas enquanto o jogo ou outra preparação usa os dados. Uma instalação inválida oferece **Reparar importação…**; a substituição só acontece após validar os novos arquivos, preservando a pasta anterior em um backup local.
 
-Mesmo com o DLC instalado, **Instalar → Conteúdo adicional → Reinstalar ou selecionar outro NSP** permite escolher novamente o pacote e as chaves. **Reinstalar DLC…** valida e extrai o NSP selecionado, sem reutilizar automaticamente a instalação existente. Os arquivos atuais só são substituídos após a validação; ficam preservados em um backup local. A preferência de ativação e os saves são mantidos. Apenas o pacote do perfil verificado continua aceito.
+Mesmo com o DLC instalado, **Instalar → Conteúdo adicional → Reinstalar ou selecionar outro NSP/NSZ** permite escolher novamente o pacote e as chaves. **Reinstalar DLC…** valida e extrai o pacote selecionado, sem reutilizar automaticamente a instalação existente. Os arquivos atuais só são substituídos após a validação; ficam preservados em um backup local. A preferência de ativação e os saves são mantidos. Apenas o pacote do perfil verificado continua aceito.
 
 Os campos de NSP e chaves mostram contorno verde e marca de confirmação quando os arquivos são encontrados, como na etapa 2. O campo de chaves também considera a configuração já salva e a detecção automática. Essa indicação confirma a presença dos arquivos; o conteúdo do pacote e as chaves continuam sendo validados durante a importação.
 

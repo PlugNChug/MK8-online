@@ -3,7 +3,7 @@
 The build copy calls the runtime after the game's viewport/aspect updates, while its
 manager mutex is held, before projection consumers and frustum construction.
 """
-import hashlib
+from guest_source import verified_bytes
 
 UNIT = 'main_077.c'
 SHA256 = 'e2acde446b23167a4ed1bb4f211d5888773d245e4e2e9d60352d8b0f0bd5dce4'
@@ -33,11 +33,9 @@ def patch(text):
 def patch_unit(src, output):
     if src.name != UNIT or src.parent.name != 'main':
         return src
-    raw = src.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SHA256:
-        raise ValueError('Ultrawide camera requires the verified MK8 4.0.1 generated unit')
+    raw = verified_bytes(src, SHA256, 'Ultrawide camera requires the verified MK8 4.0.1 generated unit')
     text = patch(raw.decode('utf-8').replace('\r\n', '\n'))
     target = output/'ultrawide'/src.name
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding='utf-8')
+    target.write_text(text, encoding='utf-8', newline='\r\n')
     return target

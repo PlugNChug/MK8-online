@@ -4,6 +4,7 @@
 #include "input_bind.h"
 #include "nvn/shader_ahead.h"
 #include "settings_values.h"
+#include "mk8_upscaler_choices.h"
 #include <math.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -19,14 +20,6 @@ typedef struct {
 static const char *const aspects[]={"Stretch","Original 16:9","Ultrawide (experimental)"};
 static const char *const resolutions[]={"25%","50%","75%","Match display","Dynamic","1x (1080p)","2x","3x","4x"};
 static const int resolution_values[]={RES_Q25,RES_Q50,RES_Q75,RES_MATCH,RES_DYNAMIC,1,2,3,4};
-static const char *const upscalers[]={"Bilinear",
-#ifdef __APPLE__
-    "MetalFX"
-#else
-    "AMD FSR 1"
-#endif
-};
-static const int upscaler_values[]={UPSCALE_BILINEAR,UPSCALE_SHARP};
 static const char *const antialias[]={"Off","SMAA"}, *const framegen[]={"Off","120 FPS"};
 static const char *const prompts[]={"Auto","Nintendo","Xbox","PlayStation"};
 static const char *const devices[]={"Controller","Keyboard"};
@@ -39,7 +32,7 @@ static const Option options[]={
     TOGGLE("Show FPS",show_fps,"Show FPS in the screen corner."),
     TOGGLE("Show memory use",show_memory,"Show runtime memory usage."),
     CHOICE("Internal resolution",res_mode,resolutions,resolution_values,9,"Higher values use more GPU memory."),
-    CHOICE("Upscaler",upscaler,upscalers,upscaler_values,2,"Used below the display resolution."),
+    {"Upscaler","Install FSR 3/4 or DLSS in the launcher."},
     CHOICE("Anti-aliasing",antialias,antialias,NULL,2,"Smooth jagged edges with SMAA."),
     CHOICE("Frame generation",frame_gen,framegen,NULL,2,"High refresh; game stays at 60."),
     TOGGLE("Skip intro",skip_intro,"Skip logos on the next launch."),
@@ -80,6 +73,29 @@ bool mk8_settings_save_checked(void);
 void mk8_settings_window_changed(void);
 bool mk8_settings_style_active(void);
 void menu_notice(const char *,double);
+
+// Sample on the renderer thread, including after a controller binding finishes.
+// Coalesce held buttons and slider drags before replacing the launcher's INI.
+void mk8_publish_settings(bool overlay, uint64_t now) {
+    static bool watching,pending;
+    static uint64_t next_write;
+    static Settings seen;
+    static int16_t pad[BIND_PAD_COUNT];
+    static int16_t key[BIND_KEY_COUNT];
+    if (!opened && !overlay) { watching=pending=false; return; }
+    if (!watching || memcmp(&seen,&g_settings,sizeof seen) ||
+        memcmp(pad,g_bind_pad,sizeof pad) || memcmp(key,g_bind_key,sizeof key)) {
+        pending=watching;
+        watching=true;
+        next_write=now+350;
+        memcpy(&seen,&g_settings,sizeof seen);
+        memcpy(pad,g_bind_pad,sizeof pad);
+        memcpy(key,g_bind_key,sizeof key);
+    } else if (pending && now>=next_write) {
+        pending=!mk8_settings_save_checked();
+        if (pending) next_write=now+2000;
+    }
+}
 
 RT_ON_RESET(settings_values_reset) {
     pthread_mutex_lock(&lock);
@@ -150,7 +166,13 @@ static void apply(Request r) {
         return;
     }
     if(r.id==RESET) { if(r.operation==SETTINGS_ACTIVATE) { bind_reset(mapping_device); dirty=true; } return; }
-    if(r.id==SHADERS || (r.id==5 && g_settings.res_mode==RES_MATCH)) return;
+    if(r.id==5) {
+        Mk8Upscalers list=mk8_upscaler_choices(g_settings.upscaler);
+        int next=list.selected+r.value;
+        if(next>=0 && next<list.count) { g_settings.upscaler=list.values[next]; dirty=true; }
+        return;
+    }
+    if(r.id==SHADERS) return;
     if(r.id==VOLUME) {
         int pct=(int)lroundf(g_settings.volume*100);
         int next=r.operation==SETTINGS_SET ? r.value : pct+(r.value<0 ? -5 : 5);
@@ -205,6 +227,11 @@ void mk8_settings_values_sync(void) {
         if(v->id==SHADERS) {
             AheadStatus a=shader_ahead_status(); v->kind=SETTING_INFO; v->enabled=false;
             snprintf(v->value,sizeof v->value,a.state==2 ? "Prepared" : a.state==1 ? "Preparing (%d)" : "Starts with the game",a.items);
+        } else if(v->id==5) {
+            Mk8Upscalers list=mk8_upscaler_choices(g_settings.upscaler);
+            v->maximum=list.count-1; v->current=list.selected;
+            snprintf(v->value,sizeof v->value,"%s",list.names[list.selected]);
+            if (list.count>2) snprintf(v->help,sizeof v->help,"Reopen game to load a new provider.");
         } else if(v->id==VOLUME) {
             v->kind=SETTING_NUMBER; v->current=(int)lroundf(g_settings.volume*100); v->maximum=200;
             snprintf(v->value,sizeof v->value,"%d%%",v->current);
@@ -216,7 +243,6 @@ void mk8_settings_values_sync(void) {
             v->maximum=o->count-1; bool found=false;
             for(int i=0;i<o->count;i++) if(*o->choice==(o->values ? o->values[i] : i)) { v->current=i; snprintf(v->value,sizeof v->value,"%s",o->names[i]); found=true; }
             if(!found) snprintf(v->value,sizeof v->value,"Custom (%d)",*o->choice);
-            if(v->id==5 && g_settings.res_mode==RES_MATCH) { v->enabled=false; snprintf(v->value,sizeof v->value,"Not used at Match"); }
         }
         if(needs_main_menu(v->id) && !main_menu) {
             v->enabled=false; snprintf(v->help,sizeof v->help,"Exit the race to modify.");

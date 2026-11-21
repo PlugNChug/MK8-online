@@ -252,6 +252,7 @@ typedef struct { uint64_t x[32]; } Cpu;
 static int mode;
 int mk8_no_mii_renderer(void) { return mode; }
 static uint32_t LD32(uint64_t p) { uint32_t n; memcpy(&n,(void *)(uintptr_t)p,4); return n; }
+static uint64_t LD64(uint64_t p) { uint64_t n; memcpy(&n,(void *)(uintptr_t)p,8); return n; }
 void f_70004297b4(Cpu *c) { c->x[0] = 12; }
 void f_70004297bc(Cpu *c) { c->x[0] = 1; }
 void f_70004297cc(Cpu *c) { c->x[0] = 1; }
@@ -261,7 +262,8 @@ void f_7000428880(Cpu *c) { c->x[1]++; }
 void f_70004288a0(Cpu *c) { c->x[1]++; }
 void f_7000428900(Cpu *c) { c->x[1]++; }
 void f_70004289ac(Cpu *c) { c->x[1]++; }
-void f_70004289d0(Cpu *c) { c->x[1]++; }
+void f_7000428838(Cpu *c) { *(unsigned char *)(uintptr_t)LD64(c->x[0] + 0x20) |= 1; }
+void f_70004289d0(Cpu *c) { *(unsigned char *)(uintptr_t)LD64(c->x[0] + 0x20) |= 2; }
 void f_7000428a18(Cpu *c) { c->x[1]++; }
 void f_7000428d94(Cpu *c) { c->x[1]++; }
 void f_7000428f80(Cpu *c) { c->x[1]++; }
@@ -281,11 +283,19 @@ int main(void) {
    if(c.x[1]!=(mode&&!a&&!b?0:1))return 5;
    f_7000428880(&c);f_70004288a0(&c);f_7000428900(&c);
    if(c.x[1]!=(mode&&!a&&!b?0:4))return 7;
-   f_70004289ac(&c);f_70004289d0(&c);f_7000428a18(&c);
-   if(c.x[1]!=(mode&&!a&&!b?0:7))return 8;
+   f_70004289ac(&c);f_7000428a18(&c);
+   if(c.x[1]!=(mode&&!a&&!b?0:6))return 8;
    f_7000428d94(&c);f_7000428f80(&c);f_7000428fb0(&c);
-   if(c.x[1]!=(mode&&!a&&!b?0:10))return 9;
+   if(c.x[1]!=(mode&&!a&&!b?0:9))return 9;
    c.x[0]=object;f_70004288bc(&c);if(c.x[0]!=(mode&&!a&&!b?0:1))return 6;
+   for(unsigned allocated=0;allocated<=1;allocated++) {
+    unsigned char flags=0;
+    uint64_t storage=allocated?(uintptr_t)&flags:0;
+    memcpy(&manager[0x20/4],&storage,sizeof storage);
+    c.x[0]=object;f_7000428838(&c);f_70004289d0(&c);
+    if(flags!=(allocated&&a?3:0))return 10;
+   }
+   c.x[0]=0;f_7000428838(&c);f_70004289d0(&c);
   }
  }
  return 0;
@@ -327,7 +337,7 @@ int main(void) {
             raw = b'void f_70004297b4(Cpu *c) { c->x[0] = 12; return; }\nvoid f_70004297bc(Cpu *c) { c->x[0] = 1; return; }\nvoid f_70004297cc(Cpu *c) { c->x[0] = 1; return; }\n'
             raw += b'void f_7000428b88(Cpu *c) { check_mii_slots(c); }\n'
             raw += b'void f_7000428a34(Cpu *c) { animate_mii_slots(c); }\n'
-            for address in ('7000428880', '70004288a0', '7000428900',
+            for address in ('7000428838', '7000428880', '70004288a0', '7000428900',
                             '70004289ac', '70004289d0', '7000428a18',
                             '7000428d94', '7000428f80', '7000428fb0'):
                 raw += f'void f_{address}(Cpu *c) {{ animate_mii_slots(c); }}\n'.encode()

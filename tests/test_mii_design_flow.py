@@ -54,6 +54,63 @@ class MiiDesignFlowTests(unittest.TestCase):
     def export(self):
         return self.page.request.get(self.url+'/api/mii/export', headers={'X-MK8-Token':self.token}).json()['data']['data']
 
+    def test_play_modes_wait_for_customization_and_resume_selected_nextendo(self):
+        page = self.page
+        for route, body in [('play', {}), ('play', {'online':True}), ('play', {'nextendo':True}),
+                            ('steam/host', {}), ('steam/join', {'lobby':'123'})]:
+            response = page.request.post(self.url+'/api/'+route, headers={'X-MK8-Token':self.token},
+                                         data=json.dumps(body)).json()
+            self.assertFalse(response['ok'])
+            self.assertIn('Mii', response['error'])
+        status = page.evaluate("api('status')")
+        status.update(candidate=True, nextendo_supported=True, nextendo_trusted=False)
+        page.route('**/api/status', lambda route: route.fulfill(json={'ok':True, 'data':status}))
+        calls = []
+        def play(route):
+            calls.append(route.request.post_data_json)
+            route.fulfill(json={'ok':True,'data':{}})
+        page.route('**/api/play', play)
+        page.locator('[data-tab="play"]').click()
+        page.locator('#play-solo').click()
+        expect(page.locator('#mii-play-prompt')).to_be_visible()
+        page.locator('#mii-play-cancel').click()
+        expect(page.locator('#play')).to_be_visible()
+        page.locator('[data-tab="session"]').click()
+        page.locator('#steam-host').click()
+        expect(page.locator('#mii-play-prompt')).to_be_visible()
+        page.locator('#mii-play-cancel').click()
+        expect(page.locator('#session')).to_be_visible()
+        page.locator('[data-tab="play"]').click()
+        page.locator('#play-nextendo').click()
+        expect(page.locator('#nextendo-consent')).to_be_hidden()
+        page.locator('#mii-name').fill('Piloto')
+        page.locator('#mii-continue').click()
+        expect(page.locator('#mii-workshop')).to_be_visible()
+        expect(page.locator('#mii-save')).to_have_text('Salvar e continuar')
+        self.assertFalse(calls)
+        page.locator('#mii-save').click()
+        expect(page.locator('#nextendo-consent')).to_be_visible()
+        page.locator('#nextendo-accept').click()
+        page.wait_for_function('() => !busy')
+        self.assertEqual(calls, [{'online':False, 'nextendo':True}])
+        page.locator('#play-solo').click()
+        page.wait_for_function('() => !busy')
+        self.assertEqual(calls[-1], {'online':False})
+
+    def test_direct_play_editor_can_be_cancelled_without_starting_a_game(self):
+        page = self.page
+        calls = []
+        page.on('request', lambda req: calls.append(req.url) if req.url.endswith('/api/play') else None)
+        page.goto(self.url+'/#create-mii-to-play')
+        page.reload()
+        expect(page.locator('#mii-play-prompt')).to_be_visible()
+        page.locator('#mii-play-cancel').click()
+        expect(page.locator('#play')).to_be_visible()
+        page.reload()
+        expect(page.locator('#play')).to_be_visible()
+        expect(page.locator('#mii-play-prompt')).to_be_hidden()
+        self.assertFalse(calls)
+
     def shot(self, name):
         folder = ROOT/'local/screenshots'
         folder.mkdir(exist_ok=True, parents=True)

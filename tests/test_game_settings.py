@@ -33,6 +33,7 @@ int main(void) {
            g_settings.skip_intro, g_settings.show_memory, g_settings.ahead_fast,
            g_settings.prompts);
     bind_settings_save(stdout);
+    settings_save();
     return 0;
 }
 '''
@@ -72,6 +73,12 @@ class RuntimeSettingsTests(unittest.TestCase):
                 with self.subTest(aspect=value):
                     output = run(dict(defaults, aspect=value))
                     self.assertEqual(int(output.splitlines()[1].split()[0]), expected)
+            for mode, index in (("bilinear", 0), ("fsr1", 2), ("fsr3", 3), ("fsr4", 4), ("dlss", 5)):
+                with self.subTest(upscaler=mode):
+                    output = run(dict(defaults, upscaler=mode))
+                    self.assertEqual(int(output.splitlines()[0].split()[5]), index)
+                    written = (folder / "mk8d.ini").read_text().splitlines()
+                    self.assertIn("upscaler = " + mode, written)
             changed = dict(defaults, volume="0.65", resolution="75%", fullscreen="1",
                            show_fps="1", language="fr", upscaler="bilinear", antialias="smaa",
                            frame_gen="120", bind_key_a="Space", bind_pad_a="south")

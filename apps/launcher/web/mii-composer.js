@@ -254,10 +254,14 @@ async function load(){
     el('mii-name').value=active.appearance.name;
   }else{creating=true;data=null;el('mii-name').value='';}
   dirty=false;
-  i18n.text(el('mii-save'),creating?'Criar Mii':'Salvar Mii');
+  updateSaveLabel();
   editorLoaded=true;listProfiles();openTab(tab);scheduleStage();
   if(creating)status('Dê um nome ao Mii e toque em Criar Mii para começar.');
 }
+function updateSaveLabel(){
+  i18n.text(el('mii-save'),creating?'Criar Mii':el('mii-play-prompt').hidden?'Salvar Mii':'Salvar e continuar');
+}
+new MutationObserver(updateSaveLabel).observe(el('mii-play-prompt'),{attributes:true,attributeFilter:['hidden']});
 async function switchTo(p){
   if(dirty&&!confirm(i18n.t('Descartar as alterações não salvas?')))return;
   try{await api('mii/select',{id:hex(p.id)});await load();status('');}catch(e){status(e.message);}
@@ -276,12 +280,14 @@ el('mii-save').onclick=async()=>{
     if(creating){
       await api('mii/create',{name,color:0,gender:0});
       tab='face';await load();status('Mii criado. Escolha rosto, cabelo, olhos e o resto; depois salve.');
+      prepareForGame();
     }else{
       const bytes=data.slice();setName(bytes,name);
       await api('mii/data',Array.from(bytes));
       await load();status('Mii salvo. O jogo usa este Mii na próxima vez que abrir.');
+      await prepareForGame();
+      window.dispatchEvent(new Event('miireadytoplay'));
     }
-    prepareForGame();
   }catch(e){status(e.message);}finally{el('mii-save').disabled=false;}
 };
 el('mii-name').oninput=()=>{if(!creating){dirty=true;status('Alterações não salvas.');}};
@@ -325,10 +331,13 @@ el('mii-library-load').onclick=async()=>{
   }catch(e){status(e.message);}
 };
 // The game draws Miis with resources generated once from the same library (mii_resources). Done automatically.
-let preparing=false;
-async function prepareForGame(){
-  if(preparing||!ffl||!active)return;
-  preparing=true;
+let preparing;
+function prepareForGame(){
+  if(!ffl||!active)return;
+  if(!preparing) preparing=prepareResources().finally(()=>{preparing=null;});
+  return preparing;
+}
+async function prepareResources(){
   try{
     const resources=await api('mii/resources');
     if(resources?.enabled)return;
@@ -341,7 +350,7 @@ async function prepareForGame(){
       const job=await api('mii/resources/job');
       if(job.state!=='running'){status(job.state==='failed'?job.detail:'Mii pronto para o jogo.');break;}
     }
-  }catch(e){status(e.message);}finally{preparing=false;}
+  }catch(e){status(e.message);}
 }
 
 // ---- start ---------------------------------------------------------------------------------------------------

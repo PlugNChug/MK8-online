@@ -35,6 +35,7 @@ class SettingsValuesTests(unittest.TestCase):
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={"Default"};
 const char *const g_heart_colours[N_HEART_COLOURS]={"Default"};
 static int windows,reboots,notices;
+void mk8_publish_settings(bool overlay,uint64_t ticks);
 void menu_notice(const char *message,double seconds) {
     assert(!strcmp(message,"Settings could not be saved. Check the settings folder, then reopen Settings and go Back to retry."));
     assert(seconds>0); ++notices;
@@ -80,6 +81,19 @@ int main(int argc,char **argv) {
     }
     check_tips();
     assert(!strcmp(find(0,"Aspect ratio").value,"Stretch"));
+    // The launcher may read the INI while the overlay remains open. A drag
+    // publishes its settled value, and an idle menu never rewrites the file.
+    mk8_publish_settings(true,100);
+    g_settings.volume=1.50f;
+    mk8_publish_settings(true,120);
+    g_settings.volume=1.75f;
+    mk8_publish_settings(true,200);
+    mk8_publish_settings(true,550);
+    FILE *live=fopen(argv[1],"rb"); assert(live);
+    char live_text[4096]={0}; assert(fread(live_text,1,sizeof live_text-1,live)>0);
+    fclose(live); assert(strstr(live_text,"volume = 1.75"));
+    g_settings.volume=1.0f;
+    mk8_publish_settings(false,570);
     assert(!mk8_settings_values_row(3,0,&(Mk8Setting){0}));
     assert(!mk8_settings_values_request(SETTINGS_SET,11,201));
     assert(!mk8_settings_values_request(SETTINGS_SET,1,0));
@@ -91,6 +105,30 @@ int main(int argc,char **argv) {
     request(SETTINGS_BEGIN,0,0);
     assert(family_queries>before);
     int aspect=find(0,"Aspect ratio").id;
+    int scaler=find(0,"Upscaler").id;
+    assert(find(0,"Upscaler").maximum==1);
+    assert(!_putenv_s("MK8_READY_FSR3","1"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!strcmp(find(0,"Upscaler").value,"AMD FSR 3.1.6"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_DLSS","1"));
+    mk8_publish_settings(true,1000);
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_DLSS);
+    mk8_publish_settings(true,1010);
+    mk8_publish_settings(true,1400);
+    live=fopen(argv[1],"rb"); assert(live);
+    memset(live_text,0,sizeof live_text); assert(fread(live_text,1,sizeof live_text-1,live)>0);
+    fclose(live); assert(strstr(live_text,"upscaler = dlss"));
+    assert(!_putenv_s("MK8_READY_DLSS",""));
+    mk8_settings_values_sync();
+    assert(!strcmp(find(0,"Upscaler").value,"NVIDIA DLSS SR"));
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_FSR4","1"));
+    request(SETTINGS_STEP,scaler,1); assert(g_settings.upscaler==UPSCALE_FSR4);
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR3);
+    assert(!_putenv_s("MK8_READY_FSR4",""));
+    request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR1);
+    assert(!_putenv_s("MK8_READY_FSR3",""));
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ORIGINAL);
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ULTRAWIDE);
     assert(find(0,"Aspect ratio").maximum==2 && !strcmp(find(0,"Aspect ratio").value,"Ultrawide (experimental)"));

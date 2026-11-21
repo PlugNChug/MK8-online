@@ -1,5 +1,6 @@
 """Language switching against the real launcher; installer UI uses isolated API fixtures."""
 import json
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -288,6 +289,37 @@ class LanguageTests(unittest.TestCase):
             expect(page.get_by_role("heading", name="Bienvenido a MK8-online")).to_be_visible()
             expect(page.locator("html")).to_have_attribute("lang", "es")
             expect(page.locator("#language")).to_have_value("es")
+        finally:
+            page.close()
+
+    def test_installer_refuses_data_folder_without_hard_links(self):
+        page = self.browser.new_page(locale="en-US", viewport={"width": 880, "height": 620})
+
+        def route(request):
+            path = request.request.url.split("mk8.test", 1)[1]
+            if path.startswith("/api/"):
+                if path == "/api/state":
+                    data = {"version": "0.4.0", "app": "C:\\Apps\\MK8-online", "data": "D:\\Games\\MK8-online", "desktop": True, "update": False, "needed_gib": 30}
+                elif path == "/api/space":
+                    data = {"free_gib": 400.0, "hard_disk": False, "file_system": "exFAT", "hard_links": False}
+                else:
+                    data = {}
+                request.fulfill(json={"ok": True, "data": data})
+                return
+            file = WEB / ("setup.html" if path == "/" else path[1:])
+            mime = {".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css"}[file.suffix]
+            request.fulfill(body=file.read_text(encoding="utf-8").replace("__TOKEN__", "test").replace("__LANGUAGE__", ""), content_type=mime + "; charset=utf-8")
+
+        try:
+            page.route("http://mk8.test/**", route)
+            page.goto("http://mk8.test/")
+            page.get_by_role("button", name="Get started").click()
+            page.locator("#data").fill("G:\\Jeux\\MK8-online")
+            expect(page.locator("#space")).to_have_text(
+                "The drive of the data folder uses exFAT, which does not support hard links. Game preparation needs an NTFS drive: choose another folder or convert the drive to NTFS.")
+            expect(page.locator("#space")).to_have_class(re.compile(r"\bbad\b"))
+            page.get_by_label("Language", exact=True).select_option("es")
+            expect(page.locator("#space")).to_contain_text("unidad exFAT, que no admite enlaces físicos")
         finally:
             page.close()
 

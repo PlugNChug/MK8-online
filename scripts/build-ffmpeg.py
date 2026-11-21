@@ -1,4 +1,4 @@
-"""Build the minimal FFmpeg that the setup carries (packaging machine with WSL; scripts/build-ffmpeg.sh).
+"""Build the minimal FFmpeg that the setup carries (Linux or Windows with WSL; scripts/build-ffmpeg.sh).
 
 The runtime only plays the game's movies: H.264 + AAC in MP4 and VP8 in WebM. The MSYS2 FFmpeg (all codecs) pulls
 ~100 DLLs (140 MB); this build has the four the runtime imports (~5 MB), with the same version and file names
@@ -8,6 +8,7 @@ Kept as is when the recorded build script is unchanged; `--force` builds again.
 """
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -38,8 +39,12 @@ def current():
     if not manifest.is_file():
         return False
     recorded = json.loads(manifest.read_text(encoding='utf-8'))
-    return recorded.get('script') == script_digest() and all(
-        (OUTPUT / name).is_file() and sha256(OUTPUT / name) == digest for name, digest in recorded['files'].items())
+    return (recorded.get('script') == script_digest()
+            and set(recorded.get('files', {})) == set(DLLS)
+            and all((OUTPUT / name).is_file() and sha256(OUTPUT / name) == digest
+                    for name, digest in recorded['files'].items())
+            and all((OUTPUT / name).is_file()
+                    for name in ('LICENSE.md', 'COPYING.LGPLv2.1', 'configuration.txt')))
 
 
 def windows_to_wsl(path):
@@ -55,8 +60,14 @@ def main():
     script = SOURCE / 'build-ffmpeg.sh'
     SOURCE.mkdir(parents=True, exist_ok=True)
     script.write_bytes(SCRIPT.read_bytes().replace(b'\r\n', b'\n'))
-    subprocess.run(['wsl.exe', '-e', 'bash', windows_to_wsl(script)], check=True)
-    subprocess.run(['wsl.exe', '-e', 'bash', '-c', f'cp /tmp/mk8-ffmpeg/out/* "{windows_to_wsl(SOURCE)}/"'], check=True)
+    if os.name == "nt":
+        subprocess.run(['wsl.exe', '-e', 'bash', windows_to_wsl(script)], check=True)
+        subprocess.run(['wsl.exe', '-e', 'bash', '-c', 'cp /tmp/mk8-ffmpeg/out/* "$1/"',
+                        'bash', windows_to_wsl(SOURCE)], check=True)
+    else:
+        subprocess.run(['bash', script], check=True)
+        for path in Path('/tmp/mk8-ffmpeg/out').iterdir():
+            shutil.copyfile(path, SOURCE / path.name)
     if OUTPUT.exists():
         shutil.rmtree(OUTPUT)
     OUTPUT.mkdir(parents=True)

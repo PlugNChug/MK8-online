@@ -121,6 +121,8 @@ static void pump(void) {
     SDL_UpdateJoysticks();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        extern bool mk8_steam_gamepad_event(const SDL_Event *);
+        if (mk8_steam_gamepad_event(&event)) continue;
         mk8_tip_event(&event,fixed_navigation);
         if(mk8_title_event(&event,host_captures)) continue;
         extern bool settings_test_chord(const SDL_Event *,bool);
@@ -753,6 +755,7 @@ void check_gameinput_title(SDL_JoystickID first, SDL_JoystickID second, uint32_t
     *buttons=0; pump();
     title_accepted();
     assert(title_pad_seat(second)==0 && title_pad_seat(first)>0);
+    assert(!extra_pad[1] && !extra_pad[2]);
     title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
     assert(mk8_assigned_keyboard()==0 && title_pad_seat(second)>0);
 }

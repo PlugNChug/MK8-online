@@ -12,6 +12,7 @@ static uint64_t held;
 static unsigned events, polls, transitions, editor_polls, tip_polls, tip_events, title_polls, title_events;
 static unsigned steam_polls, rumble_polls;
 void mk8_poll_steam_gamepads(void) { ++steam_polls; }
+bool mk8_steam_gamepad_event(const SDL_Event *) { return false; }
 void mk8_rumble_pump(void) { ++rumble_polls; }
 static uint64_t previous;
 static SDL_JoystickID id;

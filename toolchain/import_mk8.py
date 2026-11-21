@@ -148,8 +148,11 @@ def write_nca(stream, index, digest, target):
     member = next((name for name in (stem + b".nca", stem + b".ncz") if name in index), None)
     if member is None:
         raise ValueError("Conteúdo do MK8 base ou da atualização 4.0.1 ausente no pacote.")
+    write_verified_member(stream, index, member, SIZES[digest], digest, target)
+
+
+def write_verified_member(stream, index, member, size, digest, target):
     entry = Entry(stream, *index[member])
-    size = SIZES[digest]
     if member.endswith(b".nca") and entry.size != size:
         raise ValueError("Tamanho NCA divergente.")
     pieces = ncz_chunks(entry, size) if member.endswith(b".ncz") else iter(lambda: entry.read(CHUNK), b"")

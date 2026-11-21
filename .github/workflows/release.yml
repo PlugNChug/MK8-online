@@ -1,4 +1,4 @@
-# Builds the packaged launcher and its setup.exe for a version tag, and publishes them as a GitHub Release.
+# Builds Windows and Linux packages before publishing a tagged GitHub Release.
 # Suffixed tags and v0.3.0 are experimental pre-releases; the updater offers both release types.
 name: release
 
@@ -8,10 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  windows-ffmpeg:
+    uses: ./.github/workflows/windows-ffmpeg.yml
+
   windows:
+    needs: windows-ffmpeg
     runs-on: windows-latest
     env:
       MK8_UPDATE_REPO: ${{ github.repository }}
@@ -37,30 +41,73 @@ jobs:
         run: >-
           python -m pip --isolated install --only-binary=:all: --require-hashes
           -r upstream/smm2recomp/recomp/tools/requirements-gen.txt -r toolchain/requirements-host.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-ffmpeg
+      - name: Prepare Windows compiler and headers
+        run: |
+          python scripts/setup-native.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/setup-runtime-deps.py
       - name: Build setup
         shell: pwsh
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           if ($tag) { python scripts/release.py --tag $tag } else { python scripts/release.py }
+      - run: python scripts/smoke-windows-portable.py
       - uses: actions/upload-artifact@v4
         with:
-          name: setup
+          name: windows-packages
           path: target/dist/*
-      - name: Release title
-        id: title
-        shell: pwsh
-        run: '"text=" + (Get-Content target/dist/release-title.txt -Raw).Trim() | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8'
-      - name: Publish
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+          if-no-files-found: error
+
+  linux:
+    uses: ./.github/workflows/linux.yml
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          name: ${{ steps.title.outputs.text }}
-          prerelease: ${{ contains(github.ref_name, '-') || github.ref_name == 'v0.3.0' }}
-          body_path: target/dist/release-notes.md
-          files: |
-            target/dist/*-setup.exe
-            target/dist/*-setup.exe.sha256
-            target/dist/*-portable.zip
-            target/dist/*-portable.zip.sha256
-            target/dist/ffmpeg-9.0.2.tar.xz
-            target/dist/build-ffmpeg.sh
+          name: windows-packages
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: dist
+      - name: Release information
+        id: release
+        shell: bash
+        run: |
+          printf 'title=%s\n' "$(tr -d '\r\n' < dist/release-title.txt)" >> "$GITHUB_OUTPUT"
+          cd dist
+          for file in *-setup.exe *-portable.zip *-linux-x86_64.AppImage *-linux-x86_64.tar.gz; do
+            test -s "$file"
+            sha256sum --check "$file.sha256"
+          done
+      - name: Publish complete download set
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TITLE: ${{ steps.release.outputs.title }}
+        run: |
+          cd dist
+          assets=(*-setup.exe *-portable.zip *-linux-x86_64.AppImage *-linux-x86_64.tar.gz
+                  *.sha256 ffmpeg-9.0.2.tar.xz build-ffmpeg.sh)
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Manually tested packages may already be public. Verify the published files in place.
+            for asset in "${assets[@]}"; do
+              gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p "$asset" -D published
+            done
+            cd published
+            sha256sum --check ./*.sha256
+          else
+            flags=()
+            if [[ $GITHUB_REF_NAME == *-* || $GITHUB_REF_NAME == v0.3.0 ]]; then flags+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" --notes-file release-notes.md "${flags[@]}" "${assets[@]}"
+          fi
