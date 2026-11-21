@@ -109,20 +109,32 @@ int main(void) {
             output = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', output)
             windows = (runtime/'platform/windows.c').read_text(encoding='utf-8')
-            handler = windows[windows.index('static LONG CALLBACK vectored_handler('):windows.index('// The window keeps write tracking')]
+            handler = windows[windows.index('static bool mk8_thread_name_notification('):windows.index('// The window keeps write tracking')]
+            terminal = windows[windows.index('static LONG WINAPI unhandled_filter('):windows.index('void plat_crash_handler_install(')]
             program = output/'thread-name.c'
             program.write_text('''#include <windows.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
 static bool g_report_crashes;
 static bool lazy_commit(uint64_t address) { (void)address; return false; }
 static bool rt_fault_watch(uint64_t address, uint64_t pc) { (void)address; (void)pc; return false; }
-''' + handler + '''
-int main(void) {
+static _Noreturn void rt_fault_report(const char *what, uint64_t addr, uint64_t pc, uint64_t lr) { ExitProcess(37); }
+''' + handler + terminal + '''
+int main(int argc, char **argv) {
+    const ULONG_PTR args[] = {0x1000, (ULONG_PTR)"test thread", (ULONG_PTR)-1};
+    SetUnhandledExceptionFilter(unhandled_filter);
+    if (argc > 1) {
+        if (!strcmp(argv[1], "terminal")) RaiseException(0x406D1388, 0, 3, args);
+        else if (!strcmp(argv[1], "noncontinuable")) RaiseException(0x406D1388, EXCEPTION_NONCONTINUABLE, 3, args);
+        else if (!strcmp(argv[1], "malformed")) RaiseException(0x406D1388, 0, 0, NULL);
+        else RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, NULL);
+        return 0;
+    }
     void *token = AddVectoredExceptionHandler(1, vectored_handler);
     assert(token);
-    const ULONG_PTR args[] = {0x1000, (ULONG_PTR)"test thread", (ULONG_PTR)-1};
     RaiseException(0x406D1388, 0, 3, args);
     EXCEPTION_RECORD fault = {.ExceptionCode=EXCEPTION_ACCESS_VIOLATION, .NumberParameters=2};
     EXCEPTION_POINTERS pointers = {.ExceptionRecord=&fault};
@@ -139,6 +151,9 @@ int main(void) {
             subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG',
                             str(program), '-o', str(exe)], env=env, check=True)
             subprocess.run([str(exe)], check=True, timeout=20)
+            for mode, expected in [('terminal', 0), ('noncontinuable', 37), ('malformed', 37), ('fault', 37)]:
+                with self.subTest(mode=mode):
+                    self.assertEqual(subprocess.run([str(exe), mode], timeout=20).returncode, expected)
 
     def test_map_memory_backs_destination_before_copying(self):
         with tempfile.TemporaryDirectory() as folder:

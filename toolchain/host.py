@@ -423,11 +423,19 @@ def prepare_host_sources(source, output):
     boundary = 'static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
     if text.count(boundary) != 1:
         raise ValueError('Windows exception handler boundary changed')
-    text = text.replace(boundary, boundary + '''    // The legacy debugger thread-name notification can escape SDL's fallback on Windows.
-    if (er->ExceptionCode == 0x406D1388 && !(er->ExceptionFlags & EXCEPTION_NONCONTINUABLE) &&
-        er->NumberParameters >= 2 && (DWORD)er->ExceptionInformation[0] == 0x1000)
-        return EXCEPTION_CONTINUE_EXECUTION;
-''')
+    notification = '''static bool mk8_thread_name_notification(const EXCEPTION_RECORD *er) {
+    return er->ExceptionCode == 0x406D1388 && !(er->ExceptionFlags & EXCEPTION_NONCONTINUABLE) &&
+           er->NumberParameters >= 2 && (DWORD)er->ExceptionInformation[0] == 0x1000;
+}
+
+'''
+    resume = '    if (mk8_thread_name_notification(er)) return EXCEPTION_CONTINUE_EXECUTION;\n'
+    text = text.replace(boundary, notification + boundary + resume)
+    # SDL's legacy thread-name notification can also reach the top-level Windows crash filter.
+    terminal = 'static LONG WINAPI unhandled_filter(EXCEPTION_POINTERS *ep) {\n    EXCEPTION_RECORD *er = ep->ExceptionRecord;\n'
+    if text.count(terminal) != 1:
+        raise ValueError('Windows crash filter boundary changed')
+    text = text.replace(terminal, terminal + resume)
     windows.write_text(text, encoding='utf-8')
     from settings_menu import prepare as prepare_settings_menu
     prepare_settings_menu(runtime)
