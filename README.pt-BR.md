@@ -269,6 +269,8 @@ Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplic
 
 Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Na versão de teste, a autorização fica na memória enquanto o launcher estiver aberto. O CTGP é desativado nessa sessão. A reconexão continua experimental.
 
+Se o Nextendo retornar `discord_unlinked` após o login, vincule o Discord à mesma conta Nextendo e selecione **Jogar no Nextendo** novamente.
+
 | Local | Responsabilidade |
 | --- | --- |
 | `apps/launcher` | Launcher nativo, interface web, instalador, atualizações e relatórios |

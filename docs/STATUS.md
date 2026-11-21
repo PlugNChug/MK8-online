@@ -4,6 +4,8 @@
 
 O launcher tenta a DLL configurada, a pasta de dados e a pasta do executável antes de consultar as bibliotecas de jogos. Uma DLL local que inicializa as interfaces necessárias dispensa a varredura. Se as interfaces falharem, a próxima candidata é testada.
 
+Quando o Nextendo encerra a sessão com código 2 por uma recusa de conta, o launcher usa o log daquela partida para mostrar a orientação no aviso e na tela Jogar. As mensagens incluem vínculo com Discord, verificação de e-mail, conta desativada e sessão em outro aparelho. Outros códigos válidos aparecem como informados pelo serviço. Falhas fatais do runtime mantêm prioridade no diagnóstico.
+
 ## Validação local para a próxima versão — menu, imagem e Miis
 
 O menu F1 e as opções nativas usam a mesma lista de métodos de ampliação. O launcher verifica os componentes opcionais e a GPU antes de oferecê-los ao jogo. Bilinear e FSR 1 ficam disponíveis na instalação normal. A escolha de um novo provedor temporal é gravada para a próxima abertura do jogo. O launcher acompanha as preferências gravadas pelo jogo e conserva edições locais em andamento. Uma consulta lenta de status também passou a permitir que o jogador cancele, reabra e confirme o diálogo do Nextendo. O teste em navegador segura a resposta dessa consulta até depois da confirmação.

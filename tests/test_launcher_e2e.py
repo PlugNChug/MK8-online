@@ -74,6 +74,14 @@ class LauncherTests(unittest.TestCase):
             expect(page.locator('#play-nextendo')).to_have_text('Play on Nextendo')
             status['game_pid'] = 123
             expect(page.locator('#play-nextendo')).to_be_disabled()
+            message = 'Nextendo refused online play for this account: link a Discord account at nextendo.network (account page) and try again.'
+            status.update(game_pid=None, game_exit='exit code: 2', nextendo_refusal_message=message)
+            expect(page.locator('#notice')).to_have_text(message)
+            expect(page.locator('#game-state')).to_have_text(message)
+            status.update(nextendo_refusal_message='Nextendo refused online access: maintenance', last_report='report-2.zip')
+            expect(page.locator('#notice')).to_have_text('Nextendo refused online access: maintenance')
+            status.update(nextendo_refusal_message=None, last_report='report-3.zip')
+            expect(page.locator('#notice')).to_have_text('The game exited with an error. A report was saved in Support.')
         finally:
             page.close()
 

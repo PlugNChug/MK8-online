@@ -300,6 +300,8 @@ Keep adaptations in `runtime/mk8` and `toolchain`; preparation applies them to a
 
 To use Nextendo, update the game build and select **Play → Play on Nextendo**. The first launch shows the racing server’s self-signed public-key fingerprint and asks whether to trust it on this PC. Other service connections verify the Nextendo CA and hostname. Sign in through your browser, then select **Online Play** in MK8. The test launcher keeps the refresh token in memory while its window is open. CTGP is disabled for this session. Reconnection remains experimental.
 
+If Nextendo returns `discord_unlinked` after sign-in, link Discord to the same Nextendo account, then select **Play on Nextendo** again.
+
 | Location | Responsibility |
 | --- | --- |
 | `apps/launcher` | Native launcher, web interface, installer, updates and reports |

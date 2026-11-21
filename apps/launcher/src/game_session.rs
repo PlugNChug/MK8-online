@@ -124,17 +124,25 @@ pub fn run() -> Result<i32> {
 
 /// What to do when Nextendo refused online play for the account; the reason is the one the
 /// runtime logs (`[nextendo] online status: refused: <reason>`, runtime net/nextendo.c).
-fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
+pub fn nextendo_refusal_code(log: &str) -> Option<&str> {
     let status = log
         .lines()
         .rev()
         .find_map(|line| line.strip_prefix("[nextendo] online status: "))?;
-    let reason = status
-        .strip_prefix("refused")?
-        .trim_start_matches(':')
-        .trim();
+    if status == "refused" {
+        return Some("");
+    }
+    let code = status.strip_prefix("refused: ")?.trim();
+    (code.len() <= 64
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'))
+    .then_some(code)
+}
+
+pub fn nextendo_message(reason: &str, language: &str) -> String {
     let pick = |pt, en, es| crate::language::pick(language, pt, en, es);
-    Some(match reason {
+    match reason {
         "discord_unlinked" => pick(
             "O Nextendo recusou o jogo online desta conta: vincule uma conta do Discord em nextendo.network (página da conta) e tente de novo.",
             "Nextendo refused online play for this account: link a Discord account at nextendo.network (account page) and try again.",
@@ -160,12 +168,13 @@ fn nextendo_refusal(log: &str, language: &str) -> Option<&'static str> {
             "Nextendo does not know this account: sign in again through the browser.",
             "Nextendo no reconoce esta cuenta: vuelve a iniciar sesión en el navegador.",
         ),
-        _ => pick(
+        "" => pick(
             "O Nextendo recusou o jogo online desta conta.",
             "Nextendo refused online play for this account.",
             "Nextendo rechazó el juego en línea de esta cuenta.",
         ),
-    })
+        code => return format!("{} {code}", pick("O Nextendo recusou o acesso online:", "Nextendo refused online access:", "Nextendo rechazó el acceso en línea:")),
+    }.to_owned()
 }
 
 pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<String> {
@@ -188,14 +197,14 @@ pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<Strin
             "Windows rejected the format of a game executable or DLL.",
             "Windows rechazó el formato de un ejecutable o una DLL del juego.",
         ),
-        _ => nextendo_refusal(log, language)?,
+        _ => return None,
     };
     Some(reason.to_owned())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_reason, nextendo_refusal};
+    use super::{exit_reason, nextendo_message, nextendo_refusal_code};
 
     #[test]
     fn reports_the_last_fatal_or_windows_loader_status_without_guessing() {
@@ -213,9 +222,7 @@ mod tests {
         assert!(exit_reason("", Some(0xc000007bu32 as i32), "es")
             .unwrap()
             .contains("formato"));
-        assert!(exit_reason(refusal, Some(1), "en")
-            .unwrap()
-            .contains("Discord"));
+        assert_eq!(exit_reason(refusal, Some(1), "en"), None);
         assert_eq!(
             exit_reason(
                 &format!("{refusal}[nextendo] online status: allowed"),
@@ -229,6 +236,8 @@ mod tests {
 
     #[test]
     fn explains_nextendo_refusal_from_the_game_log() {
+        let nextendo_refusal =
+            |log, lang| nextendo_refusal_code(log).map(|code| nextendo_message(code, lang));
         let log = "[nextendo] game token ok (87 chars, 86400s)\n\
                    [nextendo] online status: refused: discord_unlinked\n\
                    BAAS adapter unavailable or online access refused.\n";
@@ -248,7 +257,7 @@ mod tests {
         let bare = "[nextendo] online status: refused\n";
         assert_eq!(
             nextendo_refusal(bare, "en"),
-            Some("Nextendo refused online play for this account.")
+            Some("Nextendo refused online play for this account.".to_owned())
         );
         assert_eq!(
             nextendo_refusal("[nextendo] online status: allowed\n", "en"),
