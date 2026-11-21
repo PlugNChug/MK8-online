@@ -1,5 +1,9 @@
 # Estado técnico — 20/11/2026
 
+## Busca de DLL da Steam na 0.5.0 de teste
+
+O launcher tenta a DLL configurada, a pasta de dados e a pasta do executável antes de consultar as bibliotecas de jogos. Uma DLL local que inicializa as interfaces necessárias dispensa a varredura. Se as interfaces falharem, a próxima candidata é testada.
+
 ## Validação local para a próxima versão — menu, imagem e Miis
 
 O menu F1 e as opções nativas usam a mesma lista de métodos de ampliação. O launcher verifica os componentes opcionais e a GPU antes de oferecê-los ao jogo. Bilinear e FSR 1 ficam disponíveis na instalação normal. A escolha de um novo provedor temporal é gravada para a próxima abertura do jogo. O launcher acompanha as preferências gravadas pelo jogo e conserva edições locais em andamento. Uma consulta lenta de status também passou a permitir que o jogador cancele, reabra e confirme o diálogo do Nextendo. O teste em navegador segura a resposta dessa consulta até depois da confirmação.
