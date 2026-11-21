@@ -2,6 +2,8 @@
 
 ## Controles da PR #75 na base 0.5.0
 
+Se o jogador apertava e soltava um botão durante a animação de entrada, o jogo podia ficar parado no título até abrir e fechar o F1. Agora o primeiro dispositivo assume o jogador 1 durante a animação. O runtime envia a confirmação quando a tela de título já aceita o comando e o jogo já leu um quadro com os botões soltos. Nesta revisão da PR, os testes nativos cobriram a entrada antecipada pelo controle, a volta ao título usando o teclado e várias leituras no mesmo quadro. Também passaram os testes de Steam/GameInput e da seleção de Mii no fluxo LAN automático.
+
 Integramos a `master` da versão 0.5.0 (`78dc562`) à revisão `92beb4e` da PR #75. O primeiro dispositivo usado na tela de título assume o jogador 1, e a tela de atribuição controla o pareamento dos Joy-Con. Preservamos a descoberta de controles via Steam/GameInput no Windows e a inicialização direta da SDL nos demais sistemas.
 
 No Windows, passaram 38 testes de atribuição, reconexão, vibração, movimento, menus e configurações, incluindo três no Chromium com o launcher `9b11c620`. O navegador confirmou que salvar outra opção preserva as chaves de controle antigas no INI. A build isolada com `--runtime-only` ligou as 231 unidades do runtime (`746c7fe9`), verificou as dependências e preservou a biblioteca do jogo. Conferimos os 116 arquivos do manifesto e as importações dos três módulos de código. O caminho portátil da SDL aceitou um controle virtual e propagou o erro de vídeo no teste no Windows. Falta executar esse cenário em Linux nativo. Esta integração não passou por nova corrida.

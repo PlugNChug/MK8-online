@@ -66,9 +66,10 @@ static char rendered[SETTINGS_VISIBLE+1][80];
 static Mk8Setting catalogue[3][12];
 static int counts[]={11,4,2};
 static bool in_main=true;
-static bool native_style=true, auto_lan, title_active;
+static bool native_style=true, auto_lan;
+static enum Mk8TitlePhase title_active;
 bool mk8_auto_lan_requested(void) { return auto_lan; }
-void mk8_title_input_active(bool active) { title_active=active; }
+void mk8_title_input_phase(enum Mk8TitlePhase phase) { title_active=phase; }
 static unsigned race_input_players;
 void mk8_input_race_players(unsigned players) { race_input_players=players; }
 static uint64_t game_root, root_node, root_context;
@@ -785,13 +786,13 @@ int main(void) {
     mk8_settings_page_frame(title_manager); assert(!title_active);
     ST32(title_page+0x124,1);
     auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
-    auto_lan=false; mk8_settings_page_frame(title_manager); assert(title_active);
+    auto_lan=false; mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
     ST32(title_page+0x124,2);
-    mk8_settings_page_frame(title_manager); assert(title_active);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
     ST32(title_page+0x124,3);
-    mk8_settings_page_frame(title_manager); assert(title_active);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
     ST32(title_page+0x120,4); ST32(title_page+0x124,0);
-    mk8_settings_page_frame(title_manager); assert(title_active);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_PROMPT);
     auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
     auto_lan=false; ST32(title_page+0x124,1);
     mk8_settings_page_frame(title_manager); assert(!title_active);

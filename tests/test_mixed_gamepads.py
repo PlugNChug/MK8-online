@@ -61,6 +61,7 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 env['SDL_' + driver] = '0'
             for order, layout, expected in (
                 ('forward', None, 'title'),
+                ('forward', None, 'title-confirm'),
                 ('forward', None, 'title-hotplug'),
                 ('forward', None, 'steam-title'),
                 ('forward', None, 'all-reconnect'),

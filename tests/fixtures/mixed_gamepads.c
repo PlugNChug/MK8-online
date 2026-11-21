@@ -806,6 +806,9 @@ int main(int argc, char **argv) {
     if(!strcmp(argv[2],"title")) {
         check_title_input(); SDL_Quit(); return 0;
     }
+    if(!strcmp(argv[2],"title-confirm")) {
+        check_title_confirm(); SDL_Quit(); return 0;
+    }
     if(!strcmp(argv[2],"title-hotplug")) {
         check_title_hotplug(); SDL_Quit(); return 0;
     }
@@ -880,11 +883,11 @@ int main(int argc, char **argv) {
     check_popup_owner();
     check_blocked_settings_chord();
     if(!strcmp(argv[2],"mixed")) {
-        mk8_title_input_active(true); pump();
+        mk8_title_input_phase(MK8_TITLE_PROMPT); pump();
         button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
         assert(SDL_GetGamepadID(pad)==ids[PRO] && mk8_partner[1] && !(guest_buttons(0)&(1ull<<BIND_A)));
         button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
-        mk8_title_input_active(false); pump();
+        mk8_title_input_phase(MK8_TITLE_INACTIVE); pump();
     }
     const int buttons[] = {SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_WEST,
                            SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST};

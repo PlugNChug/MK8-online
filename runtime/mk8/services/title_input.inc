@@ -2,6 +2,8 @@
 enum { MK8_TITLE_OFF, MK8_TITLE_WAIT, MK8_TITLE_ACCEPTED };
 static _Atomic int mk8_title_state;
 static _Atomic unsigned mk8_title_visit;
+static _Atomic unsigned mk8_title_neutral_visit;
+static _Atomic bool mk8_title_confirm_ready;
 static unsigned mk8_observed_visit;
 static pthread_mutex_t mk8_title_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -11,8 +13,14 @@ bool mk8_title_manual_input(void) {
     return !(layout && *layout && mk8_startup_preset >= 0) && !(script && *script) && !input_user_blocked(NULL);
 }
 
-void mk8_title_input_active(bool active) {
-    if (active == (mk8_title_state != MK8_TITLE_OFF)) return;
+void mk8_title_input_phase(enum Mk8TitlePhase phase) {
+    int state = mk8_title_state;
+    bool active = phase != MK8_TITLE_INACTIVE;
+    // Claim during the entrance, then deliver a fresh edge when the stock prompt can act.
+    // Multiple Npad reads in one guest frame must see the same neutral state.
+    mk8_title_confirm_ready = phase == MK8_TITLE_PROMPT && state != MK8_TITLE_OFF &&
+                              mk8_title_neutral_visit == mk8_title_visit;
+    if (active == (state != MK8_TITLE_OFF)) return;
     if (active && !mk8_title_manual_input()) return;
     pthread_mutex_lock(&mk8_title_lock);
     if (!active) mk8_title_state = MK8_TITLE_OFF;
@@ -154,7 +162,9 @@ static void mk8_title_hid(unsigned player, uint64_t *buttons, int32_t *lx, int32
     if (state != MK8_TITLE_OFF) {
         held[player] = *buttons;
         held_axes[player] = mask;
-        *buttons = player == 0 && state == MK8_TITLE_ACCEPTED ? 1ull << BTN_A : 0;
+        *buttons = player == 0 && state == MK8_TITLE_ACCEPTED && mk8_title_confirm_ready ? 1ull << BTN_A : 0;
+        if (player == 0 && !*buttons)
+            mk8_title_neutral_visit = mk8_title_visit;
         *lx = *ly = *rx = *ry = 0;
     } else {
         *buttons &= ~atomic_fetch_and(&held[player], *buttons);

@@ -1,4 +1,11 @@
-static void title_ready(bool ready) { mk8_title_input_active(ready); pump(); }
+static void title_ready(bool ready) {
+    mk8_title_input_phase(ready ? MK8_TITLE_PROMPT : MK8_TITLE_INACTIVE);
+    pump();
+    if (ready) {
+        guest_buttons(0);
+        mk8_title_input_phase(MK8_TITLE_PROMPT);
+    }
+}
 
 static void title_key(SDL_Scancode code, bool repeat) {
     SDL_Event key={.type=SDL_EVENT_KEY_DOWN};
@@ -194,6 +201,33 @@ static void check_title_hotplug(void) {
     SDL_CloseJoystick(sticks[PRO]); assert(SDL_DetachVirtualJoystick(ids[PRO])); pump();
 }
 
+static void check_title_confirm(void) {
+    attach(PRO); pump();
+    // An entrance claim can precede the title's interactive wait. The guest
+    // must get a new confirm edge in that wait even if the player let go.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    uint64_t entrance = guest_buttons(0);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    assert(!entrance && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    assert((guest_buttons(0) & ~entrance) == (1ull << BIND_A));
+    title_ready(false);
+    assert(!guest_buttons(0));
+    // A new visit cannot reuse the previous visit's neutral sample. Here A
+    // reached the guest immediately before the title and the claim arrived
+    // before any title HID poll. Two polls in the same frame stay neutral.
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    assert(guest_buttons(0)==(1ull<<BIND_A));
+    mk8_title_input_phase(MK8_TITLE_PROMPT); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    title_key(SDL_SCANCODE_K,false);
+    assert(!guest_buttons(0) && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
+    detach_title_pad(PRO);
+}
+
 static void check_title_input(void) {
     attach(PRO); pump();
     SDL_VirtualJoystickDesc d; SDL_INIT_INTERFACE(&d);
@@ -292,7 +326,7 @@ static void check_title_input(void) {
     title_ready(true);
     button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,true);
     // The guest may leave and reopen the title between two SDL pumps.
-    mk8_title_input_active(false); mk8_title_input_active(true); pump();
+    mk8_title_input_phase(MK8_TITLE_INACTIVE); title_ready(true);
     button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,true);
     button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,false);
     button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,false);
