@@ -8,7 +8,12 @@ use std::{fs, path::Path, time::SystemTime};
 pub struct Options {
     pub graphics_capture: bool,
     pub audio_recording: bool,
-    pub native_settings: bool,
+    #[serde(
+        rename = "native_settings",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub legacy_native: Option<bool>,
 }
 
 pub(crate) fn plain(path: &Path) -> Result<()> {
@@ -47,11 +52,11 @@ pub fn read(local: &Path) -> Result<Options> {
     Ok(stored(local)?.unwrap_or_else(|| Options {
         graphics_capture: std::env::var("MK8_GFX_DIAGNOSTICS").as_deref() == Ok("1"),
         audio_recording: std::env::var_os("LARECOMP_AUDIO_WAV").is_some(),
-        native_settings: std::env::var("MK8_SETTINGS_EXPERIMENT").as_deref() == Ok("1"),
+        legacy_native: None,
     }))
 }
 
-pub fn write(local: &Path, options: &Options) -> Result<()> {
+pub(super) fn write(local: &Path, options: &Options) -> Result<()> {
     let path = local.join("debug-options.json");
     plain(&path)?;
     plain(&path.with_extension("json.new"))?;
@@ -66,10 +71,6 @@ pub fn configure(local: &Path) -> Result<()> {
     std::env::set_var(
         "MK8_GFX_DIAGNOSTICS",
         if options.graphics_capture { "1" } else { "0" },
-    );
-    std::env::set_var(
-        "MK8_SETTINGS_EXPERIMENT",
-        if options.native_settings { "1" } else { "0" },
     );
     std::env::remove_var("LARECOMP_AUDIO_WAV");
     if options.audio_recording {
@@ -109,7 +110,6 @@ mod tests {
             serde_json::json!({
                 "options":options,
                 "graphics":std::env::var("MK8_GFX_DIAGNOSTICS").ok(),
-                "settings":std::env::var("MK8_SETTINGS_EXPERIMENT").ok(),
                 "audio":std::env::var("LARECOMP_AUDIO_WAV").ok()
             })
         );
@@ -130,7 +130,6 @@ mod tests {
                 ])
                 .env("MK8_DEBUG_OPTIONS_TEST", &local)
                 .env("MK8_GFX_DIAGNOSTICS", "1")
-                .env("MK8_SETTINGS_EXPERIMENT", "1")
                 .env("LARECOMP_AUDIO_WAV", "existing-custom.wav")
                 .output()
                 .unwrap();
@@ -147,19 +146,17 @@ mod tests {
         };
         let inherited = probe();
         assert_eq!(inherited["graphics"], "1");
-        assert_eq!(inherited["settings"], "1");
         assert_eq!(inherited["audio"], "existing-custom.wav");
         assert_eq!(inherited["options"]["graphics_capture"], true);
         assert!(!local.join("debug-options.json").exists());
         write(&local, &Options::default()).unwrap();
         let off = probe();
         assert_eq!(off["graphics"], "0");
-        assert_eq!(off["settings"], "0");
         assert_eq!(off["audio"], serde_json::Value::Null);
         let on = Options {
             graphics_capture: true,
             audio_recording: true,
-            native_settings: true,
+            legacy_native: None,
         };
         write(&local, &on).unwrap();
         assert_eq!(read(&local).unwrap(), on);
@@ -167,12 +164,10 @@ mod tests {
         audio_off.audio_recording = false;
         write(&local, &audio_off).unwrap();
         assert!(read(&local).unwrap().graphics_capture);
-        assert!(read(&local).unwrap().native_settings);
         assert_eq!(probe()["audio"], serde_json::Value::Null);
         write(&local, &on).unwrap();
         let first = probe();
         assert_eq!(first["graphics"], "1");
-        assert_eq!(first["settings"], "1");
         let first_path = Path::new(first["audio"].as_str().unwrap());
         fs::write(first_path, "earlier recording").unwrap();
         let second = probe();

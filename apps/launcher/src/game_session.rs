@@ -8,6 +8,8 @@ use std::{path::PathBuf, process::Child};
 pub struct Request {
     pub root: PathBuf,
     pub local: PathBuf,
+    #[serde(default)]
+    pub browser_language: String,
     pub install: Installation,
     pub network: Option<(String, u8)>,
     pub username: String,
@@ -39,43 +41,27 @@ pub fn run() -> Result<i32> {
         std::env::current_exe().map_err(|e| e.to_string())?,
     );
 
-    // The in-game panel (F1) follows the language the launcher shows.
-    std::env::set_var(
-        "MK8_UI_LANGUAGE",
-        crate::language::effective(&request.local),
-    );
-    crate::graphics::configure(&request.local)?;
+    crate::graphics::configure(&request.local, (&request.install).into())?;
     crate::fonts::configure(&request.local)?;
+    let wrench_layout =
+        crate::game_settings::configure_menu(&request.local, (&request.install).into())?;
     crate::debug_options::configure(&request.local)?;
+    let saved = crate::language::read(&request.local);
+    let overlay_language = if !saved.is_empty() {
+        saved
+    } else if crate::language::valid(&request.browser_language) {
+        request.browser_language.clone()
+    } else {
+        crate::language::effective(&request.local)
+    };
+    std::env::set_var("MK8_UI_LANGUAGE", &overlay_language);
+    std::env::set_var("MK8_SETTINGS_LANGUAGE", overlay_language);
     std::env::remove_var("MK8_SETTINGS_ROMFS");
-    if !request.nextendo && std::env::var("MK8_SETTINGS_EXPERIMENT").as_deref() == Ok("1") {
+    if !request.nextendo && wrench_layout {
         if let Some(pack) = mk8_installer::ctgp::launch_overlay(&request.local, &request.install)? {
-            let menu = request
-                .install
-                .files
-                .get("settings-layout")
-                .ok_or("Rebuild the game to combine CTGP with native Settings.")?;
-            let output = request.local.join("derived/settings-ctgp");
-            let mut command =
-                std::process::Command::new(request.root.join("local/python/Scripts/python.exe"));
-            command
-                .arg(request.root.join("toolchain/settings_layout.py"))
-                .arg(&menu.path)
-                .arg(pack.join("UI/cmn/menu.sarc"))
-                .arg(&output);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                command.creation_flags(0x08000000);
+            if let Some(output) = ctgp_menu_overlay(&request, &pack)? {
+                std::env::set_var("MK8_SETTINGS_ROMFS", output);
             }
-            let result = command.output().map_err(|e| e.to_string())?;
-            if !result.status.success() {
-                return Err(format!(
-                    "Could not combine CTGP and Settings layouts: {}",
-                    String::from_utf8_lossy(&result.stderr)
-                ));
-            }
-            std::env::set_var("MK8_SETTINGS_ROMFS", output);
         }
     }
     let signal = request.local.join("open-rooms");
@@ -120,6 +106,53 @@ pub fn run() -> Result<i32> {
     let _ = supervisor::ready();
     let exit = game.wait().map_err(|e| e.to_string())?;
     Ok(exit.code().unwrap_or(1))
+}
+
+fn ctgp_menu_overlay(request: &Request, pack: &std::path::Path) -> Result<Option<PathBuf>> {
+    let pack_menu = pack.join("UI/cmn/menu.sarc");
+    let custom_menu = pack_menu.try_exists().map_err(|e| e.to_string())?;
+    if !custom_menu && request.install.menu_themes_supported {
+        return Ok(None);
+    }
+    let menu = request
+        .install
+        .files
+        .get("settings-layout")
+        .ok_or("Atualize a build do jogo para combinar o CTGP com o menu da chave inglesa.")?;
+    if !custom_menu {
+        // The legacy host requires an explicit layout even if the pack keeps the original menu.
+        return menu
+            .path
+            .ancestors()
+            .nth(3)
+            .map(|p| Some(p.to_path_buf()))
+            .ok_or_else(|| "Caminho do layout do menu inválido.".into());
+    }
+    let output = request.local.join("derived/settings-ctgp");
+    let python = if cfg!(windows) {
+        "local/python/Scripts/python.exe"
+    } else {
+        "local/python/bin/python"
+    };
+    let mut command = std::process::Command::new(request.root.join(python));
+    command
+        .arg(request.root.join("toolchain/settings_layout.py"))
+        .arg(&menu.path)
+        .arg(pack_menu)
+        .arg(&output);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let result = command.output().map_err(|e| e.to_string())?;
+    if !result.status.success() {
+        return Err(format!(
+            "Could not combine CTGP and Settings layouts: {}",
+            String::from_utf8_lossy(&result.stderr)
+        ));
+    }
+    Ok(Some(output))
 }
 
 /// What to do when Nextendo refused online play for the account; the reason is the one the

@@ -31,7 +31,11 @@ class SettingsModulesTests(unittest.TestCase):
         (user/'save').mkdir(parents=True)
         (user/'mk8d.ini').write_text('future_setting = preserve\ntheme = Default\n', encoding='utf-8')
         (user/'save/marker').write_bytes(b'keep-save')
-        env = {**os.environ, **({} if os.environ.get('MK8_TEST_EMBEDDED') == '1' else {'MK8_WEB_ROOT': str(ROOT/'apps/launcher/web')})}
+        env = os.environ.copy()
+        if env.get('MK8_TEST_EMBEDDED') == '1':
+            env.pop('MK8_WEB_ROOT', None)
+        else:
+            env['MK8_WEB_ROOT'] = str(ROOT/'apps/launcher/web')
         self.process = subprocess.Popen([os.environ['MK8_LAUNCHER_EXE'], '--headless', '--data-dir', str(self.local)],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
@@ -82,56 +86,155 @@ class SettingsModulesTests(unittest.TestCase):
         ini.write_text(ini.read_text()+'\nlanguage = fr\n', encoding='utf-8')
         expect(page.locator('#play-game-language')).to_have_value('fr')
 
-    def test_native_settings_opt_in_preserves_other_options_and_game_data(self):
+    def save_settings(self):
+        # The button also disables while the POST is in flight; reloading then can cancel the save.
+        with self.page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method=='POST') as response:
+            self.page.locator('#settings-save').click()
+        result = response.value.json()
+        self.assertTrue(result['ok'], result)
+        expect(self.page.locator('#settings-save')).to_be_disabled()
+
+    def test_theme_screenshots_follow_drafts_and_saved_selection(self):
+        page = self.page
+        theme = page.locator('#config-field-theme')
+        image = page.locator('#config-theme-screenshot')
+        ini = self.local/'user-no-mii/mk8d.ini'
+        choices = [('Native','native'),('Default','default'),('SimpleLight','simple-light'),('NES','nes'),('NESLight','nes-light')]
+        self.assertEqual(theme.locator('option').evaluate_all('options => options.map(o => o.value)'),[choice for choice,_ in choices])
+        for choice,file in choices:
+            theme.select_option(choice)
+            expect(image).to_be_visible()
+            expect(image).to_have_attribute('src',f'/menu-themes/{file}.webp')
+            size = image.evaluate('async img => { await img.decode(); return [img.naturalWidth,img.naturalHeight]; }')
+            self.assertEqual(size,[1280,720])
+            expect(page.locator('#config-display-preview')).to_be_hidden()
+            expect(page.locator('#config-illustration-note')).to_be_hidden()
+            self.assertIn('theme = Default',ini.read_text())
+        page.reload()
+        expect(image).to_have_attribute('src','/menu-themes/default.webp')
+        theme.select_option('NESLight')
+        self.save_settings()
+        page.reload()
+        expect(image).to_have_attribute('src','/menu-themes/nes-light.webp')
+        for lang,label,alt in [('en','Game screenshot','Quick settings with the NES Light Menu theme.'),
+                               ('es','Captura del juego','Ajustes rápidos del menú con el tema NES claro.'),
+                               ('pt-BR','Captura do jogo','Ajustes rápidos do menu no tema NES claro.')]:
+            page.locator('#language').select_option(lang)
+            expect(page.locator('#config-preview-kind')).to_have_text(label)
+            expect(image).to_have_accessible_name(alt)
+        for width in (1440,390):
+            page.set_viewport_size({'width':width,'height':844})
+            image.scroll_into_view_if_needed()
+            box = image.bounding_box()
+            self.assertGreater(box['width'],200)
+            self.assertAlmostEqual(box['width']/box['height'],16/9,delta=.01)
+            self.assertGreaterEqual(box['x'],0)
+            self.assertLessEqual(box['x']+box['width'],width)
+        page.locator('#config-field-aspect').focus()
+        expect(image).to_be_hidden()
+        expect(page.locator('#config-display-preview')).to_be_visible()
+        expect(page.locator('#config-preview-kind')).to_have_text('Prévia ilustrativa')
+
+        ini.unlink()
+        page.reload()
+        expect(theme).to_have_value('Native')
+        expect(image).to_have_attribute('src','/menu-themes/native.webp')
+        self.assertFalse(ini.exists())
+
+        ini.write_text('theme = constructor\n', encoding='utf-8')
+        page.reload()
+        expect(image).to_have_attribute('src','/menu-themes/default.webp')
+        expect(image).to_have_accessible_name('Ajustes rápidos do menu no tema Simples escuro.')
+        self.assertIn('theme = constructor',ini.read_text())
+
+    def test_native_theme_migrates_existing_opt_in_and_allows_an_explicit_change(self):
         path = self.local/'debug-options.json'
-        previous = {'graphics_capture':True, 'audio_recording':True, 'native_settings':False}
-        path.write_text(json.dumps(previous), encoding='utf-8')
+        debug = {'graphics_capture':True, 'audio_recording':True}
+        path.write_text(json.dumps({**debug, 'native_settings':True}), encoding='utf-8')
         ini = self.local/'user-no-mii/mk8d.ini'
         original = ini.read_bytes()
         page = self.page
         page.reload()
-        switch = page.locator('#debug-settings')
-        expect(switch).not_to_be_checked()
-        switch.check()
-        expect(page.locator('#debug-status')).to_have_text('Preferência salva. A alteração vale ao iniciar o jogo.')
-        expect(switch).to_be_enabled()
-        self.assertEqual(json.loads(path.read_text()), {**previous, 'native_settings':True})
+        theme = page.locator('#config-field-theme')
+        expect(theme).to_have_value('Native')
+        expect(page.locator('#config-theme-screenshot')).to_have_attribute('src','/menu-themes/native.webp')
+        expect(page.locator('#debug-settings')).to_have_count(0)
         self.assertEqual(ini.read_bytes(), original)
-        page.reload()
-        expect(switch).to_be_checked()
-        token = page.locator('meta[name="mk8-token"]').get_attribute('content')
-        invalid = page.request.post(self.url+'/api/debug-options', headers={'X-MK8-Token':token},
-            data=json.dumps({**previous, 'native_settings':'yes'})).json()
-        self.assertFalse(invalid['ok'])
         self.assertTrue(json.loads(path.read_text())['native_settings'])
-        for language, label in [('en','Enable native settings menu'), ('es','Activar el menú nativo de ajustes')]:
+        for language, label in [('en','Native'), ('es','Nativo')]:
             page.locator('#language').select_option(language)
-            expect(page.locator('label').filter(has=switch)).to_contain_text(label)
-        self.shot('native-settings')
+            expect(theme.locator('option:checked')).to_have_text(label)
+        for choice in ('NES','Native','Default'):
+            theme.select_option(choice)
+            self.save_settings()
+            page.reload()
+            expect(theme).to_have_value(choice)
+            self.assertIn('theme = '+choice, ini.read_text())
+            self.assertIn('future_setting = preserve', ini.read_text())
+            self.assertEqual(json.loads(path.read_text()), debug)
         page.set_viewport_size({'width':390,'height':844})
         self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
-        self.shot('native-settings-mobile')
 
-    def test_native_settings_failed_save_restores_saved_value_and_retries(self):
+    def test_native_theme_save_failure_keeps_draft_for_retry(self):
         page = self.page
-        switch = page.locator('#debug-settings')
-        expect(switch).not_to_be_checked()
+        theme = page.locator('#config-field-theme')
+        theme.select_option('Native')
         def reject(route):
             if route.request.method == 'POST':
                 route.fulfill(status=500,json={'ok':False,'error':'Fixture write failure'})
             else:
                 route.continue_()
-        page.route('**/api/debug-options',reject)
-        switch.check()
-        expect(page.locator('#debug-status')).to_have_text('Não foi possível salvar a preferência.')
-        expect(switch).to_be_enabled()
-        expect(switch).not_to_be_checked()
+        page.route('**/api/settings',reject)
+        page.locator('#settings-save').click()
+        expect(page.get_by_text('Fixture write failure',exact=True)).to_be_visible()
+        expect(theme).to_have_value('Native')
+        expect(page.locator('#settings-save')).to_be_enabled()
+        self.assertIn('theme = Default',(self.local/'user-no-mii/mk8d.ini').read_text())
+        page.unroute('**/api/settings',reject)
+        self.save_settings()
+        page.reload()
+        expect(theme).to_have_value('Native')
         self.assertFalse((self.local/'debug-options.json').exists())
-        page.unroute('**/api/debug-options',reject)
-        switch.check()
-        expect(page.locator('#debug-status')).to_have_text('Preferência salva. A alteração vale ao iniciar o jogo.')
-        expect(switch).to_be_enabled()
-        self.assertTrue(json.loads((self.local/'debug-options.json').read_text())['native_settings'])
+
+    def test_old_candidate_keeps_native_selected_when_other_settings_change(self):
+        from hashlib import sha256
+        layout = self.local/'test-layout'
+        layout.write_bytes(b'synthetic')
+        record = {'path':str(layout),'bytes':9,'sha256':sha256(b'synthetic').hexdigest()}
+        candidate = {'schema':2,'identity':'test','profile':'mk8d-smm2-experimental','gameplay_verified':False,
+                     'executable':record,'files':{'settings-layout':record},'data_root':str(self.local),'shader_root':str(self.local)}
+        (self.local/'candidate.json').write_text(json.dumps(candidate))
+        debug = self.local/'debug-options.json'
+        debug.write_text(json.dumps({'graphics_capture':True,'audio_recording':False,'native_settings':True}))
+        ini = self.local/'user-no-mii/mk8d.ini'
+        ini.write_text('theme = NES\n')
+        page = self.page
+        page.reload()
+        theme = page.locator('#config-field-theme')
+        expect(theme).to_have_value('Native')
+        page.locator('#config-field-show_fps').check()
+        self.save_settings()
+        token = {'X-MK8-Token':page.locator('meta[name="mk8-token"]').get_attribute('content')}
+        full = page.request.get(self.url+'/api/settings',headers=token).json()['data']['values']
+        full['volume'] = '1.5'
+        result = page.request.post(self.url+'/api/settings',headers=token,data=full).json()
+        self.assertTrue(result['ok'],result)
+        self.assertIn('theme = NES',ini.read_text())
+        self.assertTrue(json.loads(debug.read_text())['native_settings'])
+        for choice in ('Default','Native'):
+            theme.select_option(choice)
+            self.save_settings()
+            page.reload()
+            expect(theme).to_have_value(choice)
+            self.assertEqual(json.loads(debug.read_text())['native_settings'],choice=='Native')
+            self.assertIn('theme = Default',ini.read_text())
+        candidate['menu_themes_supported'] = True
+        (self.local/'candidate.json').write_text(json.dumps(candidate))
+        saved = ini.read_bytes(),debug.read_bytes()
+        theme.select_option('SimpleLight')
+        page.locator('#settings-save').click()
+        expect(page.locator('#notice')).to_contain_text('Atualize a build do jogo para usar os temas claros')
+        self.assertEqual((ini.read_bytes(),debug.read_bytes()),saved)
 
     def test_optional_graphics_component_requires_reading_and_acceptance(self):
         page = self.page
@@ -173,7 +276,8 @@ class SettingsModulesTests(unittest.TestCase):
         candidate = {'schema':2, 'identity':'test', 'profile':'mk8d-smm2-experimental',
                      'executable':{'path':'old.exe', 'sha256':'0'*64, 'bytes':1},
                      'files':{}, 'data_root':'.', 'shader_root':'.', 'gameplay_verified':False,
-                     'dlc_supported':True, 'nextendo_supported':True}
+                     'dlc_supported':True, 'nextendo_supported':True,
+                     'menu_themes_supported':True, 'menu_light_themes_supported':True}
         path = self.local/'candidate.json'
         path.write_text(json.dumps(candidate))
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
@@ -195,12 +299,18 @@ class SettingsModulesTests(unittest.TestCase):
         path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
 
+        for capability in ('menu_themes_supported', 'menu_light_themes_supported'):
+            old = dict(candidate)
+            del old[capability]
+            path.write_text(json.dumps(old))
+            self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page
         expect(page.locator('#config-tab-fonts')).to_be_enabled()
         expect(page.locator('#config-tab-content')).to_be_enabled()
         page.locator('#config-field-theme').select_option('NES')
-        expect(page.locator('#config-menu-example')).to_have_class('config-menu-example nes')
+        expect(page.locator('#config-theme-screenshot')).to_have_attribute('src','/menu-themes/nes.webp')
         self.shot('01-menu-nes')
         page.locator('#config-field-aspect').select_option('original')
         expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
@@ -221,8 +331,7 @@ class SettingsModulesTests(unittest.TestCase):
         self.shot('03-fonts')
         page.locator('#config-tab-video').click()
         expect(page.locator('#config-field-theme')).to_have_value('NES')
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         page.reload()
         expect(page.locator('#config-field-theme')).to_have_value('NES')
         expect(page.locator('#config-field-fullscreen')).to_be_checked()
@@ -241,10 +350,10 @@ class SettingsModulesTests(unittest.TestCase):
         page = self.page
         aspect = page.locator('#config-field-aspect')
         aspect.select_option('original')
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         page.reload()
         expect(aspect).to_have_value('original')
+        aspect.focus()
         expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
         self.assertIn('aspect = original', (self.local/'user-no-mii/mk8d.ini').read_text())
         # The same scene widens; the illustration must not suggest a wider field of view.
@@ -261,8 +370,7 @@ class SettingsModulesTests(unittest.TestCase):
         stretched = page.locator('.config-track-art circle').first.bounding_box()
         self.assertAlmostEqual(stretched['width'] / stretched['height'], 21 / 16, delta=.02)
         self.assertAlmostEqual(stretched['width'] / original['width'], 21 / 16, delta=.02)
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         page.reload()
         expect(aspect).to_have_value('unlocked')
         self.assertIn('aspect = unlocked', (self.local/'user-no-mii/mk8d.ini').read_text())
@@ -308,8 +416,7 @@ class SettingsModulesTests(unittest.TestCase):
             expect(page.locator('#config-preview-description')).to_contain_text('16:9')
             expect(page.locator('#config-preview-description')).to_contain_text('32:9')
         page.locator('#language').select_option('pt-BR')
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         page.reload()
         expect(aspect).to_have_value('ultrawide')
         aspect.focus()
@@ -317,15 +424,14 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertIn('aspect = ultrawide', ini.read_text())
         self.assertIn('future_setting = preserve', ini.read_text())
         page.locator('#config-field-theme').focus()
-        expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
-        expect(page.locator('#config-screen-caption')).to_contain_text('Menus mantêm 16:9')
+        expect(page.locator('#config-theme-screenshot')).to_be_visible()
+        expect(page.locator('#config-display-preview')).to_be_hidden()
         frame_gen = page.locator('#config-field-frame_gen')
         frame_gen.select_option('120')
         expect(aspect).to_have_value('ultrawide')
         expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
         expect(page.locator('#config-screen-caption')).to_contain_text('16:9 com geração de quadros')
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         page.reload()
         expect(aspect).to_have_value('ultrawide')
         expect(frame_gen).to_have_value('120')
@@ -394,8 +500,7 @@ class SettingsModulesTests(unittest.TestCase):
         expect(page.locator('#settings-game-language')).to_have_value('fr')
         expect(page.locator('#config-field-theme')).to_have_value('NES')
         expect(page.locator('#settings-save')).to_be_enabled()
-        page.locator('#settings-save').click()
-        expect(page.locator('#settings-save')).to_be_disabled()
+        self.save_settings()
         self.assertEqual(patches[-1], {'theme': 'NES'})
         page.reload()
         expect(page.locator('#settings-game-language')).to_have_value('fr')
