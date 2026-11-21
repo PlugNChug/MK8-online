@@ -161,7 +161,7 @@ pub fn validate(local: &Path, mode: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn configure(local: &Path) -> Result<()> {
+pub fn configure(local: &Path, build: crate::game_settings::MenuBuild) -> Result<()> {
     for key in [
         "MK8_READY_FSR3",
         "MK8_READY_FSR4",
@@ -179,7 +179,7 @@ pub fn configure(local: &Path) -> Result<()> {
     ] {
         std::env::remove_var(key);
     }
-    let schema = crate::game_settings::read(local)?;
+    let schema = crate::game_settings::read(local, build)?;
     let mode = schema["values"]["upscaler"].as_str().unwrap_or("");
     // The menus may select an installed provider for the next game process.
     // With no optional components, the normal launch needs no GPU probe.

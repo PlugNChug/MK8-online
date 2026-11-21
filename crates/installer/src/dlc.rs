@@ -177,6 +177,8 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            menu_themes_supported: false,
+            menu_light_themes_supported: false,
             files: BTreeMap::from([
                 (
                     "dlc-manifest".into(),

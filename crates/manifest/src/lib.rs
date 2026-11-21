@@ -64,6 +64,12 @@ pub struct Installation {
     pub nextendo_session_supported: bool,
     #[serde(default)]
     pub live_settings_supported: bool,
+    /// The host loads all three Menu themes from the shared INI and mounts the wrench for each.
+    #[serde(default)]
+    pub menu_themes_supported: bool,
+    /// The host can save and render Simple Light and NES Light.
+    #[serde(default)]
+    pub menu_light_themes_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

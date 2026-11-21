@@ -35,9 +35,20 @@ fn main() {
     assert_eq!(env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT").unwrap(), "");
     assert_eq!(env::var("SDL_GAMECONTROLLERCONFIG").unwrap(), "authored-custom-mapping");
     if env::var("MK8_TEST_INPUT_PROBE").is_ok() {
-        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT", "MK8_SETTINGS_EXPERIMENT"]
+        assert_eq!(env::var("MK8_UI_LANGUAGE").unwrap(), env::var("MK8_SETTINGS_LANGUAGE").unwrap());
+        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT", "MK8_SETTINGS_EXPERIMENT", "MK8_SETTINGS_LANGUAGE"]
             .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
         fs::write("navigation.txt", state).unwrap();
+        if env::var_os("MK8_PACK_PROBE").is_some() {
+            fs::write("pack-path.txt",env::var("MK8_ROMFS_OVERLAY").unwrap()).unwrap();
+            fs::write("menu-path.txt",env::var("MK8_SETTINGS_ROMFS").unwrap_or_default()).unwrap();
+        }
+        if args.iter().any(|arg| arg=="--nextendo-login-play") {
+            assert!(env::var_os("MK8_SETTINGS_ROMFS").is_none());
+            assert_eq!(env::var("MK8_ROMFS_OVERLAY").unwrap(), "");
+            assert!(env::var_os("MK8_MENU_PROTOTYPE").is_none());
+            fs::write("nextendo-theme.txt",fs::read("mk8d.ini").unwrap()).unwrap();
+        }
         return;
     }
     fs::write("game.pid", std::process::id().to_string()).unwrap();
@@ -72,13 +83,12 @@ def alive(pid):
 
 @unittest.skipUnless(os.name == 'nt', 'Windows process lifetime')
 class LifetimeTests(unittest.TestCase):
-    def test_manual_and_automatic_launch_preserve_network_and_clear_inherited_macro(self):
-        data = self.base/'navigation'
+    def probe_install(self, data):
         (data/'fixture-game/extracted/romfs').mkdir(parents=True)
         dummy = data/'synthetic-input'
         dummy.write_bytes(b'authored fixture')
         identity = lambda p: {'path':str(p), 'sha256':hashlib.sha256(p.read_bytes()).hexdigest(), 'bytes':p.stat().st_size}
-        manifest = {'schema':2, 'identity':'fixture', 'profile':'mk8d-smm2-experimental',
+        manifest = {'schema':2, 'identity':'fixture', 'profile':'mk8d-smm2-experimental', 'menu_themes_supported':True, 'menu_light_themes_supported':True,
                     'gameplay_verified':False, 'executable':identity(self.fixture),
                     'files':{k:identity(dummy) for k in ['npdm','main','sdk','subsdk0','gamelib']},
                     'data_root':str(data/'fixture-game'), 'shader_root':str(data)}
@@ -95,34 +105,120 @@ class LifetimeTests(unittest.TestCase):
             manifest['files'][source.name]=identity(target)
         saves=data/'user-no-mii'
         (saves/'save').mkdir(parents=True)
-        protected={saves/'mk8d.ini':b'[video]\naspect = original\n[future]\nmarker = preserve\n',
-                   saves/'save/progress.bin':b'authored progress marker'}
-        for path,content in protected.items():
-            path.write_bytes(content)
-        preference=data/'debug-options.json'
+        request={'root':str(data/'root'), 'local':str(data), 'install':manifest,
+                 'network':['127.0.0.1:47820',2], 'username':'Test','candidate':True}
         env=dict(os.environ,MK8_TEST_INPUT_PROBE='1',MK8_AUTO_LAN='host',MK8_GFX_DIAGNOSTICS='0',
                  SDL_GAMECONTROLLERCONFIG='authored-custom-mapping')
         env.pop('LARECOMP_AUDIO_WAV',None)
-        cases=[(role,None,'1') for role in (None,'host','guest')]+[(None,True,'0'),(None,False,'1')]
+        def launch():
+            return subprocess.run([str(EXE),'--game-supervisor'],input=json.dumps(request)+'\n',
+                                  env=env,capture_output=True,text=True,timeout=30)
+        return request,env,launch
+
+    def test_manual_and_automatic_launch_preserve_network_and_clear_inherited_macro(self):
+        data=self.base/'navigation'
+        request,env,launch=self.probe_install(data)
+        preference=data/'debug-options.json'
+        ini=data/'user-no-mii/mk8d.ini'
+        original=b'theme = NES\nvolume = 1.50\n[future]\nmarker = preserve\n'
+        progress=data/'user-no-mii/save/progress.bin'
+        progress.write_bytes(b'authored progress marker')
+        cases=[(role,None,'1') for role in (None,'host','guest')]
+        cases += [(None,True,'0'),(None,False,'1')]
         for role,native,inherited in cases:
             with self.subTest(role=role,native=native,inherited=inherited):
+                ini.write_bytes(original)
                 env['MK8_SETTINGS_EXPERIMENT']=inherited
                 if native is not None:
                     preference.write_text(json.dumps({'graphics_capture':False,'audio_recording':False,
                                                       'native_settings':native}))
                 else:
                     self.assertFalse(preference.exists())
-                request={'root':str(data/'root'), 'local':str(data), 'install':manifest,
-                         'network':['127.0.0.1:47820',2], 'username':'Test', 'candidate':True, 'auto_lan':role}
-                result=subprocess.run([str(EXE),'--game-supervisor'],input=json.dumps(request)+'\n',
-                                      env=env,capture_output=True,text=True,timeout=30)
+                request['auto_lan']=role
+                request.pop('browser_language',None)
+                if role == 'guest':
+                    request['browser_language']='es'
+                if native is not None:
+                    (data/'language.json').write_text(json.dumps('pt-BR'))
+                result=launch()
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 lines=(data/'user-no-mii/navigation.txt').read_text().splitlines()
-                self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}', 'LARECOMP_LAN_RELAY=127.0.0.1:47820',
+                self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}',
+                                        'LARECOMP_LAN_RELAY=127.0.0.1:47820',
                                         'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2',
-                                        f'MK8_SETTINGS_EXPERIMENT={inherited if native is None else int(native)}'])
-                for path,content in protected.items():
-                    self.assertEqual(path.read_bytes(),content)
+                                        'MK8_SETTINGS_EXPERIMENT=',
+                                        'MK8_SETTINGS_LANGUAGE='+('pt-BR' if native is not None else 'es' if role=='guest' else 'en')])
+                expected=original.replace(b'theme = NES',b'theme = Native') if native else original
+                self.assertEqual(ini.read_bytes(),expected)
+                self.assertEqual(progress.read_bytes(),b'authored progress marker')
+
+    def test_older_game_keeps_legacy_native_switch_and_refuses_new_ini(self):
+        data=self.base/'legacy-native'
+        request,env,launch=self.probe_install(data)
+        manifest=request['install']
+        saves=data/'user-no-mii'
+        ini=saves/'mk8d.ini'
+        original=b'theme = NES\nvolume = 1.50\n'
+        preference=data/'debug-options.json'
+        env['MK8_SETTINGS_EXPERIMENT']='0'
+        manifest.pop('menu_light_themes_supported')
+        manifest.pop('menu_themes_supported')
+        manifest['files']['settings-layout']=manifest['files']['npdm']
+        legacy={'graphics_capture':False,'audio_recording':False,'native_settings':True}
+        preference.write_text(json.dumps(legacy))
+        ini.write_bytes(original)
+        result=launch()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('MK8_SETTINGS_EXPERIMENT=1',(saves/'navigation.txt').read_text().splitlines())
+        self.assertEqual(ini.read_bytes(),original)
+        self.assertEqual(json.loads(preference.read_bytes()),legacy)
+        # The old parser would overwrite the new value. Refuse before starting it.
+        canonical=original.replace(b'theme = NES',b'theme = Native')
+        ini.write_bytes(canonical)
+        (saves/'navigation.txt').unlink()
+        result=launch()
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((saves/'navigation.txt').exists())
+        self.assertEqual(ini.read_bytes(),canonical)
+        manifest['menu_themes_supported']=True
+        for value in (b'SimpleLight',b'NESLight'):
+            light=original.replace(b'theme = NES',b'theme = '+value)
+            ini.write_bytes(light)
+            result=launch()
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('temas claros',result.stdout)
+            self.assertFalse((saves/'navigation.txt').exists())
+            self.assertEqual(ini.read_bytes(),light)
+            self.assertEqual(json.loads(preference.read_bytes()),legacy)
+
+    def test_ctgp_without_custom_menu_and_nextendo_launch_with_selected_theme(self):
+        data=self.base/'pack-menu'
+        request,env,launch=self.probe_install(data)
+        saves=data/'user-no-mii'
+        ini=saves/'mk8d.ini'
+        pack=data/'ctgp/pack'
+        (pack/'romfs/Course').mkdir(parents=True)
+        (pack/'romfs/Course/fixture.bin').write_bytes(b'track')
+        (pack/'manifest.json').write_text(json.dumps({'kind':'ctgp-deluxe','schema':1,
+            'files':{'Course/fixture.bin':{'bytes':5}}}))
+        (data/'ctgp.json').write_text('{"enabled":true}')
+        request['install']['pack_supported']=True
+        request.update(network=None)
+        env.update(MK8_PACK_PROBE='1', MK8_SETTINGS_ROMFS='stale-layout', MK8_NEXTENDO_TEST='1',
+                   RECOMP_NEXTENDO_TLS_PIN='0'*64, RECOMP_NEXTENDO_ZNC_TLS_PIN='1'*64)
+        env.pop('MK8_MENU_PROTOTYPE',None)
+        result=launch()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(Path((saves/'pack-path.txt').read_text()),pack/'romfs')
+        self.assertEqual((saves/'menu-path.txt').read_text(),'')
+        request['nextendo']=True
+        for theme in ('Native','Default','SimpleLight','NES','NESLight'):
+            with self.subTest(nextendo=theme):
+                current=f'theme = {theme}\nvolume = 1.50\n'.encode()
+                ini.write_bytes(current)
+                result=launch()
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertEqual((saves/'nextendo-theme.txt').read_bytes(),current)
 
     def test_python_tools_ignore_external_home_path_and_user_site(self):
         folder = self.base/'python-environment'
