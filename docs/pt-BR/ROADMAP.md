@@ -1,5 +1,7 @@
 # Pendências e roteiro
 
+[English](../en/ROADMAP.md) · **Português** · [Resumo do estado](STATUS.md)
+
 O MK8-online é **experimental**: ele chega ao menu, completa corridas e já rodou duas instâncias multijogador numa máquina, mas tem defeitos conhecidos. Nada aqui está qualificado (`gameplay_verified=false`). Os detalhes técnicos e as evidências de cada item ficam em [STATUS.md](STATUS.md).
 
 Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá para testar · **[validação]** funciona em teste, falta provar no uso real.
@@ -8,7 +10,7 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 - Validar no Steam Deck físico a preparação em modo desktop, uma corrida completa, áudio, controles e recarga de saves. O AppImage amd64 e a lista de dependências do Ubuntu estão no [guia Linux](LINUX.md).
 - Repetir o solo sem DLC na RTX 4090 do relato, validar DLSS e FSR 4 nas GPUs correspondentes e registrar conexão, resultado e reconexão entre dois PCs no Nextendo e na Steam.
-- Acompanhar os engasgos com cache frio e o aviso de cubemap nas pistas identificadas. [Estado da 0.5.0](STATUS.md) · [Notas da versão](releases/0.5.0.md)
+- Acompanhar os engasgos com cache frio e o aviso de cubemap nas pistas identificadas. [Estado da 0.5.0](STATUS.md) · [Notas da versão](../releases/0.5.0.md)
 
 ## Ultrawide e menu nativo — entrega experimental
 
@@ -23,7 +25,7 @@ Legenda: **[bloqueia]** impede o uso normal · **[visível]** atrapalha, mas dá
 
 ## Prioridades após a 0.4.0 experimental
 
-A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. A 0.4.0 acrescenta portabilidade no Windows, controles, melhorias gráficas e correções de saves. Veja as [notas bilíngues](releases/0.4.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.
+A 0.3.0 reúne CTGP no perfil 4.0.1 (64 pistas/16 copas adicionais), redesign padrão, DLC opcional, Miis e as PRs aceitas da fix-chore. A 0.4.0 acrescenta portabilidade no Windows, controles, melhorias gráficas e correções de saves. Veja as [notas bilíngues](../releases/0.4.0.md). Não representa compatibilidade completa; o plugin CTGP original não é executado.
 
 - **[bloqueia]** Corrigir a descoberta de DLLs Steam quando uma cópia local incompatível oculta outra instalada. Validar as interfaces SteamUser e SteamFriends nas configurações das issues #69–71.
 - **[bloqueia]** Renovar corretamente a sessão autenticada na reconexão Steam à mesma sala (#32), preservando proteção antirreplay, e validar retorno/corrida entre dois PCs.
