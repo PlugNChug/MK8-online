@@ -24,7 +24,7 @@ class LinuxInputTests(unittest.TestCase):
             runtime = prepare_host_sources(ROOT / 'upstream/smm2recomp/recomp', out / 'host')
             device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
             inputs = (runtime / 'hle/input.c').read_text(encoding='utf-8')
-            start = device.index('#ifdef _WIN32', device.index('mk8_set_joycon_mode(g_settings.joycon_mode);'))
+            start = device.rindex('#ifdef _WIN32', 0, device.index('bool input_ready = mk8_init_joycon_input()'))
             init = device[start:device.index('    int win_w', start)]
             def windows_block(function):
                 pos = device.index(function)
@@ -33,11 +33,13 @@ class LinuxInputTests(unittest.TestCase):
             source = out / 'input.c'
             source.write_text('''#include <SDL3/SDL.h>
 #include <assert.h>
+#include "settings.h"
 #define FATAL(...) return 17
 ''' + inputs[real_pad:inputs.index('\n}', real_pad) + 2] + '''
 int main(int argc, char **argv) {
 ''' + init + '''
     assert(SDL_WasInit(SDL_INIT_GAMEPAD) && SDL_WasInit(SDL_INIT_VIDEO));
+    assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, true));
     SDL_VirtualJoystickDesc desc = {0};
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
@@ -67,7 +69,8 @@ int main(int argc, char **argv) {
 ''', encoding='utf-8')
             flags = subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl3'], text=True)
             binary = out / 'input'
-            subprocess.run(['cc', source, *shlex.split(flags), '-o', binary], check=True)
+            subprocess.run(['cc', source, ROOT/'runtime/mk8/support/joycon_modes.c', '-I'+str(runtime),
+                            *shlex.split(flags), '-o', binary], check=True)
             for video, expected in [('dummy', 0), ('mk8_missing_video_driver', 17)]:
                 with self.subTest(video=video):
                     result = subprocess.run([binary], env=dict(os.environ, SDL_VIDEO_DRIVER=video),

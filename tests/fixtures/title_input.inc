@@ -1,4 +1,11 @@
-static void title_ready(bool ready) { mk8_title_input_active(ready); pump(); }
+static void title_ready(bool ready) {
+    mk8_title_input_phase(ready ? MK8_TITLE_PROMPT : MK8_TITLE_INACTIVE);
+    pump();
+    if (ready) {
+        guest_buttons(0);
+        mk8_title_input_phase(MK8_TITLE_PROMPT);
+    }
+}
 
 static void title_key(SDL_Scancode code, bool repeat) {
     SDL_Event key={.type=SDL_EVENT_KEY_DOWN};
@@ -23,7 +30,7 @@ static void check_lan_claim(const char *device) {
     button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, true);
     assert(!mk8_lan_input_active(false));
     assert(mk8_lan_input_active(true) == 1);
-    mk8_title_input_active(false); pump();
+    mk8_title_input_phase(MK8_TITLE_INACTIVE); pump();
     assert(!guest_buttons(0) && mk8_lan_input_active(true) == 1);
     bool other_held = !strcmp(device,"right");
     if (!other_held) button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, false);
@@ -255,6 +262,93 @@ static void check_title_hotplug(void) {
     SDL_CloseJoystick(sticks[PRO]); assert(SDL_DetachVirtualJoystick(ids[PRO])); pump();
 }
 
+static void check_title_confirm(void) {
+    attach(PRO); pump();
+    // An earlier held input stays ordinary prelude input and cannot take P1.
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    assert(guest_buttons(0)==(1ull<<BIND_X));
+    mk8_title_input_phase(MK8_TITLE_PRELUDE);
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    assert(!guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    assert(!guest_buttons(0));
+    title_ready(false);
+
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump(); // Last observed title frame, 3/0.
+    title_key(SDL_SCANCODE_K,false);
+    assert(SDL_GetGamepadID(pad)==ids[PRO]); // No assignment during 3/0.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump(); // The guest has entered 3/1.
+    assert(!pad && mk8_assigned_keyboard()==0 && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
+    // Focus loss, an intervening overlay, and leaving the page discard an
+    // otherwise valid fresh press, including one from a detached title visit.
+    for (int cancel=0;cancel<5;cancel++) {
+        mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+        button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+        button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+        if (cancel==0 || cancel==4) {
+            if (cancel==4) {
+                SDL_Event queued={.type=SDL_EVENT_USER};
+                fixture_event_limit=64;
+                for (int i=0;i<64;i++) assert(SDL_PushEvent(&queued));
+            }
+            SDL_Event focus={.type=SDL_EVENT_WINDOW_FOCUS_LOST};
+            assert(SDL_PushEvent(&focus));
+            focus.type=SDL_EVENT_WINDOW_FOCUS_GAINED; assert(SDL_PushEvent(&focus));
+        } else if (cancel==1) { host_captures=true; pump(); host_captures=false; }
+        else if (cancel==2) mk8_title_input_phase(MK8_TITLE_INACTIVE);
+        else {
+            SDL_Event open={.type=SDL_EVENT_KEY_DOWN};
+            open.key.scancode=SDL_SCANCODE_F1;
+            fixture_f1_capture=true; assert(SDL_PushEvent(&open));
+        }
+        mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+        if (cancel==4) {
+            assert(!pad); // The queued focus loss is in the next event batch.
+            fixture_event_limit=~0u; pump();
+        }
+        fixture_f1_capture=false; host_captures=false;
+        assert(!guest_buttons(0));
+        mk8_title_input_phase(MK8_TITLE_PROMPT);
+        assert(!pad && !guest_buttons(0));
+        title_ready(false);
+    }
+    mk8_title_input_phase(MK8_TITLE_PRELUDE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    title_key(SDL_SCANCODE_K,false); // The first eligible device keeps the claim.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    assert(SDL_GetGamepadID(pad)==ids[PRO] && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
+    // An entrance claim can precede the title's interactive wait. The guest
+    // must get a new confirm edge in that wait even if the player let go.
+    mk8_title_input_phase(MK8_TITLE_ENTRANCE); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,true);
+    uint64_t entrance = guest_buttons(0);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_NORTH,false);
+    assert(!entrance && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    assert((guest_buttons(0) & ~entrance) == (1ull << BIND_A));
+    title_ready(false);
+    assert(!guest_buttons(0));
+    // A new visit cannot reuse the previous visit's neutral sample. Here A
+    // reached the guest immediately before the title and the claim arrived
+    // before any title HID poll. Two polls in the same frame stay neutral.
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    assert(guest_buttons(0)==(1ull<<BIND_A));
+    mk8_title_input_phase(MK8_TITLE_PROMPT); pump();
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    title_key(SDL_SCANCODE_K,false);
+    assert(!guest_buttons(0) && !guest_buttons(0));
+    mk8_title_input_phase(MK8_TITLE_PROMPT);
+    title_accepted();
+    detach_title_pad(PRO);
+}
+
 static void check_title_input(void) {
     attach(PRO); pump();
     SDL_VirtualJoystickDesc d; SDL_INIT_INTERFACE(&d);
@@ -353,7 +447,7 @@ static void check_title_input(void) {
     title_ready(true);
     button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,true);
     // The guest may leave and reopen the title between two SDL pumps.
-    mk8_title_input_active(false); mk8_title_input_active(true); pump();
+    mk8_title_input_phase(MK8_TITLE_INACTIVE); title_ready(true);
     button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,true);
     button(sticks[SOLO_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,false);
     button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,false);
@@ -514,6 +608,26 @@ static void check_prerace_applet(void) {
     detach_title_pad(PRO); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
 }
 
+static void check_prerace_pair_split(void) {
+    attach(PAIR_L); attach(PAIR_R); pump();
+    title_ready(true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_SOUTH,true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_SOUTH,false);
+    title_accepted();
+    assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R]);
+    SDL_Thread *worker=open_prerace_applet(2,1);
+    shoulders(sticks[PAIR_L]);
+    assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY && mk8_editor.slots[0][0]==ids[PAIR_R]);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_EAST,false);
+    assert(mk8_controller_join_players()==2 && SDL_GetAtomicInt(&core_released));
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_EAST,true); pump();
+    int confirmed; SDL_WaitThread(worker,&confirmed);
+    assert(confirmed==2 && title_pad_seat(ids[PAIR_R])==0 && title_pad_seat(ids[PAIR_L])==1 && !mk8_partner[0]);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_EAST,false);
+    detach_title_pad(PAIR_L); detach_title_pad(PAIR_R);
+}
+
 static void check_prerace_sparse_seats(void) {
     title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted();
     attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
@@ -631,7 +745,7 @@ static void check_all_reconnect(const char *scenario) {
     fixture_serials=!identical && !stock;
     returning_serial_ready=true; spare_serial_ready=!one_serial;
     enum Device p3=stock ? PAIR_L : PAIR_R;
-    if (stock) g_settings.pads_from_p2=true;
+    if (stock) { attach_as(PAIR_R,SOLO_L); pump(); } // Automatic discovery already filled P1.
     else { title_ready(true); title_key(SDL_SCANCODE_K,false); title_accepted(); }
     attach(PRO); attach(p3); attach_as(SOLO_R,PAIR_R); pump_pro_hotplug();
     int pro=1,right=2;
@@ -674,4 +788,5 @@ static void check_all_reconnect(const char *scenario) {
         check_extra_button(SOLO_R,right); check_extra_button(p3,3);
     }
     detach_title_pad(p3); detach_title_pad(PRO); detach_title_pad(SOLO_R);
+    if (stock) detach_title_pad(PAIR_R);
 }

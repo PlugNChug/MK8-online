@@ -183,7 +183,10 @@ static bool SDLCALL send_effect(void *userdata,const void *data,int size) {
     if(changed) ++packet_changes;
     return true;
 }
+static bool motion_fixture;
+static bool SDLCALL enable_motion(void *unused,bool enabled) { return true; }
 static SDL_JoystickID attach(unsigned i,bool capable) {
+    SDL_VirtualJoystickSensorDesc gyro={SDL_SENSOR_GYRO,200};
     SDL_VirtualJoystickDesc d;
     SDL_INIT_INTERFACE(&d);
     d.type=SDL_JOYSTICK_TYPE_GAMEPAD;
@@ -198,6 +201,9 @@ static SDL_JoystickID attach(unsigned i,bool capable) {
         d.vendor_id=0x057e;
         d.product_id=switch_product;
         d.SendEffect=send_effect;
+        if(motion_fixture) {
+            d.nsensors=1; d.sensors=&gyro; d.SetSensorsEnabled=enable_motion;
+        }
     }
     SDL_JoystickID id=SDL_AttachVirtualJoystick(&d);
     CHECK(id);
@@ -600,6 +606,64 @@ static void hd_output(void) {
     extra_pad[1]=NULL;
     CHECK(SDL_DetachVirtualJoystick(id));
 }
+static void deliver_gyro(SDL_Gamepad *device, Uint64 sample) {
+    const float data[]={(float)sample,0,0};
+    CHECK(SDL_SendJoystickVirtualSensorData(SDL_GetGamepadJoystick(device),SDL_SENSOR_GYRO,sample,data,3));
+    SDL_UpdateJoysticks();
+    SDL_Event e;
+    while(SDL_PollEvent(&e)) dispatch_sensor(&e);
+}
+static void motion_paces_hd_output(void) {
+    motion_fixture=true;
+    uint32_t h[2]; handles(0,h);
+    const Uint16 products[]={0x2006,0x2007,0x2009};
+    for(unsigned n=0;n<SDL_arraysize(products);n++) {
+        switch_product=products[n];
+        SDL_JoystickID id=attach(2,true);
+        virtual_hidapi_id=id; pad=mk8_rumble_open(0,id);
+        CHECK(pad && SDL_SetGamepadSensorEnabled(pad,SDL_SENSOR_GYRO,true));
+        /* Hold the timer outside the test; guest updates still use the usual SDL output path. */
+        SDL_LockJoysticks();
+        SDL_Delay(55);
+        unsigned before=packet_writes;
+        send_one(h[0],.25f,0);
+        CHECK(packet_writes==before+1);
+        SDL_Delay(55);
+        send_one(h[0],.5f,0);
+        CHECK(packet_writes==before+1);
+        deliver_gyro(pad,1);
+        send_one(h[0],0,0);
+        CHECK(packet_writes==before+2);
+        SDL_Delay(55);
+        send_one(h[0],.4f,0);
+        CHECK(packet_writes==before+2);
+        SDL_Event e={0};
+        e.type=SDL_EVENT_GAMEPAD_SENSOR_UPDATE;
+        e.gsensor.sensor=SDL_SENSOR_GYRO;
+        e.gsensor.timestamp=SDL_GetTicksNS();
+        e.gsensor.which=id+1; dispatch_sensor(&e);
+        e.gsensor.which=id; e.gsensor.timestamp=1; dispatch_sensor(&e);
+        send_one(h[0],.501433f,0);
+        CHECK(packet_writes==before+2);
+        deliver_gyro(pad,2);
+        SDL_UnlockJoysticks();
+        /* The existing timer sends the most recent staged value without another guest command. */
+        const Uint8 low[]={0,1,0x40,0x62}, silent[]={0,1,0x40,0x40};
+        expect_effect(switch_product==0x2007?silent:low,switch_product==0x2007?low:silent);
+        SDL_LockJoysticks();
+        CHECK(packet_writes==before+3);
+        SDL_Delay(55);
+        send_one(h[0],.7f,0);
+        CHECK(packet_writes==before+3);
+        CHECK(SDL_SetGamepadSensorEnabled(pad,SDL_SENSOR_GYRO,false));
+        send_one(h[0],.8f,0);
+        CHECK(packet_writes==before+4);
+        SDL_UnlockJoysticks();
+        mk8_rumble_close(0,pad); pad=NULL;
+        CHECK(SDL_DetachVirtualJoystick(id));
+    }
+    motion_fixture=false;
+}
 static int SDLCALL submit_tone(void *arg) {
     send_tone(*(uint32_t *)arg,.2f,160,0,320);
     return 0;
@@ -797,6 +861,7 @@ int main(void) {
     CHECK(guest==(void *)(GUEST_LO+0x100000));
     CHECK(SDL_Init(SDL_INIT_GAMEPAD));
     hd_output();
+    motion_paces_hd_output();
     joycon_output();
     mk8_output_exiting=false;  /* The exit-handler test returns to this fixture. */
     SDL_JoystickID ids[2]={attach(0,true),attach(1,true)};
@@ -971,6 +1036,9 @@ class ControllerRumbleTests(unittest.TestCase):
             start=text.index('// Vibration devices:')
             end=text.index('// Controller support (',start)
             vibration=text[start:end]
+            start=text.index('    if (e->type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE)')
+            end=text.index('    if (e->type == SDL_EVENT_WINDOW_FOCUS_LOST',start)
+            dispatch=text[start:end]
             service=(runtime/'services/hid_set.c').read_text(encoding='utf-8')
             start=service.index('static uint32_t new_event_handle(void)')
             end=service.index('SERVICE("hid:sys"',start)
@@ -983,7 +1051,10 @@ class ControllerRumbleTests(unittest.TestCase):
 #undef pthread_cond_timedwait
 #undef SDL_RumbleGamepad
 #undef SDL_GetJoystickGUIDForID
-'''+service[start:end]
+'''+service[start:end]+'''
+static void mk8_sensor_event(const SDL_GamepadSensorEvent *e) { (void)e; }
+static void dispatch_sensor(const SDL_Event *e) {
+'''+dispatch+'}\n'
             device=(runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
             exit_start=device.index('static void quick_exit_handler(void) {')
             source+='''

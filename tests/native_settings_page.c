@@ -51,6 +51,8 @@ enum Mk8EditState mk8_edit_view(uint16_t names[4][80],int *row) {
     return editor_state;
 }
 bool mk8_edit_has_combined(void) { return false; }
+static bool assigned_pair;
+bool mk8_edit_has_pair(void) { return assigned_pair; }
 static uint16_t last_name[80],last_footer_unit[80];
 static char last_hint[41];
 static uint16_t shown_tips[2][41];
@@ -70,12 +72,13 @@ static char rendered_labels[SETTINGS_VISIBLE+1][80];
 static Mk8Setting catalogue[SETTINGS_CATEGORIES][13];
 static int counts[]={13,4,2,5};
 static bool in_main=true;
-static bool native_style=true, auto_lan, title_active;
+static bool native_style=true, auto_lan;
+static enum Mk8TitlePhase title_active;
 bool mk8_auto_lan_requested(void) { return auto_lan; }
 static unsigned lan_room_players;
 unsigned mk8_guest_lan_editor_players(uint64_t manager) { (void)manager; return lan_room_players; }
 void mk8_auto_lan_menu_tick(uint64_t manager) { (void)manager; }
-void mk8_title_input_active(bool active) { title_active=active; }
+void mk8_title_input_phase(enum Mk8TitlePhase phase) { title_active=phase; }
 static unsigned race_input_players;
 void mk8_input_race_players(unsigned players) { race_input_players=players; }
 static uint64_t game_root, root_node, root_context;
@@ -997,6 +1000,12 @@ static void check_controller_footer(uint64_t manager) {
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(2,"J","Cancel");
+    assigned_pair=true; mk8_settings_page_frame(manager);
+    assert(!strcmp(action_strings[1],"Join sideways or split pair"));
+    assert(pane_float(panes->action_labels[1],0x30)+pane_float(panes->action_labels[1],0x50)/2 <
+           pane_float(panes->keycaps[2],0x30)-pane_float(panes->keycaps[2],0x50)/2);
+    assigned_pair=false; mk8_settings_page_frame(manager);
+    assert(!strcmp(action_strings[1],"Sideways Joy-Con"));
     assert(mk8_controller_pointer(640,606,0)); mk8_settings_page_frame(manager);
     assert(controller_focus==4 && cursor_x==0 && cursor_y==-246);
     assert(mk8_controller_pointer(440,606,0)); mk8_settings_page_frame(manager);
@@ -1083,13 +1092,22 @@ int main(void) {
     native_style=false;
     // The stock title can buffer an advance in its entrance animation. Returning
     // from the main menu can add subphase 3 before the ordinary interactive phase.
+    ST32(title_page+0x120,3); ST32(title_page+0x124,0);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_PRELUDE);
+    ST32(title_page+0x124,1);
+    auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
+    auto_lan=false; mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
+    ST32(title_page+0x124,2);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
+    ST32(title_page+0x124,3);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_ENTRANCE);
     ST32(title_page+0x120,4); ST32(title_page+0x124,0);
-    mk8_settings_page_frame(title_manager); assert(title_active);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_PROMPT);
     auto_lan=true; mk8_settings_page_frame(title_manager); assert(!title_active);
     auto_lan=false; ST32(title_page+0x124,1);
     mk8_settings_page_frame(title_manager); assert(!title_active);
     ST32(title_page+0x124,0); ST32(title_page+0x120,3);
-    mk8_settings_page_frame(title_manager); assert(!title_active);
+    mk8_settings_page_frame(title_manager); assert(title_active==MK8_TITLE_PRELUDE);
     ST32(title_page+0x120,4); ST64(title_page,MAIN_BASE+0x127c840);
     mk8_settings_page_frame(title_manager); assert(!title_active);
     assert(!in_main);

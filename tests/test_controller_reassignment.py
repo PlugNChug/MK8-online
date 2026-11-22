@@ -36,12 +36,10 @@ typedef unsigned SDL_JoystickID;
 typedef struct { unsigned id; } SDL_Gamepad;
 static SDL_Gamepad devices[]={{0},{1},{2},{3}};
 static SDL_Gamepad *pad, *extra_pad[EXTRA_PADS];
-static bool scanned,p2;
+static bool scanned;
 static bool mk8_explicit_slots;
 static void mk8_forget_seat(unsigned player) { assert(player<=EXTRA_PADS); }
 static int mk8_startup_preset;
-static struct { int joycon_mode; } g_settings;
-static bool mk8_set_joycon_mode(int mode) { abort(); }
 static bool mk8_assign_gamepads(const SDL_JoystickID slots[4][2]) { abort(); }
 static bool mk8_startup_layout(const char *layout,const SDL_JoystickID *ids,int n) { abort(); }
 static unsigned opens,closes,enumerations;
@@ -62,7 +60,6 @@ static SDL_JoystickID *SDL_GetGamepads(int *count) {
     static SDL_JoystickID ids[]={0,1,2,3};*count=4;enumerations++;return ids;
 }
 static void SDL_free(void *p) { (void)p; }
-static bool pads_from_p2(void) { return p2; }
 static void open_extra(unsigned id) {
     for(unsigned i=0;i<EXTRA_PADS;i++) if(!extra_pad[i]) { extra_pad[i]=mk8_rumble_open(i+1,id);return; }
 }
@@ -76,11 +73,11 @@ int main(void) {
     assert(scanned && enumerations==1 && opens==3 && pad==&devices[2] && extra_pad[0]==&devices[3]);
     scan_gamepads();mk8_open_gamepad(2);mk8_open_gamepad(3);
     assert(enumerations==1 && opens==3);
-    p2=true;input_pads_reassign();
-    assert(scanned && enumerations==2 && opens==6 && closes==2 && !pad);
-    assert(extra_pad[0]==&devices[2] && extra_pad[1]==&devices[3]);
+    input_pads_reassign();
+    assert(scanned && enumerations==2 && opens==6 && closes==2);
+    assert(pad==&devices[2] && extra_pad[0]==&devices[3]);
     mk8_open_gamepad(2);mk8_open_gamepad(3);assert(opens==6);
-    p2=false;input_pads_reassign();
+    input_pads_reassign();
     assert(scanned && enumerations==3 && opens==9 && closes==4);
     assert(pad==&devices[2] && extra_pad[0]==&devices[3] && !extra_pad[1]);
     return 0;
@@ -122,7 +119,6 @@ Settings g_settings;
 int16_t g_bind_pad[BIND_PAD_COUNT], g_bind_key[BIND_KEY_COUNT];
 bool padscript_active(void) { return false; }
 bool mk8_settings_shared_race(void) { return false; }
-void mk8_settings_pads_changed(void) { abort(); }
 ''' + source + lifecycle + r'''
 static void mk8_sync_sensors(void) {}
 static void style_changed(void) {}
@@ -168,9 +164,8 @@ int main(void) {
         g_settings.pads_from_p2=!(i&1); input_pads_reassign();
         assert(scanned);
         assert(SDL_GetGamepadFromID(id));
-        assert(g_settings.pads_from_p2 ? !pad && extra_pad[0] : pad!=NULL);
-        unsigned player=g_settings.pads_from_p2 ? 1 : 0;
-        assert(mk8_rumble_pads[player].id==id && !mk8_rumble_pads[1-player].id);
+        assert(pad && !extra_pad[0]);
+        assert(mk8_rumble_pads[0].id==id && !mk8_rumble_pads[1].id);
         released(j,b);
     }
     SDL_CloseJoystick(j); SDL_DetachVirtualJoystick(id); SDL_Quit();

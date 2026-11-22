@@ -543,7 +543,8 @@ class LauncherTests(unittest.TestCase):
         folder = Path(self.temporary.name) / "0/user-no-mii"
         folder.mkdir(exist_ok=True)
         ini = folder / "mk8d.ini"
-        ini.write_text("# teste\nvolume = 0.50\nunknown_future = preserve\n", encoding="utf-8")
+        legacy = b"pads_from_p2 = 1\r\njoycon_mode = horizontal\r\n"
+        ini.write_bytes(b"# teste\r\nvolume = 0.50\r\nunknown_future = preserve\r\n" + legacy)
         page = self.page()
         try:
             page.locator('[data-tab="settings"]').click()
@@ -555,12 +556,14 @@ class LauncherTests(unittest.TestCase):
             page.locator("#config-sub-image").click()
             page.locator("#settings select[data-key=resolution]").select_option("75%")
             page.locator("#config-sub-controls").click()
+            expect(page.locator("[data-key=pads_from_p2], [data-key=joycon_mode]")).to_have_count(0)
             page.get_by_text("Mapeamento do teclado", exact=True).click()
             page.locator("#settings select[data-key=bind_key_a]").select_option("J")
             expect(page.locator("#settings select[data-key=bind_key_b]")).to_have_value("K")
             page.locator("#settings select[data-key=bind_key_a]").select_option("Space")
             page.locator("#settings-save").click()
             expect(page.locator("#notice")).to_contain_text("Configurações salvas.")
+            self.assertIn(legacy, ini.read_bytes())
             self.assertIn("unknown_future = preserve", ini.read_text())
             self.assertIn("bind_key_a = Space", ini.read_text())
             page.reload()

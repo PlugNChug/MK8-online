@@ -5,7 +5,7 @@ static void mk8_open_gamepad(SDL_JoystickID id) {
     if (!real_gamepad(id) || (pad && SDL_GetGamepadID(pad) == id)) return;
     for (int i = 0; i < EXTRA_PADS; i++)
         if (extra_pad[i] && SDL_GetGamepadID(extra_pad[i]) == id) return;
-    if (pad || pads_from_p2()) { open_extra(id); return; }
+    if (pad) { open_extra(id); return; }
     SDL_Gamepad *opened = SDL_OpenGamepad(id);
     if (!opened) {
         LOG("[input] cannot open gamepad %u: %s\\n", (unsigned)id, SDL_GetError());
@@ -51,7 +51,8 @@ def prepare(runtime):
     text = path.read_text(encoding='utf-8')
     anchor = 'void input_handle_event(const SDL_Event *e) {'
     eligible = 'static bool real_gamepad(SDL_JoystickID id) {'
-    for old, new in [(eligible, eligible + '\n#ifdef _WIN32\n'
+    for old, new in [('static bool pads_from_p2(void) { return g_settings.pads_from_p2; }\n', ''),
+                     (eligible, eligible + '\n#ifdef _WIN32\n'
                              '    extern bool mk8_steam_pad_deferred(SDL_JoystickID);\n'
                              '    if (mk8_steam_pad_deferred(id)) return false;\n#endif'),
                      (anchor, HELPER + anchor),

@@ -34,7 +34,6 @@ static bool boot_set;
 static int seen_binding=-1;
 bool mk8_settings_save_checked(void);
 void mk8_settings_window_changed(void);
-void mk8_settings_pads_changed(void);
 void renderer_get_scale(float *,float *);
 double output_scale_dynamic_factor(void);
 static _Atomic bool native_theme;
@@ -162,11 +161,9 @@ static void apply(Request r) {
         if(index<0) index=o->default_index;
         int next=index+(r.value<0 ? -1 : 1);
         next=next<0 ? 0 : next>=o->count ? o->count-1 : next;
-        if(r.id==MK8_MENU_JOYCON_MODE && next!=index && !mk8_set_joycon_mode(next)) return;
         if(next!=index) { *o->choice=o->values ? o->values[next] : next; dirty=true; }
     }
     if(r.id==MK8_MENU_FULLSCREEN) mk8_settings_window_changed();
-    if(r.id==MK8_MENU_PADS_FROM_P2) mk8_settings_pads_changed();
 }
 
 // Called by the existing menu renderer: all real settings writes share its thread.

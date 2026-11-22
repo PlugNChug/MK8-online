@@ -1,4 +1,4 @@
-"""Prepare Windows gamepad initialization and the in-game Joy-Con settings."""
+"""Prepare Windows gamepad initialization and remove superseded global assignment options."""
 
 
 def insert(path, marker, new):
@@ -9,23 +9,16 @@ def insert(path, marker, new):
 
 
 def prepare(runtime):
-    insert(runtime/'settings.h', '} Settings;', '''    int joycon_mode;
-} Settings;
-extern const char *const mk8_joycon_modes[2];
-bool mk8_set_joycon_mode(int mode);''')
-    insert(runtime/'settings.c', '        else if (!strcmp(key, "pads_from_p2"))',
-           '        else if (!strcmp(key, "joycon_mode")) g_settings.joycon_mode = !strcmp(val, "horizontal");\n'
-           '        else if (!strcmp(key, "pads_from_p2"))')
-    insert(runtime/'settings.c', '    fprintf(f, "pads_from_p2',
-           '    fprintf(f, "joycon_mode = %s\\n", g_settings.joycon_mode ? "horizontal" : "combined");\n'
-           '    fprintf(f, "pads_from_p2')
+    insert(runtime/'settings.h', '} Settings;', '} Settings;\nbool mk8_init_joycon_input(void);')
+    insert(runtime/'settings.c',
+           '        else if (!strcmp(key, "pads_from_p2")) g_settings.pads_from_p2 = atoi(val) != 0;\n', '')
+    insert(runtime/'settings.c', '    fprintf(f, "pads_from_p2 = %d\\n", g_settings.pads_from_p2);\n', '')
     insert(runtime/'nvn/vulkan/device.c', '    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))',
-           '    mk8_set_joycon_mode(g_settings.joycon_mode);\n'
            '#ifdef _WIN32\n'
            '    extern bool mk8_init_window_input(void);\n'
-           '    bool input_ready = mk8_init_window_input();\n'
+           '    bool input_ready = mk8_init_joycon_input() && mk8_init_window_input();\n'
            '#else\n'
-           '    bool input_ready = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);\n'
+           '    bool input_ready = mk8_init_joycon_input() && SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);\n'
            '#endif\n'
            '    if (!input_ready)')
     insert(runtime/'nvn/vulkan/device.c', '        menu_apply_window_requests(window);',
@@ -40,8 +33,11 @@ bool mk8_set_joycon_mode(int mode);''')
            '            if (mk8_steam_gamepad_event(&e)) continue;\n'
            '#endif\n'
            '            extern bool input_user_blocked(const SDL_Event *e);')
-    insert(runtime/'ui/menu.mm', '    if (opt_toggle("Controllers start at player 2"', '''    int joycon_mode = g_settings.joycon_mode;
-    if (opt_choice("Joy-Con mode", &joycon_mode, mk8_joycon_modes, 2, 0,
-                   "Use both halves as one controller, or give each player a sideways Joy-Con.") &&
-        mk8_set_joycon_mode(joycon_mode)) settings_save();
-    if (opt_toggle("Controllers start at player 2"''')
+    insert(runtime/'ui/menu.mm', '''    if (opt_toggle("Controllers start at player 2", &g_settings.pads_from_p2, false,
+                   "The keyboard and the on-screen controls are player 1, and every controller is the next player "
+                   "(player 2, 3, 4), for local multiplayer with a keyboard and one controller. Off: the first "
+                   "controller is player 1's too.")) {
+        settings_save();
+        input_pads_reassign();
+    }
+''', '')

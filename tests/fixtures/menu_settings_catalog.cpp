@@ -52,6 +52,10 @@ static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     return false;
 }
 static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
+static bool opt_text_editing(const char *) { return false; }
+static bool opt_text(const char *label,char *,size_t,const char *,const char *,int *step=nullptr) {
+    record(label); if(step) *step=0; return false;
+}
 static bool choice(const char *label,int *value,const char *const *,int n) {
     const Mk8MenuOption *o=mk8_menu_option(record(label));
     assert(value==o->choice && n==o->count); return false;

@@ -37,8 +37,8 @@ void mk8_menu_tip(const char *text) {
     SDL_strlcpy(assignment_tip,text,sizeof assignment_tip);
     ++assignment_tips;
 }
-void mk8_settings_pads_changed(void) { assert(0 && "No settings changes during a controller assignment"); }
-static bool host_captures;
+static bool host_captures, fixture_f1_capture;
+static unsigned fixture_event_limit=~0u;
 bool menu_input_captured(void) { return host_captures; }
 bool menu_is_open(void) { return false; }
 bool mk8_settings_page_active(void) { return false; }
@@ -121,11 +121,14 @@ static void pump(void) {
     mk8_title_pump();
     SDL_UpdateJoysticks();
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    unsigned events=0;
+    while (events++<fixture_event_limit && SDL_PollEvent(&event)) {
         extern bool mk8_steam_gamepad_event(const SDL_Event *);
         if (mk8_steam_gamepad_event(&event)) continue;
         mk8_tip_event(&event,fixed_navigation);
         if(mk8_title_event(&event,host_captures)) continue;
+        if(fixture_f1_capture && event.type==SDL_EVENT_KEY_DOWN && event.key.scancode==SDL_SCANCODE_F1)
+            host_captures=true;
         extern bool settings_test_chord(const SDL_Event *,bool);
         if(settings_test_chord(&event,host_captures) && shared_race) {
             mk8_suppress_settings_buttons(event.gbutton.which,(1u<<SDL_GAMEPAD_BUTTON_BACK)|(1u<<SDL_GAMEPAD_BUTTON_START));
@@ -135,6 +138,7 @@ static void pump(void) {
     }
     mk8_edit_pump();
     mk8_tip_sync();
+    mk8_title_after_events();
 }
 static void set_extra_inputs(bool down) {
     // Guest P2 uses the right Joy-Con upright; its physical A arrives as sideways South.
@@ -489,6 +493,66 @@ static void check_tips(SDL_Joystick *generic, SDL_JoystickID spare) {
     assert(mk8_assign_gamepads(NULL)); mk8_tip_sync();
 }
 
+static void check_pair_split(void) {
+    SDL_JoystickID layout[4][2]={{ids[PAIR_L],ids[PAIR_R]},{ids[PRO]}};
+    for (int trial=0; trial<3; ++trial) {
+        enum Device moved=trial==2 ? PAIR_R : PAIR_L, kept=moved==PAIR_L ? PAIR_R : PAIR_L;
+        int keyboard=trial==2 ? 0 : -1;
+        assert(mk8_assign_layout(layout,keyboard,false));
+        assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+        assert(mk8_edit_has_pair());
+        assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+        shoulders(sticks[moved]);
+        assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY);
+        assert(mk8_editor.slots[0][0]==ids[kept] && !mk8_editor.slots[0][1]);
+        assert(mk8_editor.slots[1][0]==ids[moved] && !mk8_editor.slots[1][1]);
+        assert(!mk8_edit_has_pair());
+        assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && mk8_partner[0] && SDL_GetGamepadID(extra_pad[0])==ids[PRO]);
+        button(sticks[moved],SDL_GAMEPAD_BUTTON_EAST,true);
+        assert(!(mk8_controller_p1_navigation()&(1ull<<BIND_A)));
+        button(sticks[moved],SDL_GAMEPAD_BUTTON_EAST,false);
+        SDL_Event key={.type=SDL_EVENT_KEY_DOWN};
+        key.key.scancode=SDL_SCANCODE_K;
+        input_handle_event(&key); mk8_tip_sync();
+        assert(!!(mk8_controller_p1_navigation()&(1ull<<BIND_A))==(keyboard==0));
+        key.type=SDL_EVENT_KEY_UP; input_handle_event(&key); mk8_tip_sync();
+        button(sticks[kept],SDL_GAMEPAD_BUTTON_EAST,true);
+        assert(mk8_controller_p1_navigation()&(1ull<<BIND_A));
+        button(sticks[kept],SDL_GAMEPAD_BUTTON_EAST,false);
+        if (trial==0) {
+            assert(edit(MK8_EDIT_CANCEL,0,0)==MK8_EDIT_CLOSED);
+            assert(SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R] && SDL_GetGamepadID(extra_pad[0])==ids[PRO]);
+            continue;
+        }
+        assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+        assert(mk8_assigned_keyboard()==keyboard);
+        for (int player=0; player<2; ++player) {
+            SDL_Joystick *grip=sticks[player ? moved : kept];
+            button(grip,SDL_GAMEPAD_BUTTON_EAST,true);
+            assert(guest_buttons(player)==(1ull<<BIND_A) && !guest_buttons(1-player));
+            button(grip,SDL_GAMEPAD_BUTTON_EAST,false);
+        }
+    }
+    // A player can also register one half on their own row and give away the other.
+    assert(mk8_assign_layout(layout,-1,false));
+    assert(edit(MK8_EDIT_BEGIN,2,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,0,0)==MK8_EDIT_LISTEN);
+    shoulders(sticks[PAIR_R]);
+    assert(edit(MK8_EDIT_ASSIGN,1,0)==MK8_EDIT_LISTEN);
+    shoulders(sticks[PAIR_L]);
+    assert(edit(MK8_EDIT_CLEAR,1,0)==MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_ASSIGN,0,0)==MK8_EDIT_LISTEN);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,true);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,true);
+    button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_PADDLE1,false);
+    button(sticks[PAIR_R],SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1,false);
+    assert(edit(MK8_EDIT_KEYBOARD,1,0)==MK8_EDIT_READY);
+    assert(mk8_edit_has_pair());
+    assert(edit(MK8_EDIT_APPLY,0,0)==MK8_EDIT_APPLIED);
+    assert(SDL_GetGamepadID(pad)==ids[PAIR_L] && SDL_GetGamepadID(mk8_partner[0])==ids[PAIR_R] && mk8_assigned_keyboard()==1);
+    assert(mk8_assign_gamepads(NULL));
+}
+
 static void check_spare_seats(void) {
     SDL_JoystickID layout[4][2]={{ids[PAIR_L],ids[PAIR_R]},{0},{ids[PRO]},{ids[SOLO_L],ids[SOLO_R]}};
     assert(mk8_assign_layout(layout,1,false));
@@ -805,8 +869,11 @@ int steam_gamepads_title_test(void);
 int main(int argc, char **argv) {
     style_events[nstyle_events++]=&style_event;
     assert(argc == 3);
-    assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0"));
-    assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS, "0"));
+    assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "1"));
+    assert(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS, "1"));
+    assert(mk8_init_joycon_input());
+    assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,true));
+    assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS,true));
     assert(SDL_Init(SDL_INIT_GAMEPAD));
     int count;
     SDL_JoystickID *physical = SDL_GetJoysticks(&count);
@@ -834,6 +901,9 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[2],"prerace-applet")) {
         check_prerace_applet(); SDL_Quit(); return 0;
     }
+    if (!strcmp(argv[2],"prerace-pair-split")) {
+        check_prerace_pair_split(); SDL_Quit(); return 0;
+    }
     if (!strcmp(argv[2],"prerace-p1-only")) {
         check_prerace_p1_only(); SDL_Quit(); return 0;
     }
@@ -849,6 +919,9 @@ int main(int argc, char **argv) {
     if(!strcmp(argv[2],"steam-title")) return steam_gamepads_title_test();
     if(!strcmp(argv[2],"title")) {
         check_title_input(); SDL_Quit(); return 0;
+    }
+    if(!strcmp(argv[2],"title-confirm")) {
+        check_title_confirm(); SDL_Quit(); return 0;
     }
     if(!strcmp(argv[2],"title-hotplug")) {
         check_title_hotplug(); SDL_Quit(); return 0;
@@ -902,6 +975,7 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[2],"editor")) {
         assert(!SDL_getenv("MK8_GAMEPAD_LAYOUT"));
         check_spare_seats();
+        check_pair_split();
         check_live_editor();
         for (int i=0;i<DEVICE_COUNT;i++) {
             SDL_CloseJoystick(sticks[i]);
@@ -913,7 +987,7 @@ int main(int argc, char **argv) {
         SDL_Quit(); return 0;
     }
     if (!strcmp(argv[2], "automatic")) {
-        assert(SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, false));
+        assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,true));
         assert(SDL_GetGamepadID(pad) == ids[PRO]);
         assert(SDL_GetGamepadID(extra_pad[2]) == ids[SOLO_L]);
         assert(!SDL_GetGamepadFromID(ids[SOLO_R]));
@@ -924,11 +998,11 @@ int main(int argc, char **argv) {
     check_popup_owner();
     check_blocked_settings_chord();
     if(!strcmp(argv[2],"mixed")) {
-        mk8_title_input_active(true); pump();
+        mk8_title_input_phase(MK8_TITLE_PROMPT); pump();
         button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true);
         assert(SDL_GetGamepadID(pad)==ids[PRO] && mk8_partner[1] && !(guest_buttons(0)&(1ull<<BIND_A)));
         button(sticks[SOLO_R],SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false);
-        mk8_title_input_active(false); pump();
+        mk8_title_input_phase(MK8_TITLE_INACTIVE); pump();
     }
     const int buttons[] = {SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_WEST,
                            SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST};
@@ -997,7 +1071,7 @@ int main(int argc, char **argv) {
     check_pulse(1, 0, PAIR_L); check_pulse(1, 1, PAIR_R);
     check_pulse(3, 0, SOLO_L);
     assert(mk8_assign_gamepads(NULL));
-    assert(SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, false));
+    assert(!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS,true));
     for (int i = 0; i < DEVICE_COUNT; ++i) {
         SDL_CloseJoystick(sticks[i]);
         assert(SDL_DetachVirtualJoystick(ids[i]));

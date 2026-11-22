@@ -148,7 +148,6 @@
     movie_audio: 'Controla o áudio das sequências em vídeo.',
     mute_in_background: 'Silencia o jogo enquanto outra janela estiver em foco.',
     prompts: 'Escolhe os símbolos exibidos nos comandos. Isso não altera o mapeamento dos botões físicos.',
-    pads_from_p2: 'Na tela inicial, pressione um botão com o controle ou teclado que será o jogador 1. Na seleção local de personagens, use + ou o botão −/+ para reorganizar os jogadores.',
     language: 'Escolhe o idioma dentro do jogo. O idioma do launcher é configurado separadamente no topo da janela.',
   };
   const hints = {
@@ -158,7 +157,7 @@
     resolution: 'Equilíbrio entre detalhe e custo de renderização.', upscaler: 'FSR 3, FSR 4 e DLSS são experimentais.', antialias: 'Tratamento das bordas dos objetos.',
     frame_gen: 'Quadros intermediários para a apresentação.', skip_intro: 'Vá mais rapidamente para o menu inicial.', ahead_fast: 'Priorize a preparação antecipada dos shaders.',
     reverb: 'Efeito de reverberação no áudio.', movie_audio: 'Som das sequências em vídeo.', mute_in_background: 'Silencie ao trocar de janela.',
-    language: 'Idioma do jogo, independente do launcher.', prompts: 'Símbolos Nintendo, Xbox ou PlayStation.', pads_from_p2: 'Comece a atribuição dos controles no jogador 2.',
+    language: 'Idioma do jogo, independente do launcher.', prompts: 'Símbolos Nintendo, Xbox ou PlayStation.',
   };
   function enhanceFields() {
     for (const group of byId('settings-groups').querySelectorAll('.settings-group')) {
@@ -271,7 +270,7 @@
     byId('config-keyboard-example').hidden = !keyboard;
     byId('config-controller-caption').hidden = keyboard;
     text('config-key-selected', keyboard ? selectedText(focusKey) : '');
-    text('config-binding-example', focusKey.startsWith('bind_') ? `${title} → ${selectedText(focusKey)}` : checked('pads_from_p2') ? 'Primeiro controle → jogador 2' : 'Primeiro controle → jogador 1');
+    text('config-binding-example', focusKey.startsWith('bind_') ? `${title} → ${selectedText(focusKey)}` : 'Escolha o dispositivo do jogador 1 na tela de título.');
     for (const toggle of panel.querySelectorAll('.config-toggle-row')) i18n.text(toggle.querySelector('.config-switch-state'), toggle.querySelector('input').checked ? 'Ativado' : 'Desativado');
     for (const label of byId('settings-groups').querySelectorAll('.config-option')) label.classList.toggle('config-option-active', label.contains(input));
   }

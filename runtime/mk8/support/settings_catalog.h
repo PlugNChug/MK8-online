@@ -42,8 +42,6 @@ enum { MK8_MENU_TOGGLE, MK8_MENU_CHOICE, MK8_MENU_NUMBER, MK8_MENU_INFO, MK8_MEN
     T(MUTE_IN_BACKGROUND, AUDIO, "Mute in background", mute_in_background, false, ALWAYS, "Mute while another app has focus.") \
     C(LANGUAGE, CONTROLS, "Game language", language, g_language_names, NULL, LANG_AUTO, ON_RESTART, "Applies after restarting the game.") \
     C(PROMPTS, CONTROLS, "Button icons", prompts, prompts, NULL, PROMPTS_AUTO, ALWAYS, "Choose controller button icons.") \
-    T(PADS_FROM_P2, CONTROLS, "Controllers start at player 2", pads_from_p2, false, ALWAYS, "Keyboard P1; controllers from P2.") \
-    C(JOYCON_MODE, CONTROLS, "Joy-Con mode", joycon_mode, mk8_joycon_modes, NULL, 0, ALWAYS, "One pair or two sideways controllers.") \
     S(DEVICE, CONTROLS, "Mapping device", CHOICE, "Choose bindings to edit.") \
     S(RESET, CONTROLS, "Reset these bindings", ACTION, "Restore this device's defaults.")
 

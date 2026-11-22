@@ -1,10 +1,17 @@
 // The guest publishes the native title's interactive phase. SDL owns device handles and assignments.
-enum { MK8_TITLE_OFF, MK8_TITLE_WAIT, MK8_TITLE_ACCEPTED, MK8_LAN_WAIT, MK8_LAN_ACCEPTED };
+enum { MK8_TITLE_OFF, MK8_TITLE_WAIT, MK8_TITLE_ACCEPTED, MK8_TITLE_ARMED, MK8_LAN_WAIT, MK8_LAN_ACCEPTED };
 static _Atomic int mk8_title_state;
 static _Atomic bool mk8_lan_chosen;
 static SDL_Scancode mk8_lan_claim_key;
 static SDL_Event mk8_lan_pointer;
 static _Atomic unsigned mk8_title_visit;
+static _Atomic unsigned mk8_title_neutral_visit;
+static _Atomic bool mk8_title_confirm_ready;
+static _Atomic unsigned mk8_title_prelude_frame;
+static struct {
+    unsigned visit, frame;
+    SDL_JoystickID left, right;
+} mk8_title_pending;
 static unsigned mk8_observed_visit;
 static pthread_mutex_t mk8_title_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -14,15 +21,24 @@ bool mk8_title_manual_input(void) {
     return !(layout && *layout && mk8_startup_preset >= 0) && !(script && *script) && !input_user_blocked(NULL);
 }
 
-void mk8_title_input_active(bool active) {
+void mk8_title_input_phase(enum Mk8TitlePhase phase) {
     int state = mk8_title_state;
-    if (state >= MK8_LAN_WAIT || active == (state != MK8_TITLE_OFF)) return;
-    if (active && !mk8_title_manual_input()) return;
+    // The direct LAN room browser owns the claim until the guest leaves it.
+    if (state >= MK8_LAN_WAIT) return;
+    int target = phase == MK8_TITLE_INACTIVE ? MK8_TITLE_OFF :
+                 phase == MK8_TITLE_PRELUDE ? MK8_TITLE_ARMED : MK8_TITLE_WAIT;
+    if (target == MK8_TITLE_ARMED) ++mk8_title_prelude_frame;
+    // Claim during the entrance, then deliver a fresh edge when the stock prompt can act.
+    // Multiple Npad reads in one guest frame must see the same neutral state.
+    mk8_title_confirm_ready = phase == MK8_TITLE_PROMPT && state != MK8_TITLE_OFF &&
+                              mk8_title_neutral_visit == mk8_title_visit;
+    if (state == target || (target == MK8_TITLE_WAIT && state == MK8_TITLE_ACCEPTED)) return;
+    if (state == MK8_TITLE_OFF && target != MK8_TITLE_OFF && !mk8_title_manual_input()) return;
     pthread_mutex_lock(&mk8_title_lock);
-    if (!active && mk8_title_state < MK8_LAN_WAIT) mk8_title_state = MK8_TITLE_OFF;
-    else if (mk8_title_state == MK8_TITLE_OFF) {
-        ++mk8_title_visit;
-        mk8_title_state = MK8_TITLE_WAIT;
+    if (mk8_title_state < MK8_LAN_WAIT && (target != MK8_TITLE_WAIT || mk8_title_state != MK8_TITLE_ACCEPTED)) {
+        if (target != MK8_TITLE_OFF && (state == MK8_TITLE_OFF || target == MK8_TITLE_ARMED))
+            ++mk8_title_visit;
+        mk8_title_state = target;
     }
     pthread_mutex_unlock(&mk8_title_lock);
 }
@@ -50,7 +66,20 @@ int mk8_lan_input_active(bool room_list) {
 
 static bool mk8_claim_waiting(int state) { return state == MK8_TITLE_WAIT || state == MK8_LAN_WAIT; }
 
+static bool mk8_title_pending_current(void) {
+    return mk8_title_pending.visit && mk8_title_pending.visit == mk8_title_visit &&
+           mk8_title_pending.frame == mk8_title_prelude_frame;
+}
+
 static void mk8_title_choose(SDL_JoystickID left, SDL_JoystickID right) {
+    if (mk8_title_pending_current()) return;
+    if (mk8_title_state == MK8_TITLE_ARMED) {
+        mk8_title_pending.visit = mk8_observed_visit;
+        mk8_title_pending.frame = mk8_title_prelude_frame;
+        mk8_title_pending.left = left;
+        mk8_title_pending.right = right;
+        return;
+    }
     SDL_JoystickID slots[4][2];
     int keyboard = mk8_assigned_keyboard(), vacancy = -1;
     for (unsigned i = 0; i < 4; ++i) {
@@ -97,8 +126,26 @@ static void mk8_title_choose(SDL_JoystickID left, SDL_JoystickID right) {
     pthread_mutex_unlock(&mk8_title_lock);
 }
 
+// Only the last prelude frame can straddle the guest update that enables input.
+void mk8_title_after_events(void) {
+    extern bool menu_input_captured(void);
+    if (!mk8_title_pending.visit) return;
+    int state = mk8_title_state;
+    if (mk8_title_pending_current() && mk8_title_focused && !mk8_editor.rows &&
+        !menu_input_captured() && !mk8_settings_page_active()) {
+        if (state == MK8_TITLE_ARMED) return;
+        // A full SDL batch can leave a focus change or menu shortcut queued for the next batch.
+        if (state == MK8_TITLE_WAIT && SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST)) return;
+        mk8_title_pending.visit = 0;
+        if (state == MK8_TITLE_WAIT) mk8_title_choose(mk8_title_pending.left, mk8_title_pending.right);
+        return;
+    }
+    mk8_title_pending.visit = 0;
+}
+
 void mk8_title_pump(void) {
-    bool waiting = mk8_claim_waiting(mk8_title_state);
+    int title_state = mk8_title_state;
+    bool waiting = mk8_claim_waiting(title_state) || title_state == MK8_TITLE_ARMED;
     unsigned visit = mk8_title_visit;
     if (mk8_editor.rows || (waiting == mk8_title_observing && (!waiting || visit == mk8_observed_visit))) return;
     if (mk8_title_observing) {
@@ -106,8 +153,6 @@ void mk8_title_pump(void) {
         mk8_title_observing = false;
     }
     if (!waiting) return;
-    // A previous F1 mode change may have recombined the grips since the last title visit.
-    SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0", SDL_HINT_OVERRIDE);
     mk8_title_observing = true;
     mk8_observed_visit = visit;
     mk8_editor.focused = mk8_title_focused;
@@ -147,8 +192,10 @@ bool mk8_title_event(const SDL_Event *e, bool captured) {
     if (mk8_applet_key(e)) return true;
     if (e->type == SDL_EVENT_WINDOW_FOCUS_LOST || e->type == SDL_EVENT_WINDOW_FOCUS_GAINED)
         mk8_title_focused = e->type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+    if (captured || !mk8_title_focused) mk8_title_pending.visit = 0;
     int state = mk8_title_state;
-    if (!mk8_title_observing || !mk8_claim_waiting(state) || mk8_observed_visit != mk8_title_visit) return false;
+    if (!mk8_title_observing || (!mk8_claim_waiting(state) && state != MK8_TITLE_ARMED) ||
+        mk8_observed_visit != mk8_title_visit) return false;
     bool focused = mk8_title_focused && !captured;
     if (focused != mk8_editor.focused) {
         mk8_editor.focused = focused;
@@ -214,7 +261,7 @@ static void mk8_title_hid(unsigned player, uint64_t *buttons, int32_t *lx, int32
         *buttons &= ~atomic_fetch_and(&mk8_applet_suppressed,*buttons);
     static _Atomic uint64_t held[4];
     int state = mk8_title_state;
-    if (state == MK8_LAN_ACCEPTED) state = MK8_TITLE_OFF;
+    if (state == MK8_LAN_ACCEPTED || state == MK8_TITLE_ARMED) state = MK8_TITLE_OFF;
     int32_t *axes[4] = {lx, ly, rx, ry};
     if (state == MK8_TITLE_OFF && !held[player] && !mk8_title_held_axes[player]) return;
     unsigned mask = 0;
@@ -222,7 +269,9 @@ static void mk8_title_hid(unsigned player, uint64_t *buttons, int32_t *lx, int32
     if (state != MK8_TITLE_OFF) {
         held[player] = *buttons;
         mk8_title_held_axes[player] = mask;
-        *buttons = player == 0 && state == MK8_TITLE_ACCEPTED ? 1ull << BTN_A : 0;
+        *buttons = player == 0 && state == MK8_TITLE_ACCEPTED && mk8_title_confirm_ready ? 1ull << BTN_A : 0;
+        if (player == 0 && !*buttons)
+            mk8_title_neutral_visit = mk8_title_visit;
         *lx = *ly = *rx = *ry = 0;
     } else {
         *buttons &= ~atomic_fetch_and(&held[player], *buttons);

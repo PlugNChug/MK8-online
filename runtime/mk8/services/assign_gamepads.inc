@@ -105,10 +105,7 @@ static bool mk8_assign_layout(const SDL_JoystickID slots[1 + EXTRA_PADS][2], int
     note_family();
     style_changed();
     SDL_UnlockJoysticks();
-    if (!slots) {
-        mk8_set_joycon_mode(g_settings.joycon_mode);
-        scan_gamepads();
-    }
+    if (!slots) scan_gamepads();
     return true;
 
 invalid:

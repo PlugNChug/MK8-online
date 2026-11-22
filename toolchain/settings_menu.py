@@ -332,16 +332,14 @@ bool settings_ahead_fast''')
         if (o->group==MK8_MENU_AUDIO && o->toggle) opt_toggle(o->label,o->toggle,o->default_index,o->help);
     }''')
     marker = '    bool fs = g_settings.fullscreen;'
-    text = replace(text, marker, '''    bool split_60 = mk8_split_screen_60fps_enabled();
-    if (opt_toggle("Split-screen 60 FPS", &split_60, false, "Target 60 FPS per view with 3-4 players."))
-        mk8_set_split_screen_60fps(split_60);
+    # These rows edit the shared catalog fields, so every Menu theme shows the same label and value.
+    text = replace(text, marker, '''    opt_toggle(mk8_menu_option(MK8_MENU_SPLIT_SCREEN_60FPS)->label, &g_settings.split_screen_60fps, false,
+               "Target 60 FPS per view with 3-4 players.");
 ''' + marker)
-    text = replace(text, marker, '''    bool bloom = mk8_bloom_enabled();
-    if (opt_toggle("Bloom", &bloom, true, "Add a glow around bright objects."))
-        mk8_set_bloom(bloom);
+    text = replace(text, marker, '''    opt_toggle(mk8_menu_option(MK8_MENU_BLOOM)->label, &g_settings.bloom, true, "Add a glow around bright objects.");
 ''' + marker)
     text = replace(text, marker, '''    int distance = mk8_settings_camera_distance();
-    const char *distance_label = "Driving camera distance (%)";
+    const char *distance_label = "Driving camera distance";
     static char distance_text[128];
     if (!opt_text_editing(distance_label)) snprintf(distance_text, sizeof distance_text, "%d", distance);
     int step = 0;
@@ -416,11 +414,9 @@ bool settings_ahead_fast''')
                    '            if (!g_open.load() && mk8_settings_page_toggle()) return true;\n'
                    '            set_open(!g_open.load());\n            return true;')
     marker = 'void menu_apply_window_requests(void *win) {'
-    text = replace(text, marker, '''static std::atomic<bool> mk8_pads_apply{false};
-extern "C" void mk8_settings_window_changed(void) { g_want_fullscreen_apply.store(true); }
-extern "C" void mk8_settings_pads_changed(void) { mk8_pads_apply.store(true); }
+    text = replace(text, marker, '''extern "C" void mk8_settings_window_changed(void) { g_want_fullscreen_apply.store(true); }
 ''' + marker + '\n    if (g_open.load() && mk8_settings_shared_race()) set_open(false);'
-                   '\n    if (mk8_pads_apply.exchange(false)) input_pads_reassign();\n    mk8_settings_poll(capturing());')
+                   '\n    mk8_settings_poll(capturing());')
     marker = '    mk8_settings_poll(capturing());'
     text = replace(text, marker, "    if (mk8_open_overlay.exchange(false)) set_open(true);\n" + marker)
     marker = '    bool open = g_open.load();\n    bool kbd = g_kbd.load() == 1;'

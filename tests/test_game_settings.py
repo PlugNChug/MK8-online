@@ -28,10 +28,10 @@ int main(void) {
     printf("%.2f %d %d %d %d %d %d %d\n", g_settings.volume, g_settings.res_mode,
            g_settings.fullscreen, g_settings.show_fps, g_settings.language,
            g_settings.upscaler, g_settings.antialias, g_settings.frame_gen);
-    printf("%d %d %d %d %d %d %d %d %d %d\n", g_settings.aspect, g_settings.theme,
+    printf("%d %d %d %d %d %d %d %d %d\n", g_settings.aspect, g_settings.theme,
            g_settings.reverb, g_settings.movie_audio, g_settings.mute_in_background,
            g_settings.skip_intro, g_settings.show_memory, g_settings.ahead_fast,
-           g_settings.prompts, g_settings.pads_from_p2);
+           g_settings.prompts);
     printf("camera_distance=%d\n", mk8_settings_camera_distance());
     bind_settings_save(stdout);
     settings_save();

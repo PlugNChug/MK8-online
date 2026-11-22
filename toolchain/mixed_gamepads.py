@@ -123,9 +123,6 @@ static void mk8_signal_styles(void) {''')
             if (mk8_startup_layout(layout, ids, n)) { mk8_startup_preset = 1; SDL_free(ids); return; }
             mk8_startup_preset = -1;
             LOG("[input] invalid MK8_GAMEPAD_LAYOUT; using automatic assignment\\n");
-            mk8_set_joycon_mode(g_settings.joycon_mode);
-            SDL_free(ids);
-            ids = SDL_GetGamepads(&n);
         }
         for (int i = 0; i < n; i++) mk8_open_gamepad(ids[i]);''')
     text = replace(text, 'void input_pads_reassign(void) {', '''void input_pads_reassign(void) {
@@ -185,25 +182,19 @@ static void mk8_signal_styles(void) {''')
     atomic_store(&mk8_race_seats,0);
     mk8_lan_input_active(false);
     mk8_lan_chosen = false;
-    mk8_title_input_active(false);''')
+    mk8_title_input_phase(MK8_TITLE_INACTIVE);''')
     path.write_text(text, encoding='utf-8')
     device = runtime / 'nvn/vulkan/device.c'
     text = device.read_text(encoding='utf-8')
     marker = '        unsigned events = 0;'
     text = replace(text, marker, '        extern void mk8_title_pump(void);\n        mk8_title_pump();\n' + marker)
     marker = '        menu_apply_window_requests(window);'
-    text = replace(text, marker, '        extern void mk8_edit_pump(void), mk8_tip_sync(void);\n'
-                   '        mk8_edit_pump();\n        mk8_tip_sync();\n' + marker)
+    text = replace(text, marker, '        extern void mk8_edit_pump(void), mk8_tip_sync(void), mk8_title_after_events(void);\n'
+                   '        mk8_edit_pump();\n        mk8_tip_sync();\n        mk8_title_after_events();\n' + marker)
     marker = '            if (menu_handle_event(&e)) continue;'
     text = replace(text, marker, '            extern bool mk8_controller_layout_active(void), mk8_settings_page_active(void);\n'
                    '            extern bool mk8_title_event(const SDL_Event *, bool), menu_input_captured(void);\n'
                    '            if (mk8_title_event(&e,menu_input_captured() || mk8_settings_page_active() || mk8_controller_layout_active())) continue;\n'
                    '            extern void mk8_tip_event(const SDL_Event *, bool);\n'
                    '            mk8_tip_event(&e,mk8_settings_page_active() && !mk8_controller_layout_active());\n' + marker)
-    marker = '    mk8_set_joycon_mode(g_settings.joycon_mode);'
-    text = replace(text, marker, marker + '''
-    const char *controller_layout = getenv("MK8_GAMEPAD_LAYOUT");
-    extern bool mk8_title_manual_input(void), mk8_auto_lan_requested(void);
-    if ((controller_layout && *controller_layout) || (mk8_title_manual_input() && !mk8_auto_lan_requested()))
-        SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0", SDL_HINT_OVERRIDE);''')
     device.write_text(text, encoding='utf-8')

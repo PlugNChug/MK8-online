@@ -2,7 +2,6 @@ extern "C" void mk8_settings_values_sync(void);
 extern "C" void mk8_publish_settings(bool overlay,uint64_t ticks);
 extern "C" void mk8_settings_page_fixed(uint64_t);
 extern "C" void mk8_settings_page_wheel(int);
-extern "C" void input_pads_reassign(void);
 extern "C" bool input_user_blocked(const SDL_Event *);
 static bool menu_ab_swapped(void);
 
