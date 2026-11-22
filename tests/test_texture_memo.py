@@ -103,7 +103,9 @@ static bool vk_is_color_dummy_view(VkImageView view) {
  for(int t=TEXTYPE_1D;t<=TEXTYPE_1D_ARRAY;t++) if(view==vk_dummy_view(t)) return true;
  return false;
 }
-static VkSampler vk_sampler(NvnSamplerDesc *s) { (void)s;return (VkSampler)(uintptr_t)456; }
+#include "nvn/castle_blur.h"
+static uint64_t g_cur_fs_hash; static bool mk8_reduce_linear; static unsigned mk8_blur_target; static int mk8_blur_lod;
+static VkSampler vk_sampler(NvnSamplerDesc *s,int *locked_lod) { (void)s;if(locked_lod) *locked_lod=-1;return (VkSampler)(uintptr_t)456; }
 static VkSampler vk_default_sampler(bool linear) { (void)linear;return (VkSampler)(uintptr_t)457; }
 static VkSampler vk_shadow_default_sampler(void) { return (VkSampler)(uintptr_t)458; }
 void rt_log(const char *fmt, ...) { (void)fmt; }
@@ -143,10 +145,10 @@ static void test_shadow_fallback(void) {
  st.tpool=&images;st.spool=&samplers;st.tex[0][0]=1;si.tex[0].type=TEXTYPE_2D;
  image_view=(uintptr_t)vk_dummy_view(TEXTYPE_2D); /* vk_view rejected incompatible dimensions. */
  texture_info(0,&si,0,&descriptor,scale,wh);
- assert(descriptor.imageView==vk_shadow_dummy_view(TEXTYPE_2D) && descriptor.sampler==vk_sampler(&sampler));
+ assert(descriptor.imageView==vk_shadow_dummy_view(TEXTYPE_2D) && descriptor.sampler==vk_sampler(&sampler,NULL));
  image_view=321;vk_view_gen++; /* vk_view resolved a live native depth view. */
  texture_info(0,&si,0,&descriptor,scale,wh);
- assert(descriptor.imageView==(VkImageView)image_view && descriptor.sampler==vk_sampler(&sampler));
+ assert(descriptor.imageView==(VkImageView)image_view && descriptor.sampler==vk_sampler(&sampler,NULL));
  shadow_copy=(VkImageView)(uintptr_t)322; /* A supported R32/R16 source with a depth copy. */
  texture_info(0,&si,0,&descriptor,scale,wh);
  assert(descriptor.imageView==shadow_copy);
@@ -179,7 +181,7 @@ int main(void) {
  assert(draw_slots(&mixed,sets));assert(copied_source==&actual);
  assert(sets[3].imageView==(VkImageView)image_view);
  assert(sets[4].imageView==(VkImageView)(uintptr_t)1001 && sets[5].imageView==sets[4].imageView);
- assert(sets[4].sampler==vk_sampler(&sampler) && tex_wh[1][4][0]==64);
+ assert(sets[4].sampler==vk_sampler(&sampler,NULL) && tex_wh[1][4][0]==64);
  naliases=0;alias_target=NULL;entries[1].has_view=0;st.spool=NULL;
  assert(draw_slots(&mixed,sets));assert(sets[4].imageView==(VkImageView)image_view);
  si.tex[0].type=TEXTYPE_2D;

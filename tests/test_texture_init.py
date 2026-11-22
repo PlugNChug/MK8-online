@@ -22,6 +22,8 @@ class TextureInitTests(unittest.TestCase):
             text = (runtime/'nvn/vulkan/textures.c').read_text(encoding='utf-8')
             code = text[text.index('// MK8: zeroed guest memory -> zeroed image'):]
             code = code[:code.index('\nTexBackend *vk_tex(NvnTexture *t, bool for_render) {')]
+            if 'VkFormat mk8_bc_backing_format(' in code:  # (toolchain/bc_render.py accessor ahead of vk_tex)
+                code = code[:code.index('VkFormat mk8_bc_backing_format(')]
             fixture = r'''
 #include <stdlib.h>
 #include <string.h>

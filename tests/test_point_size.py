@@ -24,7 +24,7 @@ static void check_vertex(bool guest_size) {
     ShaderInfo *info = ctx->info = calloc(1,sizeof *info);
     ctx->key=&key;ctx->glsl=true;ctx->stage=STAGE_VERTEX;
     if(guest_size) attr_store(ctx,0,0x6c);
-    info=glsl_finish(ctx,false,false);
+    info=glsl_finish(ctx,false,false,false);
     assert(info->msl && info->writes_point_size==guest_size);
     shaderc_compiler_t cc=shaderc_compiler_initialize();
     shaderc_compilation_result_t r=shaderc_compile_into_spv(cc,info->msl,strlen(info->msl),

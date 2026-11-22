@@ -81,6 +81,12 @@ def alive(pid):
         dll.CloseHandle(handle)
 
 
+def system_language():
+    """The launcher's default without language.json (apps/launcher/src/language.rs `effective`)."""
+    primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3ff
+    return {0x16: 'pt-BR', 0x09: 'en'}.get(primary, 'es')
+
+
 @unittest.skipUnless(os.name == 'nt', 'Windows process lifetime')
 class LifetimeTests(unittest.TestCase):
     def probe_install(self, data):
@@ -89,6 +95,7 @@ class LifetimeTests(unittest.TestCase):
         dummy.write_bytes(b'authored fixture')
         identity = lambda p: {'path':str(p), 'sha256':hashlib.sha256(p.read_bytes()).hexdigest(), 'bytes':p.stat().st_size}
         manifest = {'schema':2, 'identity':'fixture', 'profile':'mk8d-smm2-experimental', 'menu_themes_supported':True, 'menu_light_themes_supported':True,
+                    'direct_lan_guest_supported':True,
                     'gameplay_verified':False, 'executable':identity(self.fixture),
                     'files':{k:identity(dummy) for k in ['npdm','main','sdk','subsdk0','gamelib']},
                     'data_root':str(data/'fixture-game'), 'shader_root':str(data)}
@@ -147,7 +154,7 @@ class LifetimeTests(unittest.TestCase):
                                         'LARECOMP_LAN_RELAY=127.0.0.1:47820',
                                         'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2',
                                         'MK8_SETTINGS_EXPERIMENT=',
-                                        'MK8_SETTINGS_LANGUAGE='+('pt-BR' if native is not None else 'es' if role=='guest' else 'en')])
+                                        'MK8_SETTINGS_LANGUAGE='+('pt-BR' if native is not None else 'es' if role=='guest' else system_language())])
                 expected=original.replace(b'theme = NES',b'theme = Native') if native else original
                 self.assertEqual(ini.read_bytes(),expected)
                 self.assertEqual(progress.read_bytes(),b'authored progress marker')

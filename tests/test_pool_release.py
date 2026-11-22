@@ -51,6 +51,7 @@ typedef struct {
 typedef struct { uint64_t img, mem, view; } Dead;
 typedef struct { uint64_t size; } VmaAllocationInfo;
 static struct { int vma; } g_vk;
+static void forget_shadow_arrays(uint64_t image) { (void)image; }
 static float g_rs_x=1, g_rs_y=1;
 static unsigned retired, forgotten, creates, ended;
 static Dead deferred[16];

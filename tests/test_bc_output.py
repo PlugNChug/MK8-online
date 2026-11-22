@@ -74,7 +74,7 @@ int main(void) {
     Ctx *c=calloc(1,sizeof *c);
     c->key=&k;c->glsl=true;c->stage=STAGE_FRAGMENT;c->omap_target=15;c->info=calloc(1,sizeof *c->info);
     for(unsigned i=0;i<4;i++) {c->reg_used[i]=1;sp(&c->body,"  r%u = 0x%08xu;\n",i,words[i]);}
-    ShaderInfo *info=glsl_finish(c,false,false);
+    ShaderInfo *info=glsl_finish(c,false,false,false);
     assert(info && info->msl && strstr(info->msl,"layout(location = 0) out uvec4 c0;"));
     shaderc_compiler_t cc=shaderc_compiler_initialize();
     shaderc_compile_options_t opts=shaderc_compile_options_initialize();
