@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 
 #define XLATE_PACK "cache/xlate.pack"
-#define XLATE_VERSION 2u
+#define XLATE_VERSION 3u
 #define XLATE_MAX_BYTES (512ull << 20)  // (no more records past this; a full game's shaders are well under it)
 
 typedef struct {

@@ -171,6 +171,12 @@ class TranslationCacheTests(unittest.TestCase):
             self.assertEqual(again.returncode, 105, again.stdout)
             self.assertIn('bytes after the last whole record are written over', again.stdout)
             self.assertEqual(run(work, 'count').returncode, 105)
+            # Version 2 can contain a vertex shader with no PointSize store.
+            with pack.open('r+b') as f:
+                f.seek(8)
+                f.write((2).to_bytes(4, 'little'))
+            self.assertEqual(run(work, 'count').returncode, 100)
+            self.assertEqual(run(work).returncode, 104)
             # another runtime build: a new pack, nothing of the old one served
             (work/'stamp.bin').write_bytes(b'runtime, rebuilt')
             self.assertEqual(run(work, 'count').returncode, 100)
