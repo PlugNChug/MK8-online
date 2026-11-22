@@ -15,6 +15,7 @@ Este guia explica como instalar, configurar e jogar o MK8-online. No Linux, come
 - [Salas Steam com amigos](#salas-steam-com-amigos)
 - [DLC Booster Course Pass](#dlc-booster-course-pass)
 - [Pacote de pistas CTGP Deluxe](#pacote-de-pistas-ctgp-deluxe)
+- [Mods de RomFS](#mods-de-romfs)
 - [Fontes do console](#fontes-do-console)
 - [Relatar um problema](#relatar-um-problema)
 - [Solução de problemas](#solução-de-problemas)
@@ -165,6 +166,12 @@ O CTGP Deluxe 1.1.1 foi feito para o MK8 3.0.3. O MK8-online adapta seus recurso
 3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. Com o CTGP ligado, o jogo usa saves próprios, criados uma vez como cópia dos seus.
 
 Nas salas Steam, todos precisam do mesmo estado de CTGP. Os menus próprios e o botão aleatório do CTGP não estão disponíveis; os fantasmas de staff são os da pista original; as sessões online usam as copas do jogo. O MK8-online não distribui o CTGP.
+
+## Mods de RomFS
+
+Mods que só substituem arquivos do jogo (texturas, modelos, músicas, layouts) para o MK8 Deluxe 4.0.1 podem ser instalados à mão. Coloque os arquivos extraídos do mod em `<pasta de dados>/user-no-mii/mods/<nome do mod>/romfs/`, com os mesmos caminhos do RomFS do jogo. No jogo, abra **F1 → Configurações → Mods**, mude **Show** para **Installed**, selecione o mod, ative-o, feche e abra o jogo de novo. Para voltar aos arquivos originais, desative o mod e reinicie. Quando vários mods substituem o mesmo arquivo, vale o que estiver mais abaixo na lista de Mods.
+
+Só arquivos de RomFS são carregados: patches de ExeFS, patches IPS, cheats e plugins executáveis não funcionam. Um mod que troca o layout do menu (`UI/cmn/common.sarc` ou `menu.sarc`) desliga a entrada nativa do Menu do launcher enquanto estiver ativo. As sessões do Nextendo começam sem os mods instalados. As salas Steam comparam o DLC e o CTGP, mas não os mods instalados à mão, então combine com os amigos. Para o CTGP Deluxe, use o importador acima.
 
 ## Fontes do console
 

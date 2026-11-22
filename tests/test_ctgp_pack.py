@@ -565,6 +565,9 @@ class CtgpPackTests(unittest.TestCase):
 #endif
 int fatal_calls; char logged[2048];
 static const char *settings;
+size_t usermods_overlay(char *out,size_t size) { out[0]=0; return 0; }
+bool usermods_find(const char *rel,char *out,size_t size) { return false; }
+bool mk8_nextendo_enabled(void) { return false; }
 const char *mk8_settings_romfs_overlay(void) { return settings; }
 static bool prepared;
 bool plat_exe_path(char *out, size_t size) {

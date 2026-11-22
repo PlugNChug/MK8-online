@@ -14,7 +14,10 @@ struct Location {
 }
 
 fn mapped(value: &str, old: &Path, new: &Path) -> Option<String> {
-    let clean = |v: &str| v.trim_start_matches(r"\\?\").replace('\\', "/");
+    let clean = |v: &str| match v.strip_prefix(r"\\?\UNC\") {
+        Some(unc) => format!("//{}", unc.replace('\\', "/")),
+        None => v.trim_start_matches(r"\\?\").replace('\\', "/"),
+    };
     let value = clean(value);
     let prefix = clean(&old.to_string_lossy());
     let prefix = prefix.trim_end_matches('/');
@@ -248,6 +251,56 @@ pub fn relocate(home: &Path, root: &Path, local: &Path) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn renamed_portable_mii_resources_launch_but_redirected_resources_do_not() {
+        use mk8_installer::mii_resources::{configure, launch_directory};
+        let base = crate::canonical(&std::env::temp_dir())
+            .unwrap()
+            .join(format!("mk8-relocate-mii-{}", std::process::id()));
+        let old = base.join("old");
+        let new = base.join("new");
+        let data = old.join("data");
+        let assets = data.join("MiiModel");
+        fs::create_dir_all(&assets).unwrap();
+        let mut bytes = vec![0; 0x15000];
+        bytes[12] = 1;
+        for name in [
+            "ShapeMid.dat",
+            "ShapeHigh.dat",
+            "NXTextureLowLinear.dat",
+            "NXTextureLowSRGB.dat",
+            "NXTextureMidLinear.dat",
+            "NXTextureMidSRGB.dat",
+        ] {
+            fs::write(assets.join(name), &bytes).unwrap();
+        }
+        configure(&data, &assets, true).unwrap();
+        assert!(launch_directory(&data).unwrap().is_some());
+        relocate(&old, &old.join("0123456789abcdef"), &data).unwrap();
+        fs::rename(&old, &new).unwrap();
+        let data = new.join("data");
+        relocate(&new, &new.join("0123456789abcdef"), &data).unwrap();
+        let assets = data.join("MiiModel");
+        assert_eq!(launch_directory(&data).unwrap(), Some(assets.clone()));
+
+        // The same bytes at a redirected destination must still fail the path check.
+        let outside = base.join("outside");
+        fs::rename(&assets, &outside).unwrap();
+        let made = std::process::Command::new("cmd")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&assets)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        assert_eq!(
+            launch_directory(&data).unwrap_err().to_string(),
+            "Caminho de recurso Mii alterado."
+        );
+        fs::remove_dir(&assets).unwrap();
+        fs::remove_dir_all(base).unwrap();
+    }
     #[test]
     fn move_preserves_saves_hashes_and_external_paths() {
         // Match run_at's canonical paths even when TEMP uses a different Windows spelling.
@@ -309,6 +362,18 @@ mod tests {
             .starts_with(std::env::temp_dir().canonicalize().unwrap()));
         fs::remove_dir_all(base).unwrap();
     }
+    #[test]
+    fn rebases_verbatim_and_ordinary_unc_resources_within_the_share() {
+        let old = Path::new(r"\\server\share\portable");
+        let new = Path::new(r"\\server\share\renamed");
+        let ordinary = r"\\server\share\portable\data\ShapeMid.dat";
+        let verbatim = r"\\?\UNC\server\share\portable\data\ShapeMid.dat";
+        let rebased = new.join("data/ShapeMid.dat").to_string_lossy().into_owned();
+        assert_eq!(mapped(ordinary, old, new).as_ref(), Some(&rebased));
+        assert_eq!(mapped(verbatim, old, new).as_ref(), Some(&rebased));
+        assert!(mapped(r"\\?\UNC\server\share2\portable\data", old, new).is_none());
+    }
+
     #[test]
     fn mapping_requires_component_boundary_and_rejects_traversal() {
         let old = Path::new("C:/portable");

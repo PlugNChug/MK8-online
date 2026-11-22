@@ -15,6 +15,7 @@ This guide covers installing, configuring and playing MK8-online. On Linux, star
 - [Steam rooms with friends](#steam-rooms-with-friends)
 - [Booster Course Pass DLC](#booster-course-pass-dlc)
 - [CTGP Deluxe course pack](#ctgp-deluxe-course-pack)
+- [RomFS mods](#romfs-mods)
 - [Console fonts](#console-fonts)
 - [Reporting a problem](#reporting-a-problem)
 - [Troubleshooting](#troubleshooting)
@@ -165,6 +166,12 @@ CTGP Deluxe 1.1.1 targets MK8 3.0.3. MK8-online adapts its course resources to 4
 3. **Enable CTGP Deluxe** to switch it on; turn it off to play the original game. With CTGP on, the game uses its own saves, created once as a copy of yours.
 
 In Steam rooms everyone needs the same CTGP state. CTGP's own menus and random button are unavailable; Time Trial staff ghosts are the original course's; online sessions use the game's cups. MK8-online does not distribute CTGP.
+
+## RomFS mods
+
+Mods that only replace game files (textures, models, music, layouts) for MK8 Deluxe 4.0.1 can be installed by hand. Put the mod's extracted files in `<data folder>/user-no-mii/mods/<mod name>/romfs/`, with the same paths as the game's RomFS. In the game, open **F1 → Settings → Mods**, set **Show** to **Installed**, select the mod, enable it, then close and restart the game. To go back to the original files, turn the mod off and restart again. When several mods replace the same file, the one later in the Mods list wins.
+
+Only RomFS files are loaded: ExeFS patches, IPS patches, cheats and executable plugins are not supported. A mod that replaces the menu layout (`UI/cmn/common.sarc` or `menu.sarc`) turns off the launcher's native Menu entry while it is on. Nextendo sessions start without installed mods. Steam rooms compare the DLC and CTGP state, not manually installed mods, so agree on them with your friends. Use the importer above for CTGP Deluxe.
 
 ## Console fonts
 

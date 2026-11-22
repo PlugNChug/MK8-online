@@ -1,5 +1,11 @@
 # Estado técnico — 22/11/2026
 
+## PRs #116, #117 e #118 — 22/11/2026
+
+- **#116, recursos Mii depois de renomear a pasta portátil (#115).** Substitui a correção anterior desta branch. A anterior resolvia também o caminho gravado no manifesto, e com isso uma junção que redirecionasse a pasta para outra cópia idêntica passaria na verificação. A #116 compara o destino resolvido com o caminho gravado, com ou sem o prefixo `\\?\`, e recusa a junção. Ela também corrige a realocação de caminhos UNC verbatim (`\\?\UNC\...`). Passaram o teste do manifesto realocado, o teste da PR que renomeia a pasta e cria a junção e o teste de UNC.
+- **#117, mods de RomFS pelo menu Mods do jogo (#103).** O menu já salvava a escolha em `mods/mods.ini`, mas o jogo não incluía os mods ativos na lista de arquivos. Agora os diretórios `romfs` dos mods ativos entram na leitura, na ordem salva, e a lista é refeita ao reiniciar o jogo. Com `RECOMP_MOD_DIR` definido ou numa sessão do Nextendo, os mods instalados ficam de fora. A PR foi escrita antes dos temas do Menu (#92). Nesta branch, um mod que troca `UI/cmn/common.sarc` ou `menu.sarc` passa pela mesma regra de conflito do `RECOMP_MOD_DIR` e desliga a entrada nativa do Menu, em vez da verificação de estilo da PR. O teste da PR roda sobre essa regra. Passaram também os módulos de CTGP, Menu, página de opções, Nextendo, idioma e caminhos do RomFS. O uso está nos guias.
+- **#118, chinês em inglês (#99).** É a mesma correção do `toolchain/desired_language.py`, que já está nesta branch. Aplicar as duas quebraria a preparação, porque a âncora some depois do primeiro patch. A PR não entrou, mas a tabela dela confirma o resultado: `UI/CNzh/message.sarc` e `UI/TWzh/message.sarc` com o menu em chinês.
+
 ## Distribuição Linux integrada na fix-chore — 22/11/2026
 
 A distribuição Linux da 0.5.0 ([PR #83](https://github.com/Vnnc1/MK8-online/pull/83), `release/linux-0.5.0`) entrou na `fix-chore` no merge `04ca4ee`. O Linux passa a ser construído a partir desta árvore, e o submódulo `platforms/linux` saiu do `.gitmodules`. O CI Linux deixou de baixar o submódulo e lê a versão do `Cargo.toml`. O CI geral roda as duas baterias.
