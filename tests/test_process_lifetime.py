@@ -36,7 +36,7 @@ fn main() {
     assert_eq!(env::var("SDL_GAMECONTROLLERCONFIG").unwrap(), "authored-custom-mapping");
     if env::var("MK8_TEST_INPUT_PROBE").is_ok() {
         assert_eq!(env::var("MK8_UI_LANGUAGE").unwrap(), env::var("MK8_SETTINGS_LANGUAGE").unwrap());
-        let state = ["MK8_AUTO_LAN", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT", "MK8_SETTINGS_EXPERIMENT", "MK8_SETTINGS_LANGUAGE"]
+        let state = ["MK8_AUTO_LAN", "MK8_LAN_PLAYERS", "LARECOMP_LAN_RELAY", "LARECOMP_LAN_ROOM", "LARECOMP_LAN_SLOT", "MK8_SETTINGS_EXPERIMENT", "MK8_SETTINGS_LANGUAGE"]
             .map(|key| format!("{}={}", key, env::var(key).unwrap_or_default())).join("\n");
         fs::write("navigation.txt", state).unwrap();
         if env::var_os("MK8_PACK_PROBE").is_some() {
@@ -143,7 +143,7 @@ class LifetimeTests(unittest.TestCase):
                 result=launch()
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 lines=(data/'user-no-mii/navigation.txt').read_text().splitlines()
-                self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}',
+                self.assertEqual(lines,[f'MK8_AUTO_LAN={role or ""}', 'MK8_LAN_PLAYERS=',
                                         'LARECOMP_LAN_RELAY=127.0.0.1:47820',
                                         'LARECOMP_LAN_ROOM=MK8ONLINE', 'LARECOMP_LAN_SLOT=2',
                                         'MK8_SETTINGS_EXPERIMENT=',
@@ -219,6 +219,35 @@ class LifetimeTests(unittest.TestCase):
                 result=launch()
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 self.assertEqual((saves/'nextendo-theme.txt').read_bytes(),current)
+
+    def test_steam_guest_direct_entry_requires_capable_game_and_relay(self):
+        data=self.base/'direct-guest'
+        request,env,launch=self.probe_install(data)
+        manifest=request['install']
+        saves=data/'user-no-mii'
+        protected={saves/'mk8d.ini':b'[video]\naspect = original\n[future]\nmarker = preserve\n',
+                   saves/'save/progress.bin':b'authored progress marker'}
+        for path,content in protected.items():
+            path.write_bytes(content)
+        env['MK8_LAN_PLAYERS']='2'
+        # Role, requested 2P, capable game, connected relay.
+        cases=[('guest',True,True,True), ('guest',False,True,True), ('host',True,False,True), (None,True,True,True),
+               ('guest',True,False,True), ('guest',True,True,False)]
+        for role,two,capable,online in cases:
+            with self.subTest(role=role,two=two,capable=capable,online=online):
+                manifest['direct_lan_guest_supported']=capable
+                request.update(network=['127.0.0.1:47820',2] if online else None, auto_lan=role, two_player_guest=two)
+                result=launch()
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                lines=(saves/'navigation.txt').read_text().splitlines()
+                expected_role=role if online and (role=='host' or capable) else None
+                self.assertEqual(lines[:5],[f'MK8_AUTO_LAN={expected_role or ""}',
+                                            f'MK8_LAN_PLAYERS={2 if two and expected_role=="guest" else ""}',
+                                            'LARECOMP_LAN_RELAY='+('127.0.0.1:47820' if online else ''),
+                                            'LARECOMP_LAN_ROOM='+('MK8ONLINE' if online else ''),
+                                            'LARECOMP_LAN_SLOT='+('2' if online else '')])
+                for path,content in protected.items():
+                    self.assertEqual(path.read_bytes(),content)
 
     def test_python_tools_ignore_external_home_path_and_user_site(self):
         folder = self.base/'python-environment'

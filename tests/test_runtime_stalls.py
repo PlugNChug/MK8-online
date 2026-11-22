@@ -163,7 +163,7 @@ class RuntimeStallTests(unittest.TestCase):
             self.assertIn('mk8_auto_lan_movie(path);', (runtime/'hle/movie.c').read_text(encoding='utf-8'))
             vlan = (runtime/'net/vlan.c').read_text(encoding='utf-8')
             self.assertIn('mk8_auto_lan_vlan_up();', vlan)
-            beacon = vlan.index('if (dport == 47999) {')
+            beacon = vlan.index('if (dport == 47999) continue;')
             self.assertLess(beacon, vlan.index('if (deliver_fn) deliver_fn('))
             self.assertIn('continue;', vlan[beacon:beacon + 300])
 

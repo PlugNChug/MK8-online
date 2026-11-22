@@ -446,8 +446,8 @@
   ];
   const descriptions = [
     'Cada pessoa prepara o jogo com seus próprios arquivos e cria um Mii. Todos precisam usar a mesma configuração de DLC.',
-    'Para receber amigos, crie uma sala. Para acompanhar alguém, abra Convites e salas e escolha Aceitar ou Entrar.',
-    'Com a sala aberta, use Convidar na lista de amigos. A entrada automática é experimental; no modo manual, navegue até a sala LAN no jogo.',
+    'Para receber amigos, crie uma sala. Para jogar com um amigo, escolha a sala dele e quantas pessoas vão jogar neste PC.',
+    'Na entrada automática, o jogo abre a lista LAN. No modo manual, abra LAN Play. Escolha a sala do anfitrião.',
   ];
   function showGuide(index) {
     for (const button of guide.querySelectorAll('[data-mp-guide]')) {
@@ -526,7 +526,7 @@
       if (!row.dataset.mpDecorated) {
         row.dataset.mpDecorated = '1'; row.dataset.presence = friend.online ? 'online' : 'offline';
         const avatar = document.createElement('b'); avatar.className = 'mp-friend-avatar'; avatar.setAttribute('aria-hidden', 'true'); avatar.textContent = Array.from(friend.name.trim())[0]?.toUpperCase() || '?'; row.prepend(avatar);
-        if (friend.room && friend.room !== steamData.room) row.append(steamButton('Entrar', () => joinSteam(friend.room), true));
+        if (friend.room && friend.room !== steamData.room) row.append(...steamJoinButtons(friend.room));
       }
       row.hidden = filter === 'online' ? !friend.online : filter === 'rooms' ? !friend.room : false;
       if (!row.hidden) visible++;

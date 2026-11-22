@@ -181,6 +181,7 @@ mod tests {
             menu_light_themes_supported: false,
             split_screen_60fps_supported: false,
             bloom_supported: false,
+            direct_lan_guest_supported: false,
             files: BTreeMap::from([
                 (
                     "dlc-manifest".into(),

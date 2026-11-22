@@ -8,6 +8,7 @@
 #include "../ui/menu_launcher_actions.h"
 #include "controller_edit.h"
 #include "controller_tips.h"
+#include "../net/auto_lan_menu.h"
 bool mk8_auto_lan_requested(void);
 #include <stdatomic.h>
 #include <pthread.h>
@@ -1931,6 +1932,7 @@ static bool select_panes(MenuPanes *next,uint64_t fader,uint64_t mount,bool sele
 }
 
 void mk8_settings_page_frame(uint64_t manager) {
+    mk8_auto_lan_menu_tick(manager);
     uint64_t end=HEAP_BASE+kernel_heap_size();
     uint64_t page=race_heap(manager,0xc70,end) ? LD64(manager+0xc68) : 0;
     mk8_title_input_active(race_heap(page,0x128,end) && LD64(page)==MAIN_BASE+0x127cb38 &&
@@ -1987,6 +1989,7 @@ void mk8_settings_page_frame(uint64_t manager) {
     }
     // The LAN layout hides the on-screen shortcut. Plus still opens the editor.
     controller_character_shortcut=parts==0x16 && edit_players!=0;
+    if(present && !shared_race && !edit_players) edit_players=mk8_guest_lan_editor_players(manager);
     controller_entry_players=edit_players;
     if(!main_menu) { top_root=restore_nav=0; from_button=confirming=false; }
     if(!present) {

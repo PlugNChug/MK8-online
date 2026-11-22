@@ -109,7 +109,7 @@ class MultiplayerDesignTests(unittest.TestCase):
         page.locator('#mp-social-rooms').click()
         page.locator('#steam-invites button', has_text='Aceitar').click()
         page.wait_for_function('() => !busy')
-        self.assertEqual(self.actions[-1], ('steam/join',{'lobby':'123'}))
+        self.assertEqual(self.actions[-1], ('steam/join',{'lobby':'123','players':1}))
         page.locator('#steam-invites button', has_text='Recusar').click()
         page.wait_for_function('() => !busy')
         self.assertEqual(self.actions[-1], ('steam/dismiss',{'lobby':'123'}))
@@ -122,6 +122,30 @@ class MultiplayerDesignTests(unittest.TestCase):
             page.locator('#mp-social-'+key).click()
             self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.shot('03-mobile')
+
+    def test_direct_guest_choices_follow_the_active_build_and_navigation_mode(self):
+        page = self.page
+        self.status.update(candidate=True)
+        self.status['session'].update(direct_lan_guest_supported=True, steam_auto_join=True)
+        page.evaluate('refresh()')
+        for panel, selector, room, count in [
+                ('rooms','#steam-invites','123',2), ('rooms','#steam-rooms','456',1),
+                ('friends','#steam-friends','123',2)]:
+            page.locator('#mp-social-'+panel).click()
+            row = page.locator(selector+' li').filter(has_text='Duda' if room == '456' else 'Ana')
+            row.get_by_role('button', name=f'Entrar ({count}P)', exact=True).click()
+            page.wait_for_function('() => !busy')
+            self.assertEqual(self.actions[-1], ('steam/join',{'lobby':room,'players':count}))
+        page.set_viewport_size({'width':390,'height':844})
+        page.locator('#mp-social-rooms').click()
+        self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        for capable, automatic in [(True,False),(False,True)]:
+            self.status['session'].update(direct_lan_guest_supported=capable,steam_auto_join=automatic)
+            page.evaluate('refresh()')
+            expect(page.locator('#steam-invites').get_by_role('button',name='Aceitar')).to_be_visible()
+            expect(page.locator('#steam-rooms').get_by_role('button',name='Entrar (2P)')).to_have_count(0)
+            if not capable:
+                expect(page.locator('#steam-direct-upgrade')).to_be_visible()
 
     def test_hosting_offline_invites_and_steam_retry(self):
         page = self.page
@@ -138,7 +162,7 @@ class MultiplayerDesignTests(unittest.TestCase):
         page.locator('#friend-filter').fill('Ana')
         page.locator('#steam-friends').get_by_role('button',name='Entrar',exact=True).click()
         page.wait_for_function('() => !busy')
-        self.assertEqual(self.actions[-1], ('steam/join',{'lobby':'123'}))
+        self.assertEqual(self.actions[-1], ('steam/join',{'lobby':'123','players':1}))
         self.status['game_pid'] = 123
         page.evaluate('refresh()')
         expect(page.locator('#leave')).to_be_disabled()

@@ -502,7 +502,8 @@ def build_host(source, output, workers=None):
     exports = output/'exports.def'
     exported.append('mk8_split_race_full_speed')
     exported.extend(['mk8_ultrawide_camera', 'mk8_driver_camera_distance', 'mk8_ultrawide_hud', 'mk8_settings_top_event',
-                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_fader_build', 'mk8_settings_page_frame'])
+                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_fader_build', 'mk8_settings_page_frame',
+                     'mk8_guest_lan_start', 'mk8_guest_lan_hide_boot_logo', 'mk8_guest_lan_hold_boot'])
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'
     directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)

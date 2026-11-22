@@ -217,7 +217,7 @@ You can keep several Miis and switch between them at the top. **Mii profile** in
 Each player needs their own prepared copy of the game (same 4.0.1 version), a Mii, and Steam open. Keep the Launcher open on **Multiplayer**: Steam shows it as **Spacewar** (AppID 480, Steam's test app), which is how invites reach it.
 
 1. **Host:** **Multiplayer → Create room**, then **Invite** next to a friend (or **Invite through Steam**). The host's game opens and creates the LAN room by itself.
-2. **Friend:** accept the invite in the Launcher (**Accept**), in Steam chat, or with **Join** under the friend's open room. The game opens and joins the room by itself.
+2. **Guest:** choose one or two local players when joining a friend's room in the launcher. Accepting an invite directly through Steam starts with one local player. With automatic navigation enabled and a compatible game build, the game opens the LAN room list. For two players, complete the controller and Mii prompts first. Select the host's room in the list.
 3. Everyone picks a character and kart; the host sets the rules.
 
 If the automatic entry stops (it is experimental and gives up rather than pressing the wrong thing), continue by hand: at the game's main menu hold **L + R** and click the **left stick** to reveal **LAN Play**. The host uses **Create Room**; guests choose the host's room in **Lobby**.

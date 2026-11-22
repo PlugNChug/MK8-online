@@ -1,29 +1,15 @@
-// Experimental: enter the LAN room by itself, for rooms opened through the launcher (MK8_AUTO_LAN=host|guest, or 1:
-// slot 0 hosts). Included into hle/input.c by toolchain/auto_lan.py.
-//
-// It presses what a player would, through the game's own input (g_test_buttons, OR'd with the player's input), and
-// waits for what it can observe instead of fixed times: the menu movie opening (the title screen), the virtual LAN
-// starting (the game entered the LAN lobby) and, for a guest, the host's room beacon: once the host's sequence has
-// created the room, its runtime broadcasts a datagram on a port the game never uses (AUTO_BEACON_PORT, kept out of the
-// game by net/vlan.c). Without the beacon a guest never presses A: on an empty list A would create a room. Any wait
-// that runs out stops the sequence; the player goes on by hand. Character and rules stay the player's.
+// Automatic host room creation for Steam rooms. Guests open the native room browser directly.
 #include <stdatomic.h>
 #include <stdbool.h>
 
-static _Atomic int mk8_auto_menu, mk8_auto_vlan, mk8_auto_room;
+static _Atomic int mk8_auto_menu, mk8_auto_vlan;
 
 void mk8_auto_lan_movie(const char *path) {
     if (path && strstr(path, "MovieMenu")) mk8_auto_menu = 1;
 }
 void mk8_auto_lan_vlan_up(void) { mk8_auto_vlan = 1; }
 #define AUTO_BEACON_PORT 47999
-void mk8_auto_lan_beacon(uint32_t from, const uint8_t *data, size_t len) {
-    if (len != 8 || memcmp(data, "MK8-ROOM", 8)) return;
-    if (!mk8_auto_room) LOG("[mk8:auto-lan] room beacon from 10.13.37.%u\n", (unsigned)(from & 0xff));
-    mk8_auto_room = 1;
-}
-
-enum { AUTO_NONE, AUTO_MENU, AUTO_VLAN, AUTO_ROOM };
+enum { AUTO_NONE, AUTO_MENU, AUTO_VLAN };
 #define AUTO_A (1ull << 0)
 #define AUTO_LSTICK (1ull << 4)
 #define AUTO_L (1ull << 6)
@@ -57,11 +43,6 @@ static const AutoStep auto_common[] = {
 static const AutoStep auto_host[] = {
     {AUTO_NONE, 240, 0, AUTO_A, 6, "lobby: create room"},
 };
-static const AutoStep auto_guest[] = {
-    {AUTO_ROOM, 180, 18000, AUTO_DOWN, 6, "lobby: the host's room"},
-    {AUTO_NONE, 150, 0, AUTO_A, 6, "lobby: join"},
-};
-
 static _Atomic int mk8_auto_lan_owns_title = -1;
 
 static int mk8_auto_lan_role(void) {
@@ -69,24 +50,43 @@ static int mk8_auto_lan_role(void) {
     if (!mode || !getenv("LARECOMP_LAN_RELAY")) return 0;
     if (!strcmp(mode, "host")) return 1;
     if (!strcmp(mode, "guest")) return 2;
-    if (!strcmp(mode, "1")) return slot && atoi(slot) == 0 ? 1 : 2;
+    if (!strcmp(mode, "1") && slot && *slot && !slot[1]) {
+        if (*slot=='0') return 1;
+        if (*slot>='1' && *slot<='3') return 2;
+    }
     return 0;
+}
+
+bool mk8_guest_lan_requested(void) {
+    if (mk8_auto_lan_role() != 2) return false;
+    const char *slot=getenv("LARECOMP_LAN_SLOT"), *room=getenv("LARECOMP_LAN_ROOM");
+    const char *relay=getenv("LARECOMP_LAN_RELAY"), *players=getenv("MK8_LAN_PLAYERS");
+    const char *port=strrchr(relay, ':');
+    return slot && *slot>='1' && *slot<='3' && !slot[1] && room && *room && strlen(room)<=16 &&
+           port && port!=relay && port[1] && (!players || !strcmp(players,"1") || !strcmp(players,"2"));
+}
+
+int mk8_guest_lan_hide_boot_logo(void) {
+    static bool visited;
+    if (visited) return 0;
+    visited = true;
+    return mk8_guest_lan_requested();
 }
 
 // The stock LAN sequence supplies its own title confirm, including before its first input frame.
 bool mk8_auto_lan_requested(void) {
     int active = mk8_auto_lan_owns_title;
-    return active < 0 ? mk8_auto_lan_role() != 0 : active != 0;
+    return active < 0 ? mk8_auto_lan_role() == 1 : active != 0;
 }
 
 static void mk8_auto_lan_frame(uint64_t frame) {
-    static int role = -1;  // 0 off, 1 host, 2 guest
+    static int role = -1;  // Only hosts run the input sequence.
     static size_t step;
     static uint64_t since, busy_until;
     if (role < 0) {
-        role = mk8_auto_lan_role();
+        role = mk8_auto_lan_role() == 1;
         mk8_auto_lan_owns_title = role != 0;
-        if (role) LOG("[mk8:auto-lan] entering the LAN room as %s (experimental)\n", role == 1 ? "host" : "guest");
+        if (role) LOG("[mk8:auto-lan] entering the LAN room as host (experimental)\n");
         since = frame;
     }
     if (role == 1 && step == (size_t)-1) {  // (host done: announce the room to the guests' runtimes once a second)
@@ -96,12 +96,11 @@ static void mk8_auto_lan_frame(uint64_t frame) {
     }
     if (!role || frame < busy_until) return;
     size_t common = sizeof auto_common / sizeof *auto_common;
-    const AutoStep *steps = role == 1 ? auto_host : auto_guest;
-    size_t count = common + (role == 1 ? sizeof auto_host / sizeof *auto_host : sizeof auto_guest / sizeof *auto_guest);
+    size_t count = common + sizeof auto_host / sizeof *auto_host;
     if (step >= count) return;
-    const AutoStep *s = step < common ? &auto_common[step] : &steps[step - common];
+    const AutoStep *s = step < common ? &auto_common[step] : &auto_host[step - common];
     int happened = s->wait == AUTO_NONE || (s->wait == AUTO_MENU && mk8_auto_menu) ||
-                   (s->wait == AUTO_VLAN && mk8_auto_vlan) || (s->wait == AUTO_ROOM && mk8_auto_room);
+                   (s->wait == AUTO_VLAN && mk8_auto_vlan);
     if (!happened) {
         if (frame - since > s->timeout) {
             LOG("[mk8:auto-lan] stopped at \"%s\" (frame %llu): continue by hand\n", s->what, (unsigned long long)frame);

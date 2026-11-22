@@ -199,7 +199,7 @@ Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu 
 Cada jogador precisa da própria cópia do jogo preparada (mesma versão 4.0.1), de um Mii e da Steam aberta. Deixe o launcher aberto em **Multijogador**: a Steam o mostra como **Spacewar** (AppID 480, o aplicativo de testes da Steam), e é assim que os convites chegam até ele.
 
 1. **Anfitrião:** **Multijogador → Criar sala**, depois **Convidar** ao lado do amigo (ou **Convidar pela Steam**). O jogo do anfitrião abre e cria a sala LAN sozinho.
-2. **Amigo:** aceite o convite no launcher (**Aceitar**), no chat da Steam ou com **Entrar** na sala aberta do amigo. O jogo abre e entra na sala sozinho.
+2. **Convidado:** escolha um ou dois jogadores locais ao entrar na sala de um amigo pelo launcher. Aceitar um convite diretamente pela Steam inicia a sessão com um jogador local. Com a navegação automática ativada e uma compilação compatível, o jogo abre a lista de salas LAN. Para dois jogadores, conclua primeiro as etapas de controle e Mii. Selecione a sala do anfitrião na lista.
 3. Todos escolhem personagem e kart; o anfitrião define as regras.
 
 Se a entrada automática parar (ela é experimental e prefere desistir a apertar a coisa errada), continue à mão: no menu principal do jogo segure **L + R** e clique o **analógico esquerdo** para mostrar **LAN Play**. O anfitrião usa **Create Room**; os convidados escolhem a sala do anfitrião em **Lobby**.

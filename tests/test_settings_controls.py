@@ -182,6 +182,10 @@ extern "C" void mk8_suppress_settings_buttons(SDL_JoystickID id,uint32_t buttons
 extern "C" int mk8_pause_owner(SDL_JoystickID id) { return (int)id-1; }
 extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned) {}
 extern "C" bool mk8_settings_shared_race() { if (checks_before_race && !--checks_before_race) shared_race=true; return shared_race; }
+extern "C" void mk8_controller_names(uint16_t out[4][80]) {
+    std::memset(out,0,4*80*sizeof(uint16_t));
+    std::memcpy(out[0],u"Joy-Con (R)",sizeof(u"Joy-Con (R)"));
+}
 static Uint64 clock_ms=5000;
 #define SDL_GetTicks() clock_ms
 struct QEvent { enum { KEY,ANALOG,MOUSE_POS,MOUSE_BUTTON,WHEEL,TEXT } kind; ImGuiKey key; bool down; float value,x,y; int button; bool touch; char text[32]; };
@@ -252,7 +256,7 @@ static void check_notice(const char *message,float alpha,float output_scale=1,fl
 #undef ImGui
     const auto &last=NoticeUI::last;
     if (!message) {CHECK(!last.text && NoticeUI::tip.labels.empty() && NoticeUI::tip.tiles.empty());return;}
-    if(notice_fades) {
+    if(notice_fades || (mk8_lan_claim_pending.load() && clock_ms/1000.0 >= notice_until)) {
         CHECK(!last.text && !last.flags); // No input window covers the race.
         NoticeUI::check_tip(message,alpha,io.DisplaySize,scale,width<400);
         return;
@@ -286,6 +290,14 @@ int main() {
     clock_ms+=9000; check_notice(nullptr,0);
     set_open(true); can_save=true; set_open(false);
     CHECK(legacy_saves==failed_save+1); check_notice(nullptr,0);
+    mk8_lan_claim_notice(1); check_notice(mk8_lan_claim_hint,1);
+    clock_ms+=10000; check_notice(mk8_lan_claim_hint,1);
+    menu_notice("Network notice",2); check_notice("Network notice",1);
+    clock_ms+=2000; check_notice(mk8_lan_claim_hint,1);
+    mk8_lan_claim_notice(0); check_notice(nullptr,0);
+    mk8_lan_claim_notice(1); mk8_lan_claim_notice(2);
+    clock_ms+=200; check_notice("Player 1 · Joy-Con (R)",1);
+    clock_ms+=3200; check_notice(nullptr,0);
     for(selected_theme=0;selected_theme<5;++selected_theme) for(const char *hub : {"","0","1"}) {
         CHECK(!_putenv_s("MK8_MENU_PROTOTYPE",hub));
         bool intercept=selected_theme==2;

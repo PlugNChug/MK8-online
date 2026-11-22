@@ -44,6 +44,14 @@ A opção vem ligada e controla a contribuição das máscaras de bloom do MK8 4
 
 Em Bowser’s Castle com quatro jogadores, a comparação de três instantes da contagem regressiva mediu a luminância da imagem final (escala de 0 a 255). Sem a chave no INI, o halo acima e abaixo da placa mediu 108,49 e 104,24. Desligado, caiu para 64,25 e 56,09. Ao religar, voltou a 108,81 e 104,72. A amostra do asfalto permaneceu entre 79,75 e 79,76. O teste cobre a largada; o código do jogo foi preservado na atualização do runtime.
 
+## Entrada pela Steam com um ou dois jogadores locais
+
+O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.
+
+O protocolo Steam do anfitrião permanece o da base `fix-chore`. A [ocorrência #32](https://github.com/Vnnc1/MK8-online/issues/32) descreve a falha de navegação do convidado que motivou esse fluxo. A qualificação multiplayer desta revisão exige uma corrida completa entre duas máquinas.
+
+No teste local com dois processos e um relay, o convidado iniciou com o save de teste vazio, registrou um controle virtual no P1 e o teclado no P2, escolheu o segundo Mii e encontrou a sala de um anfitrião sem a alteração. Os três pilotos escolheram personagens, votaram e chegaram à primeira volta no Mario Kart Stadium, com as duas câmeras ativas no convidado. Os processos encerraram normalmente e os 50 arquivos protegidos mantiveram os mesmos hashes. Em outro teste, o convidado com um jogador registrou o teclado e entrou na mesma pista com o anfitrião.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.

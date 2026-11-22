@@ -18,6 +18,8 @@ pub struct Request {
     #[serde(default)]
     pub auto_lan: Option<String>,
     #[serde(default)]
+    pub two_player_guest: bool,
+    #[serde(default)]
     pub nextendo: bool,
     #[serde(default)]
     pub nextendo_session: Option<String>,
@@ -69,9 +71,24 @@ pub fn run() -> Result<i32> {
         std::fs::remove_file(signal).map_err(|e| e.to_string())?;
     }
     // (inherited by the game the launch below starts; never left over from the launcher's own environment)
-    match request.auto_lan.as_deref() {
-        Some(role @ ("host" | "guest")) => std::env::set_var("MK8_AUTO_LAN", role),
-        _ => std::env::remove_var("MK8_AUTO_LAN"),
+    let role = match request.auto_lan.as_deref() {
+        Some("host") if request.network.is_some() => Some("host"),
+        Some("guest")
+            if request.network.is_some() && request.install.direct_lan_guest_supported =>
+        {
+            Some("guest")
+        }
+        _ => None,
+    };
+    if let Some(role) = role {
+        std::env::set_var("MK8_AUTO_LAN", role);
+    } else {
+        std::env::remove_var("MK8_AUTO_LAN");
+    }
+    if role == Some("guest") && request.two_player_guest {
+        std::env::set_var("MK8_LAN_PLAYERS", "2");
+    } else {
+        std::env::remove_var("MK8_LAN_PLAYERS");
     }
     let launch = if request.candidate {
         mk8_installer::launch_candidate

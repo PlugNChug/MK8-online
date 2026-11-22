@@ -313,6 +313,19 @@ def guest_has_split_screen_hook(files):
                    for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ()))
 
 
+def guest_has_direct_lan(files):
+    # A runtime-only build can reuse a main module without one or both boot callbacks.
+    main = files.get('mk8d-code-main.dll')
+    if not main:
+        return False
+    import pefile
+    with pefile.PE(main['path'], fast_load=True) as pe:
+        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+        required = {b'mk8_guest_lan_start', b'mk8_guest_lan_hide_boot_logo', b'mk8_guest_lan_hold_boot'}
+        return any(module.dll.lower() == b'mk8drecomp.exe' and required <= {item.name for item in module.imports}
+                   for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ()))
+
+
 def finish(config, local, executable=None):
     # A candidate enables only the explicit diagnostic launch, never normal/online play.
     from host import build_host, link_game
@@ -369,7 +382,8 @@ def finish(config, local, executable=None):
                  'split_screen_60fps_supported': guest_has_split_screen_hook(files),
                  'pack_supported': True,  # runtime/mk8/support/romfs_overlay.c: MK8_ROMFS_OVERLAY
                  'nextendo_supported': True, 'cups_supported': True, 'temporal_upscaling_supported': True,
-                 'romfs_long_paths_supported': True, 'nextendo_session_supported': True, 'live_settings_supported': True, 'bloom_supported': True, 'menu_themes_supported': True, 'menu_light_themes_supported': True}
+                 'romfs_long_paths_supported': True, 'nextendo_session_supported': True, 'live_settings_supported': True,
+                 'direct_lan_guest_supported': guest_has_direct_lan(files), 'bloom_supported': True, 'menu_themes_supported': True, 'menu_light_themes_supported': True}
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
@@ -421,6 +435,7 @@ def refresh_runtime(local):
     candidate['menu_light_themes_supported'] = True
     candidate['split_screen_60fps_supported'] = guest_has_split_screen_hook(candidate['files'])
     candidate['bloom_supported'] = True
+    candidate['direct_lan_guest_supported'] = guest_has_direct_lan(candidate['files'])
     candidate['cups_supported'] = candidate.get('cups_supported', False)  # (the game library's, kept as it was)
     atomic_json(local/'candidate.json', candidate)
     print('Runtime atualizado; biblioteca do jogo preservada. Gameplay não qualificado.', flush=True)

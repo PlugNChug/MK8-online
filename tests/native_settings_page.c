@@ -72,6 +72,9 @@ static int counts[]={13,4,2,5};
 static bool in_main=true;
 static bool native_style=true, auto_lan, title_active;
 bool mk8_auto_lan_requested(void) { return auto_lan; }
+static unsigned lan_room_players;
+unsigned mk8_guest_lan_editor_players(uint64_t manager) { (void)manager; return lan_room_players; }
+void mk8_auto_lan_menu_tick(uint64_t manager) { (void)manager; }
 void mk8_title_input_active(bool active) { title_active=active; }
 static unsigned race_input_players;
 void mk8_input_race_players(unsigned players) { race_input_players=players; }
@@ -932,6 +935,13 @@ static void check_controller_footer(uint64_t manager) {
     ST32(layout+0xe8,0x15); ST64(drivers,MAIN_BASE+0x1278648);
     mk8_settings_page_frame(manager); assert(controller_entry_players==2);
     assert(mk8_controller_pointer(640,643,2) && !mk8_controller_layout_active());
+    // Direct LAN room-list Plus works after registration, without stealing clicks from room entries.
+    ST32(manager+0xb50,1); lan_room_players=2; mk8_settings_page_frame(manager);
+    assert(!mk8_controller_pointer(640,643,1));
+    popup_open(manager); assert(controller_visible && controller_rows==2);
+    popup_key(manager,2); assert(!controller_visible);
+    lan_room_players=0; mk8_settings_page_frame(manager); assert(!controller_entry_players);
+
     // The mandatory join opens before character select, even with the optional F1 menu disabled.
     ST32(manager+0xb50,1);
     native_style=false;

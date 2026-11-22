@@ -688,6 +688,106 @@ static void check_live_editor(void) {
 
 #include "title_input.inc"
 
+static SDL_Thread *start_lan_worker(void) {
+    assert(mk8_reserve_lan_registration());
+    SDL_Thread *worker=SDL_CreateThread(request_players,"Stock LAN two-pad applet",(void *)(intptr_t)2);
+    assert(worker);
+    Uint64 until=SDL_GetTicks()+2000;
+    while (!SDL_GetAtomicInt(&core_released) && SDL_GetTicks()<until) SDL_Delay(1);
+    assert(SDL_GetAtomicInt(&core_released) && !mk8_applet_request);
+    return worker;
+}
+
+static void check_lan_worker_without_ui(void) {
+    attach(PRO); attach(SOLO_L); pump();
+    SDL_Thread *worker=start_lan_worker();
+    Uint64 until=SDL_GetTicks()+5250;
+    while (SDL_GetTicks()<until) {
+        assert(mk8_lan_registration_alive(true)); // Waiting for a player at a live picker is fine.
+        SDL_Delay(20);
+    }
+    assert(SDL_GetAtomicInt(&core_released));
+    until=SDL_GetTicks()+6500;
+    while (SDL_GetAtomicInt(&core_released) && SDL_GetTicks()<until) SDL_Delay(10);
+    assert(!SDL_GetAtomicInt(&core_released)); // A stopped picker must release the guest worker.
+    int confirmed;
+    SDL_WaitThread(worker,&confirmed);
+    assert(!confirmed && !mk8_controller_join_players());
+    detach_title_pad(PRO); detach_title_pad(SOLO_L);
+}
+
+static void check_lan_p2_enrollment(void) {
+    attach(PRO); attach(SOLO_L); attach(SOLO_R); pump();
+    assert((mk8_live_seats()&3)==3);
+    SDL_Thread *worker=start_lan_worker();
+    assert(mk8_lan_input_active(true)==1);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    assert(mk8_lan_input_active(true)==2);
+    assert(title_pad_seat(ids[PRO])==0 && title_pad_seat(ids[SOLO_L])==1 && title_pad_seat(ids[SOLO_R])==2);
+    for (int apply=0; apply<2; ++apply) {
+        if (apply) worker=start_lan_worker();
+        assert(mk8_lan_enroll_p2(true)==0);
+        Uint64 until=SDL_GetTicks()+2000;
+        while (mk8_controller_join_players()!=2 && SDL_GetTicks()<until) pump();
+        int row=-1;
+        assert(mk8_edit_view(NULL,&row)==MK8_EDIT_LISTEN && row==1 && mk8_controller_join_keyboard());
+        assert(mk8_editor.slots[0][0]==ids[PRO] && !mk8_editor.slots[1][0]);
+        assert(title_pad_seat(ids[SOLO_L])==1 && title_pad_seat(ids[SOLO_R])==2);
+        if (apply) {
+            title_key(SDL_SCANCODE_RETURN,false); pump();
+            assert(mk8_edit_view(NULL,NULL)==MK8_EDIT_READY && mk8_assigned_keyboard()<0);
+        }
+        SDL_GamepadButton action=apply ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
+        button(sticks[PRO],action,true); button(sticks[PRO],action,false);
+        int result;
+        until=SDL_GetTicks()+2000;
+        while ((result=mk8_lan_enroll_p2(true))==0 && SDL_GetTicks()<until) pump();
+        assert(result==(apply ? 1 : -1));
+        assert(SDL_GetAtomicInt(&core_released) && mk8_finish_lan_registration(result>0));
+        int confirmed;
+        SDL_WaitThread(worker,&confirmed);
+        assert(confirmed==(apply ? 2 : 0) && !SDL_GetAtomicInt(&core_released));
+        assert(title_pad_seat(ids[PRO])==0 && title_pad_seat(ids[SOLO_R])==2);
+        if (!apply) assert(title_pad_seat(ids[SOLO_L])==1 && mk8_assigned_keyboard()<0);
+    }
+    assert(mk8_assigned_keyboard()==1 && !extra_pad[0]);
+    applet_key_state(SDL_SCANCODE_K,true);
+    assert(!guest_buttons(0) && guest_buttons(1)==(1ull<<BIND_A));
+    applet_key_state(SDL_SCANCODE_K,false);
+    // A native picker can disappear with both players still holding Confirm.
+    assert(mk8_lan_enroll_p2(true)==0);
+    Uint64 until=SDL_GetTicks()+2000;
+    while (mk8_controller_join_players()!=2 && SDL_GetTicks()<until) pump();
+    assert(mk8_controller_join_players()==2);
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO],SDL_GAMEPAD_AXIS_LEFTX,24000));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    applet_key_state(SDL_SCANCODE_D,true);
+    applet_key_state(SDL_SCANCODE_K,true);
+    assert(!guest_buttons(0) && !guest_buttons(1));
+    assert(mk8_lan_enroll_p2(false)==-1);
+    assert(!guest_buttons(0) && !guest_buttons(1)); // Before SDL sees the abandoned request.
+    pump();
+    assert(!mk8_controller_join_players() && !mk8_editor.rows && !guest_buttons(0) && !guest_buttons(1));
+    Cpu cpu={0};
+    for (unsigned player=0; player<2; ++player) {
+        uint64_t state[5];
+        fill_state(&cpu,(uint8_t *)state,player,false);
+        assert(!state[2] && !state[3]);
+    }
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO],SDL_GAMEPAD_AXIS_LEFTX,0));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    applet_key_state(SDL_SCANCODE_D,false);
+    applet_key_state(SDL_SCANCODE_K,false);
+    assert(!guest_buttons(0) && !guest_buttons(1));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true);
+    applet_key_state(SDL_SCANCODE_K,true);
+    assert(guest_buttons(0)==(1ull<<BIND_A) && guest_buttons(1)==(1ull<<BIND_A));
+    button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+    applet_key_state(SDL_SCANCODE_K,false);
+    detach_title_pad(PRO); detach_title_pad(SOLO_L); detach_title_pad(SOLO_R);
+}
+
 // The production Steam bridge exposes both simulated GameInput devices through SDL.
 void check_gameinput_title(SDL_JoystickID first, SDL_JoystickID second, uint32_t *buttons) {
     pump();
@@ -712,6 +812,15 @@ int main(int argc, char **argv) {
     SDL_JoystickID *physical = SDL_GetJoysticks(&count);
     assert(physical && !count);
     SDL_free(physical);
+    if (!strcmp(argv[2], "lan-claim")) {
+        check_lan_claim(argv[1]); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"lan-p2-enrollment")) {
+        check_lan_p2_enrollment(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"lan-worker-no-ui")) {
+        check_lan_worker_without_ui(); SDL_Quit(); return 0;
+    }
     if(!strncmp(argv[2],"all-reconnect",13)) {
         check_all_reconnect(argv[2]);
         SDL_Quit(); return 0;
@@ -761,6 +870,7 @@ int main(int argc, char **argv) {
         attach(PRO); attach(PAIR_L); pump();
         SDL_Gamepad *initial=pad; int keyboard=mk8_assigned_keyboard();
         title_ready(true); title_key(SDL_SCANCODE_K,false);
+        assert(!mk8_lan_input_active(true));
         button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,true);
         button(sticks[PAIR_L],SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,false);
         assert(pad==initial); assert(mk8_assigned_keyboard()==keyboard); assert(!(guest_buttons(0)&(1ull<<BIND_A)));

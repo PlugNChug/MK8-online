@@ -183,6 +183,8 @@ static void mk8_signal_styles(void) {''')
     if (atomic_load(&mk8_applet_request)) atomic_store(&mk8_applet_request,MK8_APPLET_ABANDONED);
     atomic_store(&mk8_applet_suppressed,0);
     atomic_store(&mk8_race_seats,0);
+    mk8_lan_input_active(false);
+    mk8_lan_chosen = false;
     mk8_title_input_active(false);''')
     path.write_text(text, encoding='utf-8')
     device = runtime / 'nvn/vulkan/device.c'
