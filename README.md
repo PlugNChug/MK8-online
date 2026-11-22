@@ -200,6 +200,8 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 
 You can keep several Miis and switch between them at the top. **Mii profile** in the game's **F1** menu brings this screen forward.
 
+If a renamed Windows portable installation reports “Caminho de recurso Mii alterado,” use a launcher with the [#115 fix](https://github.com/Vnnc1/MK8-online/issues/115). It can read the relocated resource record and verify your existing Mii files without recreating the Mii.
+
 ## Race with friends (Steam)
 
 Each player needs their own prepared copy of the game (same 4.0.1 version), a Mii, and Steam open. Keep the Launcher open on **Multiplayer**: Steam shows it as **Spacewar** (AppID 480, Steam's test app), which is how invites reach it.

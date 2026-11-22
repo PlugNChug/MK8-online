@@ -184,6 +184,8 @@ Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e sobrevivem a atualiz
 
 Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente.
 
+Se a edição portátil do Windows mostrar “Caminho de recurso Mii alterado” após renomear a pasta, use um launcher com a [correção da #115](https://github.com/Vnnc1/MK8-online/issues/115). Ele lê o registro realocado e verifica os arquivos existentes, sem precisar recriar o Mii.
+
 ## Corra com amigos (Steam)
 
 Cada jogador precisa da própria cópia do jogo preparada (mesma versão 4.0.1), de um Mii e da Steam aberta. Deixe o launcher aberto em **Multijogador**: a Steam o mostra como **Spacewar** (AppID 480, o aplicativo de testes da Steam), e é assim que os convites chegam até ele.

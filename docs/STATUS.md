@@ -1,5 +1,11 @@
 # Estado técnico — 20/11/2026
 
+## Mii após renomear a pasta portátil no Windows (#115)
+
+Na cópia isolada do ZIP oficial 0.5.0, **Jogar solo** abriu antes da mudança de pasta e retornou o erro após a mudança. Substituindo apenas o launcher nessa mesma cópia, o jogo abriu, montou os seis recursos no novo caminho e exibiu o Mii de teste `RenameQA` com sua camisa roxa na tela de seleção. Ao confirmar, o jogo mostrou o traje roxo desse Mii.
+
+Ao renomear uma instalação portátil isolada, o launcher realocou o registro dos recursos, mas a comparação com o caminho canônico do Windows retornou “Caminho de recurso Mii alterado”. A correção aceita as duas grafias do mesmo destino e mantém a verificação dos seis arquivos por tamanho e SHA-256. A regressão move a pasta e também verifica que redirecionar o diretório com uma junção para outra cópia idêntica continua sendo recusado. Um teste separado cobre a grafia UNC, sem montar um compartilhamento de rede.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
