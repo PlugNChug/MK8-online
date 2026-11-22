@@ -238,6 +238,25 @@ void settings_load(void) {''')
         }
         else if (!strcmp(key, "volume"))''')
         original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "camera_distance = %d\\n", mk8_settings_camera_distance());\n    fprintf(f, "volume =')
+        fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    bool split_screen_60fps;
+} Settings;
+bool mk8_split_screen_60fps_enabled(void);
+void mk8_set_split_screen_60fps(bool enabled);''')
+        header.write_text(fields, encoding='utf-8')
+        original = replace(original, 'void settings_load(void) {', '''bool mk8_split_screen_60fps_enabled(void) {
+    return __atomic_load_n(&g_settings.split_screen_60fps, __ATOMIC_RELAXED);
+}
+void mk8_set_split_screen_60fps(bool enabled) {
+    __atomic_store_n(&g_settings.split_screen_60fps, enabled, __ATOMIC_RELAXED);
+}
+void settings_load(void) {''')
+        original = replace(original, '    loaded = true;', '''    loaded = true;
+    const char *legacy_split = getenv("MK8_SPLITSCREEN_60FPS");
+    mk8_set_split_screen_60fps(legacy_split && !strcmp(legacy_split, "1"));''')
+        original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "split_screen_60fps"))
+            mk8_set_split_screen_60fps(*val == '1' && !val[1 + strspn(val + 1, " \t")]);
+        else if (!strcmp(key, "volume"))''')
+        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "split_screen_60fps = %d\\n", mk8_split_screen_60fps_enabled());\n    fprintf(f, "volume =')
         original = replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")')
         original = '#include <SDL3/SDL_filesystem.h>\n#include <pthread.h>\n' + original
         original = replace(original, 'void settings_save(void) {', '''static pthread_mutex_t settings_write_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -296,6 +315,10 @@ bool settings_ahead_fast''')
         if (o->group==MK8_MENU_AUDIO && o->toggle) opt_toggle(o->label,o->toggle,o->default_index,o->help);
     }''')
     marker = '    bool fs = g_settings.fullscreen;'
+    text = replace(text, marker, '''    bool split_60 = mk8_split_screen_60fps_enabled();
+    if (opt_toggle("Split-screen 60 FPS", &split_60, false, "Target 60 FPS per view with 3-4 players."))
+        mk8_set_split_screen_60fps(split_60);
+''' + marker)
     text = replace(text, marker, '''    int distance = mk8_settings_camera_distance();
     const char *distance_label = "Driving camera distance (%)";
     static char distance_text[128];

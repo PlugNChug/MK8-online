@@ -1,5 +1,9 @@
 # Dependências e atribuições
 
+## Cadência das câmeras em tela dividida
+
+As [notas do Racing 8 DX Recomp](https://github.com/galarianpikachu2021-hue/Racing-8-DX-Recomp/blob/main/COOPERATE.md) e a [investigação do Mush8](https://github.com/c22dev/mush8/pull/16) ajudaram a localizar o escalonador de câmeras do MK8 4.0.1. A adaptação deste projeto atua na configuração da corrida que alimenta esse escalonador. Os testes e as medições locais estão em [STATUS.md](STATUS.md).
+
 A atribuição de controles dentro do jogo e a recuperação da posição dos jogadores vêm da contribuição de PlugNChug. A verificação das unidades C geradas com terminações LF ou CRLF foi adaptada da contribuição de DieMitchell. [PR #75](https://github.com/Vnnc1/MK8-online/pull/75) · [PR #83](https://github.com/Vnnc1/MK8-online/pull/83)
 
 ## Distribuição nativa para Linux

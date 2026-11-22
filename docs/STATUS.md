@@ -34,6 +34,10 @@ Quando falta uma textura para comparação de profundidade, o runtime fornece um
 
 Os testes nativos exercitam a escolha dos descritores, a cópia dos sub-recursos e a reutilização da vista após colisões. Na compilação integrada anterior, a camada de validação apontou o aviso Vulkan `06479` para uma vista de cor no vínculo 32 do estágio de vértices. A repetição após a correção registrou quatro usos da textura substituta de profundidade e nenhum aviso nesse vínculo.
 
+## Opção de 60 FPS em tela dividida no Windows
+
+A opção afeta as corridas locais de três e quatro jogadores. Com a preferência desligada, o jogo mantém a alternância das vistas. Ao ativá-la, cada câmera pode atualizar a cada quadro apresentado. O ajuste preserva a seleção do mapa de profundidade adequado para o bloom. Na build combinada anterior, quatro vistas mudaram em cada um dos 691 intervalos amostrados de um único quadro na largada de Bowser’s Castle; com a opção desligada, cada vista registrou 30,02 atualizações/s. Na candidata isolada baseada na 0.5.0, quatro jogadores virtuais repetiram a mesma largada a 1×. Com a opção desligada, as vistas atualizaram entre 29,97 e 30,04 vezes/s em 13,95 s. Com a opção ligada, as quatro vistas mudaram nos 594 intervalos capturados próximos de 16,7 ms. O motor registrou 60 FPS e a captura do desktop registrou 56,72 quadros distintos/s. Os testes terminaram normalmente e preservaram os 50 arquivos protegidos. A taxa obtida depende da máquina, da pista e da resolução.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.

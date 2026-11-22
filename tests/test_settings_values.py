@@ -98,11 +98,12 @@ int main(int argc,char **argv) {
         Mk8Setting volume=find(1,"Master Volume");
         assert(volume.current==150 && !strcmp(volume.value,"150%"));
         assert(mk8_settings_camera_distance()==117);
+        assert(mk8_split_screen_60fps_enabled());
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==13 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==14 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -166,6 +167,10 @@ int main(int argc,char **argv) {
         request(SETTINGS_BEGIN,0,0);
     }
     for(int i=4;i>0;i--) request(SETTINGS_STEP,theme,-1);
+    Mk8Setting rate=find(0,"Split-screen 60 FPS");
+    assert(rate.id==MK8_MENU_SPLIT_SCREEN_60FPS && !mk8_split_screen_60fps_enabled() && !strcmp(rate.value,"Off"));
+    request(SETTINGS_STEP,rate.id,1);
+    assert(mk8_split_screen_60fps_enabled() && !strcmp(find(0,"Split-screen 60 FPS").value,"On"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -331,6 +336,7 @@ int main(int argc,char **argv) {
             self.assertIn('theme = Native',text)
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 1.50',text)
+            self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('joycon_mode = horizontal',text)
             self.assertIn('pads_from_p2 = 1',text)
             self.assertIn('camera_distance = 117',text)

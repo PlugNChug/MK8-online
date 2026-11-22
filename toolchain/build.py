@@ -300,6 +300,19 @@ def prepare_system_data(config, local):
         mirror(local/'user-no-mii/fonts', config['fonts'], copy_ok=True)
 
 
+def guest_has_split_screen_hook(files):
+    # --runtime-only and --finish can reuse guest objects from an earlier build.
+    record = files.get('mk8d-code-main.dll')
+    if not record:
+        return False
+    import pefile
+    with pefile.PE(record['path'], fast_load=True) as pe:
+        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+        return any(module.dll.lower() == b'mk8drecomp.exe'
+                   and any(symbol.name == b'mk8_split_race_full_speed' for symbol in module.imports)
+                   for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ()))
+
+
 def finish(config, local, executable=None):
     # A candidate enables only the explicit diagnostic launch, never normal/online play.
     from host import build_host, link_game
@@ -353,6 +366,7 @@ def finish(config, local, executable=None):
     identity = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
     candidate = {'schema': 2, 'identity': identity, 'profile': 'mk8d-smm2-experimental', 'executable': executable,
                  'files': files, 'data_root': str(data), 'shader_root': str(local/'user/shaders'), 'gameplay_verified': False, 'dlc_supported': True,
+                 'split_screen_60fps_supported': guest_has_split_screen_hook(files),
                  'pack_supported': True,  # runtime/mk8/support/romfs_overlay.c: MK8_ROMFS_OVERLAY
                  'nextendo_supported': True, 'cups_supported': True, 'temporal_upscaling_supported': True,
                  'romfs_long_paths_supported': True, 'nextendo_session_supported': True, 'live_settings_supported': True, 'menu_themes_supported': True, 'menu_light_themes_supported': True}
@@ -405,6 +419,7 @@ def refresh_runtime(local):
     candidate['live_settings_supported'] = True
     candidate['menu_themes_supported'] = True
     candidate['menu_light_themes_supported'] = True
+    candidate['split_screen_60fps_supported'] = guest_has_split_screen_hook(candidate['files'])
     candidate['cups_supported'] = candidate.get('cups_supported', False)  # (the game library's, kept as it was)
     atomic_json(local/'candidate.json', candidate)
     print('Runtime atualizado; biblioteca do jogo preservada. Gameplay não qualificado.', flush=True)

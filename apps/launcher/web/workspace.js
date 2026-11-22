@@ -132,6 +132,7 @@
     theme: 'A captura mostra os ajustes rápidos no jogo. Salve as configurações para usar o tema no próximo início.',
     aspect: 'Esticar deforma a imagem; Original 16:9 mantém barras. Ultrawide experimental mostra mais cenário sem deformar. Esta prévia usa uma tela 21:9.',
     camera_distance: 'Em corridas solo, aumente o valor para afastar a câmera atrás do piloto. 100% mantém a distância original. Se o jogo já estava compilado, faça uma compilação completa para aplicar este ajuste.',
+    split_screen_60fps: 'Com três ou quatro jogadores, tenta atualizar cada vista a 60 FPS. A taxa alcançada depende do computador.',
     fullscreen: 'Tela cheia ocupa o monitor; em janela, a moldura permanece visível. Durante o jogo, F11 ou Alt+Enter alterna esse modo.',
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',

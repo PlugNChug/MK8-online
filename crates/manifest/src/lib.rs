@@ -70,6 +70,9 @@ pub struct Installation {
     /// The host can save and render Simple Light and NES Light.
     #[serde(default)]
     pub menu_light_themes_supported: bool,
+    /// The prepared game imports the split-screen cadence hook provided by the host.
+    #[serde(default)]
+    pub split_screen_60fps_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

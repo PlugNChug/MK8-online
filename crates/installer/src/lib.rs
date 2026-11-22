@@ -449,6 +449,7 @@ mod tests {
             live_settings_supported: false,
             menu_themes_supported: false,
             menu_light_themes_supported: false,
+            split_screen_60fps_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());
         assert!(validate_installation(&install).is_err());
