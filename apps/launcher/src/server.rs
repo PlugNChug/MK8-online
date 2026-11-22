@@ -969,14 +969,21 @@ impl App {
                     );
                 }
                 if path == "/api/settings" {
-                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    let mut value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
                     }
                     if value.get("split_screen_60fps").is_some()
                         && !self.split_screen_60fps_supported()
                     {
-                        return Err("Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.".into());
+                        // Full-form clients can echo a disabled field while updating unrelated settings.
+                        let current = crate::game_settings::read(&self.local)?;
+                        if value["split_screen_60fps"] != current["values"]["split_screen_60fps"] {
+                            return Err("Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.".into());
+                        }
+                        if let Some(patch) = value.as_object_mut() {
+                            patch.remove("split_screen_60fps");
+                        }
                     }
                     crate::game_settings::write(&self.local, &value)?;
                     return Ok(

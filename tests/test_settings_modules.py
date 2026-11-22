@@ -201,6 +201,12 @@ class SettingsModulesTests(unittest.TestCase):
         expect(page.locator('#video-runtime-upgrade')).to_be_visible()
         self.assertTrue(page.evaluate("""async () => { try { await api('settings', {split_screen_60fps:'1'}); return false; }
             catch (_) { return true; } }"""))
+        # An older client can post the whole form; don't materialize the unavailable preference.
+        page.evaluate("""async () => { const full = (await api('settings')).values;
+            full.volume = '1.25'; await api('settings', full); }""")
+        stored = (self.local/'user-no-mii/mk8d.ini').read_text()
+        self.assertIn('volume = 1.25', stored)
+        self.assertNotIn('split_screen_60fps', stored)
         candidate['split_screen_60fps_supported'] = True
         path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
