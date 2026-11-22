@@ -64,6 +64,10 @@ static void check_tips(void) {
 }
 int main(int argc,char **argv) {
     assert(argc==3 || argc==4); settings_load(); mk8_settings_values_context(true); mk8_settings_values_sync();
+    if(argc==4 && !strncmp(argv[3],"bloom:",6)) {
+        assert(mk8_bloom_enabled()==(argv[3][6]=='1'));
+        return 0;
+    }
     if(argc==4) {
         assert(g_settings.aspect==ASPECT_ULTRAWIDE);
         assert(!mk8_bloom_enabled());
@@ -249,6 +253,11 @@ int main(int argc,char **argv) {
             self.assertEqual(result.returncode,0,result.stderr[-2000:])
             reload=subprocess.run([str(exe),str(ini),str(root/'missing/settings.ini'),'reload'],env=env,capture_output=True,text=True,timeout=25)
             self.assertEqual(reload.returncode,0,reload.stderr[-2000:])
+            probe = root/'bloom.ini'
+            for value,expected in [('0',0), ('0  \t',0), ('1',1), ('',1), ('off',1), ('00',1), ('0junk',1)]:
+                probe.write_bytes(f'bloom = {value}\r\n'.encode())
+                subprocess.run([exe,probe,root/'missing/settings.ini',f'bloom:{expected}'],
+                               env={**env,'LARECOMP_SETTINGS':str(probe)},check=True,timeout=25)
             text=ini.read_text()
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 0.65',text)
