@@ -685,6 +685,12 @@ impl App {
                     && install.gameplay_verified
             })
     }
+    fn bloom_supported(&self) -> bool {
+        self.installation()
+            .or_else(|| self.candidate())
+            .is_none_or(|game| game.bloom_supported)
+    }
+
     fn identity(&self) -> String {
         self.installation()
             .or_else(|| self.candidate())
@@ -820,16 +826,17 @@ impl App {
             .is_some_and(|game| game.nextendo_supported);
         let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
             // An existing host can predate the capability fields within the same test version.
-            (!game.temporal_upscaling_supported
-                || !game.romfs_long_paths_supported
-                || !game.nextendo_session_supported
-                || !game.live_settings_supported)
-                && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
-                    |host| {
-                        host["files"]["mk8drecomp.exe"].as_str()
-                            == Some(game.executable.sha256.as_str())
-                    },
-                )
+            !game.bloom_supported
+                || (!game.temporal_upscaling_supported
+                    || !game.romfs_long_paths_supported
+                    || !game.nextendo_session_supported
+                    || !game.live_settings_supported)
+                    && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
+                        |host| {
+                            host["files"]["mk8drecomp.exe"].as_str()
+                                == Some(game.executable.sha256.as_str())
+                        },
+                    )
         });
         let candidate_stale = candidate_exists
             && (candidate_version.as_deref() != Some(update::CURRENT)
@@ -905,7 +912,11 @@ impl App {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 self.graphics.start(&self.local, &value)
             }
-            ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/settings") => {
+                let mut settings = crate::game_settings::read(&self.local)?;
+                settings["bloom_supported"] = json!(self.bloom_supported());
+                Ok(settings)
+            }
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
             ("POST", "/api/debug-options") => {
                 let options: crate::debug_options::Options =
@@ -956,9 +967,20 @@ impl App {
                     );
                 }
                 if path == "/api/settings" {
-                    let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    let mut value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
+                    }
+                    if value.get("bloom").is_some() && !self.bloom_supported() {
+                        // A full-form client can echo an unavailable option while saving another preference.
+                        if value["bloom"]
+                            != crate::game_settings::read(&self.local)?["values"]["bloom"]
+                        {
+                            return Err("Atualize o runtime do jogo para ajustar o bloom.".into());
+                        }
+                        if let Some(patch) = value.as_object_mut() {
+                            patch.remove("bloom");
+                        }
                     }
                     crate::game_settings::write(&self.local, &value)?;
                     return Ok(
@@ -2519,6 +2541,7 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            bloom_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

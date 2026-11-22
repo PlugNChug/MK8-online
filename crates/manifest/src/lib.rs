@@ -64,6 +64,9 @@ pub struct Installation {
     pub nextendo_session_supported: bool,
     #[serde(default)]
     pub live_settings_supported: bool,
+    /// The prepared runtime can enable or suppress the bloom contribution.
+    #[serde(default)]
+    pub bloom_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

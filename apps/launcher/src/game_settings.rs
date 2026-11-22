@@ -90,6 +90,11 @@ pub fn read(local: &Path) -> Result<Value> {
     for line in contents(&path(local)?)?.lines() {
         if let Some((key, value)) = entry(line) {
             if let Some(slot) = values.get_mut(key) {
+                let value = if key == "bloom" && value != "0" {
+                    "1"
+                } else {
+                    value
+                };
                 *slot = Value::String(value.into());
             }
         }
@@ -165,6 +170,27 @@ pub fn write(local: &Path, patch: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bloom_defaults_on_and_preserves_unrelated_ini_entries() {
+        let local = std::env::temp_dir().join(format!("mk8-bloom-{}", std::process::id()));
+        let ini = local.join("user-no-mii/mk8d.ini");
+        assert_eq!(read(&local).unwrap()["values"]["bloom"], "1");
+        fs::create_dir_all(ini.parent().unwrap()).unwrap();
+        let original = "other_setting = keep\nbloom = invalid\n";
+        fs::write(&ini, original).unwrap();
+        assert_eq!(read(&local).unwrap()["values"]["bloom"], "1");
+        assert!(write(&local, &json!({"bloom":"2"})).is_err());
+        assert_eq!(fs::read_to_string(&ini).unwrap(), original);
+        for value in ["0", "1"] {
+            write(&local, &json!({"bloom":value})).unwrap();
+            assert_eq!(read(&local).unwrap()["values"]["bloom"], value);
+            assert!(fs::read_to_string(&ini)
+                .unwrap()
+                .contains("other_setting = keep"));
+        }
+        fs::remove_dir_all(local).unwrap();
+    }
 
     #[test]
     fn patches_shared_ini_preserving_unknown_fields_and_rejecting_invalid_values() {

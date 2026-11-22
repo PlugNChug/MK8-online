@@ -1,5 +1,9 @@
 # Estado técnico — 20/11/2026
 
+## Opção de bloom no Windows
+
+A opção vem ligada e controla a contribuição das máscaras de bloom do MK8 4.0.1. O launcher e o menu do jogo compartilham a preferência `bloom`. A alteração independe do filtro da PR #102 e mantém o brilho do material que origina o halo.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.

@@ -263,6 +263,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(candidate['files']['settings-layout'], pipeline.file_record(layout))
             self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
+            self.assertTrue(candidate['bloom_supported'])
             self.assertEqual(candidate['files']['controller-layout'], pipeline.file_record(controller_layout))
             self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')

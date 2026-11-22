@@ -25,6 +25,12 @@
           ]
         },
         {
+          "key": "bloom",
+          "label": "Bloom",
+          "default": "1",
+          "kind": "bool"
+        },
+        {
           "key": "fullscreen",
           "label": "Tela cheia",
           "default": "0",

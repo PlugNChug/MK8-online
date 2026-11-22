@@ -180,7 +180,7 @@ class SettingsModulesTests(unittest.TestCase):
         if host.is_file():
             candidate['executable']['sha256'] = json.loads(host.read_text())['files']['mk8drecomp.exe']
             path.write_text(json.dumps(candidate))
-            self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+            self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['executable']['sha256'] = '1'*64
         candidate['temporal_upscaling_supported'] = True
         path.write_text(json.dumps(candidate))
@@ -193,7 +193,52 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['live_settings_supported'] = True
         path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        page.evaluate('refresh()')
+        bloom = page.locator('#config-field-bloom')
+        expect(bloom).to_be_disabled()
+        expect(page.locator('#bloom-runtime-upgrade')).to_be_visible()
+        self.assertTrue(page.evaluate("""async () => { try { await api('settings', {bloom:'0'}); return false; }
+            catch (_) { return true; } }"""))
+        page.evaluate("""async () => { const full = (await api('settings')).values;
+            full.volume = '1.25'; await api('settings', full); }""")
+        saved = (self.local/'user-no-mii/mk8d.ini').read_text()
+        self.assertIn('volume = 1.25', saved)
+        self.assertNotIn('bloom =', saved)
+        candidate['bloom_supported'] = True
+        path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+        page.evaluate('refresh()')
+        expect(bloom).to_be_enabled()
+        expect(page.locator('#bloom-runtime-upgrade')).to_be_hidden()
+        active = dict(candidate, profile='mk8d-smm2-qualified', gameplay_verified=True)
+        active.pop('bloom_supported')
+        (self.local/'active.json').write_text(json.dumps(active))
+        page.evaluate('refresh()')
+        expect(bloom).to_be_disabled()
+
+    def test_bloom_reads_and_writes_the_shared_ini(self):
+        page = self.page
+        bloom = page.locator('#config-field-bloom')
+        expect(bloom).to_be_checked()
+        self.assertEqual(page.locator('#settings-groups [data-key]').evaluate_all(
+            'els => els.slice(0,4).map(e => e.dataset.key)'), ['theme','aspect','bloom','fullscreen'])
+        for language, description in [('en','glow'), ('es','halo'), ('pt-BR','halo')]:
+            page.locator('#language').select_option(language)
+            page.get_by_role('checkbox', name='Bloom').focus()
+            expect(page.locator('#config-preview-description')).to_contain_text(description)
+        bloom.uncheck()
+        with page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method=='POST') as response:
+            page.locator('#settings-save').click()
+        self.assertTrue(response.value.json()['ok'])
+        page.reload()
+        expect(bloom).not_to_be_checked()
+        ini = self.local/'user-no-mii/mk8d.ini'
+        saved = ini.read_text()
+        self.assertIn('bloom = 0', saved)
+        self.assertIn('future_setting = preserve', saved)
+        ini.write_text(saved.replace('bloom = 0','bloom = 1'))
+        expect(bloom).to_be_checked()
 
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page

@@ -132,6 +132,7 @@
   const explanations = {
     theme: 'Muda a aparência do menu F1 dentro do jogo. O tema do launcher continua separado. As cores deste exemplo são ilustrativas.',
     aspect: 'Esticar deforma a imagem; Original 16:9 mantém barras. Ultrawide experimental mostra mais cenário sem deformar. Esta prévia usa uma tela 21:9.',
+    bloom: 'Adiciona um halo de luz às partes mais brilhantes da cena.',
     fullscreen: 'Tela cheia ocupa o monitor; em janela, a moldura permanece visível. Durante o jogo, F11 ou Alt+Enter alterna esse modo.',
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',

@@ -66,13 +66,14 @@ int main(int argc,char **argv) {
     assert(argc==3 || argc==4); settings_load(); mk8_settings_values_context(true); mk8_settings_values_sync();
     if(argc==4) {
         assert(g_settings.aspect==ASPECT_ULTRAWIDE);
+        assert(!mk8_bloom_enabled());
         assert(g_settings.joycon_mode==1);
         assert(g_settings.volume==.65f && g_settings.show_fps && g_settings.fullscreen);
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==11 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==12 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
     check_tips();
     assert(!strcmp(find(0,"Aspect ratio").value,"Stretch"));
     // The launcher may read the INI while the overlay remains open. A drag
@@ -98,6 +99,11 @@ int main(int argc,char **argv) {
     assert(family_queries==before);
     request(SETTINGS_BEGIN,0,0);
     assert(family_queries>before);
+    Mk8Setting bloom;
+    assert(mk8_settings_values_row(0,1,&bloom) && !strcmp(bloom.label,"Bloom"));
+    assert(mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
+    request(SETTINGS_STEP,bloom.id,1);
+    assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -246,6 +252,7 @@ int main(int argc,char **argv) {
             text=ini.read_text()
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 0.65',text)
+            self.assertIn('bloom = 0',text)
             self.assertIn('joycon_mode = horizontal',text)
             self.assertIn('bind_key_zl = Space',text)
             self.assertIn('bind_key_zr = Left Alt',text)

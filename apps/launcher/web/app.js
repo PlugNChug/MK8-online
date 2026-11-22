@@ -254,6 +254,13 @@ async function loadGameSettings(force = false) {
       const title = document.createElement(group.binding ? "summary" : "h2");
       i18n.text(title, group.title);
       card.append(title);
+      if (group.fields.some((field) => field.key === "bloom")) {
+        const note = document.createElement("p");
+        note.id = "bloom-runtime-upgrade";
+        note.className = "hint";
+        i18n.text(note, "Atualize o runtime do jogo para ajustar o bloom.");
+        card.append(note);
+      }
       if (group.binding) {
         const reset = document.createElement("button");
         reset.type = "button";
@@ -348,7 +355,10 @@ async function loadGameSettings(force = false) {
     settingsLoaded = true;
   }
   settingsBaseline = data.values;
+  const bloomUnsupported = data.bloom_supported === false;
+  $("bloom-runtime-upgrade").hidden = !bloomUnsupported;
   for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+    if (input.dataset.key === "bloom") input.disabled = bloomUnsupported;
     const value = data.values[input.dataset.key];
     if (input.type === "checkbox") input.checked = value !== "0";
     else {
