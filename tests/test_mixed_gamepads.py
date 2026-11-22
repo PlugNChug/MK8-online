@@ -61,6 +61,9 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 env['SDL_' + driver] = '0'
             for order, layout, expected in (
                 ('forward', None, 'title'),
+                *((device, None, 'lan-claim') for device in ('keyboard', 'mouse', 'touch', 'pro', 'right', 'pair')),
+                ('forward', None, 'lan-p2-enrollment'),
+                ('forward', None, 'lan-worker-no-ui'),
                 ('forward', None, 'title-hotplug'),
                 ('forward', None, 'steam-title'),
                 ('forward', None, 'all-reconnect'),

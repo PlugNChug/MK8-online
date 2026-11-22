@@ -223,6 +223,29 @@ class PipelineTests(unittest.TestCase):
 
 
 class RuntimeDependencyManifestTests(unittest.TestCase):
+    def test_direct_lan_requires_every_boot_hook_in_the_linked_main(self):
+        from native import DEFAULT_COMPILER, compiler_env
+        if not DEFAULT_COMPILER.is_file():
+            self.skipTest('Requires the native compiler')
+        hooks = ('mk8_guest_lan_hold_boot', 'mk8_guest_lan_hide_boot_logo', 'mk8_guest_lan_start')
+        with tempfile.TemporaryDirectory() as folder:
+            stage = Path(folder)
+            env = compiler_env()
+            defs, lib = stage/'host.def', stage/'host.a'
+            defs.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n' + '\n'.join(hooks))
+            subprocess.run([DEFAULT_COMPILER,'dlltool','-m','i386:x86-64','-d',defs,'-l',lib],env=env,check=True)
+            dll, source = stage/'mk8d-code-main.dll', stage/'main.c'
+            files = {dll.name: {'path':str(dll)}}
+            for missing in (*hooks,None):
+                linked = [hook for hook in hooks if hook!=missing]
+                source.write_text(''.join(f'__declspec(dllimport) int {name}(void);\n' for name in linked) +
+                                  '__declspec(dllexport) int guest(void) { return ' +
+                                  ' + '.join(f'{name}()' for name in linked) + '; }')
+                subprocess.run([DEFAULT_COMPILER,'cc','-target','x86_64-windows-gnu','-shared',source,lib,'-o',dll],
+                               env=env,check=True)
+                self.assertEqual(pipeline.guest_has_direct_lan(files), missing is None)
+            self.assertFalse(pipeline.guest_has_direct_lan({'mk8d-code-sdk.dll':files[dll.name]}))
+
     def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
             local = Path(temporary).resolve()
@@ -268,6 +291,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(save.read_bytes(), b'preserved save')
             self.assertEqual(native.read_bytes(), b'{"identity": "fixture", "object_files": []}')
             self.assertFalse(candidate['gameplay_verified'])
+            self.assertFalse(candidate['direct_lan_guest_supported'])
             self.assertTrue(candidate['dlc_supported'])
             self.assertTrue(candidate['pack_supported'])  # (runtime/mk8/support/romfs_overlay.c)
 

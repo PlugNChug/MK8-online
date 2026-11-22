@@ -92,6 +92,14 @@ static bool mk8_profile_charinfo(uint8_t *out) {
     return true;
 }
 
+bool mk8_launcher_mii_matches(const uint8_t *record) {
+    const char *raw = getenv("MK8_MII_CHARINFO");
+    if ((!raw || !*raw) && (mk8_edited_mii_valid || !getenv("MK8_MII_ID"))) return false;
+    uint8_t selected[0x58];
+    return mk8_profile_charinfo(selected) && mk8_charinfo_valid(selected) &&
+           !memcmp(selected, record, sizeof selected);
+}
+
 static unsigned mk8_mii_count(uint32_t sources, bool local) {
     return ((sources & 1) && local ? 1 : 0) + (sources & 2 ? 6 : 0);
 }

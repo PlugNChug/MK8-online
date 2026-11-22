@@ -45,6 +45,8 @@ int main(void) {
     _putenv_s("MK8_MII_GENDER", "0");
     uint8_t saved[0x5c] = {0}, current[0x58];
     assert(mk8_profile_charinfo(current)); memcpy(saved, current, sizeof current);
+    assert(mk8_launcher_mii_matches(current));
+    current[0x27] ^= 1; assert(!mk8_launcher_mii_matches(current)); current[0x27] ^= 1;
     saved[0x58] = 1;
     IpcResp r = call(5, saved, sizeof saved);
     assert(r.result == 0x67e && r.data_size == 0x58); // unchanged
@@ -67,6 +69,7 @@ int main(void) {
     for (unsigned n=0; n<0x58; n++) assert(call(21, saved, n).result == 0x27e);
     assert(call(5, NULL, 0x5c).result == 0x27e);
     memcpy(saved, current, sizeof current); _putenv_s("MK8_MII_ID", "");
+    assert(!mk8_launcher_mii_matches(current));
     assert(call(5, saved, sizeof saved).result == 0x87e);
     assert(call(21, saved, 0x58).result == 0x87e);
     return 0;

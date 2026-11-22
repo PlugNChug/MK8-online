@@ -56,6 +56,22 @@ extern "C" void mk8_menu_tip(const char *text) {
     pthread_mutex_unlock(&notice_lock);
 }
 
+static std::atomic<bool> mk8_lan_claim_pending;
+static const char *const mk8_lan_claim_hint = "Choose Player 1. Press a controller button or a key.";
+extern "C" void mk8_controller_names(uint16_t names[4][80]);
+
+extern "C" void mk8_lan_claim_notice(int state) {
+    mk8_lan_claim_pending.store(state == 1);
+    if (state != 2) return;
+    uint16_t names[4][80];
+    mk8_controller_names(names);
+    char *device = SDL_iconv_string("UTF-8", "UTF-16LE", (const char *)names[0], sizeof names[0]);
+    char label[384];
+    snprintf(label, sizeof label, "Player 1 · %s", device ? device : "Controller");
+    SDL_free(device);
+    mk8_menu_tip(label);
+}
+
 static bool mk8_block_shared_settings(void) {
     if (!mk8_settings_shared_race()) return false;
     mk8_menu_tip("Settings cannot be accessed during a multiplayer race.");

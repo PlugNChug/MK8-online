@@ -3,10 +3,16 @@ enum { MK8_APPLET_APPLIED = -1, MK8_APPLET_CANCELLED = -2, MK8_APPLET_ABANDONED 
 static _Atomic int mk8_applet_request;
 static _Atomic Uint64 mk8_applet_heartbeat;
 static _Atomic Uint64 mk8_applet_suppressed;
+static _Atomic unsigned mk8_title_held_axes[4];
 static bool mk8_applet_editing;
 static bool mk8_applet_resync;
 static _Atomic bool mk8_applet_keyboard_free;
 static _Atomic bool mk8_applet_pad_back;
+static _Atomic bool mk8_lan_enrolling;
+enum { MK8_LAN_PENDING=1, MK8_LAN_WORKER, MK8_LAN_DONE, MK8_LAN_CANCEL };
+static _Atomic int mk8_lan_gate;
+static _Atomic Uint64 mk8_lan_heartbeat;
+static bool mk8_lan_clear_second;
 static _Atomic unsigned mk8_applet_roster;
 static int mk8_applet_row;
 static Uint64 mk8_applet_notice_at, mk8_applet_held, mk8_applet_exit_deadline;
@@ -14,6 +20,7 @@ static Uint64 mk8_applet_notice_at, mk8_applet_held, mk8_applet_exit_deadline;
 void menu_notice(const char *, double);
 void kernel_host_wait_begin(void);
 void kernel_host_wait_end(void);
+bool mk8_title_manual_input(void);
 
 unsigned mk8_controller_join_players(void) {
     int players = atomic_load(&mk8_applet_request);
@@ -23,9 +30,66 @@ unsigned mk8_controller_join_players(void) {
 bool mk8_controller_join_keyboard(void) { return atomic_load(&mk8_applet_keyboard_free); }
 bool mk8_controller_join_back_pressed(void) { return atomic_load(&mk8_applet_pad_back); }
 
+bool mk8_reserve_lan_registration(void) {
+    if (!mk8_title_manual_input()) return false;
+    mk8_lan_heartbeat=SDL_GetTicks();
+    atomic_store(&mk8_lan_gate,MK8_LAN_PENDING);
+    return true;
+}
+
+bool mk8_lan_registration_alive(bool ready) {
+    if (ready) mk8_lan_heartbeat=SDL_GetTicks();
+    int gate=atomic_load(&mk8_lan_gate);
+    return gate==MK8_LAN_PENDING || gate==MK8_LAN_WORKER;
+}
+
+bool mk8_finish_lan_registration(bool applied) {
+    return atomic_exchange(&mk8_lan_gate,applied ? MK8_LAN_DONE : MK8_LAN_CANCEL)==MK8_LAN_WORKER;
+}
+
+// Unlike the stock applet worker, the LAN picker must keep ticking while the two seats are assigned.
+int mk8_lan_enroll_p2(bool active) {
+    int request=atomic_load(&mk8_applet_request);
+    if (!mk8_lan_enrolling) {
+        if (!active || request || input_user_blocked(NULL)) return -1;
+        mk8_lan_enrolling=true;
+        if (!atomic_compare_exchange_strong(&mk8_applet_request,&request,2)) {
+            mk8_lan_enrolling=false;
+            return -1;
+        }
+        return 0;
+    }
+    if (!active && request==2 &&
+        atomic_compare_exchange_strong(&mk8_applet_request,&request,MK8_APPLET_ABANDONED))
+        request=MK8_APPLET_ABANDONED;
+    if (request==2) return 0;
+    mk8_lan_enrolling=false;
+    if (request==MK8_APPLET_APPLIED || request==MK8_APPLET_CANCELLED) {
+        bool complete=request==MK8_APPLET_APPLIED && (mk8_live_seats()&3)==3;
+        atomic_compare_exchange_strong(&mk8_applet_request,&request,0);
+        return complete && active ? 1 : -1;
+    }
+    return -1;
+}
+
 int mk8_controller_applet_wait(int min, int max, int live) {
     if (min != max || min < 2 || min > 4 || mk8_settings_shared_race() || input_user_blocked(NULL)) return live;
     unsigned seats = (1u << min) - 1;
+    int gate=MK8_LAN_PENDING;
+    if (min==2 && atomic_compare_exchange_strong(&mk8_lan_gate,&gate,MK8_LAN_WORKER)) {
+        // The direct join owns the same roster and first asks who is P1. Let the picker keep ticking.
+        kernel_host_wait_begin();
+        Uint64 start=SDL_GetTicks();
+        while ((gate=atomic_load(&mk8_lan_gate))==MK8_LAN_WORKER) {
+            Uint64 heartbeat=atomic_load(&mk8_lan_heartbeat);
+            if (g_rt_unwind || SDL_GetTicks()-SDL_max(start,heartbeat)>5000) {
+                if (atomic_compare_exchange_strong(&mk8_lan_gate,&gate,MK8_LAN_CANCEL)) break;
+            }
+            SDL_Delay(16);
+        }
+        kernel_host_wait_end();
+        return gate==MK8_LAN_DONE && (mk8_live_seats()&seats)==seats ? min : 0;
+    }
     if ((mk8_live_seats() & seats) == seats) return min;
     int idle = 0;
     if (!atomic_compare_exchange_strong(&mk8_applet_request, &idle, min)) return 0;
@@ -79,6 +143,16 @@ static Uint64 mk8_applet_p1_buttons(void) {
     return buttons | mk8_edit_pad_navigation(left,right);
 }
 
+static void mk8_applet_hold_inputs(void) {
+    Mk8KeyState keys=mk8_player_keys(0);
+    int axes[]={keys.lx+pad_lx,keys.ly+pad_ly,keys.rx+pad_rx,keys.ry+pad_ry};
+    unsigned mask=0;
+    for (unsigned i=0;i<4;i++) if (abs(axes[i])>8000) mask|=1u<<i;
+    atomic_fetch_or(&mk8_title_held_axes[0],mask);
+    atomic_fetch_or(&mk8_applet_suppressed,keys.buttons | pad_buttons | mk8_controller_p1_navigation());
+    mk8_controller_hold_extra_inputs();
+}
+
 void mk8_edit_pump(void) {
     int players = atomic_load(&mk8_applet_request);
     if (players == MK8_APPLET_ABANDONED && mk8_applet_editing) mk8_edit_command(MK8_EDIT_CANCEL,0,0);
@@ -89,6 +163,7 @@ void mk8_edit_pump(void) {
         return;
     }
     if (players == MK8_APPLET_ABANDONED) {
+        mk8_applet_hold_inputs();
         mk8_applet_editing = false;
         mk8_applet_roster = 0;
         if (mk8_applet_row>=0) menu_notice("",0);
@@ -101,6 +176,7 @@ void mk8_edit_pump(void) {
         if (mk8_edit_command(MK8_EDIT_BEGIN,players,0)) {
             mk8_applet_pad_back = false;
             mk8_applet_editing = true;
+            mk8_lan_clear_second = mk8_lan_enrolling;
             mk8_applet_exit_deadline = 0;
             mk8_applet_row = -2;
             mk8_applet_notice_at = SDL_GetTicks()+400;
@@ -119,8 +195,8 @@ void mk8_edit_pump(void) {
             if (!mk8_applet_exit_deadline) mk8_applet_exit_deadline=now+750;
             if (now<mk8_applet_exit_deadline) return;
         }
-        atomic_fetch_or(&mk8_applet_suppressed,mk8_controller_p1_navigation() | mk8_applet_held);
-        mk8_controller_hold_extra_inputs();
+        atomic_fetch_or(&mk8_applet_suppressed,mk8_applet_held);
+        mk8_applet_hold_inputs();
         mk8_applet_editing = false;
         if (mk8_applet_row>=0) menu_notice("",0);
         atomic_compare_exchange_strong(&mk8_applet_request,&players,
@@ -128,6 +204,11 @@ void mk8_edit_pump(void) {
         return;
     }
     if (state == MK8_EDIT_PENDING) return;
+    if (mk8_lan_clear_second) {
+        // Opening Join (2 players) is a new P2 registration, including when discovery already filled P2.
+        if (mk8_edit_command(MK8_EDIT_CLEAR,1,0)) mk8_lan_clear_second=false;
+        return;
+    }
     mk8_applet_keyboard_free = mk8_editor.keyboard < 0;
     int row = 0;
     while (row < players && (mk8_editor.slots[row][0] || row == mk8_editor.keyboard)) ++row;

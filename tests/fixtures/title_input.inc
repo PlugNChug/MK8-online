@@ -18,6 +18,67 @@ static void detach_title_pad(enum Device device) {
     SDL_CloseJoystick(sticks[device]); assert(SDL_DetachVirtualJoystick(ids[device])); pump();
 }
 
+static void check_lan_claim(const char *device) {
+    attach(PRO); attach(PAIR_L); attach(PAIR_R); pump();
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, true);
+    assert(!mk8_lan_input_active(false));
+    assert(mk8_lan_input_active(true) == 1);
+    mk8_title_input_active(false); pump();
+    assert(!guest_buttons(0) && mk8_lan_input_active(true) == 1);
+    bool other_held = !strcmp(device,"right");
+    if (!other_held) button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, false);
+    assert(mk8_lan_input_active(true) == 1);
+    if (!strcmp(device,"right") || !strcmp(device,"pro") || !strcmp(device,"pair")) {
+        bool pro = !strcmp(device,"pro"), pair = !strcmp(device,"pair");
+        enum Device claim = pro ? PRO : PAIR_R;
+        SDL_GamepadButton first = pro ? SDL_GAMEPAD_BUTTON_EAST : pair ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
+        button(sticks[claim], first, true);
+        assert(SDL_GetGamepadID(pad) == ids[pair ? PAIR_L : claim]);
+        assert((mk8_partner[0] ? SDL_GetGamepadID(mk8_partner[0]) : 0) == (pair ? ids[PAIR_R] : 0));
+        assert(!guest_buttons(0) && mk8_lan_input_active(true) == 2 && !guest_buttons(0));
+        if (other_held) {
+            unsigned p=1;
+            while (p<4 && SDL_GetGamepadID(*mk8_primary_slot(p)) != ids[PRO]) ++p;
+            assert(p<4 && !guest_buttons(p));
+            button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false); assert(!guest_buttons(p));
+            button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,true); assert(guest_buttons(p));
+            button(sticks[PRO],SDL_GAMEPAD_BUTTON_EAST,false);
+        }
+        button(sticks[claim], first, false); assert(!guest_buttons(0));
+        button(sticks[claim], SDL_GAMEPAD_BUTTON_EAST, true); assert(guest_buttons(0));
+        button(sticks[claim], SDL_GAMEPAD_BUTTON_EAST, false);
+    } else {
+        if (!strcmp(device,"keyboard")) {
+            SDL_Event key = {.type=SDL_EVENT_KEY_DOWN};
+            key.key.scancode=SDL_SCANCODE_K;
+            assert(SDL_PushEvent(&key)); pump();
+            key.key.repeat=true; assert(SDL_PushEvent(&key)); pump();
+            assert(!guest_buttons(0));
+            key.type=SDL_EVENT_KEY_UP; assert(SDL_PushEvent(&key)); pump();
+        } else {
+            bool mouse = !strcmp(device,"mouse");
+            SDL_Event e = {.type=mouse ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_FINGER_DOWN};
+            if (mouse) e.button.button=SDL_BUTTON_LEFT;
+            else e.tfinger.fingerID=4;
+            assert(mk8_title_event(&e,false)); // Consumed before either the menu or guest touch handler.
+            e.type=mouse ? SDL_EVENT_MOUSE_MOTION : SDL_EVENT_FINGER_MOTION;
+            assert(mk8_title_event(&e,false));
+            e.type=mouse ? SDL_EVENT_MOUSE_BUTTON_UP : SDL_EVENT_FINGER_UP;
+            assert(mk8_title_event(&e,false));
+            e.type=mouse ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_FINGER_DOWN;
+            assert(!mk8_title_event(&e,false));
+        }
+        assert(!pad && mk8_assigned_keyboard() == 0);
+        assert(!guest_buttons(0) && mk8_lan_input_active(true) == 2);
+        SDL_Event key={.type=SDL_EVENT_KEY_DOWN};
+        key.key.scancode=SDL_SCANCODE_K;
+        assert(SDL_PushEvent(&key)); pump(); assert(guest_buttons(0) & (1ull<<BIND_A));
+        key.type=SDL_EVENT_KEY_UP; assert(SDL_PushEvent(&key)); pump();
+    }
+    assert(!mk8_lan_input_active(true) && !mk8_lan_input_active(false) && !mk8_lan_input_active(true));
+    detach_title_pad(PRO); detach_title_pad(PAIR_L); detach_title_pad(PAIR_R);
+}
+
 static int title_pad_seat(SDL_JoystickID id) {
     for(int i=0;i<4;i++) {
         SDL_Gamepad *primary=*mk8_primary_slot(i);

@@ -220,6 +220,8 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
         src = patch_cup_unit(patch_yaz0_unit(patch_no_mii_unit(src, output), output), output)
         from settings_menu import patch_guest as patch_settings_guest
         src = patch_settings_guest(src, original, output)
+        from auto_lan import patch_guest as patch_lan_guest
+        src = patch_lan_guest(src, original, output)
         obj.parent.mkdir(parents=True, exist_ok=True)
         stamp = obj.with_suffix('.json')
         key = {'source': digest(src), 'environment': identity, 'flags': flags}

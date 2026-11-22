@@ -157,10 +157,12 @@ bool settings_ahead_fast''')
     text = replace(text, marker, (ROOT / 'runtime/mk8/ui/race_settings_notice.inc').read_text(encoding='utf-8') +
                    '\nstatic bool notice_active(void) {\n'
                    '    pthread_mutex_lock(&notice_lock);\n    bool active=SDL_GetTicks()/1000.0 < notice_until;\n'
-                   '    pthread_mutex_unlock(&notice_lock);\n    return active;\n}')
+                   '    pthread_mutex_unlock(&notice_lock);\n    return active || mk8_lan_claim_pending.load();\n}')
     marker = '        snprintf(t, sizeof t, "%s", notice_text);'
-    text = replace(text, marker, marker +
-                   '\n        bool fading=notice_fades;\n        float alpha=fading ? mk8_race_notice_alpha(SDL_GetTicks()-notice_started) : 1.f;')
+    text = replace(text, marker, '''        bool claim=mk8_lan_claim_pending.load() && SDL_GetTicks()/1000.0 >= notice_until;
+        snprintf(t, sizeof t, "%s", claim ? mk8_lan_claim_hint : notice_text);
+        bool fading=claim || notice_fades;
+        float alpha=!claim && fading ? mk8_race_notice_alpha(SDL_GetTicks()-notice_started) : 1.f;''')
     marker = '#ifdef __APPLE__\nvoid menu_render('
     text = replace(text, marker, (ROOT / 'runtime/mk8/ui/race_settings_tip.inc').read_text(encoding='utf-8') + '\n' + marker)
     start = text.index('        float w = fminf(io.DisplaySize.x * 0.8f, 1100 * scale);', text.index('    if (!open && notice_active()) {'))
