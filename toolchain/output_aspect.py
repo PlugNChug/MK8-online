@@ -48,7 +48,7 @@ STRETCH_MENU = '''    const char *aspects[] = {"Stretch", "Original 16:9", "Ultr
                "Stretch: fills the window by stretching the image. "
                "Original 16:9: preserves the game's proportions with black bars. "
                "Ultrawide: wider solo Time Trial, Grand Prix and no-team VS views from 16:9 to 32:9. "
-               "Frame generation or unsupported views use 16:9.");
+               "Unsupported views use 16:9.");
 '''
 
 EDITS = (

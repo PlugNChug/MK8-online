@@ -215,9 +215,8 @@
     const input = field(focusKey);
     if (!input) return;
     const ultrawide = value('aspect') === 'ultrawide';
-    const frameFallback = ultrawide && value('frame_gen') !== 'off';
     const themePreview = sub === 'image' && focusKey === 'theme';
-    const original = value('aspect') === 'original' || frameFallback;
+    const original = value('aspect') === 'original';
     const widePreview = ultrawide && !original;
     i18n.text(byId('config-tab-video').querySelector('small'), settingsDirty ? 'Alterações não salvas' : 'Imagem, áudio e comandos');
     byId('config-tab-video').classList.toggle('config-has-changes', settingsDirty);
@@ -225,7 +224,7 @@
     text('config-preview-title', title);
     text('config-preview-value', input.type === 'checkbox' ? input.checked ? 'Ativado' : 'Desativado' : input.type === 'number' ? `${input.value}%` : selectedText(focusKey));
     text('config-preview-description', focusKey === 'aspect' && ultrawide
-      ? 'Ultrawide experimental: Contra o Relógio, GP e VS solo sem equipes, entre 16:9 e 32:9. Menus, câmeras sem suporte, outras proporções e geração de quadros usam 16:9. A forma da tinta ainda não foi validada. Salve para usar no próximo início.'
+      ? 'Ultrawide experimental: Contra o Relógio, GP e VS solo sem equipes, entre 16:9 e 32:9, também com geração de quadros. Menus, câmeras sem suporte e outras proporções usam 16:9. A forma da tinta ainda não foi validada. Salve para usar no próximo início.'
       : explanations[focusKey] || 'Associe o comando do jogo ao botão físico ou à tecla desejada. O mapeamento só é aplicado depois de salvar.');
     text('config-preview-kind', themePreview ? 'Captura do jogo' : 'Prévia ilustrativa');
     byId('config-illustration-note').hidden = themePreview;
@@ -251,8 +250,7 @@
     art.style.filter = `blur(${focusKey === 'resolution' ? blur : '0px'})`;
     byId('config-frame-example').hidden = focusKey !== 'frame_gen' || value('frame_gen') === 'off';
     const framing = original ? 'Imagem 16:9' : widePreview ? 'Campo de visão ampliado' : 'Imagem esticada';
-    const fallback = frameFallback ? 'Ultrawide usa 16:9 com geração de quadros.' : '';
-    text('config-screen-caption', `${i18n.t(checked('fullscreen') ? 'Tela cheia' : 'Modo janela')} · Exemplo em tela 21:9 · ${i18n.t(framing)}${fallback ? ' · ' + i18n.t(fallback) : ''}`);
+    text('config-screen-caption', `${i18n.t(checked('fullscreen') ? 'Tela cheia' : 'Modo janela')} · Exemplo em tela 21:9 · ${i18n.t(framing)}`);
     const volume = Number(value('volume')) || 0;
     text('config-volume-display', `${volume}%`); preview.querySelector('.config-sound-bars').style.setProperty('--volume-scale', Math.max(.02, volume / 200));
     text('config-reverb-state', `Reverberação ${checked('reverb') ? 'ativada' : 'desativada'}`);

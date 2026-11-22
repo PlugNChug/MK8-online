@@ -21,9 +21,15 @@ A distribuição Linux da 0.5.0 ([PR #83](https://github.com/Vnnc1/MK8-online/pu
 - **Import perdido no menu de opções.** O merge removeu o `import hashlib` de `toolchain/settings_menu.py`. A build completa pararia com `NameError` ao preparar `main_100`. A `--runtime-only` não passa por esse código. O import voltou, e a verificação estática do `toolchain`, `scripts` e `tools` não encontrou outro nome indefinido.
 - **Testes.** Os fixtures de FSR, geração de quadros, profundidade e MLFI foram ajustados à cadeia integrada. Os fixtures do editor Mii e do pacote do launcher passaram a incluir o SDL3, o gerador aleatório e o manifesto do executável Windows. O teste de XDG do SDK de fornecedores e os dois testes da página FSR rodam só fora do Windows, porque no Windows essa página não aparece.
 
-### Geração de quadros em telas 16:9
+### Geração de quadros com ultrawide
 
-O relato é de imagem cortada e de resolução diferente de 16:9 ao ativar a geração de quadros. Na RX 580 2048SP com monitor 1920×1080, o problema não foi reproduzido. Foram testados `frame_gen = 120` e desligado, em janela 1280×720 e em tela cheia 1920×1080, com proporção original e desbloqueada, e com resolução interna 1×, 75% e dinâmica. Nos seis casos, a swapchain teve o tamanho da janela ou da tela, o log registrou `native 1920x1080 -> 1920x1080` ou `-> 1280x720` e a imagem final ficou em 16:9 (`play/fg-*`, `play/nofg-75`). Para continuar, falta o relato com monitor, taxa de atualização, escala do Windows, upscaler escolhido e uma captura.
+O relatório `mk8-report-1795347105` (launcher 0.5.0, RTX 5080, monitor 5120×1440 a 240 Hz, `aspect = ultrawide`, DLSS e SMAA) mostrou a causa da imagem que “volta” para outra proporção ao ligar a geração de quadros. O ultrawide da 0.4.0 voltava para 16:9 sempre que a geração de quadros estava ativa. No monitor 32:9, a corrida passava da largura inteira para uma caixa 16:9 com faixas pretas e voltava ao desligar. O log registra a saída alternando entre `5120x1440` e `2560x1440` nesses momentos. No monitor 16:9 da RX 580, os seis casos testados antes não mostravam diferença, porque ali as duas saídas coincidem.
+
+No Vulkan, a geração de quadros interpola a imagem final da janela, já posicionada (`nvn/vulkan/device.c`), e o `toolchain/output_aspect.py` descarta o histórico dela quando o enquadramento muda. Por isso o ultrawide agora continua ativo com a geração de quadros no Windows e no Linux. Só o modo replay do Metal mantém 16:9. O texto do launcher e a descrição do Menu deixaram de anunciar esse retorno a 16:9.
+
+Antes da correção, numa janela 1920×540 (32:9) na RX 580, a corrida ficava em 16:9 no centro com `frame_gen = 120` (`play/uw-fg-on`) e ocupava a janela com a geração desligada (`play/uw-fg-off`). Depois da correção, a corrida ocupou a janela inteira com 118 a 120 quadros gerados a cada 120 (`play/uw-fg-on-fix`). O quadro intermediário capturado saiu coerente na largura toda, com o HUD nas bordas (`play/uw-fg-gen`). Passaram os testes de câmera e HUD ultrawide e os de configurações do launcher. Falta o reteste no monitor 32:9 de 240 Hz do relato.
+
+O mesmo relatório mostra uma combinação que o launcher ainda não explica. Com resolução interna 4× em 1440p, o DLSS informa `display 2560x1440 is smaller than render 7680x4320: not an upscale` e fica sem efeito, e o jogo usa SMAA.
 
 ### Verificação
 

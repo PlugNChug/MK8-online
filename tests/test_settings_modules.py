@@ -594,8 +594,9 @@ class SettingsModulesTests(unittest.TestCase):
         frame_gen = page.locator('#config-field-frame_gen')
         frame_gen.select_option('120')
         expect(aspect).to_have_value('ultrawide')
-        expect(page.locator('#config-scene')).to_have_class('config-scene original-ratio')
-        expect(page.locator('#config-screen-caption')).to_contain_text('16:9 com geração de quadros')
+        # Frame generation keeps the wide view (runtime/mk8/support/ultrawide.c).
+        expect(page.locator('#config-scene')).to_have_class('config-scene')
+        expect(page.locator('#config-screen-caption')).to_contain_text('Campo de visão ampliado')
         self.save_settings()
         page.reload()
         expect(aspect).to_have_value('ultrawide')

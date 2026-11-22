@@ -243,6 +243,17 @@ static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8
     return check_aspect && mk8_ultrawide_hud_ready(false);
 }
 
+// Vulkan frame generation interpolates the placed window image (nvn/vulkan/device.c), and toolchain/output_aspect.py
+// drops its history when the framing changes, so the wide camera stays on. Metal's replay mode re-runs the game's
+// commands for the in-between frame and keeps 16:9.
+static bool framegen_allows_wide(void) {
+#ifdef __APPLE__
+    return g_settings.frame_gen != FRAMEGEN_REPLAY;
+#else
+    return true;
+#endif
+}
+
 static uint64_t update_camera(uint64_t manager_address, bool check_distance) {
     bool requested = g_settings.aspect == ASPECT_ULTRAWIDE || (enabled && g_settings.aspect == ASPECT_UNLOCKED);
     atomic_store(&producer, requested || enabled ? 16.0/9.0 : 0);
@@ -270,7 +281,7 @@ static uint64_t update_camera(uint64_t manager_address, bool check_distance) {
     float baseline = (x1 - x0)/(y1 - y0), aspect = f32(projection, 0xb0);
     bool solo_layer = x1 == 1280.f && y1 == 720.f && u32(manager, 0x9bc) == 0 &&
         manager[0x9d4] == 1 && u64(layer, 0x68) == u64(manager, 0x958);
-    bool eligible = solo_layer && requested && !mk8_settings_page_active() && wide > 16.0/9.0 && g_settings.frame_gen == FRAMEGEN_OFF &&
+    bool eligible = solo_layer && requested && !mk8_settings_page_active() && wide > 16.0/9.0 && framegen_allows_wide() &&
         valid_depth(f32(projection, 0x98), f32(projection, 0x9c)) &&
         isfinite(f32(projection, 0xa0)) && f32(projection, 0xa0) >= 0.5f && f32(projection, 0xa0) <= 1.6f &&
         f32(projection, 0xa4) > 0.f && f32(projection, 0xa4) <= 1.f &&

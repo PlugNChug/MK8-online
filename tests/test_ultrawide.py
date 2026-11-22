@@ -350,9 +350,10 @@ static void check_intro_case(unsigned kind, unsigned mode) {
     hud_ready=true; only_aspect(21.f/9.f);
     settings_active=true; only_aspect(16.f/9.f); assert(!wide_active());
     settings_active=false; only_aspect(21.f/9.f);
-    g_settings.frame_gen=FRAMEGEN_120; only_aspect(16.f/9.f); assert(!wide_active());
-    g_settings.frame_gen=FRAMEGEN_REPLAY; unchanged(); assert(!wide_active());
-    g_settings.frame_gen=FRAMEGEN_OFF; only_aspect(21.f/9.f);
+    // Vulkan frame generation interpolates the placed image: the wide camera stays (Metal's replay keeps 16:9).
+    g_settings.frame_gen=FRAMEGEN_120; unchanged(); assert(wide_active());
+    g_settings.frame_gen=FRAMEGEN_REPLAY; unchanged(); assert(wide_active());
+    g_settings.frame_gen=FRAMEGEN_OFF; unchanged(); assert(wide_active());
     w32(IO+0xe8,1); only_aspect(16.f/9.f); assert(!wide_active());
     unchanged(); w32(IO+0xe8,mode); only_aspect(21.f/9.f);
     const unsigned teams[] = {1,2,255};
@@ -620,9 +621,9 @@ int main(int argc, char **argv) {
     arena[M+0x240]=0; unchanged();  // repeated calls do not dirty an unchanged projection
     g_settings.aspect=ASPECT_ORIGINAL; only_aspect(16.f/9.f); unchanged();
     g_settings.aspect=ASPECT_UNLOCKED; only_aspect(21.f/9.f);
-    g_settings.frame_gen=FRAMEGEN_120; only_aspect(16.f/9.f); unchanged();
+    g_settings.frame_gen=FRAMEGEN_120; unchanged();
     g_settings.frame_gen=FRAMEGEN_REPLAY; unchanged();
-    g_settings.frame_gen=FRAMEGEN_OFF; only_aspect(21.f/9.f);
+    g_settings.frame_gen=FRAMEGEN_OFF; unchanged();
     w32(S+0x184,3); only_aspect(16.f/9.f); unchanged();  // menu fallback
     w32(S+0x184,4); only_aspect(21.f/9.f);
     arena[S+0x234]=1; only_aspect(16.f/9.f); unchanged();  // pause
@@ -764,9 +765,9 @@ int main(void) {
         image_width(mk8_ultrawide_take_present(),ordinary==0 ? 1680 : 1280);
         g_settings.aspect=2; only_aspect(21.f/9.f); assert(wide_active());
     }
-    g_settings.frame_gen=FRAMEGEN_120; only_aspect(16.f/9.f);
-    image_width(mk8_ultrawide_take_present(),1280); assert(g_settings.frame_gen==FRAMEGEN_120);
-    g_settings.frame_gen=FRAMEGEN_OFF; only_aspect(21.f/9.f);
+    g_settings.frame_gen=FRAMEGEN_120; unchanged();
+    image_width(mk8_ultrawide_take_present(),1680); assert(g_settings.frame_gen==FRAMEGEN_120);
+    g_settings.frame_gen=FRAMEGEN_OFF; unchanged();
     settings_active=true; only_aspect(16.f/9.f); image_width(mk8_ultrawide_take_present(),1280);
     settings_active=false; only_aspect(21.f/9.f);
     hud_ready=false; only_aspect(16.f/9.f); image_width(mk8_ultrawide_take_present(),1280);

@@ -21,7 +21,7 @@ enum { MK8_MENU_TOGGLE, MK8_MENU_CHOICE, MK8_MENU_NUMBER, MK8_MENU_INFO, MK8_MEN
 
 // Ordered like the Native pages. Other renderers can group the same options differently.
 #define MK8_MENU_FIELDS(T,C,S) \
-    C(ASPECT, VIDEO, "Aspect ratio", aspect, aspects, NULL, 0, ALWAYS, "Solo 16:9-32:9; FG/other views: 16:9.") \
+    C(ASPECT, VIDEO, "Aspect ratio", aspect, aspects, NULL, 0, ALWAYS, "Solo 16:9-32:9; other views: 16:9.") \
     S(CAMERA_DISTANCE, VIDEO, "Driving camera distance", NUMBER, "Solo forward and rear. 100% is stock.") \
     T(SPLIT_SCREEN_60FPS, VIDEO, "Split-screen 60 FPS", split_screen_60fps, false, ALWAYS, "Target 60 FPS per view with 3-4 players.") \
     T(BLOOM, VIDEO, "Bloom", bloom, true, ALWAYS, "Add a glow around bright objects.") \
