@@ -533,6 +533,12 @@ Corrigida perda potencial do cache: a gravação anterior removia `vk_pipelines.
 
 Seis testes aprovados: cinco de runtime stalls e um novo teste nativo da função preparada, com arquivos reais e falhas de snapshot incompleto, escrita parcial, fechamento e destino bloqueado. O cache anterior permanece intacto; após desbloqueio, a substituição funciona. Agendador também testado com falha inicial e retry sem novas compilações. Host recompilado (220 unidades, guest reutilizado), SHA-256 `268ccc0083c572863b2a5006520f88cd23e3216673fc97a3ab9046ed73f24966`. Teste de integração em andamento em `local/race-grand-prix-e9lev31t`, saves isolados e cache copiado. Sem setup/publicação. Faróis #49, Miis brancos, CTGP/split-screen e validação da APU #52 continuam pendentes.
 
+## Tamanho de pontos no Vulkan
+
+Na base 0.5.0, um shader de vértices sem saída de tamanho gerou SPIR-V sem escrita em `PointSize`. Em listas de pontos, o runtime passou a usar o tamanho fixo definido pelo jogo, respeitando os limites da GPU. Shaders que já escrevem o tamanho mantêm o próprio valor. O cache de traduções passou da versão 2 para a 3 para descartar entradas antigas.
+
+Os testes nativos verificaram a escrita em SPIR-V e o valor utilizado na criação do pipeline. Os avisos Vulkan `08773` e `10748` deixaram de aparecer na sessão com a compilação integrada. A compilação isolada desta correção ainda precisa de validação em corrida.
+
 ## Recuperação de memória e pré-teste Vulkan — continuação
 
 Revisão de `memory-check-0h2eizvj` após relato de engasgos: encerramento 0 em aproximadamente 265 s de runtime, sem `FATAL` nem acionamento registrado do fallback de snapshot. Captura 6300 confirma corrida, volta 1/3; captura 14400 mostra carregamento. As 16 capturas periódicas foram correlacionadas ao próximo resumo de frames: 15 coincidem com máximos de 368–617 ms (a última, em loading, 131 ms). O diagnóstico síncrono introduziu pausas; esses números não devem ser usados como desempenho normal. Durante frames 4200–14000 há ainda um pico de 570 ms sem captura no mesmo intervalo, próximo de estatística detalhada de VRAM, causa não isolada. Pausas de 1831 ms/3782 ms coincidem com transições, uploads e 630/428 compilações, não prova de tempo exclusivamente gasto em shaders. No fim, heap 0 registra 1776 MB reservados em blocos e 876 MB em alocações; isso não é medição de pico nem garantia de ausência de pressão de memória.

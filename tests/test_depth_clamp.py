@@ -56,7 +56,7 @@ static void set_clamp_capability(VkBool32 supported) {
     CHECK(enabled.depthClamp==supported && available.depthClamp==supported);
     CHECK(g_vk.depth_clamp==(supported!=VK_FALSE));
 }
-typedef struct { ShaderInfo *vi,*fi; VkShaderModule vs,fs,gs; VkPipelineLayout layout; } Prog;
+typedef struct { ShaderInfo *vi,*fi,*gi; ShaderKey fkey; VkShaderModule vs,fs,gs; VkPipelineLayout layout; } Prog;
 static _Atomic int stat_compiles;
 static unsigned creations,async_finishes;
 static VkBool32 observed_clamp;
@@ -268,7 +268,8 @@ class DepthClampTests(unittest.TestCase):
                 'RT_KIND': between(text,'static int rt_kind(','// ================================================================== graphics pipelines'),
                 'DYNAMIC': between(text,'static const VkDynamicState DYN[]','// Fixed-function state'),
                 'BUILD': between(text,'static VkPrimitiveTopology topo_class_base(','// ================================================================== feedback snapshots'),
-                'KEY': between(text,'static void pipe_key(','\n}\n')+'\n}\n',
+                'KEY': between(text,'static float fixed_point_key(','static void pipe_key(')
+                    +between(text,'static void pipe_key(','\n}\n')+'\n}\n',
                 'APPLY': between(text,'static bool apply_state(','static void exec_list('),
                 'PREFETCH': between(text,'static void scan_list(','// LARECOMP_PREFETCH_VERIFY=1:'),
             }
