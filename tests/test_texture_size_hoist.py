@@ -77,7 +77,12 @@ int main(void) {
     assert(mk8_use_texture_size_hoist(0x10de, 0x1b81));
     assert(!mk8_use_texture_size_hoist(0x1002, 0x1b81));
     assert(!mk8_use_texture_size_hoist(0x8086, 0x1b81));
-    assert(!mk8_use_texture_size_hoist(0x10de, 0x1b82));
+    // Every Pascal GPU: GTX 1080 Ti, 1070 Ti, 1060 (GP104 and GP106), 1050 Ti, GT 1030, Tesla P100.
+    for (unsigned i = 0; i < 7; i++)
+        assert(mk8_use_texture_size_hoist(0x10de, (uint32_t[]){0x1b06, 0x1b82, 0x1b84, 0x1c03, 0x1c82, 0x1d01, 0x15f8}[i]));
+    // Maxwell (GTX 970), Volta (Titan V), Turing (RTX 2080 Ti) and later keep the original shader.
+    for (unsigned i = 0; i < 4; i++)
+        assert(!mk8_use_texture_size_hoist(0x10de, (uint32_t[]){0x13c2, 0x1d81, 0x1e04, 0x2684}[i]));
 #endif
     ShaderInfo *si = translate(true, 1, true);
     const char *main_fn = strstr(si->msl, "void main() {"), *loop = strstr(si->msl, "  for (uint guard");

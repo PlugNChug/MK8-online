@@ -261,6 +261,8 @@ def prepare_host_sources(source, output):
     prepare_interpolation(runtime)
     from texture_size_hoist import prepare as prepare_texture_size_hoist
     prepare_texture_size_hoist(runtime)
+    from vulkan_driver_log import prepare as prepare_vulkan_driver_log
+    prepare_vulkan_driver_log(runtime)
     from castle_bloom import prepare as prepare_castle_bloom
     prepare_castle_bloom(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
