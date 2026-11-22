@@ -9,7 +9,7 @@ let busy = false;
 async function api(path, body) {
   const response = await fetch("/api/" + path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { "X-MK8-Token": token, "Content-Type": "application/json" },
+    headers: { "X-MK8-Token": token, "X-MK8-Language": i18n.language, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const value = await response.json();
@@ -96,7 +96,7 @@ function showTab(name) {
     $(item.dataset.tab).hidden = !selected;
   });
   window.dispatchEvent(new CustomEvent('launchertabchange', {detail:name}));
-  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadDebugOptions(), loadGraphics()])
+  if (name === "settings") return Promise.all([loadGameSettings(), loadFontSettings(), loadGraphics()])
     .catch((error) => notice(error.message, true));
 }
 document
@@ -168,38 +168,6 @@ function updateGraphics() {
 }
 let settingsLoaded = false;
 let settingsRequest = 0;
-let debugSaving = false;
-let debugRequest = 0;
-let debugOptions;
-async function loadDebugOptions() {
-  if (debugSaving) return;
-  const request = ++debugRequest;
-  const data = await api("debug-options");
-  if (debugSaving || request !== debugRequest) return;
-  debugOptions = data;
-  $("debug-settings").checked = data.native_settings;
-  $("debug-fields").disabled = false;
-}
-$("debug-settings").onchange = async () => {
-  ++debugRequest;
-  debugSaving = true;
-  $("debug-fields").disabled = true;
-  i18n.text($("debug-status"), "Salvando…");
-  try {
-    const result = await api("debug-options", {
-      ...debugOptions,
-      native_settings: $("debug-settings").checked,
-    });
-    i18n.text($("debug-status"), result.message);
-    return result;
-  } catch (error) {
-    i18n.text($("debug-status"), "Não foi possível salvar a preferência.");
-    notice(error.message, true);
-  } finally {
-    debugSaving = false;
-    await loadDebugOptions().catch((error) => notice(error.message, true));
-  }
-};
 let settingsDirty = false;
 let settingsBlocked = false;
 let settingsSaving = false;

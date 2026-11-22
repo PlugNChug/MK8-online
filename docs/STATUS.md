@@ -1,5 +1,15 @@
 # Estado técnico — 22/11/2026
 
+## Menu do jogo no Windows
+
+F1, Home e a chave inglesa do menu principal abrem o tema escolhido no launcher. Perfis novos usam Nativo. Os temas Simples escuro, Simples claro, NES escuro e NES claro compartilham os ajustes com o Nativo. O idioma acompanha o launcher. No tema Nativo, a lista de salas abre os detalhes e mantém a seleção ao voltar.
+
+Perfis existentes mantêm a aparência e os valores salvos. O launcher reconhece builds anteriores da 0.5.0 que precisam ser recompiladas para oferecer os cinco temas. A distribuição Linux segue a revisão própria descrita abaixo.
+
+No modo solo, o Menu nativo acompanha a tela de carregamento e a apresentação da pista com a mesma seleção. A atualização requer regenerar a unidade guest `main_100.c`, recompilar a biblioteca do jogo e atualizar o host e o layout privado. O teste nativo desta branch cobre a edição de um valor durante a troca de página, a confirmação de reinício, a restauração do cursor e o bloqueio durante corridas com vários jogadores locais. Na build integrada para Windows, os Ajustes rápidos permaneceram visíveis durante o carregamento de Bowser’s Castle e na apresentação da pista.
+
+Na build isolada, F1 abriu o tema Nativo e o volume passou de 145% para 150%. Após reiniciar o jogo, a chave inglesa mostrou 150%. Passaram os 26 testes de launcher, navegador e ciclo de vida do jogo e os 32 testes de preparação, DLC, empacotamento e runtime do Windows.
+
 ## Codificação da textura de reflexos BC3
 
 O runtime desenha os blocos de reflexão na vista inteira de 128 bits da imagem temporária e os copia para o nível e a camada da textura BC3. O shader usa o tipo da imagem efetivamente alocada, inclusive quando o driver exige decodificação em RGBA. Nesta branch, os testes nativos verificam a seleção da vista, as cópias, a mistura de cores e a preservação dos quatro valores de 32 bits no SPIR-V.
@@ -11,6 +21,18 @@ Em uma build local integrada para Windows (`7c29eb5e`), a validação Vulkan aco
 O runtime do Windows preserva a cobertura de realces estreitos na extração de bloom e nas reduções com dimensões ímpares. O primeiro desfoque cobre os pixels intermediários quando a resolução interna aumenta. Isso corrige os contornos repetidos em 4×. A primeira redução da pirâmide aplica o filtro `[1, 2, 1]/4` quando o jogo usa a sequência conhecida, amostragem linear no nível zero e uma redução próxima de 2:1.
 
 Nos testes anteriores em corrida solo a 1× e com a resolução do monitor, o brilho acima e abaixo das letras ficou mais estável e sua média na imagem final variou menos de 1%. Ainda houve oscilação. Em quatro jogadores, a comparação da imagem final foi inconclusiva para o halo inferior. Na base `6217eca`, os testes nativos compilaram os shaders sintéticos e os programas correspondentes do MK8 4.0.1 para SPIR-V. A reprodução das capturas confirmou os pesos do filtro nas fases fracionárias. O porte isolado não passou por nova corrida nem por teste no Linux.
+
+## Tamanho de pontos no Vulkan
+
+Na base 0.5.0, um shader de vértices sem saída de tamanho gerou SPIR-V sem escrita em `PointSize`. Em listas de pontos, o runtime passou a usar o tamanho fixo definido pelo jogo, respeitando os limites da GPU. Shaders que já escrevem o tamanho mantêm o próprio valor. O cache de traduções passou da versão 2 para a 3 para descartar entradas antigas.
+
+Os testes nativos verificaram a escrita em SPIR-V e o valor utilizado na criação do pipeline. Os avisos Vulkan `08773` e `10748` deixaram de aparecer na sessão com a compilação integrada. A compilação isolada desta correção ainda precisa de validação em corrida.
+
+## Comparação de profundidade em texturas Vulkan
+
+Quando falta uma textura para comparação de profundidade, o runtime fornece uma imagem de profundidade zerada com a dimensão esperada pelo shader. Para arrays de sombras R32, ele copia os níveis de mip e as camadas selecionados para uma imagem D32 antes do desenho. Uma escrita posterior na origem invalida a cópia. O cache de vistas também passa a reutilizar a entrada inserida quando as 16 posições de busca estão ocupadas.
+
+Os testes nativos exercitam a escolha dos descritores, a cópia dos sub-recursos e a reutilização da vista após colisões. Na compilação integrada anterior, a camada de validação apontou o aviso Vulkan `06479` para uma vista de cor no vínculo 32 do estágio de vértices. A repetição após a correção registrou quatro usos da textura substituta de profundidade e nenhum aviso nesse vínculo.
 
 ## Distribuição da 0.5.0
 
@@ -544,12 +566,6 @@ Validação manual posterior com Nextendo: mantenedor confirmou que os testes ro
 Corrigida perda potencial do cache: a gravação anterior removia `vk_pipelines.bin` antes do rename e ignorava erros de fechamento/substituição. A preparação validada agora verifica snapshot completo, alocação, escrita e fechamento, e usa substituição com `MoveFileExA` no Windows sem apagar previamente o destino. O wrapper público mantém sua ABI; o gravador periódico recebe o resultado real, mantém builds pendentes em caso de falha e tenta novamente após o intervalo normal de 60 s. Não emite sucesso fictício nem entra em repetição rápida. Isso protege trabalho já compilado; não demonstra a causa dos engasgos relatados nem elimina compilação na primeira utilização.
 
 Seis testes aprovados: cinco de runtime stalls e um novo teste nativo da função preparada, com arquivos reais e falhas de snapshot incompleto, escrita parcial, fechamento e destino bloqueado. O cache anterior permanece intacto; após desbloqueio, a substituição funciona. Agendador também testado com falha inicial e retry sem novas compilações. Host recompilado (220 unidades, guest reutilizado), SHA-256 `268ccc0083c572863b2a5006520f88cd23e3216673fc97a3ab9046ed73f24966`. Teste de integração em andamento em `local/race-grand-prix-e9lev31t`, saves isolados e cache copiado. Sem setup/publicação. Faróis #49, Miis brancos, CTGP/split-screen e validação da APU #52 continuam pendentes.
-
-## Tamanho de pontos no Vulkan
-
-Na base 0.5.0, um shader de vértices sem saída de tamanho gerou SPIR-V sem escrita em `PointSize`. Em listas de pontos, o runtime passou a usar o tamanho fixo definido pelo jogo, respeitando os limites da GPU. Shaders que já escrevem o tamanho mantêm o próprio valor. O cache de traduções passou da versão 2 para a 3 para descartar entradas antigas.
-
-Os testes nativos verificaram a escrita em SPIR-V e o valor utilizado na criação do pipeline. Os avisos Vulkan `08773` e `10748` deixaram de aparecer na sessão com a compilação integrada. A compilação isolada desta correção ainda precisa de validação em corrida.
 
 ## Recuperação de memória e pré-teste Vulkan — continuação
 
@@ -2753,9 +2769,3 @@ Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Priori
 Validação desta branch: **11 testes nativos/Python aprovados**, zero skips, cobrindo oclusão, compute flush e runtime stalls. Não foi refeita uma build do jogo nem uma corrida nesta separação de PR.
 
 Patch focado sobre fix-chore `15d1106`: resolve reports pendentes dos dois operandos antes de CMD_SET_RENDER_ENABLE. Espera somente a maior sequência necessária, libera cq_lock antes de submit/wait e não faz flush sem dependência. Queries indisponíveis após conclusão conhecida e timeout com reports pendentes falham explicitamente. Mantém zeros legítimos, modos equal/not-equal, q nulo e enable/disable. Teste nativo executa helper/case preparados, com dependências atuais/anteriores, ambos os operandos, produtores distintos, reset, lock e falhas. Evidência manual anterior veio da branch integrada com recorder: usuário não observou flicker em Electrodrome, DK Jungle e Rainbow Road após o fix; não é qualificação desta branch isolada. Não inclui recorder nem outros patches gráficos. `gameplay_verified=false`.
-
-## Comparação de profundidade em texturas Vulkan
-
-Quando falta uma textura para comparação de profundidade, o runtime fornece uma imagem de profundidade zerada com a dimensão esperada pelo shader. Para arrays de sombras R32, ele copia os níveis de mip e as camadas selecionados para uma imagem D32 antes do desenho. Uma escrita posterior na origem invalida a cópia. O cache de vistas também passa a reutilizar a entrada inserida quando as 16 posições de busca estão ocupadas.
-
-Os testes nativos exercitam a escolha dos descritores, a cópia dos sub-recursos e a reutilização da vista após colisões. Na compilação integrada anterior, a camada de validação apontou o aviso Vulkan `06479` para uma vista de cor no vínculo 32 do estágio de vértices. A repetição após a correção registrou quatro usos da textura substituta de profundidade e nenhum aviso nesse vínculo.

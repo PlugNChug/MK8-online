@@ -43,6 +43,8 @@ HARNESS = r'''
     } \
 } while (0)
 bool mk8_ultrawide_hud_ready(bool intro);
+bool mk8_settings_fader_covers(uint64_t);
+uint64_t mk8_settings_fader_root(uint64_t);
 bool mk8_ultrawide_hud_handoff_ready(void);
 void mk8_ultrawide_hud(Cpu *, uint64_t);
 static _Alignas(8) unsigned char arena[0x18000], before[sizeof arena], expected[sizeof arena];
@@ -666,10 +668,25 @@ static void fade_tests(const char *name) {
         if (kind) intro_setup(kind==2); else setup();
         assert(mk8_ultrawide_hud_ready(kind!=0));
         fade_setup();
+        assert(!mk8_settings_fader_root(addr(FADER)));
+        if (kind) {
+            unsigned menu=FADER+0x2800, list[]={FADER+F_PART0,FADER+F_PART1,FADER+F_LOADING,menu};
+            pane(menu,"L_SettingsRoot",0x12bf1a8);
+            children(FADER+ROOTP,list,4);
+            assert(mk8_settings_fader_root(addr(FADER))==addr(menu));
+            arena[FADER+ROOTP+0x58]&=~1;
+            assert(mk8_settings_fader_root(addr(FADER))==addr(menu));
+            assert(!mk8_settings_fader_covers(addr(FADER)));
+            arena[FADER+ROOTP+0x58]|=1;
+            w64(menu,MAIN_BASE+0x12abd70);
+            assert(!mk8_settings_fader_root(addr(FADER)));
+            w64(menu,MAIN_BASE+0x12bf1a8);
+        }
         for (unsigned i=0;i<sizeof alphas/sizeof *alphas;i++) {
             unsigned bg=FADER+F_PART0+F_BG;
             arena[bg+0x59]=(unsigned char)alphas[i];
             arena[bg+0x5a]=(unsigned char)(i ? alphas[i] : 1); // previous traversal may differ
+            assert(mk8_settings_fader_covers(addr(FADER))==(alphas[i]>0));
             memcpy(before,arena,sizeof arena);
             assert(mk8_ultrawide_hud_ready(kind!=0)); assert(!memcmp(before,arena,sizeof arena));
             // Alpha/visibility can change after camera preflight; neither changes full-screen coverage geometry.
@@ -681,6 +698,7 @@ static void fade_tests(const char *name) {
         }
         // Normal narrow loading and removal/reentry do not permanently reject later valid framing.
         arena[FADER+F_LOADING+0x58]|=1; active=false; run_fade(0);
+        assert(mk8_settings_fader_covers(addr(FADER)));
         assert(!mk8_ultrawide_hud_ready(kind!=0) && !diagnostics);
         w32(MANAGER+0xb50,kind ? 3 : 2); active=true;
         assert(mk8_ultrawide_hud_ready(kind!=0));

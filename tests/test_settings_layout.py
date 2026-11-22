@@ -93,7 +93,12 @@ class SettingsLayoutTests(unittest.TestCase):
         source = archive([('mn_TopMenuNX_00.szs', nested), ('other', b'keep'),
                           ('mn_L_SubBtn_00.szs', b'original-button'),
                           ('mn_CompeInfo_00.szs', archive([(4,b'BNTX-test')]))])
-        common = archive([('cm_Page_Dummy.szs', archive([(0xdd954d60, page_layout())])),
+        page=page_layout()
+        authored=[layout.pane(b'prt1', name, reference=name) for name in ('cm_Fade_00','cm_Fade_01','cm_LoadScreen_00')]
+        fader=bytearray(page+b'pas1\x08\0\0\0'+b''.join(authored)+b'pae1\x08\0\0\0')
+        struct.pack_into('<IH',fader,12,len(fader),6)
+        common = archive([('cm_Page_Fader.szs', archive([(0xc1e2251e, fader)])),
+                          ('cm_Page_Dummy.szs', archive([(0xdd954d60, page_layout())])),
                           ('cm_Page_Cursor.szs', archive([(0xaa119e16, page_layout())])), ('other', b'common-keep'),
                           ('cm_L_NXBtnIconL_00.szs',b'left'),('cm_L_NXBtnIconR_00.szs',b'right'),
                           ('cm_L_Scroll_ListTitle_00.szs',b'base-label'),('cm_L_WinBtn_00.szs',b'base-button')])
@@ -131,6 +136,10 @@ class SettingsLayoutTests(unittest.TestCase):
             cursor=dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_Cursor.szs'])))
             self.assertIn(b'N_Settings', private[layout.name_hash('blyt/cm_Page_SetUI.bflyt')])
             self.assertIn(b'L_SettingsRoot', cursor[0xaa119e16])
+            fader=dict((k,v) for k,_,v in layout.entries(layout.yaz0(derived['cm_Page_Fader.szs'])))
+            parts=[s for _,s in layout.sections(fader[0xc1e2251e]) if s[:4]==b'prt1']
+            self.assertEqual(parts[:3],authored)
+            self.assertEqual(parts[3:], [layout.pane(b'prt1','L_SettingsRoot',reference=layout.SETTINGS_PAGE)])
             self.assertIn(b'cm_Page_SetUI\0', cursor[0xaa119e16])
             self.assertEqual(target.read_bytes(), again)
             entries = {key: data for key, _, data in layout.entries(again)}

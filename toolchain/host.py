@@ -375,10 +375,13 @@ def prepare_host_sources(source, output):
     boundary = '        tabs_body(scale, true, NULL);'
     if text.count(boundary) != 1:
         raise ValueError('Runtime room menu boundary changed')
-    text = text.replace(boundary, '        if (mk8_room_menu_available() && ImGui::Button("Salas com amigos")) mk8_open_room_menu();\n'
-                        '        if (mk8_mii_menu_available() && ImGui::Button("Perfil Mii")) mk8_open_mii_menu();\n' + boundary)
+    text = text.replace(boundary, '        mk8_draw_launcher_actions(mk8_menu_language());\n' + boundary)
     hub = runtime/'ui/mk8_hub.h'
     shutil.copyfile(ROOT/'runtime/mk8/ui/hub.h', hub)
+    shutil.copyfile(ROOT/'runtime/mk8/ui/menu_language.h', hub.with_name('menu_language.h'))
+    shutil.copyfile(ROOT/'runtime/mk8/ui/menu_play.h', hub.with_name('menu_play.h'))
+    shutil.copyfile(ROOT/'runtime/mk8/ui/menu_nextendo.h', hub.with_name('menu_nextendo.h'))
+    shutil.copyfile(ROOT/'runtime/mk8/ui/menu_launcher_actions.h', hub.with_name('menu_launcher_actions.h'))
     boundary = 'static bool g_drew;  // the last menu_render drew (menu_redraw draws it again)'
     if text.count(boundary) != 1:
         raise ValueError('MK8 hub declaration boundary changed')
@@ -392,8 +395,7 @@ def prepare_host_sources(source, output):
         raise ValueError('MK8 hub render boundary changed')
     text = text.replace(boundary, '    if (open && mk8_hub_enabled()) mk8_hub_draw(scale);\n'
                         '    if (open && !mk8_hub_enabled()) {\n        // dim the game behind the menu')
-    menu.write_text('extern "C" bool mk8_mii_menu_available(void);\nextern "C" void mk8_open_mii_menu(void);\n'
-                   'extern "C" bool mk8_room_menu_available(void);\nextern "C" void mk8_open_room_menu(void);\n' + text, encoding='utf-8')
+    menu.write_text(text, encoding='utf-8')
     kernel = runtime/'kernel.c'
     text = kernel.read_text(encoding='utf-8')
     stack = '    pthread_attr_setstacksize(&attr, 256ull << 20);  // guest recursion runs on the host stack'
@@ -463,6 +465,12 @@ def run(args, log, env):
         raise ValueError(f'{log.name}:\n' + result.stderr.decode('utf-8', 'replace')[-6000:])
 
 
+def prepared_headers(runtime):
+    # Prepared C/C++ units include both declarations and implementation fragments.
+    return {'prepared/'+str(p.relative_to(runtime)): digest(p)
+            for pattern in ('*.h', '*.inc') for p in runtime.rglob(pattern)}
+
+
 def build_host(source, output, workers=None):
     source, output = map(compiler_path, (source, output))
     from storage import require_space
@@ -484,7 +492,7 @@ def build_host(source, output, workers=None):
     exported = ['rt_dispatch', 'rt_svc', 'rt_brk', 'rt_udf', 'rt_ticks', 'fnprof_hit', 'g_fnprof DATA', 'mk8_no_mii_renderer', 'mk8_setjmp_arm', 'mk8_yaz0_loop', 'mk8_cup_entry', 'mk8_cup_select', 'mk8_cup_select_gp', 'mk8_cup_by_course', 'mk8_cup_by_slot', 'mk8_course_folder', 'mk8_cups_built', 'mk8_cup_page_id', 'mk8_cup_page_turn', 'mk8_cup_owned', 'mk8_cup_label', 'mk8_stream_path', 'mk8_course_pictures', 'mk8_course_picture_places', 'mk8_course_picture', 'mk8_panel_record', 'mk8_panel_picture', 'mk8_course_picture_id']
     exports = output/'exports.def'
     exported.extend(['mk8_ultrawide_camera', 'mk8_ultrawide_hud', 'mk8_settings_top_event',
-                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_page_frame'])
+                     'mk8_settings_navigation', 'mk8_settings_shared_build', 'mk8_settings_fader_build', 'mk8_settings_page_frame'])
     exports.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\n'+'\n'.join(exported)+'\n', encoding='utf-8')
     export_source = output/'mk8_exports.c'
     directives = ''.join(' -export:'+name.replace(' DATA', ',data') for name in exported)
@@ -516,7 +524,7 @@ def build_host(source, output, workers=None):
     sources.append(shim)
     sources = [runtime/p.relative_to(source/'runtime') if p.is_relative_to(source/'runtime') else p for p in sources]
     headers = {str(p.relative_to(source)): digest(p) for folder in ['runtime', 'third_party', 'games/mk8d'] for p in (source/folder).rglob('*.h')}
-    headers.update({'prepared/'+str(p.relative_to(runtime)): digest(p) for p in runtime.rglob('*.h')})
+    headers.update(prepared_headers(runtime))
     headers.update({str(p.relative_to(ROOT)): digest(p) for p in (ROOT/'runtime/mk8').rglob('*.h')})
     dep_headers = {str(p.relative_to(DEPS)): digest(p) for p in (DEPS/'include').rglob('*.h')}
     environment = hashlib.sha256(json.dumps({'headers': headers, 'deps': dep_headers, 'smaa': digest(inc/'smaa_hlsl.inc'), 'compiler': digest(DEFAULT_COMPILER), 'flags': common}, sort_keys=True).encode()).hexdigest()

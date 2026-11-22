@@ -14,18 +14,73 @@ from host import DEPS,prepare_host_sources
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(),'Native compiler required')
 class SettingsControlsTests(unittest.TestCase):
-    def test_hub_prototype_keeps_keyboard_and_controller_shortcuts(self):
+    def test_hub_displays_the_launcher_language(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            runtime=prepare_host_sources(ROOT/'upstream/smm2recomp/recomp',root/'host')
+            imgui=ROOT/'upstream/smm2recomp/recomp/third_party/imgui'
+            exe=root/'hub.exe'
+            menu=(runtime/'ui/menu.mm').read_text(encoding='utf-8')
+            (root/'fixture_quit.inc').write_text(
+                menu[menu.index('static int mk8_quit_choice;'):menu.index('static void tab_about(void) {')],encoding='utf-8')
+            subprocess.run([str(DEFAULT_COMPILER),'c++','-std=c++17','-O1','-UNDEBUG','-I'+str(root),'-I'+str(runtime),'-I'+str(imgui),
+                            ROOT/'tests/fixtures/hub_language.cpp',*(imgui/name for name in (
+                                'imgui.cpp','imgui_draw.cpp','imgui_widgets.cpp','imgui_tables.cpp')),'-o',exe],
+                           env=compiler_env(),check=True)
+            subprocess.run([exe,'native-content'],cwd=root,env=dict(os.environ,MK8_SETTINGS_LANGUAGE='en',
+                           MK8_ROMFS_OVERLAY='fixture-mod'),check=True,timeout=15)
+            for lang,back,fps in [('en','Back to game','Show FPS'),('pt-BR','Voltar ao jogo','Mostrar FPS'),
+                                  ('es','Volver al juego','Mostrar FPS'),('','Back to game','Show FPS')]:
+                for page,label in [(0,back),(3,fps)]:
+                    env=dict(os.environ,MK8_SETTINGS_LANGUAGE=lang,MK8_MENU_PROTOTYPE_PAGE=str(page))
+                    result=subprocess.check_output([exe],cwd=root,env=env,encoding='utf-8')
+                    self.assertIn(label,result,(lang,page))
+                    if page==0:
+                        rooms={'pt-BR':'Salas com amigos','es':'Salas con amigos'}.get(lang,'Rooms with friends')
+                        self.assertIn(rooms,result)
+
+    def test_menu_launcher_actions_use_their_own_signal(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            probe=root/'actions.c'
+            probe.write_text('''#include "menu_launcher_actions.h"
+#include <assert.h>
+int main(int argc, char **argv) {
+    assert(argc==2);
+    int id=atoi(argv[1]);
+    for (int i=0;i<MENU_LAUNCHER_ACTION_COUNT;i++) {
+        const Mk8MenuLauncherAction *action=&mk8_menu_launcher_actions[i];
+        assert(action->available()==(i==id));
+        if (i==id) action->open();
+    }
+}
+''',encoding='utf-8')
+            exe=root/'actions.exe'
+            subprocess.run([DEFAULT_COMPILER,'cc','-UNDEBUG','-I'+str(ROOT/'runtime/mk8/ui'),probe,
+                            ROOT/'runtime/mk8/support/launcher_bridge.c','-o',exe],check=True,env=compiler_env())
+            names=['MK8_MII_MENU_SIGNAL','MK8_ROOM_MENU_SIGNAL']
+            env={k:v for k,v in os.environ.items() if k not in names}
+            subprocess.run([exe,'-1'],env=env,check=True)
+            for i,name in enumerate(names):
+                marker=root/f'sinal do cartão {i}'
+                subprocess.run([exe,str(i)],env={**env,name:str(marker)},check=True)
+                self.assertEqual(marker.read_bytes(),b'')
+            missing=root/'missing'/'signal'
+            failure=subprocess.run([exe,'1'],env={**env,names[1]:str(missing)},check=True,capture_output=True)
+            self.assertIn(b'Could not open room menu',failure.stderr)
+            self.assertFalse(missing.exists())
+
+    def test_native_preference_routes_keyboard_and_controller_shortcuts(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             runtime=prepare_host_sources(ROOT/'upstream/smm2recomp/recomp',root/'host')
             source=(runtime/'ui/menu.mm').read_text(encoding='utf-8')
             start=source.index('bool menu_handle_event(const SDL_Event *e) {')
             event=source[start:source.index('\n}',start)+2]
-            declaration='static bool mk8_hub_enabled();\n'
-            if declaration in source[:start]: event=declaration+event
             hub=(runtime/'ui/mk8_hub.h').read_text(encoding='utf-8')
             start=hub.index('static bool mk8_hub_enabled() {')
             predicate=hub[start:hub.index('\n}',start)+2]
+            child=(ROOT/'runtime/mk8/ui/menu_child.inc').read_text(encoding='utf-8')
             start=source.index('static void set_open(bool open) {')
             set_open=source[start:source.index('\n}',start)+2]
             toggle=next(line for line in source.splitlines() if line.startswith('extern "C" void menu_toggle('))
@@ -51,13 +106,16 @@ static std::atomic<int> g_kbd;
 static float g_pixel_density=1;
 static struct { bool fullscreen; } g_settings;
 static int native_requests;
+static bool mk8_collecting_rows() {return false;}
 static bool shared_race;
+static int checks_before_race;
+static void set_open(bool open);
 static SDL_JoystickID suppressed_device;
 static uint32_t suppressed_buttons;
 extern "C" void mk8_suppress_settings_buttons(SDL_JoystickID id,uint32_t buttons) { suppressed_device=id; suppressed_buttons=buttons; }
 extern "C" int mk8_pause_owner(SDL_JoystickID id) { return (int)id-1; }
 extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned) {}
-extern "C" bool mk8_settings_shared_race() { return shared_race; }
+extern "C" bool mk8_settings_shared_race() { if (checks_before_race && !--checks_before_race) shared_race=true; return shared_race; }
 static Uint64 clock_ms=5000;
 #define SDL_GetTicks() clock_ms
 struct QEvent { enum { KEY,ANALOG,MOUSE_POS,MOUSE_BUTTON,WHEEL,TEXT } kind; ImGuiKey key; bool down; float value,x,y; int button; bool touch; char text[32]; };
@@ -70,28 +128,37 @@ static void menu_tabs_focus(bool) {}
 static void osk_cancel() {}
 static void game_mod_rows_hide() {}
 static bool bind_capture_event(const SDL_Event *) { return false; }
-static bool mk8_settings_event(const SDL_Event *,bool) { return false; }
+static bool stock_owns_keys;
+static bool mk8_settings_event(const SDL_Event *,bool capture) { return stock_owns_keys && !capture; }
 static bool mk8_controller_pointer_event(const SDL_Event *) { return false; }
 static bool mk8_controller_layout_active(void) { return false; }
 static bool mk8_settings_page_active(void) { return false; }
+static int selected_theme;
+static bool page_available=true;
 static bool mk8_settings_page_toggle() {
-    if(std::strcmp(std::getenv("MK8_SETTINGS_EXPERIMENT"),"1")) return false;
+    if(!page_available || selected_theme!=2) return false;
     native_requests++; return true;
 }
 static int legacy_saves;
 static void settings_save() { ++legacy_saves; }
+static bool can_save=true;
+static bool mk8_settings_save_checked() { ++legacy_saves; return can_save; }
+#include "menu_language.h"
 static void mk8_gfx_fullscreen_request(int,int) {}
+static bool mk8_gfx_enabled() { return false; }
+static void mk8_gfx_fullscreen_apply(bool,bool,bool,unsigned,unsigned) {}
 static ImGuiKey key_from_scancode(SDL_Scancode) { return ImGuiKey_None; }
 static ImGuiKey key_from_pad(int) { return ImGuiKey_None; }
 static size_t strlcpy(char *out,const char *in,size_t count) { size_t n=std::strlen(in); if(count)std::snprintf(out,count,"%s",in);return n; }
-''' + notice + '\n' + set_open + '\n' + toggle + '\n' + event + '\n' + predicate + r'''
+''' + child + '\n' + notice + '\n' + set_open + '\n' + toggle + '\n' + predicate + '\n' + event + r'''
 static std::atomic<bool> mk8_pads_apply;
 static void input_pads_reassign() {}
-static void mk8_settings_poll(bool) {}
+static bool polled_capture;
+static void mk8_settings_poll(bool capture) {polled_capture=capture;}
 #define SDL_GetWindowPixelDensity(window) 1
 #define SDL_StartTextInput(window) ((void)0)
 #define SDL_StopTextInput(window) ((void)0)
-#define SDL_SetWindowFullscreen(window,value) ((void)0)
+#define SDL_SetWindowFullscreen(window,value) true
 ''' + apply_window + r'''
 #include "race_settings_tip.inc"
 namespace NoticeUI {
@@ -140,9 +207,22 @@ static bool button(Uint32 type,Uint8 value,SDL_JoystickID device=1) {
     SDL_Event event={};event.type=type;event.gbutton.which=device;event.gbutton.button=value;return menu_handle_event(&event);
 }
 int main() {
-    for(const char *native : {"0","1"}) for(const char *hub : {"0","1"}) {
-        CHECK(!_putenv_s("MK8_SETTINGS_EXPERIMENT",native));CHECK(!_putenv_s("MK8_MENU_PROTOTYPE",hub));
-        bool intercept=*native=='1' && *hub=='0';
+    stock_owns_keys=true;
+    for (SDL_Scancode code : {SDL_SCANCODE_RETURN,SDL_SCANCODE_ESCAPE}) {
+        g_kbd=1; menu_apply_window_requests(nullptr); CHECK(polled_capture);
+        SDL_Event e={}; e.type=SDL_EVENT_KEY_DOWN; e.key.scancode=code;
+        CHECK(menu_handle_event(&e) && g_kbd==(code==SDL_SCANCODE_RETURN ? 2 : 3));
+    }
+    g_kbd=0; stock_owns_keys=false;
+    set_open(true); can_save=false; set_open(false);
+    check_notice(mk8_menu_save_error(),1);
+    int failed_save=legacy_saves;
+    clock_ms+=9000; check_notice(nullptr,0);
+    set_open(true); can_save=true; set_open(false);
+    CHECK(legacy_saves==failed_save+1); check_notice(nullptr,0);
+    for(selected_theme=0;selected_theme<5;++selected_theme) for(const char *hub : {"","0","1"}) {
+        CHECK(!_putenv_s("MK8_MENU_PROTOTYPE",hub));
+        bool intercept=selected_theme==2;
         {
             // Start Race can be confirmed one tick before the F1 event arrives.
             shared_race=false; g_open=false; key(SDL_KMOD_SHIFT);
@@ -206,9 +286,15 @@ int main() {
             clock_ms+=100; check_notice(assigned,.5f);
             clock_ms+=100; check_notice(nullptr,0);
         }
+        g_open=false; native_requests=0; mk8_menu_request_overlay(); menu_apply_window_requests(nullptr);
+        CHECK(g_open && !native_requests); set_open(false);
+        g_open=false;native_requests=0; menu_toggle();
+        CHECK(g_open==!intercept && native_requests==(int)intercept);
         g_open=false;native_requests=0;key();
         CHECK(g_open==!intercept && native_requests==(int)intercept);
         if(g_open) { key();CHECK(!g_open); }
+        page_available=false; g_open=false; native_requests=0; key();
+        CHECK(g_open && !native_requests); key(); CHECK(!g_open); page_available=true;
         g_open=false;native_requests=0;key(SDL_KMOD_SHIFT);CHECK(g_open && !native_requests);
         g_open=false;native_requests=0;
         button(SDL_EVENT_GAMEPAD_BUTTON_DOWN,SDL_GAMEPAD_BUTTON_BACK);
@@ -226,11 +312,12 @@ int main() {
             exe=root/'shortcuts.exe'
             imgui=ROOT/'upstream/smm2recomp/recomp/third_party/imgui'
             result=subprocess.run([str(DEFAULT_COMPILER),'c++','-target','x86_64-windows-gnu','-O2',
-                '-I'+str(DEPS/'include'),'-I'+str(imgui),'-I'+str(ROOT/'tests/fixtures'),
+                '-I'+str(DEPS/'include'),'-I'+str(imgui),'-I'+str(runtime/'ui'),'-I'+str(ROOT/'tests/fixtures'),
                 *(str(imgui/name) for name in ('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp')),
-                str(root/'shortcuts.cpp'),'-o',str(exe)],env=compiler_env(),capture_output=True,text=True)
+                str(root/'shortcuts.cpp'),str(DEPS/'lib/libSDL3.dll.a'),'-o',str(exe)],env=compiler_env(),capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr[-3000:])
-            result=subprocess.run([str(exe)],capture_output=True,text=True,timeout=10)
+            result=subprocess.run([str(exe)],env=dict(os.environ,PATH=str(DEPS/'bin')+os.pathsep+os.environ.get('PATH','')),
+                                  capture_output=True,text=True,timeout=10)
             self.assertEqual(result.returncode,0,result.stderr[-3000:])
 
     def test_real_ui_loop_services_controller_state_under_continuous_events(self):

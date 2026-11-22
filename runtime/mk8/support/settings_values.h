@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum { SETTINGS_CATEGORIES=3, SETTINGS_VISIBLE=5 };
+enum { SETTINGS_QUICK=3, SETTINGS_CATEGORIES=4, SETTINGS_VISIBLE=5 };
 enum { SETTING_CHOICE, SETTING_NUMBER, SETTING_BINDING, SETTING_RESET, SETTING_INFO };
 enum { SETTINGS_STEP, SETTINGS_SET, SETTINGS_ACTIVATE, SETTINGS_BEGIN, SETTINGS_FINISH, SETTINGS_RESTART };
 enum { SETTINGS_DETACHED=2 };  // Finish after the game takes the settings page away.
@@ -10,6 +10,7 @@ typedef struct {
     int id, kind, current, maximum;
     bool enabled;
     char label[64], value[80], help[80];
+    int minimum;
 } Mk8Setting;
 
 int mk8_settings_values_count(unsigned category);
@@ -22,3 +23,4 @@ bool mk8_settings_values_capturing(void);
 void mk8_settings_values_context(bool main_menu);
 bool mk8_settings_values_main_menu(void);
 bool mk8_settings_style_active(void);
+bool mk8_settings_input_native(void); // Renderer input can arrive before the first values sync.

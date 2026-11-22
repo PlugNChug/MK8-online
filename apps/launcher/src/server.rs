@@ -58,6 +58,7 @@ pub struct App {
     nextendo_log: Option<fs::File>,
     nextendo_refusal: Option<String>,
     username: String,
+    browser_language: String,
     prepare_after_setup: bool,
     prepare_dlc: Option<PathBuf>,
     prepare_dlc_running: bool,
@@ -195,6 +196,7 @@ impl App {
             nextendo_log: None,
             nextendo_refusal: None,
             username,
+            browser_language: String::new(),
             prepare_after_setup: false,
             prepare_dlc: None,
             prepare_dlc_running: false,
@@ -463,6 +465,7 @@ impl App {
             network: net,
             username: pilot,
             candidate,
+            browser_language: self.browser_language.clone(),
             auto_lan: auto_lan.map(str::to_owned),
             nextendo,
             nextendo_session: if nextendo {
@@ -685,6 +688,14 @@ impl App {
                     && install.gameplay_verified
             })
     }
+    fn menu_build(&self) -> crate::game_settings::MenuBuild {
+        self.installation()
+            .or_else(|| self.candidate())
+            .as_ref()
+            .map_or(crate::game_settings::MenuBuild::FiveThemes, |build| {
+                build.into()
+            })
+    }
     fn identity(&self) -> String {
         self.installation()
             .or_else(|| self.candidate())
@@ -819,6 +830,9 @@ impl App {
             .or(candidate.as_ref())
             .is_some_and(|game| game.nextendo_supported);
         let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
+            if !game.menu_themes_supported || !game.menu_light_themes_supported {
+                return true;
+            }
             // An existing host can predate the capability fields within the same test version.
             (!game.temporal_upscaling_supported
                 || !game.romfs_long_paths_supported
@@ -905,16 +919,11 @@ impl App {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 self.graphics.start(&self.local, &value)
             }
-            ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/settings") => crate::game_settings::read(&self.local, self.menu_build()),
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
-            ("POST", "/api/debug-options") => {
-                let options: crate::debug_options::Options =
-                    serde_json::from_str(body).map_err(|e| e.to_string())?;
-                crate::debug_options::write(&self.local, &options)?;
-                Ok(json!({"message":"Preferência salva. A alteração vale ao iniciar o jogo."}))
-            }
             ("GET", "/api/fonts") => crate::fonts::status(&self.local),
             ("POST", "/api/settings")
+            | ("POST", "/api/debug-options")
             | ("POST", "/api/fonts")
             | ("POST", "/api/dlc/toggle")
             | ("POST", "/api/dlc/import")
@@ -939,6 +948,22 @@ impl App {
                 pipeline
                     .try_lock()
                     .map_err(|_| "Já existe uma preparação usando esta pasta de dados.")?;
+                if path == "/api/debug-options" {
+                    let mut options: crate::debug_options::Options =
+                        serde_json::from_str(body).map_err(|e| e.to_string())?;
+                    let previous = crate::debug_options::read(&self.local)?.legacy_native;
+                    if options
+                        .legacy_native
+                        .is_some_and(|value| value != previous.unwrap_or(false))
+                    {
+                        return Err("Selecione o tema do menu em Configurações → Vídeo.".into());
+                    }
+                    options.legacy_native = previous;
+                    crate::debug_options::write(&self.local, &options)?;
+                    return Ok(
+                        json!({"message":"Preferência salva. A alteração vale ao iniciar o jogo."}),
+                    );
+                }
                 if path == "/api/fonts" {
                     let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     let result = if let Some(directory) = value["directory"].as_str() {
@@ -960,7 +985,7 @@ impl App {
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
                     }
-                    crate::game_settings::write(&self.local, &value)?;
+                    crate::game_settings::write(&self.local, &value, self.menu_build())?;
                     return Ok(
                         json!({"message":"Configurações salvas. As alterações valem ao iniciar o jogo."}),
                     );
@@ -1941,16 +1966,37 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
             );
             continue;
         }
-        if method == Method::Get && path == "/vendor/ffl/ffl-emscripten.wasm" {
-            binary_response(
-                req,
-                200,
-                include_bytes!("../web/vendor/ffl/ffl-emscripten.wasm").to_vec(),
-                "application/wasm",
-            );
-            continue;
-        }
         if method == Method::Get {
+            let asset: Option<(&[u8], &str)> = match path.as_str() {
+                "/menu-themes/default.webp" => Some((
+                    include_bytes!("../web/menu-themes/default.webp"),
+                    "image/webp",
+                )),
+                "/menu-themes/nes.webp" => {
+                    Some((include_bytes!("../web/menu-themes/nes.webp"), "image/webp"))
+                }
+                "/menu-themes/simple-light.webp" => Some((
+                    include_bytes!("../web/menu-themes/simple-light.webp"),
+                    "image/webp",
+                )),
+                "/menu-themes/nes-light.webp" => Some((
+                    include_bytes!("../web/menu-themes/nes-light.webp"),
+                    "image/webp",
+                )),
+                "/menu-themes/native.webp" => Some((
+                    include_bytes!("../web/menu-themes/native.webp"),
+                    "image/webp",
+                )),
+                "/vendor/ffl/ffl-emscripten.wasm" => Some((
+                    include_bytes!("../web/vendor/ffl/ffl-emscripten.wasm"),
+                    "application/wasm",
+                )),
+                _ => None,
+            };
+            if let Some((bytes, mime)) = asset {
+                binary_response(req, 200, bytes.to_vec(), mime);
+                continue;
+            }
             let model_asset = match path.as_str() {
                 "/mii-composer.js" => Some((
                     include_str!("../web/mii-composer.js"),
@@ -2072,6 +2118,16 @@ pub fn serve(mut app: App, server: Server, authority: String, url: String, token
                 "application/json",
             );
             continue;
+        }
+        if let Some(language) = req
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("X-MK8-Language"))
+        {
+            let language = language.value.as_str();
+            if crate::language::valid(language) {
+                language.clone_into(&mut app.browser_language);
+            }
         }
         if method == Method::Get && path == "/api/report/download" {
             match report::download(&app.local, app.last_report.as_deref()) {
@@ -2519,6 +2575,8 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            menu_themes_supported: false,
+            menu_light_themes_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

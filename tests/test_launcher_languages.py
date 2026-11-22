@@ -51,7 +51,9 @@ class LanguageTests(unittest.TestCase):
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             try:
-                page.goto(url)
+                with page.expect_request(lambda req: req.url.endswith("/api/status")) as initial_status:
+                    page.goto(url)
+                self.assertEqual(initial_status.value.headers["x-mk8-language"], "en")
                 expect(page.get_by_role("heading", name="Installation", exact=True)).to_be_visible()
                 token = page.locator('meta[name="mk8-token"]').get_attribute("content")
                 saved = page.request.post(url + "/api/username", headers={"X-MK8-Token": token}, data=json.dumps({"name": "Instalar"}))
@@ -63,7 +65,9 @@ class LanguageTests(unittest.TestCase):
                 expect(page.locator("html")).to_have_attribute("lang", "pt-BR")
                 expect(page.locator("#mp-mii-text")).to_have_text("Crie seu Mii para abrir ou entrar em salas.")
                 expect(page.locator("#friend-filter")).to_have_value("literal-private-value")
-                page.get_by_label("Idioma", exact=True).select_option("es")
+                with page.expect_request(lambda req: req.url.endswith("/api/status") and
+                                          req.headers.get("x-mk8-language") == "es"):
+                    page.get_by_label("Idioma", exact=True).select_option("es")
                 expect(page.locator("html")).to_have_attribute("lang", "es")
                 expect(page.locator("#mp-mii-text")).to_have_text("Crea tu Mii para abrir salas o unirte a ellas.")
                 expect(page.get_by_role("button", name="Crear sala", exact=True)).to_be_visible()

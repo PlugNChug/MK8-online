@@ -15,8 +15,12 @@ const char *launcher_update_tag(void) { return NULL; }
 bool launcher_settings_rows(void) { return false; }
 bool launcher_has_settings(void) { return false; }
 
-bool mk8_room_menu_available(void) { return getenv("MK8_ROOM_MENU_SIGNAL") != NULL; }
-bool mk8_mii_menu_available(void) { return getenv("MK8_MII_MENU_SIGNAL") != NULL; }
+static bool has_signal(const char *name) {
+    const char *path = getenv(name);
+    return path && *path;
+}
+bool mk8_room_menu_available(void) { return has_signal("MK8_ROOM_MENU_SIGNAL"); }
+bool mk8_mii_menu_available(void) { return has_signal("MK8_MII_MENU_SIGNAL"); }
 void mk8_open_mii_menu(void) {
 #ifdef _WIN32
     const wchar_t *path = _wgetenv(L"MK8_MII_MENU_SIGNAL");

@@ -6,11 +6,14 @@
         {
           "key": "theme",
           "label": "Tema do menu",
-          "default": "Default",
+          "default": "Native",
           "kind": "select",
           "options": [
-            ["Default", "Padrão"],
-            ["NES", "NES"]
+            ["Native", "Nativo"],
+            ["Default", "Simples escuro"],
+            ["SimpleLight", "Simples claro"],
+            ["NES", "NES escuro"],
+            ["NESLight", "NES claro"]
           ]
         },
         {

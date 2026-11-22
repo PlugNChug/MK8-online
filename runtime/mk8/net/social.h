@@ -34,3 +34,18 @@ typedef struct {
 // Nonblocking UI API. Refresh is throttled; account data never leaves memory.
 void mk8_social_snapshot(Mk8Social *out);
 void mk8_social_refresh(void);
+
+// Only an unambiguous service ID can identify a room across refreshes.
+static inline int mk8_lobby_index(const Mk8Social *state,const char *id) {
+    if (!state->listings_ok || !id || !*id || state->lobby_count<0 ||
+        (size_t)state->lobby_count>sizeof state->lobbies/sizeof *state->lobbies) return -1;
+    int found=-1;
+    for (int i=0;i<state->lobby_count;i++) {
+        if (strcmp(state->lobbies[i].id,id)) continue;
+        if (found>=0) return -1;
+        found=i;
+    }
+    return found;
+}
+
+void mk8_menu_nextendo_snapshot(Mk8Social *out,bool *connected,bool *account_available);

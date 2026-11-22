@@ -50,10 +50,13 @@ class NextendoTests(unittest.TestCase):
                     if scenario == 'social_malformed': entries[0]['pid'] = -1
                     payload = json.dumps({'friends':entries, 'requests':[], 'sent':[]}).encode()
                 elif self.path == '/api/my-lobby':
-                    payload = json.dumps({'in_lobby':True,'lobby':{'id':12,'count':4,'max':12,'mode':'150 cc'}}).encode()
+                    own_id = 'x'*64 if scenario == 'social_own_id_long' else 12
+                    payload = json.dumps({'in_lobby':True,'lobby':{'id':own_id,'count':4,'max':12,'mode':'150 cc'}}).encode()
                 elif self.path == '/api/status/live':
                     room = {'count':2,'max':12,'mode':'Worldwide race','kind':'mk8-world-race','state':'waiting'}
                     game = {'titles':['0100152000022000'],'players':[{},{}],'lobbies':[room]}
+                    if scenario == 'social_success':
+                        game['lobbies'] += [dict(room,id=room_id) for room_id in ('x'*63,'x'*64,42)]
                     if scenario == 'social_list_invalid': room['count']=99
                     if scenario == 'social_list_missing': game['titles']=['another-title']
                     payload = json.dumps({'games':[game]}).encode()
@@ -107,9 +110,13 @@ class NextendoTests(unittest.TestCase):
                     succeeded = scenario in ('success', 'legacy_token_path', 'social_success')
                     self.assertEqual(proc.returncode, 0 if succeeded else 2 if scenario == 'no_nex' or scenario.startswith('social_') else 1, errors)
                     if scenario.startswith('social_'):
-                        self.assertIn('lobby=1 in_lobby=1 players=4/12', output)
+                        if scenario == 'social_own_id_long': self.assertIn('lobby=0', output)
+                        else: self.assertIn('lobby=1 in_lobby=1 players=4/12', output)
                         self.assertIn('friends=0 count=0' if scenario in ('social_denied','social_malformed') else 'friends=1 count=1', output)
-                        self.assertIn('Listings: valid=0 rooms=0 players=0 ids=0' if scenario in ('social_list_invalid','social_list_missing') else 'Listings: valid=1 rooms=1 players=2 ids=0', output)
+                        listings = 'valid=1 rooms=1 players=2 ids=0'
+                        if scenario == 'social_success': listings = 'valid=1 rooms=4 players=2 ids=2'
+                        if scenario in ('social_list_invalid','social_list_missing'): listings = 'valid=0 rooms=0 players=0 ids=0'
+                        self.assertIn('Listings: '+listings, output)
                         self.assertIn(('/api/status/live','Bearer synthetic-access'), calls)
                         self.assertIn(('/api/friends?images=0','Bearer synthetic-access'), calls)
                         self.assertIn(('/api/my-lobby','Bearer synthetic-access'), calls)
@@ -147,6 +154,7 @@ class NextendoTests(unittest.TestCase):
     def test_social_permission_denied(self): self.run_flow('social_denied')
     def test_social_malformed_account(self): self.run_flow('social_malformed')
     def test_lobby_invalid_capacity(self): self.run_flow('social_list_invalid')
+    def test_current_room_rejects_overlong_id(self): self.run_flow('social_own_id_long')
     def test_lobby_missing_game_not_empty_success(self): self.run_flow('social_list_missing')
 
     def test_legacy_token_path_only_after_not_found(self): self.run_flow('legacy_token_path')

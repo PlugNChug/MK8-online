@@ -658,7 +658,8 @@ def prepare(romfs, output):
     common_parts = {k: v for k, _, v in entries(common)}
     # The game also instantiates the dummy on unrelated pages. Give only the Settings owner the extra panes.
     for source, destination, container in [('cm_Page_Dummy', SETTINGS_PAGE, False),
-                                            ('cm_Page_Cursor', 'cm_Page_Cursor', True)]:
+                                            ('cm_Page_Cursor', 'cm_Page_Cursor', True),
+                                            ('cm_Page_Fader', 'cm_Page_Fader', True)]:
         parts = {k: v for k, _, v in entries(yaz0(common_parts[source + '.szs']))}
         layout = parts.pop(name_hash('blyt/' + source + '.bflyt'))
         parts[name_hash('blyt/' + destination + '.bflyt')] = add_page(layout, container)
