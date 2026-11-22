@@ -1,4 +1,10 @@
-# Estado técnico — 20/11/2026
+# Estado técnico — 22/11/2026
+
+## Codificação da textura de reflexos BC3
+
+O runtime desenha os blocos de reflexão na vista inteira de 128 bits da imagem temporária e os copia para o nível e a camada da textura BC3. O shader usa o tipo da imagem efetivamente alocada, inclusive quando o driver exige decodificação em RGBA. Nesta branch, os testes nativos verificam a seleção da vista, as cópias, a mistura de cores e a preservação dos quatro valores de 32 bits no SPIR-V.
+
+Em uma build local integrada para Windows (`7c29eb5e`), a validação Vulkan acompanhou a escrita das seis faces do primeiro nível e o início do seguinte sem repetir os avisos de vista incompatível e de saída em ponto flutuante para um destino inteiro. Com a validação desligada, o usuário completou uma corrida em Mario Kart Stadium nessa mesma build e confirmou que o kart e o asfalto mantiveram a aparência normal durante toda a prova, sem cintilação nem superfícies esbranquiçadas. A verificação desta branch isolada foi feita com os testes nativos.
 
 ## Distribuição da 0.5.0
 
