@@ -56,7 +56,7 @@ static void set_clamp_capability(VkBool32 supported) {
     CHECK(enabled.depthClamp==supported && available.depthClamp==supported);
     CHECK(g_vk.depth_clamp==(supported!=VK_FALSE));
 }
-typedef struct { ShaderInfo *vi,*fi; ShaderKey fkey; VkShaderModule vs,fs,gs; VkPipelineLayout layout; } Prog;
+typedef struct { ShaderInfo *vi,*fi,*gi; ShaderKey fkey; VkShaderModule vs,fs,gs; VkPipelineLayout layout; } Prog;
 static _Atomic int stat_compiles;
 static unsigned creations,async_finishes;
 static VkBool32 observed_clamp;
