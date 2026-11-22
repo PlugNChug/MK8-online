@@ -221,6 +221,14 @@ int main(int argc,char **argv) {
         command_buffer.buf_used=0; append_op(cpu,CMD_DRAW_ARRAYS); append_op(cpu,CMD_END);
         handle=(uintptr_t)command_buffer.buf; backend_prefetch(&handle,1);
         CHECK(prefetched_count==5); check_pipeline(prefetched[4],true,false);
+    } else if (!strcmp(argv[1],"output-blend")) {
+        NvnTexture bc={.format=0x44};st.rt.ncolor=1;st.rt.color[0]=&bc;
+        st.color_state[0]=1;st.channel_mask=15;fragment_info.out_mask=15;
+        layout.ncolor=1;layout.color[0]=VK_FORMAT_R32G32B32A32_UINT;
+        program.fkey.rt_kind[0]=2;PipeKey integer=key_for(&st);
+        CHECK(integer.write_mask[0]==15 && !integer.blend_on);
+        layout.color[0]=VK_FORMAT_R8G8B8A8_UNORM;program.fkey.rt_kind[0]=0;PipeKey decoded=key_for(&st);
+        CHECK(decoded.write_mask[0]==15 && decoded.blend_on==1);
     } else if (!strcmp(argv[1],"unsupported")) {
         set_clamp_capability(VK_FALSE);
         check_pipeline(off,false,false);
@@ -282,7 +290,7 @@ class DepthClampTests(unittest.TestCase):
                 '-I'+str(runtime),'-I'+str(DEPS/'include'),str(path),'-o',str(exe)],
                 env=compiler_env(),capture_output=True,text=True,timeout=120)
             self.assertEqual(built.returncode,0,built.stderr)
-            for case in ('capability','state','pipeline','prefetch','unsupported'):
+            for case in ('capability','state','pipeline','prefetch','output-blend','unsupported'):
                 with self.subTest(case=case):
                     run=subprocess.run([str(exe),case],capture_output=True,text=True,timeout=15)
                     self.assertEqual(run.returncode,0,run.stdout+run.stderr)

@@ -15,7 +15,11 @@ the extent is in source texels, one per block). MK8_BC_RENDER_DIRECT=1 restores 
 HELPERS = '''// MK8 (toolchain/bc_render.py): colour targets that are views of block-compressed images
 static bool mk8_bc_direct(void) {
     static int on = -1;
-    if (on < 0) on = getenv("MK8_BC_RENDER_DIRECT") != NULL;
+    if (on < 0) {
+        const char *value = getenv("MK8_BC_RENDER_DIRECT");
+        on = value && strcmp(value, "1") == 0;
+        if (on) LOG("[mk8:bc] diagnostic direct BC attachment views enabled\\n");
+    }
     return on;
 }
 static uint32_t mk8_bc_block_bytes(VkFormat f) {
@@ -32,6 +36,10 @@ static uint32_t mk8_bc_texel_bytes(VkFormat f) {
     case VK_FORMAT_R16G16B16A16_UNORM: case VK_FORMAT_R16G16B16A16_SNORM: return 8;
     default: return 0;
     }
+}
+static VkFormat mk8_bc_format(VkFormat base, const NvnTextureView *view) {
+    VkFormat vf = view && (view->setmask & 4) ? vk_format(view->format) : VK_FORMAT_UNDEFINED;
+    return mk8_bc_texel_bytes(vf) == mk8_bc_block_bytes(base) ? vf : VK_FORMAT_UNDEFINED;
 }
 typedef struct { VkFormat fmt; uint32_t w, h; VkImage image; VmaAllocation mem; VkImageView view; } Mk8BcShadow;
 static Mk8BcShadow mk8_bc_shadows[32];
@@ -65,22 +73,32 @@ static Mk8BcShadow *mk8_bc_shadow(VkCommandBuffer cb, VkFormat fmt, uint32_t w, 
 }
 // Colour target i of the pass being begun: a block-compressed image drawn through an uncompressed view of its blocks
 // is drawn into a shadow image instead (its view returned, its extent in *w x *h), copied in when the pass ends.
-static VkImageView mk8_bc_target(VkCommandBuffer cb, int i, TexBackend *b, VkImageView v, uint32_t *w, uint32_t *h) {
+static VkImageView mk8_bc_target(VkCommandBuffer cb, int i, NvnTexture *t, uint32_t *w, uint32_t *h) {
+    TexBackend *b = t->backend;  // renderer_mark_gpu_owned has created the backing image.
     uint32_t block = mk8_bc_block_bytes(b->format);
-    if (!block || mk8_bc_direct() || !st.rt.has_cview[i] || !(st.rt.cview[i].setmask & 4)) return v;
-    VkFormat vf = vk_format(st.rt.cview[i].format);
-    uint32_t texel = mk8_bc_texel_bytes(vf);
-    static int nlog;
-    if (texel != block) {
-        if (nlog++ < 8) LOG("[mk8:bc] colour target over BC format %d through format %d: not size-compatible, left as is\\n", b->format, vf);
-        return v;
+    if (!block || mk8_bc_direct()) return vk_view(t, &st.rt.cview[i], st.rt.has_cview[i], true, TEXTYPE_2D);
+    b = vk_tex(t, true);  // service pending uploads without constructing a view on the compressed image
+    const NvnTextureView *view = st.rt.has_cview[i] ? &st.rt.cview[i] : NULL;
+    VkFormat vf = mk8_bc_format(b->format, view);
+    uint32_t lv = view && (view->setmask & 1) ? view->base_level : 0;
+    uint32_t ly = view && (view->setmask & 2) ? view->min_layer : 0;
+    const char *reason = NULL;
+    if (vf == VK_FORMAT_UNDEFINED) reason = "missing or incompatible block view";
+    else if (lv >= b->levels || lv >= 32 || ly >= b->layers) reason = "subresource out of range";
+    else if (mk8_bc_ncopies == 8) reason = "copy list full";
+    static unsigned errors;
+    if (reason) {
+        if (errors++ < 8) LOG("[mk8:bc] colour target omitted: %s (format %d guest view %#x mip %u layer %u)\\n",
+                              reason, b->format, view ? view->format : 0, lv, ly);
+        return VK_NULL_HANDLE;
     }
-    uint32_t lv = st.rt.cview[i].setmask & 1 ? st.rt.cview[i].base_level : 0;
-    uint32_t ly = st.rt.cview[i].setmask & 2 ? st.rt.cview[i].min_layer : 0;
-    if (lv >= b->levels || ly >= b->layers || mk8_bc_ncopies == 8) return v;
     uint32_t bw = ((b->width >> lv ? b->width >> lv : 1) + 3) / 4, bh = ((b->height >> lv ? b->height >> lv : 1) + 3) / 4;
     Mk8BcShadow *s = mk8_bc_shadow(cb, vf, bw, bh);
-    if (!s) return v;
+    if (!s) {
+        if (errors++ < 8) LOG("[mk8:bc] colour target omitted: no %ux%u shadow of format %d for mip %u layer %u\\n", bw, bh, vf, lv, ly);
+        return VK_NULL_HANDLE;
+    }
+    static unsigned nlog;
     if (nlog++ < 8) LOG("[mk8:bc] BC format %d level %u layer %u drawn as %ux%u format %d, then copied in\\n", b->format, lv, ly, bw, bh, vf);
     mk8_bc_copies[mk8_bc_ncopies++] = (typeof(mk8_bc_copies[0])){b, s->image, lv, ly, bw, bh};
     *w = bw; *h = bh;
@@ -104,13 +122,16 @@ static void mk8_bc_copy_back(VkCommandBuffer cb) {
 END_PASS = ('    vkCmdEndRendering(vk_cmd());\n    in_pass = false;\n',
             '    vkCmdEndRendering(vk_cmd());\n    in_pass = false;\n'
             '    mk8_bc_copy_back(vk_cmd());  // (toolchain/bc_render.py)\n')
-TARGET = ('        TexBackend *b = t->backend;\n        if (!v) continue;\n        ca[i].imageView = v;\n',
-          '        TexBackend *b = t->backend;\n        if (!v) continue;\n'
-          '        uint32_t mk8_bcw = 0, mk8_bch = 0;  // (toolchain/bc_render.py)\n'
-          '        v = mk8_bc_target(cb, i, b, v, &mk8_bcw, &mk8_bch);\n'
-          '        ca[i].imageView = v;\n')
+TARGET = ('        VkImageView v = vk_view(t, &st.rt.cview[i], st.rt.has_cview[i], true, TEXTYPE_2D);\n',
+          '        uint32_t mk8_bcw = 0, mk8_bch = 0;\n'
+          '        VkImageView v = mk8_bc_target(cb, i, t, &mk8_bcw, &mk8_bch);\n')
+PREFETCH = ('        out->samples = b ? b->samples : (t->samples > 1 ? t->samples : 1);',
+            '        if (mk8_bc_block_bytes(base) && !mk8_bc_direct())\n'
+            '            out->color[i] = mk8_bc_format(base, s->rt.has_cview[i] ? &s->rt.cview[i] : NULL);\n'
+            '        out->samples = b ? b->samples : (t->samples > 1 ? t->samples : 1);')
 EXTENT = ('        if (g_debug_frame) mk8_pass_mip[i] = lv < b->levels ? lv : b->levels - 1;\n'
           '        uint32_t ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);\n',
+          '        if (mk8_bcw) pass_color[i] = vk_format(st.rt.cview[i].format);\n'
           '        if (g_debug_frame) mk8_pass_mip[i] = lv < b->levels ? lv : b->levels - 1;\n'
           '        uint32_t ew = mk8_bcw ? mk8_bcw : level_extent(b->width, lv), eh = mk8_bch ? mk8_bch : level_extent(b->height, lv);\n')
 BOUNDARY = 'static void begin_pass(void) {\n'
@@ -125,9 +146,44 @@ def replace(text, old, new):
 def prepare(runtime):
     execute = runtime/'nvn/vulkan/exec.c'
     text = execute.read_text(encoding='utf-8')
-    for old, new in (TARGET, EXTENT, END_PASS):
+    for old, new in (TARGET, PREFETCH, EXTENT, END_PASS):
         text = replace(text, old, new)
     # (vk_end_pass_at comes before begin_pass: the helpers go ahead of both)
     anchor = 'static void vk_end_pass_at(int line) {\n'
     text = replace(text, anchor, HELPERS + anchor)
+    keys = 'static void program_keys(const ExecState *s, ShaderKey *vkey, ShaderKey *fkey) {'
+    text = replace(text, keys, '''static int mk8_bc_output_kind(const ExecState *s, int slot, bool scan) {
+    NvnTexture *t = s->rt.color[slot];
+    const NvnTextureView *view = &s->rt.cview[slot];
+    if (s->rt.has_cview[slot] && (view->setmask & 4)) {
+        VkFormat guest = vk_format(t->format);
+        if (mk8_bc_block_bytes(guest) && mk8_bc_format(guest, view) != VK_FORMAT_UNDEFINED) {
+            const TexBackend *b = t->backend;
+            // A first allocation can select an uncompressed fallback; the advisory scan must not allocate.
+            if (scan && (!b || !b->image)) return -1;
+            VkFormat actual = scan ? b->format : mk8_bc_backing_format(t);
+            if (actual == guest) return rt_kind(view->format);
+        }
+    }
+    return rt_kind(t->format);
+}
+
+''' + keys.replace('static void','static bool').replace('ShaderKey *fkey)', 'ShaderKey *fkey, bool scan)'))
+    text = replace(text, '    for (int i = 0; i < s->rt.ncolor; i++) if (s->rt.color[i]) fkey->rt_kind[i] = (uint8_t)rt_kind(s->rt.color[i]->format);',
+                   '''    for (int i = 0; i < s->rt.ncolor && i < 8; i++) if (s->rt.color[i]) {
+        int kind = mk8_bc_output_kind(s, i, scan);
+        if (kind < 0) return false;
+        fkey->rt_kind[i] = (uint8_t)kind;
+    }
+    return true;''')
+    text = replace(text, 'program_keys(&st, &vkey, &fkey);', 'program_keys(&st, &vkey, &fkey, false);')
+    text = replace(text, 'program_keys(s, &vkey, &fkey);', 'if (!program_keys(s, &vkey, &fkey, true)) return;')
+    text = replace(text, '&& !rt_kind(s->rt.color[i]->format)) {', '&& !pr->fkey.rt_kind[i]) {')
     execute.write_text(text, encoding='utf-8')
+    for name, anchor, accessor in (
+        ('textures.c', 'TexBackend *vk_tex(NvnTexture *t, bool for_render) {',
+         'VkFormat mk8_bc_backing_format(NvnTexture *t) { return tex_backend(t)->format; }'),
+        ('vk.h', 'VkFormat vk_format(uint32_t nvn_format);', 'VkFormat mk8_bc_backing_format(NvnTexture *t);'),
+    ):
+        path = execute.parent/name
+        path.write_text(replace(path.read_text(encoding='utf-8'), anchor, accessor+'\n'+anchor),encoding='utf-8')
