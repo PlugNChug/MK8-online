@@ -94,6 +94,8 @@ The main-menu wrench, F1, Home/Guide, and Back + Start open the Menu. Shift+F1 o
 
 Press F1 during a solo course load to open the Native Menu. You can keep changing settings as the course preview appears. The selected row and any value you are typing stay in place. If you press F1 at startup before the game initializes its interface, the Menu opens as soon as the interface is ready.
 
+On Windows, **Driving camera distance** under Video adjusts the solo forward and rear driving views in Time Trial, Grand Prix and no-team VS. Start at 100% for the original distance. Use the arrows to move by 10 percentage points or type a whole number from 75 to 150. Higher values move the camera farther from the kart. The opening character close-up keeps its original distance, then the driving camera eases into your setting. The game still checks for walls. Save the choice in the launcher or change it in-game with F1. Rebuild the game and runtime together to use the setting.
+
 **CTGP Deluxe and the settings menu.** The re-release fixes the crash when both are enabled. Update the game build so the launcher regenerates the menu layout from your game files.
 
 ### Installation and runtime

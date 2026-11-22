@@ -20,8 +20,11 @@ RT_H = '''#include <stdint.h>
 #define MAIN_BASE 0x7000000000ull
 #define GUEST_LO MAIN_BASE
 #define GUEST_HI (MAIN_BASE + 0x320000000ull)
+uint64_t plat_now_ns(void);
 '''
 SETTINGS_H = '''enum { ASPECT_UNLOCKED, ASPECT_ORIGINAL, ASPECT_ULTRAWIDE };
+#define TEST_CAMERA_SETTINGS
+int mk8_settings_camera_distance(void);
 enum { FRAMEGEN_OFF, FRAMEGEN_120, FRAMEGEN_REPLAY };
 typedef struct { int aspect, frame_gen; } Settings;
 extern Settings g_settings;
@@ -52,6 +55,13 @@ BOOL WINAPI K32QueryWorkingSetEx(HANDLE, PVOID, DWORD);
     } \
 } while (0)
 Settings g_settings;
+static int camera_percent=100;
+#ifdef TEST_CAMERA_SETTINGS
+int mk8_settings_camera_distance(void) { return camera_percent; }
+#endif
+static uint64_t test_now=1000000;
+uint64_t plat_now_ns(void) { return test_now; }
+float mk8_driver_camera_distance(uint64_t owner, float length);
 static bool hud_ready = true, hud_intro, hud_fade;
 static bool settings_active;
 bool mk8_settings_page_active(void) { return settings_active; }
@@ -288,6 +298,42 @@ static void intro_setup_at(unsigned kind, unsigned mode, unsigned owner, unsigne
     arena[M+0x9d7]=mode==2 || kind==2;
 }
 static void intro_setup(unsigned kind, unsigned mode) { intro_setup_at(kind,mode,IO,IP,IT,IS); }
+static void check_distance(void) {
+    const uint64_t owner=ARENA+O;
+    for (unsigned kind=0;kind<3;kind++) {
+        for (int aspect=ASPECT_ORIGINAL;aspect<=ASPECT_ULTRAWIDE;aspect++) {
+            camera_percent=117;
+            intro_setup(kind,3); g_settings.aspect=aspect; run();
+            assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+            rear_setup(kind); link(T,O+8); g_settings.aspect=aspect; run();
+            assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+            float last=100.f;
+            for (int frame=0;frame<60;frame++) {
+                test_now+=16666667; run();
+                float next=mk8_driver_camera_distance(owner,100.f);
+                assert(next>=last && next-last<5.f); last=next;
+            }
+            assert(fabsf(last-117.f)<.001f);
+            assert(mk8_driver_camera_distance(owner+8,100.f)==100.f);
+            link(T,O+0x40); run(); assert(fabsf(mk8_driver_camera_distance(owner,100.f)-117.f)<.001f);
+            camera_percent=75;
+            for (int i=0;i<65;i++) { test_now+=16666667; run(); }
+            assert(mk8_driver_camera_distance(owner,100.f)==75.f);
+            assert(mk8_driver_camera_distance(owner,-1.f)==-1.f);
+            assert(isnan(mk8_driver_camera_distance(owner,NAN)));
+            assert(isinf(mk8_driver_camera_distance(owner,INFINITY)));
+            camera_percent=150;
+            for (int i=0;i<40;i++) { test_now+=16666667; run(); }
+            assert(mk8_driver_camera_distance(owner,100.f)==150.f);
+            assert(mk8_driver_camera_distance(owner,FLT_MAX)==FLT_MAX);
+            w32(W+0x40+0x18,1); run(); assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+            w32(W+0x40+0x18,0); run(); assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+            test_now+=16666667; run(); assert(mk8_driver_camera_distance(owner,100.f)>100.f);
+            mk8_ultrawide_camera(UINT64_MAX); assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+            camera_percent=100; setup(); run(); assert(mk8_driver_camera_distance(owner,100.f)==100.f);
+        }
+    }
+}
 static void check_intro_case(unsigned kind, unsigned mode) {
     unsigned registration=IO+(mode==2 ? 0x120 : 0x130);
     intro_setup(kind,mode);
@@ -512,6 +558,7 @@ int main(int argc, char **argv) {
     slot=module+0x8c70;
     setup();
     if (!strcmp(argv[1],"course-depth")) { check_course_depth(); return 0; }
+    if (!strcmp(argv[1],"distance")) { check_distance(); return 0; }
     if (!strcmp(argv[1],"off")) {
         assert(mk8_ultrawide_aspect()==0 && mk8_ultrawide_present_mode()==0);
         assert(mk8_ultrawide_take_present()==0);
@@ -727,6 +774,9 @@ int main(void) {
     mk8_ultrawide_drawable(960,720); only_aspect(16.f/9.f); image_width(mk8_ultrawide_take_present(),1280);
     mk8_ultrawide_drawable(3000,720); unchanged(); image_width(mk8_ultrawide_take_present(),1280);
     mk8_ultrawide_drawable(1680,720); only_aspect(21.f/9.f);
+    assert(mk8_driver_camera_distance(ARENA+O,100.f)==100.f);
+    for (int i=0;i<32;i++) { test_now+=16666667; run(); }
+    assert(fabsf(mk8_driver_camera_distance(ARENA+O,100.f)-117.f)<.001f);
     settings_save();
     assert(VirtualFree(module,0,MEM_RELEASE) && VirtualFree(arena,0,MEM_RELEASE));
     return 0;
@@ -735,6 +785,34 @@ int main(void) {
 
 
 class UltrawideTests(unittest.TestCase):
+    def test_driver_distance_requires_both_verified_camera_writers(self):
+        functions = [f'void {name}(Cpu *c) {{\n{boundary}}}\n'
+                     for name, boundary, _, _ in ultrawide.DISTANCE_SITES]
+        original = ''.join(functions)
+        adapted = ultrawide.patch_distance(original)
+        self.assertEqual(adapted.count('= mk8_driver_camera_distance('), 2)
+        for name, boundary, register, caller in ultrawide.DISTANCE_SITES:
+            function = adapted.split(f'void {name}(Cpu *c) {{', 1)[1].split('\n}', 1)[0]
+            self.assertIn(f'const int driver_camera = {caller};', function)
+            self.assertIn(boundary + f'    if (driver_camera) VSF32({register}) = ', function)
+            for bad in (original.replace(boundary, ''), original.replace(boundary, boundary*2),
+                        original.replace(boundary, '') + boundary, adapted):
+                with self.assertRaises(ValueError):
+                    ultrawide.patch_distance(bad)
+        with tempfile.TemporaryDirectory() as folder:
+            src = Path(folder)/'main'/ultrawide.DISTANCE_UNIT
+            src.parent.mkdir()
+            src.write_text(original, encoding='utf-8')
+            with self.assertRaises(ValueError):
+                ultrawide.patch_unit(src, Path(folder)/'out')
+            self.assertFalse((Path(folder)/'out').exists())
+            crlf = original.replace('\n', '\r\n').encode()
+            with mock.patch.object(ultrawide, 'DISTANCE_SHA256', hashlib.sha256(crlf).hexdigest()):
+                for raw in (crlf, original.encode()):
+                    src.write_bytes(raw)
+                    patched = ultrawide.patch_unit(src, Path(folder)/'out')
+                    self.assertEqual(patched.read_bytes(), adapted.replace('\n', '\r\n').encode())
+
     def fixture(self):
         return '#include "cpu.h"\n' + ultrawide.ENTRY + '\n' + ultrawide.BOUNDARY + '}\n'
 
@@ -789,7 +867,7 @@ class UltrawideTests(unittest.TestCase):
                 str(deps/'lib/libSDL3.dll.a'), '-o', str(exe)], env=compiler_env(), capture_output=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
             ini = out/'settings.ini'
-            ini.write_bytes(b'aspect = ultrawide\r\nframe_gen = off\r\n')
+            ini.write_bytes(b'aspect = ultrawide\r\nframe_gen = off\r\ncamera_distance = 117\r\n')
             env = dict(os.environ, LARECOMP_SETTINGS=str(ini),
                        PATH=str(deps/'bin')+os.pathsep+os.environ.get('PATH', ''))
             for key in ('MK8_ULTRAWIDE_TEST', 'LARECOMP_SCALE', 'LARECOMP_WIDE_TEST'):
@@ -799,6 +877,7 @@ class UltrawideTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, (run, result.stdout, result.stderr))
                 self.assertIn('aspect = ultrawide\n', ini.read_text())
                 self.assertIn('frame_gen = off\n', ini.read_text())
+                self.assertIn('camera_distance = 117\n', ini.read_text())
 
     @unittest.skipUnless(os.name == 'nt' and DEFAULT_COMPILER.is_file(), 'Windows native compiler required')
     def test_real_runtime_guards_and_fallback(self):
@@ -814,7 +893,7 @@ class UltrawideTests(unittest.TestCase):
                                      str(ROOT/'runtime/mk8/support/ultrawide.c'), '-o', str(exe)],
                                     env=compiler_env(), capture_output=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
-            for setting, mode in ((None, 'course-depth'), (None, 'off'), ('', 'off'), ('0', 'off'), ('true', 'off'),
+            for setting, mode in ((None, 'distance'), (None, 'course-depth'), (None, 'off'), ('', 'off'), ('0', 'off'), ('true', 'off'),
                                   ('1', 'on'), ('1', 'api-error'), ('1', 'nonresident'),
                                   ('1', 'rear'), ('1', 'rear-api-error'), ('1', 'rear-nonresident'), ('1', 'ratios'),
                                   ('1', 'intro'), ('1', 'intro-api-error'), ('1', 'intro-nonresident'),

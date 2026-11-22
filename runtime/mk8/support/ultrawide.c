@@ -20,6 +20,45 @@ bool mk8_settings_page_active(void);
 static bool enabled;
 // Zero preserves normal settings; each positive token is the aspect of that produced image.
 static _Atomic double drawable, producer, presented;
+// P1's owner and distance must reach the simulation thread together. The low 16 bits are basis points.
+_Static_assert(GUEST_HI < (UINT64_C(1) << 48), "camera owner must fit the published state");
+static _Atomic uint64_t driver_distance;
+
+float mk8_driver_camera_distance(uint64_t owner, float length) {
+    uint64_t state = atomic_load(&driver_distance);
+    unsigned gain = (uint16_t)state;
+    if (!state || state >> 16 != owner || gain == 10000 || !isfinite(length) || length <= 0.f) return length;
+    float scaled = length * (gain / 10000.f);
+    return isfinite(scaled) ? scaled : length;
+}
+
+static void update_distance(uint64_t owner, int percent) {
+    static int target;
+    static unsigned start;
+    static uint64_t previous_ns, elapsed_ns;
+    uint64_t old = atomic_load(&driver_distance);
+    if (!owner) {
+        if (old) atomic_store(&driver_distance, 0);
+        return;
+    }
+    unsigned gain = (uint16_t)old, goal = percent * 100;
+    if (old >> 16 != owner || target != percent) {
+        start = old >> 16 == owner ? gain : 10000;
+        target = percent;
+        elapsed_ns = 0;
+        previous_ns = plat_now_ns();
+        gain = start;
+    } else if (gain != goal) {
+        // Start at the stock pose after a close-up. A pause or loading stall must not skip the blend.
+        uint64_t now = plat_now_ns(), delta = now - previous_ns;
+        previous_ns = now;
+        elapsed_ns += delta > 50000000 ? 50000000 : delta;
+        float t = fminf(1.f, elapsed_ns / 450000000.f);
+        gain = (unsigned)lroundf(start + ((float)goal - start) * t * t * (3.f - 2.f * t));
+    }
+    uint64_t next = goal == 10000 && gain == goal ? 0 : (owner << 16) | gain;
+    if (next != old) atomic_store(&driver_distance, next);
+}
 #ifdef _WIN32
 static DWORD page_size;
 #endif
@@ -123,7 +162,8 @@ static uint8_t *object(const uint8_t *p, size_t offset, size_t size) {
     return mk8_ultrawide_memory(u64(p, offset), size, false);
 }
 
-static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8_t *manager) {
+static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8_t *manager,
+                        bool check_aspect, uint64_t *driver_owner) {
     uint8_t *node = object(root, 0x20, 0x10);
     uint8_t *scene = node ? object(node, 8, 0x248) : NULL;
     if (!scene || u32(scene, 0x180) != 4 || u32(scene, 0x184) != 4 || u32(scene, 0x17c) != 3 ||
@@ -153,6 +193,7 @@ static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8
     uint64_t selected = u64(selection, 0);
     uint8_t *external = mk8_ultrawide_memory(selected, 0xc, false);
     if (external && u64(external, 0) == MAIN_BASE + 0x12c7778 && u32(external, 8) == 0) {
+        if (!check_aspect) return false;
         // This owner serves other sequences; only GP/VS flyovers and GP/VS/TT close-ups are verified.
         uint8_t *race = object(scene, 0x1b0, 0x230);
         uint8_t *registry = race ? object(race, 0x228, 0x48) : NULL;
@@ -193,19 +234,19 @@ static bool solo_camera(const uint8_t *root, const uint8_t *context, const uint8
     if (!(owner && u64(owner, 0) == MAIN_BASE + 0x11b9c30 &&
         u64(owner, 8) == MAIN_BASE + 0x11b9c50 && u32(owner, 0x10) == 1 &&
         racer && u32(racer, 0x40) == 0)) return false;
-    if (selected == parameter) return mk8_ultrawide_hud_ready(false);
     // Rear view uses another registered parameter inside the same racer-camera owner.
-    return selected == parameter + 0x38 && u64(controller, 0x3d8) == selected &&
+    if (selected != parameter && !(selected == parameter + 0x38 && u64(controller, 0x3d8) == selected &&
         u64(controller, 0x3e8) == parameter - 8 + 0xca &&
         mk8_ultrawide_memory(parameter - 8, 0xcb, false) && owner[0xca] == 1 &&
-        u64(owner, 0x40) == MAIN_BASE + 0x11b9c50 && u32(owner, 0x48) == 1 &&
-        mk8_ultrawide_hud_ready(false);
+        u64(owner, 0x40) == MAIN_BASE + 0x11b9c50 && u32(owner, 0x48) == 1)) return false;
+    *driver_owner = parameter - 8;
+    return check_aspect && mk8_ultrawide_hud_ready(false);
 }
 
-void mk8_ultrawide_camera(uint64_t manager_address) {
+static uint64_t update_camera(uint64_t manager_address, bool check_distance) {
     bool requested = g_settings.aspect == ASPECT_ULTRAWIDE || (enabled && g_settings.aspect == ASPECT_UNLOCKED);
     atomic_store(&producer, requested || enabled ? 16.0/9.0 : 0);
-    if (!requested && !changed_projection) return;
+    if (!requested && !changed_projection && !check_distance) return 0;
     double wide = atomic_load(&drawable);
     uint64_t previous = changed_projection;
     float previous_aspect = changed_aspect;
@@ -216,28 +257,30 @@ void mk8_ultrawide_camera(uint64_t manager_address) {
     uint8_t *engine = context ? object(context, 0x1a0, 0x428) : NULL;
     uint8_t *manager = mk8_ultrawide_memory(manager_address, 0xc78, false);
     if (!engine || !manager || u64(engine, 0x420) != manager_address ||
-        u32(manager, 0x120) < 1 || u32(manager, 0x120) > 16 || u32(manager, 0x9c0) != 0) return;
+        u32(manager, 0x120) < 1 || u32(manager, 0x120) > 16 || u32(manager, 0x9c0) != 0) return 0;
     uint8_t *layers = object(manager, 0x128, u32(manager, 0x120)*8);
     uint8_t *layer = layers ? object(layers, 0, 0x80) : NULL;
     uint64_t projection_address = manager_address + 0x238;
     uint8_t *projection = mk8_ultrawide_memory(projection_address, 0xc0, true);
     if (!layer || !projection || u64(layer, 0x70) != projection_address ||
-        u64(projection, 0) != MAIN_BASE + 0x12b0050) return;
+        u64(projection, 0) != MAIN_BASE + 0x12b0050) return 0;
     float x0 = f32(layer, 0x30), y0 = f32(layer, 0x34), x1 = f32(layer, 0x38), y1 = f32(layer, 0x3c);
     if (!isfinite(x0) || !isfinite(y0) || !isfinite(x1) || !isfinite(y1) ||
-        x0 != 0.f || y0 != 0.f || x1 < 1.f || x1 > 3840.f || y1 < 1.f || y1 > 2160.f) return;
+        x0 != 0.f || y0 != 0.f || x1 < 1.f || x1 > 3840.f || y1 < 1.f || y1 > 2160.f) return 0;
     float baseline = (x1 - x0)/(y1 - y0), aspect = f32(projection, 0xb0);
-    bool eligible = requested && !mk8_settings_page_active() && wide > 16.0/9.0 && g_settings.frame_gen == FRAMEGEN_OFF &&
-        x1 == 1280.f && y1 == 720.f && u32(manager, 0x9bc) == 0 && manager[0x9d4] == 1 &&
-        u64(layer, 0x68) == u64(manager, 0x958) &&
+    bool solo_layer = x1 == 1280.f && y1 == 720.f && u32(manager, 0x9bc) == 0 &&
+        manager[0x9d4] == 1 && u64(layer, 0x68) == u64(manager, 0x958);
+    bool eligible = solo_layer && requested && !mk8_settings_page_active() && wide > 16.0/9.0 && g_settings.frame_gen == FRAMEGEN_OFF &&
         valid_depth(f32(projection, 0x98), f32(projection, 0x9c)) &&
         isfinite(f32(projection, 0xa0)) && f32(projection, 0xa0) >= 0.5f && f32(projection, 0xa0) <= 1.6f &&
         f32(projection, 0xa4) > 0.f && f32(projection, 0xa4) <= 1.f &&
         f32(projection, 0xa8) > 0.f && f32(projection, 0xa8) <= 1.f &&
         f32(projection, 0xac) > 0.f && f32(projection, 0xac) <= 2.f &&
         f32(projection, 0xb4) == 0.f && f32(projection, 0xb8) == 0.f &&
-        (aspect == baseline || (previous == projection_address && aspect == previous_aspect)) &&
-        solo_camera(root, context, manager);
+        (aspect == baseline || (previous == projection_address && aspect == previous_aspect));
+    uint64_t driver_owner = 0;
+    if (eligible || (solo_layer && check_distance))
+        eligible = solo_camera(root, context, manager, eligible, &driver_owner);
     // Only the currently validated owner can be restored; a prior scene's pointer is never dereferenced.
     bool restore = previous == projection_address && aspect == previous_aspect;
     float target = eligible ? (float)wide : baseline;
@@ -248,4 +291,12 @@ void mk8_ultrawide_camera(uint64_t manager_address) {
     changed_projection = eligible ? projection_address : 0;
     changed_aspect = eligible ? target : 0.f;
     if (eligible) atomic_store(&producer, wide);
+    return driver_owner;
+}
+
+void mk8_ultrawide_camera(uint64_t manager_address) {
+    int percent = mk8_settings_camera_distance();
+    bool check_distance = percent != 100 || atomic_load(&driver_distance);
+    uint64_t owner = update_camera(manager_address, check_distance);
+    if (check_distance) update_distance(owner, percent);
 }

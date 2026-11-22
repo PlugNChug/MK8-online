@@ -379,6 +379,49 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.shot('aspect-stretch-mobile')
 
+    def test_camera_distance_arrows_custom_percentage_and_reload(self):
+        page = self.page
+        page.locator('#language').select_option('en')
+        distance = page.get_by_role('spinbutton', name='Driving camera distance')
+        decrease = page.get_by_role('button', name='Decrease camera distance')
+        increase = page.get_by_role('button', name='Increase camera distance')
+        distance.focus()
+        expect(page.locator('#config-preview-description')).to_contain_text('full rebuild')
+        expect(distance).to_have_value('100')
+        increase.click()
+        expect(distance).to_have_value('110')
+        distance.fill('117')
+        distance.press('ArrowDown')
+        expect(distance).to_have_value('107')
+        decrease.click()
+        expect(distance).to_have_value('97')
+        distance.fill('78')
+        decrease.click()
+        expect(distance).to_have_value('75')
+        distance.fill('148')
+        distance.press('ArrowUp')
+        expect(distance).to_have_value('150')
+        for invalid in ('74', '151', '117.5'):
+            distance.fill(invalid)
+            self.assertFalse(distance.evaluate('(input) => input.checkValidity()'))
+        distance.fill('117')
+        page.locator('#settings-save').click()
+        expect(page.locator('#settings-save')).to_be_disabled()
+        page.reload()
+        expect(distance).to_have_value('117')
+        ini = (self.local/'user-no-mii/mk8d.ini').read_text()
+        self.assertIn('camera_distance = 117', ini)
+        self.assertIn('future_setting = preserve', ini)
+        for language, name, arrow, rebuild in (
+            ('es', 'Distancia de la cámara de conducción', 'Aumentar la distancia de la cámara', 'compilarlo por completo'),
+            ('pt-BR', 'Distância da câmera de pilotagem', 'Aumentar distância da câmera', 'compilação completa'),
+        ):
+            page.locator('#language').select_option(language)
+            expect(page.get_by_role('spinbutton', name=name)).to_have_value('117')
+            page.get_by_role('spinbutton', name=name).focus()
+            expect(page.locator('#config-preview-description')).to_contain_text(rebuild)
+            expect(page.get_by_role('button', name=arrow)).to_be_visible()
+
     def test_ultrawide_round_trip_preview_and_frame_generation_fallback(self):
         page = self.page
         aspect = page.locator('#config-field-aspect')

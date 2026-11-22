@@ -365,6 +365,14 @@ Na etapa HD, a repetição de controle em Boo Lake registrou 10.140 valores por 
 
 Nos testes físicos do Pro Controller original via Bluetooth, o piloto distinguiu esquerda, direita e dois tons, percebeu silêncio entre os pulsos e sentiu a vibração durante a corrida em Rock Rock Mountain. Os resultados dos Joy-Con estão na seção acima. Outros controles compatíveis usam a vibração padrão da SDL. `gameplay_verified=false`. [Issue #53](https://github.com/Vnnc1/MK8-online/issues/53)
 
+## Distância da câmera de pilotagem solo
+
+O launcher e o menu F1 gravam `camera_distance` no mesmo arquivo. O padrão é 100%, com valores inteiros de 75% a 150%. O ajuste atua sobre a distância frontal e traseira antes da verificação de paredes. Na passagem do close-up para a pilotagem, a câmera sai da distância original e chega ao valor escolhido em cerca de 450 ms.
+
+Na build combinada anterior, o piloto completou Rock Rock Mountain em 2:53.597 a 150%, verificou a transição do close-up, a vista traseira, a parede, o planador e um resgate de Lakitu. Após reiniciar, o tempo e a preferência de 150% continuaram disponíveis. Repetições a 100% e 150% cobriram antigravidade e painel de turbo em Mario Kart Stadium e entrada e saída da água em Water Park. A 75%, a câmera se aproximou do kart. A qualificação se limita aos modos e trechos testados.
+
+No porte para a versão Windows 0.5.0 (`fix-chore` em `6217eca`), a recompilação alterou apenas `main_038.o` entre 484 objetos guest. Os três módulos foram religados. Em três quadros correspondentes no grid de Mario Kart Stadium (1280×720), a largura do boné do Mario passou de 76 pixels a 100% para 50 pixels a 150%. O launcher passou em 19 testes de navegador. A integração local com a PR #92 (`1159351`) passou em 22 testes de navegador, incluindo a preservação da distância ao mudar entre os cinco temas. Os testes nativos cobriram edição de um valor exato, limites, cancelamento e transição do close-up. A integração repetiu as medidas de 76 e 50 pixels no grid. Na apresentação, a largura do kart permaneceu entre 417 e 418 pixels nas duas builds. As quatro execuções terminaram na primeira volta e preservaram os 50 arquivos protegidos. `gameplay_verified=false`.
+
 A [PR #57](https://github.com/Vnnc1/MK8-online/pull/57) foi integrada à `fix-chore` em `18bbf31`, após a execução aprovada do CI. Uma execução anterior passou os testes portáteis e falhou na liberação da porta UDP do teste de reconexão Steam. A repetição local também passou. A falha anterior continua sem causa confirmada. Os registros abaixo que mencionam ausência de publicação descrevem etapas anteriores.
 
 ## Atualizações de ferramentas e desinstalação no Windows

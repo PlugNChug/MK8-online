@@ -17,7 +17,8 @@ def prepare_stock_rows(runtime):
         ('void opt_end(void)', 'ImGui::PopID(); return;'),
         ('void opt_section(const char *title)', 'mk8_collect_section(title); return;'),
         ('bool opt_text_editing(const char *label)', 'return false;'),
-        ('bool opt_text(const char *label, char *buf, size_t cap, const char *hint, const char *desc)',
+        # (settings_menu.py adds the optional arrow step used by the camera distance row)
+        ('bool opt_text(const char *label, char *buf, size_t cap, const char *hint, const char *desc, int *step)',
          'return mk8_collect_text(ImGui::GetID(label),label,buf,cap,desc);'),
     ):
         marker = signature + ' {'

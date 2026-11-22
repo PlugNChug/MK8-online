@@ -22,6 +22,10 @@
 .config-modular .config-option:hover, .config-modular .config-option:focus-within { background: var(--surface); }
 .config-modular .settings-grid .config-option-active { border-left-color: var(--accent); background: var(--surface); }
 .config-option-copy { display: block; min-width: 0; }
+.camera-distance-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .3rem; }
+.camera-distance-controls input { text-align: center; }
+.camera-distance-controls input::-webkit-inner-spin-button { appearance: none; }
+.camera-distance-controls button { padding: .5rem; }
 .config-option-name { display: block; font-size: .9rem; font-weight: 550; color: var(--text); }
 .config-option-copy small { display: block; color: var(--muted); font-size: .75rem; line-height: 1.5; margin-top: .35rem; }
 .config-switch { display: flex; align-items: center; justify-content: flex-end; gap: .65rem; }

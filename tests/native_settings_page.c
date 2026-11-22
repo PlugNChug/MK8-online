@@ -67,8 +67,8 @@ static uint64_t now, revision;
 static bool publish_during_row;
 static char rendered[SETTINGS_VISIBLE+1][80];
 static char rendered_labels[SETTINGS_VISIBLE+1][80];
-static Mk8Setting catalogue[SETTINGS_CATEGORIES][12];
-static int counts[]={12,4,2,5};
+static Mk8Setting catalogue[SETTINGS_CATEGORIES][13];
+static int counts[]={13,4,2,5};
 static bool in_main=true;
 static bool native_style=true, auto_lan, title_active;
 bool mk8_auto_lan_requested(void) { return auto_lan; }
@@ -1098,6 +1098,8 @@ int main(void) {
     }
     catalogue[0][11].id=68;
     catalogue[1][0].kind=SETTING_NUMBER; catalogue[1][0].maximum=200; catalogue[1][0].current=100; strcpy(catalogue[1][0].value,"100%");
+    Mk8Setting *camera=&catalogue[0][12];
+    camera->id=69; camera->kind=SETTING_NUMBER; camera->minimum=75; camera->maximum=150; camera->current=100;
     catalogue[2][0].kind=SETTING_BINDING; catalogue[2][1].kind=SETTING_RESET;
     memset(&cpu,0x17,sizeof cpu); cpu.sp=GUEST_HI-16;
     selector_absent=false; top=owner=panes->root=HEAP_BASE; panes->hint=HEAP_BASE+3500; panes->hint_second=HEAP_BASE+14680; panes->back_icon=HEAP_BASE+14780; from_button=true;
@@ -1172,6 +1174,12 @@ int main(void) {
     mk8_settings_page_wheel(3); sample(0); assert(focus==9 && offset==4);
     focus=0; offset=0; finger=true; tx=1050; ty=420; sample(0); finger=false; sample(0);
     assert(focus==3 && catalogue[0][2].current==1);
+    while(focus<13) press(1ull<<15);
+    press(1); apply_number("74"); assert(editing && invalid && camera->current==100);
+    press(2); assert(!editing && camera->current==100);
+    press(1); apply_number("117"); assert(!editing && camera->current==117);
+    press(1); press(1ull<<14); press(2); assert(!editing && camera->current==117);
+    press(1); for(int i=0;i<5;i++) press(1ull<<12); press(1); assert(camera->current==75);
     focus=0; press(1ull<<14); assert(category==1);
     press(1ull<<15); press(1); assert(editing);
     assert(!strcmp(last_hint,"Type a value or use the arrow keys."));

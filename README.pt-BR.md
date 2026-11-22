@@ -80,6 +80,8 @@ A chave inglesa do menu principal, F1, Home/Guide e Menos + Mais abrem o Menu. S
 
 Pressione F1 durante o carregamento de uma pista no modo solo para abrir o Menu nativo. Você pode continuar ajustando as opções quando a apresentação da pista começar. A linha selecionada e o valor que estiver digitando são preservados. Se você pressionar F1 na inicialização, o Menu abrirá assim que a interface do jogo estiver pronta.
 
+No Windows, a opção **Distância da câmera de pilotagem**, em Vídeo, ajusta a vista frontal e a traseira no Contra o Relógio, Grand Prix e VS solo sem equipes. A distância original é 100%. Use as setas para mudar de dez em dez pontos percentuais ou digite um número inteiro de 75 a 150. Valores maiores afastam a câmera do kart. O close-up inicial mantém a distância original e, quando começa a pilotagem, a câmera passa gradualmente para a distância escolhida. O jogo continua verificando a colisão com paredes. Salve a configuração no launcher ou ajuste-a no jogo com F1. Recompile o jogo e o runtime juntos para usar a opção.
+
 **CTGP Deluxe e o menu de configurações.** O relançamento corrige o crash ao abrir o menu principal com as duas opções ligadas. Atualize a build para o launcher regenerar o layout do menu a partir dos arquivos do jogo.
 
 ### Instalação e runtime

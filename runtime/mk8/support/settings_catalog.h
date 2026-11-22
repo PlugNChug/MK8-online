@@ -22,6 +22,7 @@ enum { MK8_MENU_TOGGLE, MK8_MENU_CHOICE, MK8_MENU_NUMBER, MK8_MENU_INFO, MK8_MEN
 // Ordered like the Native pages. Other renderers can group the same options differently.
 #define MK8_MENU_FIELDS(T,C,S) \
     C(ASPECT, VIDEO, "Aspect ratio", aspect, aspects, NULL, 0, ALWAYS, "Solo 16:9-32:9; FG/other views: 16:9.") \
+    S(CAMERA_DISTANCE, VIDEO, "Driving camera distance", NUMBER, "Solo forward and rear. 100% is stock.") \
     T(FULLSCREEN, VIDEO, "Fullscreen", fullscreen, false, ALWAYS, "F11 also toggles fullscreen.") \
     T(SHOW_FPS, VIDEO, "Show FPS", show_fps, false, ALWAYS, "Show FPS in the screen corner.") \
     T(SHOW_MEMORY, VIDEO, "Show memory use", show_memory, false, ALWAYS, "Show runtime memory usage.") \
