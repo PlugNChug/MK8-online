@@ -1075,7 +1075,11 @@ async function refresh() {
     notice("Um amigo entrou na sua sala.");
   }
   const directJoin = !!session.direct_lan_guest_supported && session.steam_auto_join !== false;
-  $("steam-direct-upgrade").hidden = !(status.installed || status.candidate) || !!session.direct_lan_guest_supported;
+  const upgrade = $("steam-direct-upgrade");
+  upgrade.hidden = !(status.installed || status.candidate) || !!session.direct_lan_guest_supported;
+  if (!upgrade.hidden) i18n.text(upgrade, status.installed
+    ? "O launcher usa a instalação qualificada mesmo quando há uma candidata mais recente. Atualize a instalação qualificada para entrar diretamente ou abra LAN Play no jogo."
+    : "Atualize o jogo preparado para abrir a lista LAN diretamente. Até lá, navegue até LAN Play no jogo.");
   const joinsChanged = previousSession?.directJoin !== directJoin || previousSession?.hosting !== session.hosting;
   previousSession = { connected: session.connected, guests, hosting: session.hosting, directJoin };
   if (joinsChanged) renderSteam();

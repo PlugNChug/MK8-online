@@ -203,8 +203,31 @@ class SettingsModulesTests(unittest.TestCase):
         path.write_text(json.dumps(current))
         self.assertTrue(page.evaluate("api('status')")['session']['direct_lan_guest_supported'])
         active = {**candidate, 'profile':'mk8d-smm2-qualified', 'gameplay_verified':True}
-        (self.local/'active.json').write_text(json.dumps(active))
+        active_path = self.local/'active.json'
+        active_path.write_text(json.dumps(active))
         self.assertFalse(page.evaluate("api('status')")['session']['direct_lan_guest_supported'])
+        page.evaluate("api('mii/create', {name:'Test',color:1,gender:0})")
+        error = "async () => { try { await api('steam/join',{lobby:'123',players:2}) } catch(e) { return i18n.t(e.message) } }"
+        hint = page.locator('#steam-direct-upgrade')
+        for lang,build in [('pt-BR','instalação qualificada'), ('en','qualified installation'), ('es','instalación validada')]:
+            page.locator('#language').select_option(lang)
+            expect(page.locator('html')).to_have_attribute('lang',lang)
+            page.evaluate('refresh()')
+            self.assertFalse(hint.evaluate('e => e.hidden'))
+            expect(hint).to_contain_text(build)
+            self.assertIn(build,page.evaluate(error))
+        # A supported qualified installation still wins over a stale candidate.
+        active_path.write_text(json.dumps({**active, 'direct_lan_guest_supported':True}))
+        path.write_text(json.dumps(candidate))
+        page.evaluate('refresh()')
+        self.assertTrue(hint.evaluate('e => e.hidden'))
+        self.assertTrue(page.evaluate("api('status')")['session']['direct_lan_guest_supported'])
+        page.evaluate("api('steam/navigation',{automatic:false})")
+        self.assertIn('Activa la navegación automática',page.evaluate(error))
+        active_path.unlink()
+        page.evaluate('refresh()')
+        expect(hint).to_contain_text('Actualiza el juego preparado')
+        self.assertIn('actualiza el juego preparado',page.evaluate(error))
 
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page

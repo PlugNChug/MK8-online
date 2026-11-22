@@ -302,13 +302,20 @@ impl App {
     fn steam_join(&mut self, lobby: &str, two_player_guest: bool) -> Result<()> {
         self.check_room_preparation()?;
         self.mii_name()?;
-        let automatic = self.steam_auto_join
-            && self
-                .installation()
-                .or_else(|| self.candidate())
-                .is_some_and(|game| game.direct_lan_guest_supported);
+        let install = self.installation();
+        let qualified = install.is_some();
+        let direct = install
+            .or_else(|| self.candidate())
+            .is_some_and(|game| game.direct_lan_guest_supported);
+        let automatic = self.steam_auto_join && direct;
         if two_player_guest && !automatic {
-            return Err("Para abrir a lista LAN de 2 jogadores, atualize o jogo preparado e ative a entrada automática.".into());
+            return Err(if direct {
+                "Ative a entrada automática para entrar diretamente com 2 jogadores neste PC."
+            } else if qualified {
+                "Para entrar diretamente com 2 jogadores, atualize a instalação qualificada e ative a entrada automática. A instalação qualificada tem prioridade sobre a candidata."
+            } else {
+                "Para abrir a lista LAN de 2 jogadores, atualize o jogo preparado e ative a entrada automática."
+            }.into());
         }
         self.prepare_steam_join()?;
         let identity = self.identity();
