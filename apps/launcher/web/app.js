@@ -290,6 +290,10 @@ async function loadGameSettings(force = false) {
         } else if (field.kind === "bool") {
           input.type = "checkbox";
           label.className = "settings-check";
+        } else if (field.kind === "camera_distance") {
+          input.type = "number";
+          input.min = "75"; input.max = "150"; input.step = "1";
+          input.required = true;
         } else {
           input.type = "number";
           input.min = "0"; input.max = "200"; input.step = "5";
@@ -312,8 +316,34 @@ async function loadGameSettings(force = false) {
           markSettingsDirty();
         };
         label.prepend(caption);
-        label.append(input);
-        grid.append(label);
+        if (field.kind === "camera_distance") {
+          const row = document.createElement("div");
+          const controls = document.createElement("div");
+          controls.className = "camera-distance-controls";
+          i18n.html(controls, '<button type="button" aria-label="Diminuir distância da câmera">◀</button><button type="button" aria-label="Aumentar distância da câmera">▶</button>');
+          const [decrease, increase] = controls.children;
+          const jump = (delta) => {
+            const current = Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : Number(field.default);
+            input.value = Math.min(Number(input.max), Math.max(Number(input.min), Math.round(current) + delta));
+            input.dispatchEvent(new Event("input", {bubbles: true}));
+          };
+          decrease.onclick = () => jump(-10);
+          increase.onclick = () => jump(10);
+          input.onkeydown = (event) => {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+              event.preventDefault();
+              jump(event.key === "ArrowUp" ? 10 : -10);
+            }
+          };
+          input.id = "config-field-camera_distance";
+          label.htmlFor = input.id;
+          controls.insertBefore(input, increase);
+          row.append(label, controls);
+          grid.append(row);
+        } else {
+          label.append(input);
+          grid.append(label);
+        }
         if (field.key === "upscaler") {
           const panel = document.createElement("div");
           panel.id = "graphics-components"; panel.className = "graphics-components";
@@ -373,7 +403,8 @@ $("game-settings").onsubmit = (event) => {
     const patch = {};
     for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
       const value = input.type === "checkbox" ? input.checked ? "1" : "0"
-        : input.dataset.kind === "volume" ? String(Number(input.value) / 100) : input.value;
+        : input.dataset.kind === "volume" ? String(Number(input.value) / 100)
+        : input.type === "number" ? String(input.valueAsNumber) : input.value;
       const previous = settingsBaseline[input.dataset.key];
       if (input.dataset.kind === "volume" ? Number(value) !== Number(previous) : value !== previous)
         patch[input.dataset.key] = value;

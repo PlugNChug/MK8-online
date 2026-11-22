@@ -10,6 +10,7 @@ typedef struct {
     int id, kind, current, maximum;
     bool enabled;
     char label[64], value[80], help[80];
+    int minimum;
 } Mk8Setting;
 
 int mk8_settings_values_count(unsigned category);

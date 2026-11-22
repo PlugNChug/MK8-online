@@ -65,6 +65,7 @@ static void check_tips(void) {
 int main(int argc,char **argv) {
     assert(argc==3 || argc==4); settings_load(); mk8_settings_values_context(true); mk8_settings_values_sync();
     if(argc==4) {
+        assert(mk8_settings_camera_distance()==117);
         assert(g_settings.aspect==ASPECT_ULTRAWIDE);
         assert(g_settings.joycon_mode==1);
         assert(g_settings.volume==.65f && g_settings.show_fps && g_settings.fullscreen);
@@ -72,7 +73,10 @@ int main(int argc,char **argv) {
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==11 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==12 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    Mk8Setting camera=find(0,"Driving camera distance");
+    assert(camera.kind==SETTING_NUMBER && camera.minimum==75 && camera.maximum==150);
+    assert(camera.current==100 && mk8_settings_camera_distance()==100 && !strcmp(camera.value,"100%"));
     check_tips();
     assert(!strcmp(find(0,"Aspect ratio").value,"Stretch"));
     // The launcher may read the INI while the overlay remains open. A drag
@@ -123,6 +127,18 @@ int main(int argc,char **argv) {
     assert(!_putenv_s("MK8_READY_FSR4",""));
     request(SETTINGS_STEP,scaler,-1); assert(g_settings.upscaler==UPSCALE_FSR1);
     assert(!_putenv_s("MK8_READY_FSR3",""));
+    request(SETTINGS_STEP,camera.id,1);
+    assert(find(0,"Driving camera distance").current==110);
+    request(SETTINGS_SET,camera.id,78);
+    request(SETTINGS_STEP,camera.id,-1);
+    assert(find(0,"Driving camera distance").current==75);
+    request(SETTINGS_SET,camera.id,147);
+    request(SETTINGS_STEP,camera.id,1);
+    assert(find(0,"Driving camera distance").current==150);
+    assert(!mk8_settings_values_request(SETTINGS_SET,camera.id,74));
+    assert(!mk8_settings_values_request(SETTINGS_SET,camera.id,151));
+    request(SETTINGS_SET,camera.id,117);
+    assert(mk8_settings_camera_distance()==117);
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ORIGINAL);
     request(SETTINGS_STEP,aspect,1); assert(g_settings.aspect==ASPECT_ULTRAWIDE);
     assert(find(0,"Aspect ratio").maximum==2 && !strcmp(find(0,"Aspect ratio").value,"Ultrawide (experimental)"));
@@ -247,6 +263,7 @@ int main(int argc,char **argv) {
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 0.65',text)
             self.assertIn('joycon_mode = horizontal',text)
+            self.assertIn('camera_distance = 117',text)
             self.assertIn('bind_key_zl = Space',text)
             self.assertIn('bind_key_zr = Left Alt',text)
 

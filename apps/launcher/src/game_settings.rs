@@ -62,9 +62,15 @@ fn fields(schema: &Value) -> impl Iterator<Item = &Value> {
         .flat_map(|group| group["fields"].as_array().into_iter().flatten())
 }
 
+fn valid_camera_distance(value: &str) -> bool {
+    value.bytes().all(|c| c.is_ascii_digit())
+        && value.parse::<u8>().is_ok_and(|n| (75..=150).contains(&n))
+}
+
 fn valid(schema: &Value, field: &Value, value: &str) -> bool {
     match field["kind"].as_str() {
         Some("bool") => matches!(value, "0" | "1"),
+        Some("camera_distance") => valid_camera_distance(value),
         Some("volume") => value
             .parse::<f64>()
             .is_ok_and(|n| n.is_finite() && (0.0..=2.0).contains(&n)),
@@ -96,6 +102,12 @@ pub fn read(local: &Path) -> Result<Value> {
     }
     if values["resolution"] == "67%" {
         values["resolution"] = json!("75%");
+    }
+    if !values["camera_distance"]
+        .as_str()
+        .is_some_and(valid_camera_distance)
+    {
+        values.insert("camera_distance".into(), json!("100"));
     }
     schema["values"] = Value::Object(values);
     Ok(schema)
@@ -165,6 +177,30 @@ pub fn write(local: &Path, patch: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn camera_distance_accepts_custom_percentages_and_preserves_invalid_ini_on_read() {
+        let local =
+            std::env::temp_dir().join(format!("mk8-camera-distance-{}", std::process::id()));
+        let ini = local.join("user-no-mii/mk8d.ini");
+        let key = "camera_distance";
+        assert_eq!(read(&local).unwrap()["values"][key], "100");
+        for value in ["75", "117", "150"] {
+            write(&local, &json!({"camera_distance": value})).unwrap();
+            assert_eq!(read(&local).unwrap()["values"][key], value);
+        }
+        for value in ["74", "151", "117.5", "", "NaN", "100\nvolume = 1"] {
+            assert!(write(&local, &json!({"camera_distance": value})).is_err());
+            assert_eq!(fs::read_to_string(&ini).unwrap(), "camera_distance = 150\n");
+        }
+        let invalid = "camera_distance = 999\nvolume = 0.75\n";
+        fs::write(&ini, invalid).unwrap();
+        let values = read(&local).unwrap();
+        assert_eq!(values["values"][key], "100");
+        assert_eq!(values["values"]["volume"], "0.75");
+        assert_eq!(fs::read_to_string(&ini).unwrap(), invalid);
+        fs::remove_dir_all(local).unwrap();
+    }
 
     #[test]
     fn patches_shared_ini_preserving_unknown_fields_and_rejecting_invalid_values() {

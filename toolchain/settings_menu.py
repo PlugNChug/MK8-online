@@ -113,7 +113,38 @@ def prepare(runtime):
     # Windows runtime defaults to binary I/O; explicitly translate CRLF in user INIs.
     settings = runtime / 'settings.c'
     if settings.is_file():
+        header = runtime / 'settings.h'
+        fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    int camera_distance;
+} Settings;
+enum { MK8_CAMERA_DISTANCE_MIN = 75, MK8_CAMERA_DISTANCE_MAX = 150, MK8_CAMERA_DISTANCE_STOCK = 100 };
+int mk8_settings_camera_distance(void);
+void mk8_settings_set_camera_distance(int percent);
+bool mk8_settings_set_camera_distance_text(const char *text);''')
+        header.write_text(fields, encoding='utf-8')
         original = settings.read_text(encoding='utf-8')
+        original = replace(original, '    .volume = 1.0f,', '    .camera_distance = MK8_CAMERA_DISTANCE_STOCK,\n    .volume = 1.0f,')
+        original = replace(original, 'void settings_load(void) {', '''int mk8_settings_camera_distance(void) {
+    return __atomic_load_n(&g_settings.camera_distance, __ATOMIC_RELAXED);
+}
+void mk8_settings_set_camera_distance(int percent) {
+    if (percent >= MK8_CAMERA_DISTANCE_MIN && percent <= MK8_CAMERA_DISTANCE_MAX)
+        __atomic_store_n(&g_settings.camera_distance, percent, __ATOMIC_RELAXED);
+}
+bool mk8_settings_set_camera_distance_text(const char *text) {
+    if (*text < '0' || *text > '9') return false;
+    char *end;
+    long n = strtol(text, &end, 10);
+    if (end == text || end[strspn(end, " \\t\\r")] || n < MK8_CAMERA_DISTANCE_MIN || n > MK8_CAMERA_DISTANCE_MAX) return false;
+    mk8_settings_set_camera_distance((int)n);
+    return true;
+}
+
+void settings_load(void) {''')
+        original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "camera_distance")) {
+            if (!mk8_settings_set_camera_distance_text(val)) mk8_settings_set_camera_distance(MK8_CAMERA_DISTANCE_STOCK);
+        }
+        else if (!strcmp(key, "volume"))''')
+        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "camera_distance = %d\\n", mk8_settings_camera_distance());\n    fprintf(f, "volume =')
         original = replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")')
         original = '#include <SDL3/SDL_filesystem.h>\n#include <pthread.h>\n' + original
         original = replace(original, 'void settings_save(void) {', '''static pthread_mutex_t settings_write_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -138,8 +169,35 @@ bool mk8_settings_save_checked(void) { return settings_write(); }
 
 bool settings_ahead_fast''')
         settings.write_text(original, encoding='utf-8')
+    # The standard F1 overlay shares its keyboard and paste handling with the other editable rows.
+    signature = 'bool opt_text(const char *label, char *buf, size_t cap, const char *hint, const char *desc)'
+    rows = runtime / 'ui/option_rows.mm'
+    if rows.is_file():
+        header = rows.with_suffix('.h')
+        header.write_text(replace(header.read_text(encoding='utf-8'), signature, signature[:-1] + ', int *step = NULL)'), encoding='utf-8')
+        source = replace(rows.read_text(encoding='utf-8'), signature, signature[:-1] + ', int *step)')
+        marker = 'if (row(label, buf[0] ? buf : (hint ? hint : ""), false, desc) == 2) editing = id, focus = 2;'
+        source = replace(source, marker, '''int action = row(label, buf[0] ? buf : (hint ? hint : ""), false, desc, true, step != NULL);
+        if (action == 2) editing = id, focus = 2;
+        else if (step) *step = action;''')
+        rows.write_text(source, encoding='utf-8')
     path = runtime / 'ui/menu.mm'
     text = path.read_text(encoding='utf-8')
+    marker = '    bool fs = g_settings.fullscreen;'
+    text = replace(text, marker, '''    int distance = mk8_settings_camera_distance();
+    const char *distance_label = "Driving camera distance (%)";
+    static char distance_text[128];
+    if (!opt_text_editing(distance_label)) snprintf(distance_text, sizeof distance_text, "%d", distance);
+    int step = 0;
+    if (opt_text(distance_label, distance_text, sizeof distance_text, "75-150",
+                 "Solo forward and rear views. Use the arrows or enter 75-150. 100% is stock.", &step))
+        mk8_settings_set_camera_distance_text(distance_text);
+    if (step) {
+        int next = distance + 10 * step;
+        mk8_settings_set_camera_distance(next < MK8_CAMERA_DISTANCE_MIN ? MK8_CAMERA_DISTANCE_MIN :
+                                         next > MK8_CAMERA_DISTANCE_MAX ? MK8_CAMERA_DISTANCE_MAX : next);
+    }
+''' + marker)
     marker = '// ------------------------------------------------------------------ state shared with the main thread'
     own = (ROOT / 'runtime/mk8/ui/settings_entry.inc').read_text(encoding='utf-8')
     own += '\n' + (ROOT / 'runtime/mk8/ui/settings_controls.inc').read_text(encoding='utf-8')

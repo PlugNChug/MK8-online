@@ -52,6 +52,8 @@ static const Option options[]={
 #undef TOGGLE
 #undef CHOICE
 enum { VOLUME=11, SHADERS=9, JOYCONS=18, DEVICE=19, RESET=20, BINDING=21, OPTIONS=21, MAX_ROWS=40 };
+enum { CAMERA_DISTANCE = BINDING + 2 * BIND_KEY_COUNT };
+static const Option camera_distance={"Driving camera distance","Solo forward and rear. 100% is stock."};
 static const int bind_order[]={BIND_A,BIND_B,BIND_X,BIND_Y,BIND_L,BIND_R,BIND_ZL,BIND_ZR,BIND_PLUS,BIND_MINUS,
     BIND_UP,BIND_DOWN,BIND_LEFT,BIND_RIGHT,BIND_LSTICK,BIND_RSTICK,BIND_LS_UP,BIND_LS_DOWN,BIND_LS_LEFT,BIND_LS_RIGHT,
     BIND_RS_UP,BIND_RS_DOWN,BIND_RS_LEFT,BIND_RS_RIGHT};
@@ -128,10 +130,11 @@ static bool needs_restart(void) {
 }
 bool mk8_settings_values_request(int operation,int id,int value) {
     if(operation<SETTINGS_STEP || operation>SETTINGS_RESTART ||
-       ((operation==SETTINGS_STEP || operation==SETTINGS_SET || operation==SETTINGS_ACTIVATE) && (id<0 || id>=BINDING+2*BIND_KEY_COUNT))) return false;
-    if(operation==SETTINGS_SET && (id!=VOLUME || value<0 || value>200)) return false;
-    if(operation==SETTINGS_STEP && (id>=OPTIONS || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
-    if(operation==SETTINGS_ACTIVATE && id!=RESET && id<BINDING) return false;
+       ((operation==SETTINGS_STEP || operation==SETTINGS_SET || operation==SETTINGS_ACTIVATE) && (id<0 || id>CAMERA_DISTANCE))) return false;
+    if(operation==SETTINGS_SET && !(id==VOLUME && value>=0 && value<=200) &&
+       !(id==CAMERA_DISTANCE && value>=MK8_CAMERA_DISTANCE_MIN && value<=MK8_CAMERA_DISTANCE_MAX)) return false;
+    if(operation==SETTINGS_STEP && ((id>=OPTIONS && id!=CAMERA_DISTANCE) || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
+    if(operation==SETTINGS_ACTIVATE && id!=RESET && (id<BINDING || id==CAMERA_DISTANCE)) return false;
     bool detached=operation==SETTINGS_FINISH && value==SETTINGS_DETACHED;
     if((operation==SETTINGS_FINISH || operation==SETTINGS_RESTART) && (id || (value!=0 && value!=1 && !detached))) return false;
     if(operation==SETTINGS_ACTIVATE && id>=BINDING && (id-BINDING)/BIND_KEY_COUNT==BIND_DEV_PAD &&
@@ -163,6 +166,15 @@ static void apply(Request r) {
     }
     if(!opened) return;
     if(needs_main_menu(r.id) && !main_menu) return;
+    if(r.id==CAMERA_DISTANCE) {
+        int current=mk8_settings_camera_distance();
+        int next=r.operation==SETTINGS_SET ? r.value : current+10*r.value;
+        if(next<MK8_CAMERA_DISTANCE_MIN) next=MK8_CAMERA_DISTANCE_MIN;
+        if(next>MK8_CAMERA_DISTANCE_MAX) next=MK8_CAMERA_DISTANCE_MAX;
+        mk8_settings_set_camera_distance(next);
+        dirty|=next!=current;
+        return;
+    }
     if(r.id>=BINDING) {
         int dev=(r.id-BINDING)/BIND_KEY_COUNT, slot=(r.id-BINDING)%BIND_KEY_COUNT;
         if(r.operation==SETTINGS_ACTIVATE && slot<(dev==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)) bind_capture_begin(dev,slot);
@@ -213,12 +225,13 @@ void mk8_settings_values_sync(void) {
     int cd,cs,ms;
     capturing=bind_capture_active(&cd,&cs,&ms);
     Mk8Setting next[SETTINGS_CATEGORIES][MAX_ROWS]={0};
-    int sizes[]={11,4,6+(mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)};
+    int sizes[]={12,4,6+(mapping_device==BIND_DEV_PAD ? BIND_PAD_COUNT : BIND_KEY_COUNT)};
     int family=mapping_device==BIND_DEV_PAD ? bind_label_family() : 0;
     for(unsigned g=0;g<SETTINGS_CATEGORIES;g++) for(int row=0;row<sizes[g];row++) {
         Mk8Setting *v=&next[g][row];
         v->enabled=true;
         v->id=g==0 ? row : g==1 ? VOLUME+row : 15+row;
+        if(g==0 && row==11) v->id=CAMERA_DISTANCE;
         if(g==2 && row>=6) {
             int slot=bind_order[row-6]; v->id=BINDING+mapping_device*BIND_KEY_COUNT+slot; v->kind=SETTING_BINDING;
             snprintf(v->label,sizeof v->label,"%s",bind_input_name(slot));
@@ -227,7 +240,7 @@ void mk8_settings_values_sync(void) {
             snprintf(v->help,sizeof v->help,"Conflicting bindings swap positions.");
             continue;
         }
-        const Option *o=&options[v->id];
+        const Option *o=v->id==CAMERA_DISTANCE ? &camera_distance : &options[v->id];
         snprintf(v->label,sizeof v->label,"%s",o->label); snprintf(v->help,sizeof v->help,"%s",o->help);
         if(v->id==SHADERS) {
             AheadStatus a=shader_ahead_status(); v->kind=SETTING_INFO; v->enabled=false;
@@ -237,8 +250,10 @@ void mk8_settings_values_sync(void) {
             v->maximum=list.count-1; v->current=list.selected;
             snprintf(v->value,sizeof v->value,"%s",list.names[list.selected]);
             if (list.count>2) snprintf(v->help,sizeof v->help,"Reopen game to load a new provider.");
-        } else if(v->id==VOLUME) {
-            v->kind=SETTING_NUMBER; v->current=(int)lroundf(g_settings.volume*100); v->maximum=200;
+        } else if(v->id==VOLUME || v->id==CAMERA_DISTANCE) {
+            v->kind=SETTING_NUMBER;
+            if(v->id==VOLUME) { v->current=(int)lroundf(g_settings.volume*100); v->maximum=200; }
+            else { v->current=mk8_settings_camera_distance(); v->minimum=MK8_CAMERA_DISTANCE_MIN; v->maximum=MK8_CAMERA_DISTANCE_MAX; }
             snprintf(v->value,sizeof v->value,"%d%%",v->current);
         } else if(v->id==RESET) {
             v->kind=SETTING_RESET; snprintf(v->value,sizeof v->value,"Restore defaults");

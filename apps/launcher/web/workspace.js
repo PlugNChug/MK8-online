@@ -132,6 +132,7 @@
   const explanations = {
     theme: 'Muda a aparência do menu F1 dentro do jogo. O tema do launcher continua separado. As cores deste exemplo são ilustrativas.',
     aspect: 'Esticar deforma a imagem; Original 16:9 mantém barras. Ultrawide experimental mostra mais cenário sem deformar. Esta prévia usa uma tela 21:9.',
+    camera_distance: 'Em corridas solo, aumente o valor para afastar a câmera atrás do piloto. 100% mantém a distância original. Se o jogo já estava compilado, faça uma compilação completa para aplicar este ajuste.',
     fullscreen: 'Tela cheia ocupa o monitor; em janela, a moldura permanece visível. Durante o jogo, F11 ou Alt+Enter alterna esse modo.',
     show_fps: 'Exibe o contador de quadros sobre a imagem. O exemplo mostra a posição, sem apresentar uma medição de FPS.',
     show_memory: 'Exibe o indicador de memória sobre a imagem. Os valores reais aparecem durante a execução do jogo.',
@@ -151,6 +152,7 @@
   };
   const hints = {
     theme: 'Aparência do menu F1, dentro do jogo.', aspect: 'Como a imagem ocupa o monitor.', fullscreen: 'Também pode alternar com F11 ou Alt+Enter.',
+    camera_distance: 'De 75% a 150%. Use as setas para variar de 10 em 10 ou digite um valor.',
     show_fps: 'Contador sobre a imagem do jogo.', show_memory: 'Acompanhe o uso de memória durante a execução.',
     resolution: 'Equilíbrio entre detalhe e custo de renderização.', upscaler: 'FSR 3, FSR 4 e DLSS são experimentais.', antialias: 'Tratamento das bordas dos objetos.',
     frame_gen: 'Quadros intermediários para a apresentação.', skip_intro: 'Vá mais rapidamente para o menu inicial.', ahead_fast: 'Priorize a preparação antecipada dos shaders.',
@@ -164,7 +166,9 @@
       for (const input of group.querySelectorAll('[data-key]')) {
         if (input.dataset.configDecorated) continue;
         input.dataset.configDecorated = '1'; input.id = `config-field-${input.dataset.key}`;
-        const label = input.closest('label'); label.htmlFor = input.id; label.classList.add('config-option');
+        const label = input.labels[0];
+        label.htmlFor = input.id;
+        input.closest('.settings-grid > *').classList.add('config-option');
         if (input.dataset.key === 'language') { label.hidden = true; i18n.text(group.querySelector('h2'), 'Controles'); }
         const caption = label.querySelector('span'); caption.classList.add('config-option-name');
         const copy = document.createElement('span'); copy.className = 'config-option-copy'; copy.append(caption);
@@ -217,9 +221,9 @@
     const widePreview = ultrawide && !original;
     i18n.text(byId('config-tab-video').querySelector('small'), settingsDirty ? 'Alterações não salvas' : 'Imagem, áudio e comandos');
     byId('config-tab-video').classList.toggle('config-has-changes', settingsDirty);
-    const title = input.closest('label').querySelector('.config-option-name')?.textContent || focusKey;
+    const title = input.labels[0].querySelector('.config-option-name')?.textContent || focusKey;
     text('config-preview-title', title);
-    text('config-preview-value', input.type === 'checkbox' ? input.checked ? 'Ativado' : 'Desativado' : input.dataset.key === 'volume' ? `${input.value}%` : selectedText(focusKey));
+    text('config-preview-value', input.type === 'checkbox' ? input.checked ? 'Ativado' : 'Desativado' : input.type === 'number' ? `${input.value}%` : selectedText(focusKey));
     text('config-preview-description', focusKey === 'aspect' && ultrawide
       ? 'Ultrawide experimental: Contra o Relógio, GP e VS solo sem equipes, entre 16:9 e 32:9. Menus, câmeras sem suporte, outras proporções e geração de quadros usam 16:9. A forma da tinta ainda não foi validada. Salve para usar no próximo início.'
       : explanations[focusKey] || 'Associe o comando do jogo ao botão físico ou à tecla desejada. O mapeamento só é aplicado depois de salvar.');

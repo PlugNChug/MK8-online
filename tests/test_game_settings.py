@@ -32,6 +32,7 @@ int main(void) {
            g_settings.reverb, g_settings.movie_audio, g_settings.mute_in_background,
            g_settings.skip_intro, g_settings.show_memory, g_settings.ahead_fast,
            g_settings.prompts, g_settings.pads_from_p2);
+    printf("camera_distance=%d\n", mk8_settings_camera_distance());
     bind_settings_save(stdout);
     settings_save();
     return 0;
@@ -69,6 +70,12 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(baseline, run({}))
             self.assertEqual(baseline.splitlines()[0], "1.00 0 0 0 0 2 0 0")
             self.assertNotIn("bind_", baseline)
+            for value, expected in (("75", 75), ("117", 117), ("150", 150), ("", 100), ("74", 100),
+                                    ("151", 100), ("117x", 100), ("+117", 100), ("99.5", 100), ("999999999999", 100)):
+                with self.subTest(camera_distance=value):
+                    self.assertIn(f"camera_distance={expected}\n", run({"camera_distance": value}))
+                    saved = (folder / "mk8d.ini").read_text().splitlines()
+                    self.assertIn(f"camera_distance = {expected}", saved)
             for value, expected in (("unlocked", 0), ("original", 1), ("ultrawide", 2), ("unknown", 0)):
                 with self.subTest(aspect=value):
                     output = run(dict(defaults, aspect=value))

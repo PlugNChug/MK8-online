@@ -25,6 +25,12 @@
           ]
         },
         {
+          "key": "camera_distance",
+          "label": "Distância da câmera de pilotagem",
+          "default": "100",
+          "kind": "camera_distance"
+        },
+        {
           "key": "fullscreen",
           "label": "Tela cheia",
           "default": "0",

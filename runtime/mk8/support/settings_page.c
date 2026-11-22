@@ -58,7 +58,7 @@ static _Atomic bool active, back;
 static _Atomic uint64_t buttons, suppressed, fixed_buttons, raw_buttons;
 static _Atomic int wheel;
 static _Atomic bool editing;
-static int editing_id, edit_max;
+static int editing_id, edit_min, edit_max;
 static char number[4];
 static bool replace_number, invalid;
 static pthread_mutex_t key_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -488,7 +488,7 @@ static void settings_tips(Cpu *c) {
     else if(mk8_settings_values_capturing()) help="Waiting for a new binding...";
     if(help) { action_tips(c,help,NULL,0,""); return; }
     if(editing) {
-        snprintf(range,sizeof range,"Enter a value from 0 to %d.",edit_max);
+        snprintf(range,sizeof range,"Enter a value from %d to %d.",edit_min,edit_max);
         help=invalid ? range : tips.source==MK8_TIP_KEYBOARD ? "Type a value or use the arrow keys." : "Up/down: 1   Left/right: 10";
         action_tips(c,help,save,2,""); return;
     }
@@ -1158,7 +1158,7 @@ bool mk8_settings_page_key(int key) {
 
 static void begin_number(Mk8Setting row) {
     pthread_mutex_lock(&key_lock); key_count=0; overflow=false; pthread_mutex_unlock(&key_lock);
-    editing_id=row.id; edit_max=row.maximum;
+    editing_id=row.id; edit_min=row.minimum; edit_max=row.maximum;
     snprintf(number,sizeof number,"%d",row.current); replace_number=true; invalid=false; editing=true;
 }
 
@@ -1189,12 +1189,12 @@ static bool edit_number(uint64_t edge, bool cancel) {
     if (edge&((1ull<<14)|(1ull<<18))) step=10;
     if (edge&((1ull<<12)|(1ull<<16))) step=-10;
     if (step) {
-        int value=atoi(number)+step; value=value<0 ? 0 : value>edit_max ? edit_max : value;
+        int value=atoi(number)+step; value=value<edit_min ? edit_min : value>edit_max ? edit_max : value;
         snprintf(number,sizeof number,"%d",value); replace_number=true; invalid=false;
     }
     if (cancel) { editing=false; LOG("[mk8:settings] numeric edit cancelled\n"); }
     else if (commit) {
-        if (!*number || atoi(number)>edit_max || invalid) invalid=true;
+        if (!*number || atoi(number)<edit_min || atoi(number)>edit_max || invalid) invalid=true;
         else if(post(SETTINGS_SET,editing_id,atoi(number))) { editing=false; LOG("[mk8:settings] numeric value applied: %s\n",number); }
     }
     return count || edge || cancel;

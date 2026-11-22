@@ -14,6 +14,70 @@ from host import DEPS,prepare_host_sources
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(),'Native compiler required')
 class SettingsControlsTests(unittest.TestCase):
+    def test_fallback_camera_distance_steps_and_edits_exact_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            runtime=prepare_host_sources(ROOT/'upstream/smm2recomp/recomp',root/'host')
+            menu=(runtime/'ui/menu.mm').read_text(encoding='utf-8')
+            display=menu[menu.index('static void tab_display(void) {'):menu.index('static void tab_audio(void) {')]
+            start=display.index('    int distance = mk8_settings_camera_distance();')
+            draw=display[start:display.index('    bool fs = g_settings.fullscreen;',start)]
+            rows=(runtime/'ui/option_rows.mm').read_text(encoding='utf-8')
+            editor=rows[rows.index('static ImGuiID g_text_editing;'):rows.index('void opt_end(void)')]
+            settings=(runtime/'settings.c').read_text(encoding='utf-8')
+            start=settings.index('bool mk8_settings_set_camera_distance_text(')
+            parse=settings[start:settings.index('\n}',start)+2]
+            (root/'distance.cpp').write_text(r'''
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+using ImGuiID=unsigned;
+static int click, distance=100;
+static const char *typed;
+static bool cancel;
+struct Vec {float x;};
+namespace ImGui {
+ImGuiID GetID(const char*) {return 1;}
+void PushID(const char*) {} void PopID() {} Vec CalcTextSize(const char*) {return {};}
+struct Style {Vec FramePadding,ItemSpacing;}; Style GetStyle(){return {};}
+void SetNextItemWidth(float) {} void SetKeyboardFocusHere() {} void SameLine() {}
+bool IsItemActive() {return true;} bool IsItemFocused() {return true;}
+bool Button(const char*) {return false;} bool IsItemHovered() {return false;}
+}
+static const char *g_desc_focus;
+enum { ImGuiInputTextFlags_EnterReturnsTrue, MK8_CAMERA_DISTANCE_MIN=75, MK8_CAMERA_DISTANCE_MAX=150, MK8_CAMERA_DISTANCE_STOCK=100 };
+static int row(const char*,const char*,bool,const char*,bool=true,bool arrows=false) {
+    return arrows || click==2 ? click : 0;
+}
+static bool ui_input_text(const char*,char *buf,size_t cap,int,const char*,const char*) {
+    if(!typed) return false;
+    snprintf(buf,cap,"%s",typed); return true;
+}
+static bool ui_input_text_cancelled() {return cancel;}
+static bool osk_is_open() {return false;}
+static const char *menu_clipboard() {return "";}
+static int mk8_settings_camera_distance() {return distance;}
+static void mk8_settings_set_camera_distance(int n) {if(n>=75 && n<=150)distance=n;}
+''' + parse + '\n' + editor + '\nstatic void draw(){\n' + draw + r'''
+}
+static void frame(int step=0,const char *value=nullptr,bool abort=false) { click=step; typed=value; cancel=abort; draw(); }
+int main() {
+    frame(2); frame(0,"117"); assert(distance==117);
+    frame(-1); assert(distance==107); frame(1); assert(distance==117);
+    frame(2); frame(0,nullptr,true); assert(distance==117);
+    frame(2); frame(0,"151"); assert(distance==117);
+    frame(2); frame(0,"75"); frame(-1); assert(distance==75);
+    frame(2); frame(0,"147"); frame(1); assert(distance==150);
+}
+''',encoding='utf-8')
+            exe=root/'distance.exe'
+            result=subprocess.run([DEFAULT_COMPILER,'c++','-target','x86_64-windows-gnu','-O2','-UNDEBUG',
+                                   root/'distance.cpp','-o',exe],env=compiler_env(),capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            result=subprocess.run([exe],capture_output=True,text=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stderr)
+
     def test_hub_prototype_keeps_keyboard_and_controller_shortcuts(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
