@@ -21,6 +21,33 @@ def prepare(runtime):
             text = text.replace(old, new)
         path.write_text(text, encoding='utf-8')
 
+    # The filesystem rebuilds its RomFS index on a soft reboot. Re-read the corresponding
+    # preferences and overlay list at that same boundary, after guest threads have stopped.
+    adapt('mods.c', [
+        ('#include "rt.h"', '#include "rt.h"\n#include "hle.h"'),
+        ('    static pthread_once_t once = PTHREAD_ONCE_INIT;\n', ''),
+        ('static char g_overlay', '''static pthread_once_t once = PTHREAD_ONCE_INIT;
+RT_ON_RESET(overlay_reset) {
+    pthread_once_t fresh = PTHREAD_ONCE_INIT;
+    once = fresh;
+}
+static char g_overlay'''),
+        ('    snprintf(g_overlay', '    int length = snprintf(g_overlay'),
+        ('? "\\n" : "");', '? "\\n" : "");\n    if (length < 0 || (size_t)length >= sizeof g_overlay) FATAL("[mk8:mods] overlay paths too long\\n");'),
+    ])
+    adapt('usermods.c', [
+        ('#include "rt.h"', '#include "rt.h"\n#include "hle.h"'),
+        ('static char g_started[4096];', 'static char g_started[MAX_MODS * (sizeof g_e[0].m.id + 33) + 1];'),
+        ('static bool g_started_set;', '''static bool g_started_set;
+RT_ON_RESET(installed_mods_reset) {
+    pthread_mutex_lock(&g_lock);
+    g_scanned = false;
+    g_started_set = false;
+    pthread_mutex_unlock(&g_lock);
+}'''),
+        ('    if (g_n >= MAX_MODS || find_id(id) >= 0) return;', '''    if (!*id || *id == '#' || !strcmp(id, ".") || !strcmp(id, "..") || strpbrk(id, "/\\\\:=\\r\\n") ||
+        strlen(id) >= sizeof g_e[0].m.id || g_n >= MAX_MODS || find_id(id) >= 0) return;'''),
+    ])
     adapt('romfs_build.c', [
         ('#include "platform.h"', '#include "mk8_romfs_paths.h"\n#include "platform.h"'),
         ('static Dir *scan(', 'static void free_tree(Dir *);\n\nstatic Dir *scan('),

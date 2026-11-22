@@ -95,6 +95,7 @@ bool plat_exe_path(char *, size_t);
 #include <assert.h>
 #include <string.h>
 uint8_t memory[4096];
+bool mk8_manual_ui_layout(void) { return false; }
 static int constructions, openings, hovers;
 bool mk8_settings_top_event(uint64_t, uint64_t);
 uint64_t mk8_settings_navigation(uint64_t, uint64_t, uint64_t);

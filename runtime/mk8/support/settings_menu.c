@@ -10,8 +10,9 @@ void mk8_settings_top_forget(void) { pending = false; policy = 0; }
 RT_ON_RESET(settings_menu_reset) { mk8_settings_top_forget(); }
 
 bool mk8_settings_style_active(void) {
+    extern bool mk8_manual_ui_layout(void);
     const char *value = getenv("MK8_SETTINGS_EXPERIMENT");
-    return value && !strcmp(value, "1");
+    return value && !strcmp(value, "1") && !mk8_manual_ui_layout();
 }
 
 const char *mk8_settings_romfs_overlay(void) {
