@@ -217,6 +217,12 @@ As medições excluem as janelas de captura e não garantem 60 FPS em toda cena 
 
 Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Na `fix-chore`, incluem também `dlc.log` após uma tentativa de importação do DLC. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
 
+## Instalar um mod de RomFS
+
+Para substituir arquivos no MK8 Deluxe 4.0.1, coloque os arquivos extraídos do mod em `<dados>/user-no-mii/mods/<nome do mod>/romfs/`, mantendo os mesmos caminhos do RomFS do jogo. No jogo, abra **F1 → Configurações → Mods**, abra a lista de mods instalados em **Show → Installed**, selecione o mod, ative-o e reinicie o jogo. Para voltar aos arquivos originais, desative o mod e reinicie. Esse recurso carrega apenas arquivos de RomFS. Patches de ExeFS e plugins executáveis exigem suporte separado. Para o CTGP Deluxe, use o importador descrito abaixo.
+
+O Nextendo inicia com os mods de RomFS desativados para a sessão. Nas salas Steam, a verificação abrange o DLC e o pacote CTGP; os arquivos de mods instalados manualmente não são comparados entre os jogadores.
+
 ## Pacote de pistas CTGP Deluxe (opcional, experimental)
 
 O CTGP Deluxe 1.1.1 foi feito para o MK8 3.0.3 (32 bits). A 0.3.0 adapta seus recursos de pistas ao MK8 4.0.1

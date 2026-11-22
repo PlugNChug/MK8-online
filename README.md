@@ -229,6 +229,12 @@ These exclude capture windows and do not guarantee 60 FPS in every scene or on o
 
 In **Support → Create report**, create a diagnostic ZIP and attach it to an [issue](https://github.com/Vnnc1/MK8-online/issues), with your CPU/GPU, launcher version, what you did and what happened. For multiplayer, attach reports from **both** PCs. In `fix-chore`, reports also include `dlc.log` after a DLC import attempt. Reports include game, build and tool logs; personal paths and account names are redacted, and saves and keys are excluded. Review attachments before sharing. Never post ROMs, console keys or private files.
 
+## Install a RomFS mod
+
+For a file replacement compatible with MK8 Deluxe 4.0.1, put its extracted files under `<data>/user-no-mii/mods/<mod name>/romfs/`, keeping the same paths as in the game's RomFS. In the game, open **F1 → Settings → Mods**, switch **Show** to **Installed**, select the mod, enable it, then close and restart the game. To restore the original files, turn the mod off and restart again. This loads RomFS assets only. ExeFS patches and executable plugins require separate support. Use the dedicated importer below for CTGP Deluxe.
+
+Nextendo starts with installed RomFS mods disabled for that session. Steam room checks cover the DLC and CTGP pack; they do not compare manually installed mod files between players.
+
 ## CTGP Deluxe course pack (optional, experimental)
 
 CTGP Deluxe 1.1.1 targets MK8 3.0.3 (32-bit). Version 0.3.0 adapts its course resources to MK8 4.0.1 (64-bit),

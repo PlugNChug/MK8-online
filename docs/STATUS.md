@@ -1,5 +1,11 @@
 # Estado técnico — 20/11/2026
 
+## Mods de RomFS instalados pelo jogador (#103)
+
+No executável oficial 0.5.0, o mod de teste estava ativo, mas a opção do menu principal ainda dizia **Single Player**. Na compilação corrigida, o menu exibiu **Single Player → MOD ACTIVE → Single Player** em três processos consecutivos. O teste ativou e desativou o mod pelo próprio menu F1, usou a ação de reinício e confirmou os valores 1 e 0 gravados em `mods.ini`. Os 51 hashes dos arquivos protegidos permaneceram iguais.
+
+Na base 0.5.0, ativar um mod no menu gravava a preferência em `mods/mods.ini`, mas o jogo continuava lendo o arquivo original. O runtime agora inclui os diretórios `romfs` dos mods ativos na leitura dos arquivos do jogo. A regressão usa arquivos de teste próprios para conferir o conteúdo lido após ativar, desativar e reiniciar, a prioridade dos mods e a inclusão de arquivos novos. Quando um mod substitui o layout do menu, os controles nativos que dependem do layout gerado respeitam essa substituição. O Nextendo preserva a sessão sem esses mods.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
