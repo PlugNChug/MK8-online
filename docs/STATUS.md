@@ -343,6 +343,253 @@ A preparação de produção recompilou 228 unidades do host, verificou 484 obje
 
 Na build combinada anterior (`3772c86`), o teste físico confirmou que o analógico esquerdo e o botão A do Joy-Con direito voltaram a controlar o jogador 1 após reconectar apenas o direito. Dois laptops, com dois jogadores no anfitrião e um no convidado, confirmaram o aviso de F1 durante a corrida em tela dividida e a abertura das configurações no convidado. A entrada direta e a reconexão à sala Steam daquela build pertencem a outras mudanças. O teste de quatro jogadores com controles simulados passou pela seleção de personagens, peças, regras de VS e itens personalizados até a escolha da pista. A combinação de quatro Joy-Con físicos continua sem teste.
 
+## Auditoria do PR #83 — 20/11/2026
+
+- A primeira preparação passou pelo launcher do tarball com dados isolados. Ferramentas,
+  importação 4.0.1, pins do guest, compilação de 483 unidades do jogo e link de 229 unidades
+  do host concluíram. Os hooks de ultrawide, HUD, menu nativo e copas passaram em conjunto
+  com os pins existentes. Entradas, chaves, guest gerado e capturas continuam locais.
+- Na Intel Iris Xe (ADL GT2, Mesa 26.3.1, Vulkan 1.4.363), a sessão a 1280×720
+  mostrou o kart e a pista pretos com o limite de espera de shaders. A pista tinha
+  luminância média de 0,018 no quadro 3214. A mesma configuração com espera completa
+  voltou a desenhar a pista. O runtime agora usa espera completa por padrão nas iGPUs Intel
+  em Linux e aceita `MK8_SHADER_WAIT_MS` para diagnóstico. Após recompilar só o host,
+  o teste com o padrão chegou ao quadro 6200 e saiu com código 0. A pista estava
+  visível nos quadros 3326, 4763 e 6200. Ainda há pausas de compilação no primeiro uso.
+- `cargo fmt` e Clippy passaram. A suíte Rust registrou 116 testes aprovados e 1 ignorado.
+  A suíte Python e nativa registrou 96 aprovados e 10 skips. As fixtures exercitaram a
+  reutilização dos slots FSR 4, a atualização da profundidade, a restauração de layouts
+  e a ordem dos presents DLSS-G. O loader e o provedor FSR 4 compilaram com headers MIT.
+- Oito testes no Chromium passaram. O launcher abre em inglês na primeira execução e
+  respeita o idioma salvo. O fluxo gerenciado mostra os termos verificados da AMD antes
+  de oferecer o download. O caminho manual fica em opções avançadas. A verificação local
+  leu o texto oficial e conferiu o bloqueio anterior ao aceite.
+- O tarball e o AppImage passaram na inicialização e no teste do importador. O updater
+  do tarball ativou e reverteu um pacote em modo headless, preservando a porta solicitada
+  e os dados. O [CI do PR #83](https://github.com/Vnnc1/MK8-online/actions/runs/44830833515)
+  passou no commit `b8fd1e8`: o Windows rodou fmt, Clippy e testes Rust, abriu o ZIP
+  portátil e conferiu a chave do host extraída; o Linux repetiu os testes nativos e o
+  empacotamento do tarball/AppImage com o updater headless. O run anterior em `9cc9441`
+  falhou no Clippy do Windows porque o `cfg` de `publish_payload` tinha perdido `windows`
+  e `fsr4_dispatch_supported` era só Linux; `b8fd1e8` corrigiu os dois.
+
+`gameplay_verified` permanece falso. Áudio, controle, reinício/save, qualidade em RDNA 4
+e RTX e multiplayer entre duas máquinas exigem qualificação própria.
+
+## Corrida in-engine na RTX 5080 — 20/11/2026
+
+O runtime e o jogo atuais (`4fdd9f8`, guest gerado de novo com o fix `4318c07`) rodaram
+nativamente em Windows 11 na RTX 5080 (driver 32.0.16.2101, Vulkan 1.4.357), em sessão SSH
+(session 0), sem Wine. O boot simples renderizou Mario Kart Stadium a 1280x720 e saiu com
+código 0. FSR 3.1.6 da DLL assinada da AMD ativou em 1920x1080→2560x1440 (`provider 3.1.6`,
+`upscale active`, `cpu dispatch 0.02 ms`), também com código 0. DLSS SR com
+`nvngx_dlss.dll` (58 MB) passou por `SuperSampling.Available=1`, criação e avaliação
+(1920x1080→2560x1440). Com `MK8_FSR4=1`/`MK8_FSR4_CAPTURE=1` recebeu profundidade
+capturada e motion vetores de câmera; o jitter Halton medido foi não nulo
+(0,125–2,667). DLSS-G
+(`MK8_DLSS_FG=1`, `nvngx_dlssg.dll`) inicialmente morria com `c0000005` em
+`nvoglv64.dll` ao encadear `VkSwapchainLatencyCreateInfoNV`; um harness mínimo de
+swapchain não reproduziu a falha em 21 variantes. O workaround em
+`toolchain/dlss_fg.py` pula essa cadeia por padrão (`MK8_DLSS_FG_LATENCY_CHAIN=1`
+reativa), mantém `VK_NV_low_latency2`/`vkSetLatencySleepModeNV` e fez o DLSS-G
+iniciar (`[dlss_fg] active`), capturar view/projection e profundidade sem
+`MK8_FSR4`, avaliar (`EvaluateFeature` sucesso, quadro 29) e apresentar o par
+real+interpolado (`pair present`) em 1920x1080, com código 0. Os hooks opcionais
+de ultrawide/settings do guest foram
+pulados porque seus hashes fixados precedem `4318c07`. Comandos, logs, matriz de
+variantes e o que falta em [WINDOWS-INGAME-RTX.md](WINDOWS-INGAME-RTX.md).
+`gameplay_verified` continua falso.
+
+## Mesa 27: corridas voltam a funcionar (PS-epilog do RADV) — 20/11/2026
+
+O crash ao entrar na corrida no Mesa 27.0.0-devel foi localizado: o RADV só inicializa o cache de **PS-epilog** (`device->ps_epilogs`) quando alguma feature de `VK_EXT_extended_dynamic_state3` está ligada; este runtime usa `VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE` e o shader de corrida escreve profundidade, então o primeiro draw desse tipo chama `cache->ops` nulo em `radv_shader.c:3426`. `RADV_DEBUG=nocache` continua quebrando no mesmo ponto, então não é o cache de pipelines. O Mesa 26.2.6 não tem o problema.
+
+**Correção (`ec4cded`):** `toolchain/radv_epilog.py` habilita `VK_EXT_extended_dynamic_state3` quando anunciada e liga `extendedDynamicState3ColorBlendEquation` quando suportada; o runtime não usa blend dinâmico, então o estado dos pipelines não muda — a feature só força a inicialização do cache de PS-epilog. Sem a extensão/feature o dispositivo fica como antes, com um aviso. `tests.test_radv_epilog` 3/3.
+
+**Corridas verificadas na RX 9070 XT (Mesa 27):** FG desligado 2560x1440, FSR 3.1.7 1280x720 e 1920x1080, e **MLFI 4.0.2 1280x720** com 195 pipelines, 1.910 despachos/quadro (191 modelo + 1 compose + preparações) e **1.800 frames gerados**, todas com “1st Race”, exit 0 e capturas (`fgoff-fix-02400.png`, `fsr3-720b-02400.png`, `fsr3-1080-02400.png`, `mlfi-720b-02400.png`). MLFI a 1080p não é possível: o provider implementa só o layout 1280x720 capturado. As capturas são dos frames reais do jogo, não dos frames gerados; ghosting/detalhe/latência dos gerados continuam não verificados (a composição do MLFI é a nossa reconstrução, não a etapa final da AMD).
+
+## FSR 3 FG, DLSS-G a 2560 e XeSS in-engine na RTX 5080 — 20/11/2026
+
+**FSR 3.1.6 frame generation com o DLL assinado da AMD** funciona nativamente em Windows/NVIDIA: `[fsr_fg] swapchain provider 3.1.7`, `frame-generation effect provider 3.1.6`, `active: FFX frame-interpolation swapchain 1920x1080`, profundidade capturada e MVs de câmera, `first interpolated frame recorded`, exit 0, sem GPUVM/device-lost (`fsrfg316-05000.png`). O mesmo caminho com o DLL `4.0.2`/MLFI continua sem provider na NVIDIA, como já registrado.
+
+**DLSS-G a 2560x1440** agora funciona: quando a profundidade capturada é menor que o display mas tem o mesmo aspecto (1152x648 → 2560x1440), `fsr.cpp` faz blit para uma imagem R32F no tamanho do display, usada só nas entradas do FG (`4acc57d`). Log: `depth resampled 1152x648 -> 2560x1440`, `pair present: real image 0 + interpolated image 1`, exit 0 (`dlssfg1152-05000.png`). O caminho 1920x1080 de tamanho igual continua passando.
+
+**XeSS in-engine** está parcial: o hook de dispositivo funciona (`VK_EXT_mutable_descriptor_type` + feature), o contexto 1920x1080→2560x1440 é criado e `upscale active` é registrado, mas `xessVKExecute` devolve -4 com a mensagem do DLL `velocityTexture is invalid` para uma view 1920x1080 `R16G16_SFLOAT` não nula, com MVs de câmera. O fallback renderiza e o processo sai 0 (`xess2560-05000.png`). A diferença em relação ao harness (que executa no mesmo DLL/GPU) está em investigação; o provider reporta 2.0.2.
+
+O pacote Windows portátil precisa ser reconstruído com o host que tem o resample (`99c88afd…`) para incluir o DLSS-G 2560; reconstrução em andamento.
+
+## Pacote Windows portátil e hashes dos patches opcionais — 20/11/2026
+
+Os hashes fixados dos patches guest opcionais (`ultrawide`, `ultrawide_hud`, `settings_menu`) foram atualizados para as unidades geradas após a correção do recompilador (`4318c07`): `main_077.c` `d4f3917c…`, `main_164.c` `6794319a…`, `main_114.c` `bea4142a…`, `main_113.c` `ab615528…`, `main_082.c` `bcacfa65…`, `main_115.c` `02f16954…`, `main_100.c` `3134491b…`, `main_191.c` `2ae69dad…`; `tests.test_optional_guest_patches` 3/3. O build Windows passou a rodar **sem** `MK8_SKIP_OPTIONAL_GUEST_PATCHES=1` (483 unidades, hooks `mk8_ultrawide_*`/`mk8_settings_*` presentes), e o Linux também (483 unidades, `mk8dgame.so` 159.341.232 bytes).
+
+`scripts/package-windows-portable.py` produz um zip portátil (110.717.508 bytes, SHA-256 `5e02d0d14bd1e4019f9144998d1686121c31d70e69175f76628a01a1800240a2`) com `Launcher.exe` (25.603.047), `mk8drecomp.exe` (4.527.104), `mk8dgame.dll` + code DLLs, SDL3, loader Vulkan, shaderc, FFmpeg e dependências (110 arquivos), mais o `launcher-source.zip` com as fontes de runtime/FSR/DLSS/XeSS e geradores; nenhum binário AMD/NVIDIA. Validação na RTX 5080: página headless com 40.097 bytes, gate FSR `not-rdna4` (3.1.6 salva 200, 4.1.2 400) e boot empacotado a 1920x1080 com saída 0, 60 fps e corrida renderizada (`package2-05000.png`). Um setup MSVC/WebView2 não foi gerado neste host; 1280x720 com a árvore nova não é reivindicado (o `mk8d.ini` de resolução difere).
+
+## FSR nativo em Windows com RTX 5080: 3.1.6/2.3.4 executam, 4.x não é oferecido — 20/11/2026
+
+As DLLs assinadas do SDK 2.4.0 (upscaler `4a7e895a…dab7`, framegeneration `d002dabf…98b4`) foram executadas nativamente em Windows 10, sem Wine, numa NVIDIA RTX 5080 (driver 621.01, Vulkan 1.4.357), com os probes de `tools/windows-fsr/` compilados por mingw-w64 `-static` (fontes compartilhadas com `tools/fg-linux-upscaler` e `tools/mlfi-capture`).
+
+- Upscaler: `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`) e **2.3.4** (`0xf5a5ca1e00803004`); **4.1.2 não é oferecido nessa GPU**. Os dois listados criam, disparam e destroem contexto em 1280x720→2560x1440 e 1920x1080→2560x1440 (`rc=0`; 14.712.960 e 14.711.840 de 14.745.600 bytes não nulos, saída variada). Forçar o id 4.1.2 `0xf5a5ca1e01001002`, presente na DLL, devolve `NO_PROVIDER` (rc 4), sem mensagem nem com `ffxConfigure(GLOBALDEBUG)` verbose.
+- Frame generation: a DLL só anuncia **3.1.6** (`0xf600000000c01006`); **4.0.2 (MLFI) não é oferecido**. O FSR 3.1.6 cria e roda 3 quadros em 1280x720: 18 pipelines, 97 despachos (3 prepare + 94 framegen), 0 substituídos, todos os `configure/prepare/framegen/submit=0`, sem device lost. Forçar o id MLFI `0xf600000001000002` devolve `ffxCreateContext=4` (`NO_PROVIDER`), contexto nulo, 0 pipelines e 0 despachos.
+- A documentação de amostras do SDK diz que a lista é preenchida por uma query e que "the entries available depend on the installed driver", e o MLFI exige RX 9000 ou superior; a ausência em NVIDIA é o gate documentado de dispositivo/driver, não falha do probe. Nenhum `GPUVM fault`, `VK_ERROR_DEVICE_LOST` ou erro de validação foi registrado (a máquina não tem a camada de validação Khronos instalada).
+- Comandos, códigos de saída e hashes em `tools/windows-fsr/README.md`; PNGs e logs em `$HOME/.cache/mk8online/win-rtx/evidence/` (fora do repositório). Nenhum binário ou asset da AMD foi commitado. `gameplay_verified` continua falso.
+
+## Frame generation FSR 3 no jogo: caminho validado e gate removido — 20/11/2026
+
+O provider construído a partir do SDK (`~/.cache/mk8online/fsr-fix-install/libamd_fidelityfx_framegeneration_vk.so`, 852.280 bytes, SHA-256 `786a32c4bd66128c3b8c09c998ed888a2b856d02234c359cd4892e8ed37a7432`) passou o fixture headless (6 presents, 0 erros de validação) e o harness de 120 quadros (240 presents, 120 gerados, `validation=clean warnings=0`) e foi executado no jogo com um runtime recompilado desta árvore em `local/qualification/fsr-fg-2026-11-20/` (raiz nova, imports e cache de objetos por hard link; exe SHA-256 `c798ea6d04896e04e34d14012d890185cdd073d9974b6ce5432e8903bec72934`). O `device.c` construído contém as features ligadas por `toolchain/fsr_fg.py` quando FG está ativo: `shaderStorageImageWriteWithoutFormat`, `shaderStorageImageReadWithoutFormat` e `VK_KHR_compute_shader_derivatives`/`computeDerivativeGroupLinear`.
+
+Execução: RADV 26.2.6 (JSON do RADV estável), 2560×1440, cópia privada dos dados, `MK8_FSR_FG=fsr3` com o provider e o gate temporário então exigido. O roteiro passou pelo título → menu → seleção de kart → “Start Grand Prix?” → corrida em Mario Kart Stadium; foram 3.400 quadros, saída 0. Linhas do caminho FG: `[fsr_fg] active: FFX frame-interpolation swapchain 2560x1440 format 44 (present family 1)` e `[fsr_fg] first interpolated frame recorded (frameID 0, 2560x1440)`. Não há `GPUVM fault`, `VK_ERROR_DEVICE_LOST`, `SyncWait`, `FATAL` nem erro de validação no log, e a ponte não se desativou depois de ativar. Capturas: `local/qualification/fsr-fg-2026-11-20/fgin1-00200.png` (título), `-00840.png` (menu), `-01480.png` (seleção), `-02120.png` (“Start Grand Prix?”), `-02760.png` (largada) e `-03400.png` (corrida, volta 1/3, 2º, 5 moedas).
+
+**Profundidade e câmera reais (correção `b04c36f`):** o log acima mostrou que a captura e o scan da matriz já disparavam (`[fsr] view/proj captured in main draw`, `[fsr] capture scene depth 2304x1296`), mas a captura estava no tamanho do passe (2304×1296) e `mk8_fsr_fg_inputs` exige o tamanho da swapchain (2560×1440): a profundidade era rejeitada e o compute de motion vectors, que depende de `depth.real`, era pulado; o log da câmera era único e saía antes do primeiro draw qualificado. A correção captura a profundidade no tamanho apresentado só com FG (mesma proporção), mapeia `depth_copy.frag` pelo tamanho de destino, inclui `COLOR_ATTACHMENT_WRITE` na barreira e registra a câmera quando `g_fsr_vp_valid` muda. Antes: `depth source: neutral`, `motion vectors are zeros`, `camera default`. Depois (`fgin3`, `MK8_FSR_FG=fsr3` sozinho, exe SHA-256 `5b44287bef213245ac6078c639f92cd6a7e19432c343fa947434843b0bb5c9c1`): `[fsr] capture scene depth 2304x1296 fmt 126 (resampled to the presented size)`, `[fsr_fg] depth source: captured scene depth 2560x1440 fmt 100`, `[fsr_fg] motion vectors: camera-derived` e `[fsr_fg] camera from the captured view matrix`. Foram 3.400 quadros, saída 0, sem `GPUVM`, device lost, `SyncWait`, `FATAL` ou erro de validação; capturas `fgin3-00200.png` … `fgin3-03400.png` (a última na corrida, volta 1/3). Uma primeira tentativa (`fgin2`, antes das correções de UV/barreira) abortou uma vez no quadro 2579 com `GPU did not finish submission 6084 within 10 s` e `FATAL: conditional occlusion report did not resolve` (saída -6, sem GPUVM); a execução corrigida passou pelo mesmo ponto. Não está estabelecido se o aborto veio do mapeamento/barreira ou da contenção do host; uma execução limpa não é garantia de estabilidade.
+
+**Validação Vulkan no jogo (20/11/2026):** `b464e94` passou as chamadas FFX para `FfxApiResourceUsage`/`FfxApiResourceState` (leitura para cor/profundidade/MVs, UAV para a saída) e estendeu `VK_KHR_compute_shader_derivatives`/`computeDerivativeGroupLinear` ao `MK8_FSR4`, porque os shaders SPD do upscaler 3.1 também declaram a derivada; a extensão continua condicionada a FSR/FG. Com os estados corretos o provider deixa cor/profundidade em layout de leitura, então `fsr.cpp` os devolve a `GENERAL` após o dispatch. `db4c239` acrescenta o tamanho de pool `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` usado pelo compute de motion vectors. Com `LARECOMP_VK_VALIDATION=1`, o upscaler 3.1.6 local (`fsr316val4`, 300 quadros) e o caminho FG (`fgval2`, 600 quadros) registraram **0 Validation Error, 0 Validation Warning e 0 VUID**; capturas `fsr316val4-00300.png` e `fgval2-00600.png`. As duas execuções com validação abortam no encerramento depois da captura (sinal 6); as execuções FG sem validação saem com 0. O aborto de encerramento é um problema separado, não um erro de validação, e não é declarado corrigido.
+
+Limites: as capturas são dos quadros reais de renderização, não dos quadros gerados pelo provider; a linha da câmera prova que o scan casou e que `run_mv` rodou sobre a profundidade real, mas não valida numericamente a matriz contra a câmera do jogo (a primeira matriz registrada é quase identidade e draws seguintes a substituem). Qualidade da imagem interpolada, pacing/latência, 120 Hz, combinação com o upscaler e corrida completa/reinício/save continuam não verificados; `gameplay_verified` permanece falso. O gate `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER` foi removido no commit `54613fa`: `MK8_FSR_FG=fsr3` basta, mantendo a checagem exata de 3.1.7. O relatório completo está em `local/qualification/fsr-fg-in-game-2026-11-20.md`.
+
+## Pacotes Linux, runtime atual e guarda FSR — 20/11/2026
+
+Os pacotes Linux foram reconstruídos em Ubuntu 24.04 (`mk8-linux-package:24.04`) a partir de uma cópia limpa de `da9af1f`, equivalente em código empacotado ao HEAD `b115151` (`git diff` vazio em `runtime`, `toolchain`, `games`, `scripts`, `docs/licenses`, `apps` e `Cargo.*`). O payload agora inclui `runtime/mk8/graphics/fsr.cpp` e os headers MIT FFX, que `toolchain/host.py` compila incondicionalmente; antes o launcher iniciava, mas o primeiro *Build the game* falharia ao ligar `mk8_fsr4_upscale`. `scripts/package_guard.py` bloqueia bibliotecas do provider AMD (`libamd_fidelityfx_*`/`amd_fidelityfx_*`), `fsr4-assets/`, `fg_blobs`/SPIR-V de FG e qualquer `.so` que exporte `ffxCreateContext`; a checagem roda antes de gerar os artefatos e o smoke audita o payload extraído. Artefatos: `MK8-online-0.3.0-linux-x86_64.tar.gz`, 42.714.915 bytes, SHA-256 `2923ab32664c9234024be8e0fee0e4c70639ef75d33626c6b0771b1a33a47220`; `MK8-online-0.3.0-linux-x86_64.AppImage`, 43.248.120 bytes, SHA-256 `04608358a015ec0de8c65699722666e0889566ce2f5362b6047075273a321218`. `scripts/smoke-linux-packages.py` passou nos dois (startup e extrator .NET embarcado); o AppImage também abriu diretamente por FUSE. O runtime foi recompilado de `da9af1f` em `local/qualification/builds/<identidade>/host-packaging-2026-11-20c` (4.652.792 bytes, SHA-256 `168a0ce3195c5f158bee2c825eced841b8641f97a3c9281c9328fcd9ac1e775d`), com E2 de present/submit, acquire limitado por `MK8_ACQUIRE_MS`, Yaz0 nativo e `MK8_OCCL_STALE`; sem `MK8_SKIP_EMPTY`. Nenhuma corrida nem medição de desempenho foi feita; `gameplay_verified` permanece falso. O target Windows compila (`cargo check --target x86_64-pc-windows-gnu`), mas o setup Windows não foi gerado neste host.
+
+## Merge do upstream 0.4.0 no ramo FSR — 20/11/2026
+
+O `origin/master` (78 commits, release 0.4.0, Nextendo Online Play, Steam/controles, reestruturação do launcher/instalador, patches `compact_commands`/`output_aspect`/`depth_bias`/`snapshot_memory`/`depth_clamp`/`ultrawide`/`settings_menu`) foi integrado em `feature/fsr` (`1c2f904`), com a branch de segurança `backup/pre-upstream-merge-2026-11-20`. Os 19 arquivos em conflito foram resolvidos combinando os dois lados: a cadeia de 66 prepares mantém os patches novos do upstream e os nossos (FSR, FG, DLSS, gmem/view batch etc.); o shim Vulkan continua só no Windows; o launcher 0.4.0 (startup/portable/launcher_app, instalador, preflight Vulkan) coexiste com a página FSR, rotas, env e settings; `en.json`/`es.json` têm paridade (1.351 chaves). Verificação: launcher 59 testes, `mk8-session` 17, 66 testes Python; Clippy Linux e `x86_64-pc-windows-gnu` limpos.
+
+Dois conflitos **semânticos** que o merge textual não pegava foram corrigidos: o teste social do Nextendo usava `Sleep` do Windows num arquivo que este ramo tornou portátil (`362e150`, agora `SDL_Delay`); e `steam_gamepads.c` (GameInput/`windows.h`) é só Windows, mas o device gerado chama suas funções em toda plataforma — o Linux agora compila `support/steam_gamepads_linux.c` (`mk8_init_window_input` → true, `mk8_poll_steam_gamepads` → no-op, SDL cuida dos controles) e o `host.py` exclui o arquivo Windows (`60ed48d`). Auditoria de todas as fontes novas do upstream em `runtime/mk8` não achou outro header Windows sem guarda.
+
+O runtime integrado compilou **230/230** unidades (4.848.192 bytes) e rodou no jogo com o upscaler FSR 4.1.2 nativo: `[fsr] provider FSR 4.1.2`, `present 1920x1080 -> 2560x1440`, 1.125 quadros, exit 0, sem faltas; captura `local/qualification/fsr-fg-2026-11-20/merged-4.1.2-00900.png`. Os pacotes serão reconstruídos neste HEAD.
+
+## Pacotes finais e payload FSR — 20/11/2026
+
+Os pacotes foram reconstruídos no HEAD `ed468b1` com o runtime de `08fa336` (4.699.280 bytes, sha256 `dab170c0…5fbb`). Um defeito real de empacotamento foi corrigido (`ed468b1`): o `launcher-source.zip` levava `runtime/toolchain/games/scripts`, mas não `tools/build_fg_provider.py`, `tools/build_upscaler_provider.py`, os geradores de blobs, o `fg-linux*` nem `runtime/mk8/graphics/fsr_fg.cpp`/`dlss.cpp` — uma instalação limpa não conseguiria construir o provider nem ligar o runtime. Agora o payload leva todo o overlay `runtime/mk8/**/*.cpp|*.h` e os 20 arquivos de `tools/fg-linux*`; 1.013 entradas verificadas por asserção, sem artefato AMD (os 14 `.so` são do extrator .NET e nenhum exporta `ffxCreateContext`).
+
+- `MK8-online-0.4.0-linux-x86_64.tar.gz`: 44.319.388 bytes, SHA-256 `28392d13c2fd4305453ee11abb359cbee604442ae4e0d9d7211afc8b0067bbab`.
+- `MK8-online-0.4.0-linux-x86_64.AppImage`: 44.878.328 bytes, SHA-256 `0a5f803fb6dd2f3b10c20b98c03407e8fdaacc00f3a7ef0980b3cd584d95ab31`.
+- Payload `launcher-source.zip`: 39.803.398 bytes, SHA-256 `61351313cd0af057407d9a0680ac5eb1c04a9d21f66b19f95b7b8b5489038388`, 1.200 entradas (inclui `toolchain/xess.py`, `toolchain/radv_epilog.py`, `scripts/package-windows-portable.py` e o resample de profundidade no `fsr.cpp`) (scripts de build, 133 arquivos de `tools/fsr4-linux`, 21 de `fg-linux*`, 618 do upstream pinado, overlay do runtime incluindo `dlss.cpp`/`steam_gamepads_linux.c`).
+- Todos os suites passam com os providers validados: `test_fsr_fg` 9/9, `test_fg_harness` 1/1, `test_fg_upscaler` 7/7, `test_fsr4_provider` 11/11, `test_dlss` 18/18, `test_xess` 12 + Wine execute, `test_mlfi_provider` 5/5, pipeline 10/10, native cache 7/7, guard 5/5, `test_fsr` 5/5; guarda e smoke passam nos dois artefatos.
+- Payload `launcher-source.zip`: 39.693.614 bytes, SHA-256 `9982289cffc986e7bc582e590b4ede9ecd14f87c8e984260d0c2f0391a50a6a6`, com 1.151 entradas: os seis scripts de build, 133 arquivos de `tools/fsr4-linux`, o overlay de runtime (fsr.cpp/fsr_fg/dlss/xess/yaz0) e nenhum artefato AMD.
+- Guarda e smoke passaram nos dois; `cargo check --target x86_64-pc-windows-gnu` continua OK. Cópias em `local/qualification/packages-2026-11-20-8974efd/`. `tests.test_fsr_fg` e `tests.test_fg_harness` passam com o provider validado (`local/fg-provider`, sha256 `786a32c4…`); a falha registrada no relatório de empacotamento veio de um provider antigo em cache (`fsr-build3`, sem a correção de CBVs), não do código.
+
+## DLSS 4.5/5 e XeSS — pesquisa e downloader — 20/11/2026
+
+Pesquisa em [DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md), sem integrar código de fornecedor no runtime. O DLSS tem caminho Linux nativo oficial: o SDK NGX `v310.9.16` publica `libnvidia-ngx-dlss.so`, `-dlssd.so` e `-dlssg.so` (ELF x86-64, exportam `NVSDK_NGX_VULKAN_*`) e o driver NVIDIA documenta DLSS SR/FG/RR em Linux nativo e Proton; o Streamline 2.14.16 só traz DLLs Windows, então o runtime nativo usa NGX direto. O DLSS 5 Neural Rendering não é implementável com o pacote público: `kFeatureDLSS_NR = 1004` e os buffers `kBufferTypeUplift*` existem, mas não há `sl.dlss_nr.dll` nem modelo; é RTX 50 e driver 616.64 no Windows. O XeSS 3.0.2 é só Windows (sem `libxess.so`) e FG/XeLL são D3D12; a solicitação de suporte Linux da Intel continua aberta. `tools/fetch_vendor_sdk.py` baixa os arquivos fixados por tamanho e SHA-256 para `$XDG_DATA_HOME/mk8online/<fornecedor>/`, exige aceite da licença e falha fechado; 14 testes passaram. Nada foi executado em GPU NVIDIA (a máquina tem RX 9070 XT/RADV) e nenhum binário foi commitado; `gameplay_verified` continua falso.
+
+Implementação: a ponte **DLSS SR** (NGX, `libnvidia-ngx-dlss.so`) e o módulo **DLSS Frame Generation** (`libnvidia-ngx-dlssg.so` + `VK_NV_low_latency2`, dois imagens/semáforos, marcadores de latência) compilam no runtime, com ABI própria verificada por `static_assert` contra os headers oficiais v310.9.16 e 18 testes. Numa **RTX 5080 com Windows nativo** (driver 621.01, core `_nvngx.dll` 32.0.16.2101): `SuperSampling.Available=1`, feature criada e 10 frames avaliados (0 pixels sentinela, saída estruturada), e `FrameGeneration.Available=1`, feature criada, frames 1–2 diferentes do backbuffer (interpolação real, sem swapchain). O harness revelou quatro diferenças de ABI do Windows — `Init_ProjectID` de 9 argumentos, slots do objeto de parâmetros, dispatch pelo core e core descoberto pelo registro — que foram aplicadas às branches Windows de `runtime/mk8/graphics/dlss.cpp`. A própria API da ponte (`mk8_dlss_upscale`, `mk8_dlss_fg_init`/`evaluate`) rodou com `tools/dlss_bridge_harness.cpp`: SR com 6 frames, FG com 3 frames e PNGs; o runtime Windows compila 234/234 unidades e `host-dlss-final/mk8drecomp.exe` foi ligado antes do hook. O `device.c` agora recebe as quatro extensões NGX e `VK_KHR_get_physical_device_properties2` via `toolchain/dlss.py`, registrado antes de `dlss_fg.py`, somente sob `MK8_DLSS`/`MK8_DLSS_FG` e quando anunciadas; sem DLSS o dispositivo fica inalterado e uma extensão ausente gera a linha exata de fail-closed. Com o hook, o Windows compila 234/234 (`host-dlss-ngx/mk8drecomp.exe`, 4.525.568 bytes) e o Linux 230/230 (`host-linux-ngx/mk8drecomp`, 4.850.784 bytes); `tests.test_dlss` + `tests.test_dlss_fg` passam (25) e a suíte com `test_fsr_fg` também (34, 1 skip). O jogo foi executado nessa máquina com os dados reais (ver «Corrida in-engine na RTX 5080»); `gameplay_verified` continua falso. Nenhuma feature de neural rendering/DLSS 5 foi exposta: `nvngx_dlssnr.dll` ausente e `FrameInterpolation.Available=0xBAD00010`; nada aqui autoriza afirmar DLSS 5, RR ou MFG. O conjunto [Bandukids/DLSS-Runtimes](https://huggingface.co/Bandukids/DLSS-Runtimes/tree/main) foi testado na mesma RTX 5080: o `te_dlss5_native.dll` criou a Feature 18 (`te_nr_create`, ~8 s) e processou frames reais via `te_nr_process_rgba` (rc=0; 720p/1080p, 25–76 ms/quadro, ~66% dos bytes alterados, saída inspecionada em `local/dlss5-2026-11-20/`). O `nvngx_dlssnr.dll` desse conjunto é um binário **modificado pela comunidade (RenoDX)**, não redistribuível, e a ponte é D3D12; o jogo é Vulkan e não há backend D3D12, então DLSS 5 NR **não está integrado** — é uma demonstração em hardware, não um recurso do jogo. O `nvngx_dlss.dll` do conjunto é 310.8.0.0 (SR clássico) mas funciona no Vulkan: `SuperSampling.Available=1`, 10 frames avaliados, `ModelPreset 13` (mais recente), FG disponível; o processo cai no shutdown do NGX depois das avaliações, sem afetar a saída. Não é um DLSS 5 SR; RR/MFG continuam não suportados. O **XeSS SR** para Windows carrega o `libxess.dll` oficial sob Wine/RADV (PE validado, `xessVKCreateContext`/`xessVKInit` rc=0, DP4a) e agora também executa **nativamente no Windows numa RTX 5080** (`6a885cf`): `eval`/`submit`/`wait` rc=0, 2560x1440 com 14.710.400/14.745.600 bytes não nulos, saída determinística e sensível ao quadro, sem device-lost. A resolução de entrada do preset PERFORMANCE é 1114x627 nas duas máquinas; os pixels cruzados ficam a PSNR 70,6 dB (mesma rede, arredondamento por arquitetura) e o caminho é o não-XMX (DP4a), não XMX. `MK8_XESS` já é despachado no `mk8_fsr4_upscale`. O DLSS-G foi ligado ao caminho de apresentação (`3fb9d0e`): `toolchain/dlss_fg.py` habilita `VK_NV_low_latency2` + `VK_KHR_present_id/2` e `fsr_fg.cpp` faz init no swapchain, evaluate com profundidade/MVs/view-projection/jitter reais, segunda imagem + semáforos e present em par; falhas caem para o present simples com uma linha. Build 222/222, 31 testes OK, e com `MK8_DLSS_FG=1` no RADV o módulo falha fechado (sem `VK_NV_low_latency2`/core NVIDIA) mantendo o caminho normal; com a variável desligada os logs são idênticos. Na RTX 5080 o DLSS-G roda in-engine com a cadeia de latência desativada por padrão: o `VkSwapchainLatencyCreateInfoNV` no swapchain crasha o `nvoglv64` no driver 621.01 (matriz de 18 variantes mínimas não reproduz fora do jogo), `MK8_DLSS_FG_LATENCY_CHAIN=1` reativa e reproduz o crash, e `VK_NV_low_latency2`/`vkSetLatencySleepModeNV` continuam ativos. `EvaluateFeature` retorna sucesso; o scan principal captura view/projection para o DLSS-G sozinho (a linha inicial sem câmera é só o primeiro quadro) e o par real+interpolado é apresentado (`[dlss_fg] pair present: real image 1 + interpolated image 2`) em 1920x1080, exit 0. A resolução 2560 com depth resample (o jogo renderiza 1152x648 nessa janela) continua follow-up. XeSS FG/XeLL continuam D3D12-only, e a qualificação real em Windows/Arc não foi feita.
+
+## Frame generation FSR 3 nativa em Linux: provider construído e validado — 20/11/2026
+
+O SDK 2.4.0 da AMD (MIT) traz o *kit* Vulkan de frame generation (FSR 3.1.7) mas não publica as tabelas de shaders geradas (`*_permutations.h`). `tools/gen_fg_blobs.py` compila os 11 passes de frame interpolation (duas convenções de profundidade) e os 7 passes de optical flow do HLSL do SDK com DXC, reflete os descritores do SPIR-V, reescreve os bindings para o esquema do backend Vulkan (samplers 320/321, CBVs 128+, SRV 0+, UAV 64+, buffers 192+/224+) e emite `fg_blobs.cpp`. O provider é construído por `tools/build_fg_provider.py` a partir do SDK do próprio usuário, com patches explícitos de portabilidade (shims Win32, GCC 16, `wchar_t` de 4 bytes no contexto privado, miniz sobre zlib) e sem nenhum binário ou SPIR-V pré-compilado no repositório.
+
+**Evidência em hardware real (RADV GFX1201, RX 9070 XT):** `ffxQuery` para `FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK` devolve **3.1.7**; `ffxCreateContext(FRAMEGENERATION, 1920x1080)` devolve `FFX_API_RETURN_OK`, criando todos os pipelines de optical flow/frame interpolation e recursos internos a partir dos blobs gerados; `ffxDestroyContext` devolve OK. `tools/fg-linux/` guarda os shims e os testes headless (`test_query`, `test_context`).
+
+O caminho de frame generation no jogo (`toolchain/fsr_fg.py` + ponte host) e a página FSR do launcher com aceite de licença/download/patch estão implementados. Um harness Vulkan headless (`tools/fg-harness/`) exercita o swapchain FFX completo: 120 quadros renderizados, **240 presents**, 120 frames gerados, e a leitura de volta mostra que o frame gerado difere dos dois vizinhos (0,19 em ambos; limiar 0,005) — interpolação real, não cópia. Os blobs gerados foram corrigidos (`0ab6d5a`): CBVs e buffers passaram a ser refletidos (`cbFI`/`StructuredBuffer` em `Uniform`, `RWStructuredBuffer` em `StorageBuffer`), storage images não atômicas usam formato `Unknown` com as features sem formato ligadas, imagens atômicas mantêm `R32ui`, e `rw_output` escreve quatro componentes. O provider oficial (852.280 bytes, sha256 `786a32c4…a7432`) passa o harness com **warnings=0**, o fixture de swapchain com 0 erros de validação e 6/6 testes nativos; a corrida no jogo com esse provider e a remoção do gate `MK8_FSR_FG_ALLOW_UNVALIDATED_PROVIDER` estão na seção mais recente acima (`54613fa`). Nada disso está qualificado até haver corrida completa, imagem, áudio e controle verificados; `gameplay_verified` continua falso. O host segue carregado (load 80+), então medições de desempenho continuam bloqueadas.
+
+## Validação de desempenho e RE dos stalls — 20/11/2026
+
+Runtime recompilado do master atual em uma raiz local nova (`local/qualification/perf-2026-11-20/`, identidade
+`fe1986c7…`, exe `8202faee…`; após o experimento, `33b71a41…`/`4b0617f3…`), com a instrumentação E2 de
+present/submit e o Yaz0 nativo confirmados na árvore construída (Yaz0 medido em 0,4–2,1 ms por arquivo de até
+1 MB). **O host nunca ficou ocioso**: load average entre 16,6 e 118,8 durante toda a rodada, por builds de outros
+agentes (`cc1`/`cc1plus`/`rustc`) e dois processos longos do usuário; nada foi encerrado. Por isso **nenhum número de
+tempo é publicado** e a corrida completa + reinício/save **não foi executada**: a execução diagnóstica terminou com
+status 0 e captura correta do menu (900 quadros a 19,1 fps sob carga). O relatório completo, com comandos, endereços
+e log cru, está em [PERF-2026-11-20.md](PERF-2026-11-20.md).
+
+A análise somente-leitura localizou a tabela de bind do NVN (`0x7000585ae4`, slots em `0x700130b000+0x3e0/0x3e8/
+0x3f8/0x400`), os 7 pontos de `SetRenderEnableConditional` (`f_70006a0d50`, `f_70006e8210`, `f_70006e846c`,
+`f_70006e8840`, `f_70006e8ab4`), o laço que repõe os contadores (`f_7000aed30c+0xc0/+0x264`, SAMPLES_PASSED tipo 1
+com slot por entrada) e, com `LARECOMP_PROF_SVC=1`, os LR de guest das esperas de kernel (`0x700408d9f8` futex com
+timeout de ~200 ms, `0x7004096678` WaitSynchronization, `0x7004096f2c` ArbitrateLock de mutex em `0x7253413130`,
+`0x70040a0154` SendSyncRequest no handle `0x10b`, 1,68 s no boot). O stall de 901 ms do boot é `other` (898,5 ms, 5
+draws), compatível com esse IPC de boot, não com GPU. Confirmado de novo que Y4 são 1.617 esperas/973 ms em
+`ship3.log` no campo `waits:` (não no `waits` do prefetch).
+
+Experimento novo, **desligado por padrão**: `MK8_OCCL_STALE=1` (`toolchain/occlusion.py`) mantém o valor do último
+submit concluído em vez de esperar o relatório pendente; `tests/test_occlusion.py` ganhou o caso nativo (passa
+compilado nativamente neste host; o controle negativo com o gate desativado falha). Não validado em execução — falta
+host ocioso. `gameplay_verified` continua falso.
+
+**Segunda tentativa de medir (20/11, 08:22): bloqueada.** O host não estava ocioso — um build externo
+(`/home/mitchell/Projects/mkdx-x64-wt`, `ninja -j2` + `cc1`, fora deste repositório) elevou a carga de 7,8 para 17,8 e
+a memória livre caiu a 5–8 GiB. Pelo limite de ~8, **nenhuma execução de tempo foi iniciada**. O runtime foi
+recompilado no HEAD `08fa336` (`--runtime-only`, 221/221 unidades, candidato `1898e0aa…`, exe `bf848bcb…`) com todos
+os marcadores conferidos (`[present] flush`, `[submit] pre`, `mk8_acquire_timeout_ns`, `MK8_OCCL_STALE`,
+`mk8_yaz0_loop`, 35 símbolos FSR/FFX). O driver ABBA (`local/qualification/perf-2026-11-20/abba.py`, ABBA
+intercalado, `nice -n 10`, gate em load 8) e os comandos exatos ficaram registrados em
+[PERF-2026-11-20.md](PERF-2026-11-20.md) §10. Nenhum tempo foi medido; os números da tabela de base continuam os de
+18–20/11.
+
+**Terceira tentativa (20/11, 09:00–09:35): também abortada.** Runtime recompilado de uma árvore limpa no HEAD
+`339ce6a` (`git worktree …/clean-head`, sem as edições FSR4 ainda não commitadas; candidato `b86f515e…`, exe
+`1cdb5d72…`, marcadores `[present] flush`/`[submit] pre`/`mk8_acquire_timeout_ns`/`MK8_OCCL_STALE`/`mk8_yaz0_loop`
+conferidos, FSR desligado). A primeira execução foi contaminada por um segundo `mk8drecomp` de
+`MK8-online-linux-fsr4` (20,5 fps no quadro 3.516, máx. 1.195 ms); o detector foi endurecido (gate por
+`/proc/<pid>/exe`, monitor de carga em execução, retry, mediana de corrida ≥50 fps). Outras tentativas morreram a
+7,4 fps (quadro 1.814, pico de carga 12,4) e 35,8 fps (quadro 2.430); às 09:31 a carga subiu a 26–70 (cross-`cc1`
+aarch64, `mariokartdx-linux`, Steam/wine, `tesseract`) e os blocos foram parados. **Nenhuma execução limpa; nenhum
+tempo publicado.**
+
+## Upscaler FSR 3.1.6 nativo e MLFI (FSR 4) — 20/11/2026
+
+O upscaler **FSR 3.1.6** também é construído localmente a partir do SDK MIT: `tools/gen_upscaler_blobs.py` compila os 11 passes com DXC, reflete os descritores (incluindo `Uniform`/`StorageBuffer`), reescreve os formatos das storage images e `tools/build_upscaler_provider.py` produz `libamd_fidelityfx_upscaler_vk.so` (573.136 bytes, sha256 `4c3a75cf…fde709`). Duas builds independentes são idênticas; `ffxQuery` devolve **3.1.6** (`0xf5a5ca1e00c01006`); a saída 1920x1080→2560x1440 é **byte-idêntica** à do DLL assinado da AMD no Windows para as entradas capturadas (SHA-256 `df8c4cf2…49ae`, MAE 0). No jogo: `[fsr] provider 3.1.6`, `upscale active 1920x1080 -> 2560x1440`, `depth now game`, `motion now camera`, título e largada renderizados. 7/7 testes. O **FSR 4.1.2** também virou um clique: o port GPL-3.0 do projeto foi vendorizado em `tools/fsr4-linux/` e `tools/build_fsr4_provider.py` extrai 1.778 módulos e 4 classes/8 bancos de modelo do DLL assinado do SDK, compila `libamd_fidelityfx_upscaler_vk.so` (183.512 bytes, sha256 `ae0cd7fd…441b`) e instala com as licenças GPL/AMD e oferta de fonte. `ffxQuery` devolve **4.1.2** (`0x1001002`), contexto 1080p→1440p com ABI legada e dispatch OK, saída não nula; no jogo `[fsr] provider FSR 4.1.2`, `upscale active 1920x1080 -> 2560x1440`, menu e largada em `local/qualification/fsr4-linux/`. 11/11 testes; nada de AMD ou assets gerados foi commitado.
+
+Numa **RTX 5080 com Windows nativo**, os DLLs assinados da AMD expõem apenas **FSR 3.1.6 e 2.3.4**: o upscale 3.1.6 (1280x720→1440p e 1080p→1440p) e o FG 3.1.6 (18 pipelines, 97 despachos) funcionam, mas **4.1.2 e MLFI 4.0.2 devolvem `NO_PROVIDER` (rc=4)** mesmo forçando o id — o gate é RDNA 4 do lado da AMD, não um defeito do nosso caminho. No Linux/RDNA 4 (RX 9070 XT) os nossos ports nativos expõem 4.1.2 e MLFI 4.0.2 e funcionam. O **launcher Windows** foi executado na mesma RTX 5080 (build cross `x86_64-pc-windows-gnu`, 24.880.702 bytes): o probe Vulkan reporta vendor `0x10de`/device `0x2c02`, a API bloqueia FSR 4.1.2 e MLFI com o motivo, mantém **FSR 3.1.6** selecionável e aceita o override manual de DLL; o teste no Windows real confirma a decisão da unidade. Resta apenas um rótulo duplicado "NVIDIA NVIDIA …" sendo corrigido, sem efeito na decisão. Do lado do **FSR 4 (MLFI)**, o DLL assinado foi executado sob Wine contra RADV: o layout do host foi recuperado (5 preprocess + `pass0…pass190`, geometria por resolução, `CsTensorSizes uint4[92]`, bindings, upload do modelo `[72 : 72+10.657.152]`, 195 pipelines). Quatro módulos derrubavam o RADV: o front-end do Mesa os rejeita e `radv_shader.c:549` desreferencia `NULL` — é um defeito de tratamento de erro do RADV, não limitação de shader. Um legalizador de SPIR-V (`tools/radv-mlfi/fix_image_types.py`) faz **195/195** pipelines compilarem e executarem. A reprodução nativa do MLFI funciona (`tools/mlfi-replay`): 195/195 pipelines, 196 despachos por quadro, validação 0 erros/0 avisos (as três discordâncias conhecidas do validador são contadas à parte), saída RGBA32F não nula, sensível ao movimento e determinística, sem falta de GPU. Sobre ela foi construído um provider FFX nativo (`tools/mlfi-provider`, commit `8a4d00d`) que responde `ffxQuery` com **4.0.2** (`f600000001000002`), cria contexto, aceita `PrepareV2`/`FrameGeneration` e grava a predição em `outputs[0]` com uma composição própria (a etapa final da AMD não foi capturada). Validação 0/0, 195 pipelines, 199 despachos, saída determinística. A integração no swapchain do jogo foi feita (`c431e7a`): `MK8_FSR_FG=fsr4` carrega o provider MLFI 4.0.2 ao lado do swapchain 3.1.7, exige as duas versões exatas, usa um contexto 3.1.7 “router” + `ffxOverrideVersion` e um gate de um quadro em voo. No jogo: 195 pipelines, `MLFI prepare frame 0: 5 preprocess + 2 copy`, `191 model + 1 compose` por quadro, **1.800 frames gerados**, exit 0, sem GPUVM/device-lost/FATAL. O A/B com `fsr3` mostra os quadros reais byte-idênticos (menu e seleção de kart), como esperado. Limites: sem screenshot de corrida porque o Mesa 27.0.0-devel segfaulta ao entrar na corrida em `vkCmdDrawIndexed` com FG desligado, fsr3 e fsr4 (o RADV estável 26.2.6 não tem `VK_EXT_cooperative_matrix_maintenance1`), e os frames gerados não foram capturados — qualidade/ghosting/pacing não medidos. `gameplay_verified` continua falso.
+
+## Verificação Windows — 20/11/2026
+
+O launcher Windows e o runtime host foram compilados da árvore `f5949f1` com o
+alvo `x86_64-pc-windows-gnu` (Zig 0.17.0; launcher Rust 1.96.0). O launcher
+abriu o servidor local e respondeu `HTTP 200` no Wine 11.22 e no Proton-GE
+11-12. O runtime carregou os três módulos, montou o RomFS e criou dispositivo e
+swapchain Vulkan (RADV, 1280x720), a janela NVN e o dispositivo de áudio. A
+primeira execução **parou antes do primeiro quadro** em
+`nn::crypto::detail::bigint_mod_mult` (`no function at 7004004c30`): o gerador
+só aceitava símbolos `STT_FUNC`, e seis helpers `nndetailCryptoBignum*` do sdk
+são `STT_NOTYPE`; no Linux o suplemento de `toolchain/sdk_exports.py` mascarava
+a lacuna, mas o layout do build Windows não o aplicava. A correção em
+`runtime/prepare.py` trata símbolo definido em `.text` com tamanho como entrada.
+O runtime Windows passou a desenhar o primeiro quadro e a chegar à seleção de
+Mii no Wine 11.22 e no Proton-GE 11-12, sem o FATAL, e o Linux foi revalidado
+com a nova tabela. Endereços, desmontagem, comandos e limites em
+[WINDOWS-BOOT-2026-11-20.md](WINDOWS-BOOT-2026-11-20.md).
+`scripts/runtime-dlls.py` também precisou resolver DLLs empacotadas como
+hardlink (`zlib1.dll`) e System32 com maiúsculas em host sensível a caixa — sem
+isso a etapa Ferramentas falha em uma máquina Windows nova. Detalhes do build e
+da verificação inicial em [WINDOWS-2026-11-20.md](WINDOWS-2026-11-20.md).
+`gameplay_verified` e `multiplayer_verified` continuam falsos.
+
+## Pausas de vários segundos: importação do heap guest — 19/11/2026
+
+As pausas de 0,4–18 s que sobravam no perfil não eram orçamento de shader nem a fila de apresentação: eram a importação do heap do jogo como **uma única alocação host-pointer** (`VK_EXT_external_memory_host`), 3.100 MB fixados no primeiro uso da GPU. Com `toolchain/submit_profile.py`, toda submissão ≥1 s tinha `copies 0 layouts 0 full 0` e a divisão `lock`/`call` deu `lock 0,0` — o tempo estava dentro de `vkQueueSubmit2`. `strace -T` registrou 2.886 ioctls `AMDGPU_CS`, 15,3 s de tempo de kernel e 1.147 retornos `EAGAIN`; `LARECOMP_VK_NO_GMEM=1` eliminou **todas** as pausas, e `MK8_GMEM_MB` mostrou que o custo cresce com o tamanho importado.
+
+**Correção (padrão):** `toolchain/gmem_cap.py` limita a importação a **1.024 MB** (`MK8_GMEM_MB`; 0 = heap inteiro) e `toolchain/gmem_map.py` lê a memória global dos shaders por cópias por desenho (o caminho gmap já usado no Android), com o BDA desligado nesse modo (`MK8_GMEM_MAP=0` restaura o caminho antigo; `MK8_GMEM_MB=0 MK8_GMEM_MAP=0` restaura o comportamento anterior). O limite sozinho não bastava: em 512/1.024 MB os dígitos do HUD sumiam (moedas/volta) porque leituras de memória global acima do limite davam zero; desligar o BDA junto foi o que os trouxe de volta. Leituras de vértice/índice acima do limite caem para cópias (corretas, registradas em `[gmem]`).
+
+**Medições (3.600 quadros, mesma janela):** heap inteiro **24 quadros >200 ms, pior 18.455 ms**; padrão novo **0–1 quadros >200 ms, pior 239 ms** (159 ms de exec do guest; a execução com as variáveis explícitas deu 201 ms). HUD `05`/`1/3` correto e quadro dentro da variação normal entre execuções (1,6% de pixels diferentes; outras execuções variaram 1,3–11%). A importação caiu de 724–805 ms para 31–45 ms. `tests.test_gmem_cap` 2 aprovados (limite por ambiente em harness nativo). `MADV_HUGEPAGE` (`toolchain/gmem_thp.py`) foi testado e **piorou**: importação de 3.585 ms contra 724 ms; removido.
+
+**Pausas residuais (atribuídas):** na janela de 3.600 quadros do padrão novo sobram só **2 quadros ≥100 ms**, ambos na carga da pista (2.109: 115 ms; 2.137: 239 ms), não na corrida. O de 2.109 coincide com `[mk8:yaz0] 94.817 KB em 127,0 ms` e leituras de RomFS (337 MB); o de 2.137 com 772 traduções de shader (163 ms; 426/126 ms com cache quente), 15,6 MB de upload e 3.293 draws. Com cache quente a carga continua em 213 ms (yaz0 + upload), então a tradução não é o custo dominante. Numa sessão de 6.000 quadros que passou para uma **segunda pista** (Rainbow Road; `local/qualification/track2-05600.png`, HUD `03`/`1/3`, 1º), o único quadro ≥100 ms em corrida foi **143 ms no quadro 5.307**, uma espera de pipeline de primeira visita (`worst 131 ms`, 23 compilações). `toolchain/prefetch_nowait.py` passou os alvos não escaláveis (sombra/sonda/cube map) pelo mesmo orçamento de 4 ms do caminho normal: a espera máxima caiu para **3–4 ms** (`waits 29 (39 ms total, worst 4 ms)`) e, se o build não ficar pronto, o desenho é pulado naquele quadro e adotado no seguinte (`MK8_INLINE_PIPE=1` restaura a espera antiga). Repetição de 6.000 quadros: ≥100 ms só na carga (2.111: 107 ms; 2.137: 143 ms) e na captura (3.599: 533 ms). Numa das execuções houve duas pausas de ~630 ms em `present` (quadros 32 e 5.324) que não se repetiram na seguinte e não vêm do pipeline — são o mesmo tipo de contenção de compositor/host já visto; ficam registradas, não atribuídas. Não sobra pausa de vários segundos. `gameplay_verified` continua falso; a validação cobre duas pistas e o HUD, não todas as pistas/efeitos.
+
+## Pré-aquecimento de pipelines gráficos — 19/11/2026
+
+O primeiro desenho que usa cada pipeline o compila no caminho de render/submit. Uma tentativa de pré-aquecer o cache do driver a partir de um catálogo gravado (`toolchain/pipeline_warm.py`, `cache/pipeline_recipes2.bin`) foi implementada e testada, mas **não demonstrou ganho na comparação controlada**: com o mesmo binário, a mesma pasta de dados e cache de driver quente, a pior entrada ficou em **174 ms com o replay e 178 ms sem ele** (janela de quadros 2000–2600); o pior quadro da corrida foi 1.613 ms com e 1.040 ms sem, dentro do ruído do host. O pico de 4.117 ms de uma execução anterior não se repetiu e foi atribuído a contenção do host, não a compilação de pipeline. O catálogo cobre apenas pipelines que uma execução anterior já viu; não cobre a primeira passagem por uma pista ou efeito, que continua compilando sob demanda (a execução com cache de driver frio teve 223 compilações e 1,4 s na entrada).
+
+A gravação e o replay são **opt-in** (`MK8_PIPELINE_WARM=1`) e sua função é recuperar um cache de driver perdido (por exemplo, uma sessão encerrada sem salvar), não eliminar a primeira compilação. Cada receita usa um `Prog` privado, traduz e compila na própria thread e não usa as filas nem as tabelas de programas/pipelines do jogo; com cache de driver frio (`vk_pipelines.bin` ausente ou menor que 1 MiB) o replay é pulado. Uma primeira tentativa chamava `get_program` na thread de replay: ela corrompeu a tabela de programas, o jogo passou a pular 10.777 draws/s e a imagem mostrou artefatos. A versão atual usa programas privados e ficou com **0 draws pulados**; a captura `active1-03600.png` está normal. Uma tentativa intermediária usava as filas de build do jogo e fez o prefetch esperar 79,8 s; a versão final não usa nenhuma das duas.
+
+**Testes:** `tests.test_pipeline_warm` 2 aprovados e `tests.test_fsr` 5 aprovados. `tests.test_pipeline` e `tests.test_texture_retire` falham no ambiente atual (gen.py do upstream com Python 3.14 e link cruzado do clang), sem relação com esta mudança. O runtime ativo foi recompilado com `--runtime-only` (219 unidades).
+
+**Caminho de apresentação (20/11/2026):** `toolchain/submit_profile.py` fica na build (registra `[present]` lock/chamada e `[acquire]` acima de 5 ms; `[submit]` só com `LARECOMP_VK_PROF`). Em cinco sessões de 6.000 quadros (duas pistas), **nenhuma chamada `vkQueuePresentKHR` passou de 5 ms** e o acquire ficou ≤17 ms; a pausa de ~630 ms do quadro 5.324 **não se repetiu**. `toolchain/acquire_bound.py` limita o acquire (`MK8_ACQUIRE_MS`, padrão 100; 0 = `UINT64_MAX`): era a única espera WSI sem limite. O quadro 3.795 (151 ms) caiu em `present` mas **antes** do submit (`vkEndCommandBuffer`/flush), não no WSI; essa parte ainda não está instrumentada.  O quadro de 3.795 (151 ms) e os de ~100 ms da build ativa vêm de `vkQueueSubmit2` (`[submit] 91,6 ms lock 0,0 call`, 0 cópias), a mesma pressão de memória reduzida pelo limite — não do WSI. Baixar o limite para 256/512 MB eliminou essas pausas na pista 1, mas a sessão de duas pistas com **512 MB teve 506 ms no quadro 816 e uma rajada de até 1.138 ms na carga da segunda pista** (cópias de vértice/índice acima do limite); **768 MB também foi pior** (518 ms no 1.328, 522 ms no 3.500, 325 ms no 5.428, importação em 171,9 ms). `toolchain/vcache_above.py` passou os intervalos acima do limite pelo cache de vértices já existente (uma cópia por intervalo via ring, em vez de uma por desenho). Com **512 MB** uma sessão de duas pistas ficou limpa (sem quadro ≥100 ms em corrida; carga 156/204 ms), mas **duas repetições** da build final tiveram picos de **exec de 220–537 ms** em 753–860 draws (trabalho do cache/cópias acima do limite), então **1.024 MB continua o padrão**; o cache segue ativo para os intervalos acima de 1 GB. **Próximas alavancas no submit (análise de 20/11/2026):** o tempo de `vkQueueSubmit2` é ICD+kernel (lista de BOs, `AMDGPU_CS`, PTEs adiados); os candidatos de menor risco são `MK8_COMPUTE_SUBMIT=0` (remove um submit por dispatch, ~7–9 CS por quadro), `vmaSetCurrentFrameIndex` + `VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT`, pré-alocar os chunks do ring e lotes maiores de command lists (maior risco: `vc_pend`/`gcopy` são por sequência de envio). **`MK8_COMPUTE_SUBMIT=0` rejeitado (20/11/2026):** a sessão de duas pistas caiu para centenas de quadros ≥100 ms (pior **5.249 ms**, 9 fps no fim): sem o submit por dispatch, os desenhos passam a esperar resultados de compute. O padrão (submit após cada dispatch que escreve) fica. **Y4 (submeter no fim da query de oclusão) rejeitado (20/11/2026):** a mudança em `toolchain/occlusion.py` (submeter o command buffer quando o relatório de samples termina) baixou a espera de conditional samples de 1.617/973 ms/114 ms para 2.308/100 ms/21 ms, mas acrescentou ~6.400 submits (33.198 contra 26.791, +24%) e **129 submits >100 ms** (pior 2.388,9 ms) numa sessão de duas pistas — regressão clara. Revertido; fica registrado que a espera de oclusão só compensa se o submit extra for evitado. **`collect_per_frame` não validado:** a execução de teste foi contaminada pela carga dos 15 auditorores e a repetição com ele mostrou os mesmos submits de segundos; foi desligado do `host.py` até um teste em host ocioso. A instrumentação E2 (`[present] flush` e `[submit] pre` acima de 50 ms com o quadro) foi adicionada e não registrou eventos >50 ms na execução testada.**Auditoria e consenso (20/11/2026):** 15 auditorias somente-leitura e 5 revisores em 3 rodadas (todos aceitaram a tabela final) estão em `docs/AUDIT-2026-11-20.md`, com as correções (por exemplo: o cache de vértices está inerte no Linux; o hash já é 4 pistas × 32 B; F5 e o relógio N4 estavam errados; Y4 é real: 1.617 esperas/973 ms/pior 114 ms) e o resultado dos experimentos (Y4 e MK8_COMPUTE_SUBMIT=0 rejeitados; collect_per_frame sem validação; Yaz0 rápido verificado byte a byte). **Pendente:** a primeira passagem por cada pista/efeito continua compilando pipelines sob demanda, e as pausas de vários segundos sob contenção do host (outros processos compilando, 22 GB em zram) continuam. A execução de referência de 18/11, em máquina ociosa, fez 60 FPS sem essas pausas. Qualificar e atacar a primeira passagem exige uma máquina ociosa e uma reprodução concreta (pista/cena).
+
+**Perfil da primeira visita (19/11/2026):** com cache de driver frio, a entrada teve 223 compilações de pipeline, mas só 85 ms de espera no caminho do desenho; o custo de 1,19 s foi a criação de **2.221 image views** e 91,6 MB de texturas no primeiro uso, além de 8.500 draws pulados pelo orçamento de 4 ms. `MK8_SHADER_BURST_WAIT_MS` (padrão 0, desligado) espera durante um surto de mais de 64 builds e pelos 120 quadros seguintes: 250 ms reduziu os pulos para 2.500; a espera total eliminou os pulos, mas a entrada foi 2,36 s contra 1,20 s. O gargalo real é a criação de views/texturas; corrigi-lo exige criá-las fora da thread do jogo (backend de textura thread-safe), uma mudança maior. O orçamento original continua sendo o padrão.
+
+**Views dos anexos em paralelo (19/11/2026):** a criação das 2.221 views da entrada custava 2.040–2.327 ms do bloco `pre`. `toolchain/view_batch.py` resolve os anexos da passagem na thread de render e cria as views em quatro workers; a tabela de views tem mutex, duplicatas criadas por corrida são destruídas e um worker sem vaga não despeja entradas. `MK8_VIEW_BATCH=0` mantém o caminho antigo. A/B na mesma build, cache frio: `pre` **2.327 → 480 ms**; na build ativa, sob carga do host, 1.774 ms. As capturas `vbbase-03600.png`, `vbnew-03600.png` e `vbactive-03600.png` estão normais; os draws pulados e as pausas de `submit` de 3,7–16,4 s continuam sendo orçamento/host, não as views. `tests.test_view_batch` 2 aprovados (2D, 3D, format view, depth, clamp, sem imagem). As texturas (91,6 MB, 30–48 ms no `tex`) não foram movidas: o upload usa os comandos de staging da submissão e fica na thread de render.
+
+## Portabilidade Linux x86-64
+
+A etapa inicial de instalação abre o launcher na mesma janela. O pipeline Linux gera objetos ELF PIC e carrega a biblioteca de jogo com validação de versão e tabelas. O teste sintético gerou sete módulos, ligou o host e o guest, rejeitou uma biblioteca inválida e preservou a biblioteca do guest ao recompilar o host. O adaptador Steam abriu e encerrou uma sala privada em um cliente Linux com callback nativo.
+
+**Correções de 18/11/2026:** a sobreposição do RomFS removia o link de diretório deixado por builds antigos com `os.rmdir`, que só serve para junctions do Windows; em Unix o link agora é removido como link (`repair.unlink_link`) e o destino permanece intacto. O handshake do supervisor separa o encerramento do grupo de processos (Linux) da propagação de erro por plataforma, mantendo o Clippy do alvo Windows sem avisos e sem mudar o comportamento. `tests/test_pipeline.py` passou nos 9 casos, incluindo o link de diretório e a atualização de uma importação; `test_linux_elf.py` passou; 77 testes Rust passaram (um Steam real optativo ignorado); formatação e Clippy Linux e `x86_64-pc-windows-gnu` com `-D warnings` passaram. Os seis casos de `test_repair.py` são específicos de junction do Windows e ficaram ignorados no Linux.
+
+**Pacotes:** o `.tar.gz` e o `.AppImage` foram recompilados dentro do Ubuntu 24.04. O extrator embarcado agora leva o runtime .NET dessa imagem (10.0.15); o pacote montado no host exigia `GLIBC_2.44` e não iniciava no 24.04. Startup e extrator embarcado passaram nos dois pacotes no Ubuntu 24.04 e no CachyOS. A página de instalação foi carregada no Chromium headless contra o servidor real e escondeu a etapa de registro do Windows. A primeira execução do `.tar.gz` aceitou uma pasta de programa e uma de dados escolhidas pela API, concluiu a instalação e abriu o launcher no mesmo PID e na mesma janela de topo gerenciada; a janela auxiliar não gerenciada do toolkit é ignorada. Artefatos: `MK8-online-0.3.0-linux-x86_64.tar.gz`, 42.019.639 bytes, SHA-256 `726bba82456caacd465dffa9fd6d38fe1ee8a7d7073d9acf06e4546af2c3f74b`; `MK8-online-0.3.0-linux-x86_64.AppImage`, 42.547.704 bytes, SHA-256 `070d734e1b513a98c19fbb8cfec3c64c9262ea7054de66a1a7c152e82555fc16`. Cópias anteriores preservadas em `local/qualification/packages-2026-11-18-before-linux-fixes`.
+
+**Qualificação:** o RADV de desenvolvimento do sistema segfaulta em `vkCmdDrawIndexed`/`libvulkan_radeon.so` por volta do quadro 2100 quando o ICD relativo do pacote é usado (`usr/share/vulkan/icd.d/radeon_icd.json` resolve para o driver do sistema). O RADV estável 26.2.6 extraído, selecionado só para o processo por `VK_DRIVER_FILES=local/qualification/stable-radv/radv.json` (caminho absoluto), não crashou: uma execução chegou ao quadro 13283 antes do limite de 6 min do harness, e outra completou a primeira corrida, mostrou a transição "2nd Race" e chegou ao quadro 17296 a ~50–58 FPS, saindo com status 0 após a captura configurada. As capturas `stable-radv-6-03000`…`17400` foram inspecionadas (volta 1/3 a 3/3, karts, itens, minimapa e a segunda corrida). O desempenho variou entre execuções (uma caiu para 25–38 FPS no fim; outra manteve ~50–58 FPS), então 60 FPS não está qualificado. O `userdata.dat` é gravado durante a corrida, mas as execuções automatizadas encerram o processo sem o fluxo de saída do jogo; na abertura seguinte o próprio jogo apaga e recria o arquivo, então a persistência entre reinícios não está qualificada e exige uma saída limpa pelo menu. Controles físicos, áudio, relógio, reinício/save e a copa inteira continuam pendentes. O CTGP importou 64 pistas em 16 copas adicionais; o NSP de desbloqueio de DLC fornecido falhou nas verificações fixadas do Booster Course Pass, então a qualificação com DLC precisa de um dump suportado. Salas entre duas máquinas (Windows e Linux) e reconexão continuam sem teste. `gameplay_verified` e `multiplayer_verified` permanecem falsos.
+
 ## Nextendo e menu no relançamento da 0.4.0
 
 A primeira publicação da 0.4.0 continha as implementações do serviço e do painel, mas o launcher escondia a opção de jogar atrás de variáveis de diagnóstico e o painel F1 exigia uma variável adicional. A build atual expõe **Jogar → Jogar no Nextendo** e abre o painel com **F1 / Menos + Mais** por padrão. Ao relançar com o mesmo número, quem já tem o launcher 0.4.0 precisa baixar o novo pacote manualmente. Ao abrir esse launcher, uma build anterior do jogo recebe a indicação de atualização. O launcher pede confirmação da chave de corrida no primeiro uso. O runtime valida o certificado do ZNC pela CA do Nextendo e pelo nome do host, permitindo a renovação do certificado do serviço. O ingresso na corrida continua pelo Online Play nativo.
@@ -2841,3 +3088,341 @@ Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Priori
 Validação desta branch: **11 testes nativos/Python aprovados**, zero skips, cobrindo oclusão, compute flush e runtime stalls. Não foi refeita uma build do jogo nem uma corrida nesta separação de PR.
 
 Patch focado sobre fix-chore `15d1106`: resolve reports pendentes dos dois operandos antes de CMD_SET_RENDER_ENABLE. Espera somente a maior sequência necessária, libera cq_lock antes de submit/wait e não faz flush sem dependência. Queries indisponíveis após conclusão conhecida e timeout com reports pendentes falham explicitamente. Mantém zeros legítimos, modos equal/not-equal, q nulo e enable/disable. Teste nativo executa helper/case preparados, com dependências atuais/anteriores, ambos os operandos, produtores distintos, reset, lock e falhas. Evidência manual anterior veio da branch integrada com recorder: usuário não observou flicker em Electrodrome, DK Jungle e Rainbow Road após o fix; não é qualificação desta branch isolada. Não inclui recorder nem outros patches gráficos. `gameplay_verified=false`.
+
+## Notas que estavam no README (até a 0.5.0)
+
+O README passou a ser só a apresentação do projeto. As notas de versão, correções e instruções que ele acumulava foram movidas para cá sem alteração; o uso atual está em `docs/GUIDE.pt-BR.md`.
+
+> [!IMPORTANT]
+> Use seus próprios arquivos do jogo e as chaves do seu console. O repositório e as releases não incluem ROMs, recursos do jogo, chaves, saves ou código recompilado do jogo. A compilação acontece localmente, a partir dos seus arquivos.
+
+> [!NOTE]
+> **Baixe a versão 0.5.0** · [Instalador Windows](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-setup.exe) · [ZIP portátil Windows](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-portable.zip) · [AppImage Linux amd64](https://github.com/Vnnc1/MK8-online/releases/download/v0.5.0/MK8-online-0.5.0-linux-x86_64.AppImage)
+>
+> No Windows, mantenha a pasta de dados e conclua **Instalação → Ferramentas → Build do jogo** se solicitado. No Linux, o launcher e o jogo recompilado executam nativamente. O guia explica como instalar as dependências no Ubuntu 24.04 e como experimentar no modo desktop do Steam Deck. [Guia Linux](docs/LINUX.md) · [Notas da versão](docs/releases/0.5.0.md)
+
+O instalador Windows 0.5.0 permite usar arquivos do RomFS cujo caminho no Windows chega a 260 caracteres ou mais, inclusive com acentos e emoji. Se a preparação anterior parou com a mensagem `MAX_PATH` do RomFS, mantenha a mesma pasta de dados, instale o launcher atualizado e tente novamente em **Instalação → Build do jogo**. A compilação aproveita as etapas já concluídas.
+
+### Windows 0.5.0 · Jogue com seu Mii
+
+Na 0.5.0, o solo, as salas Steam e o Nextendo usam o Mii ativo. Na primeira partida, dê um nome ao Mii, personalize e escolha **Salvar e continuar** para seguir no modo escolhido. Para o Nextendo, confirme o e-mail e vincule o Discord à conta. Autorize uma vez no navegador enquanto o launcher estiver aberto. Ao abrir, o jogo mostra a conta Nextendo e o Mii local. Fechar o launcher ou revogar o acesso exige um novo login. [Gerenciar conta Nextendo](https://nextendo.network/account)
+
+### Windows 0.5.0 · Opções gráficas
+
+No launcher 0.5.0, abra **Jogar → Gráficos** ou **Configurações → Vídeo e controles → Imagem**. Se Instalação oferecer **Atualizar a build**, conclua essa etapa primeiro, inclusive ao atualizar uma instalação de teste da 0.4.1. Escolha uma resolução interna menor, como **75%**, e selecione **FSR 3.1.6**, **FSR 4.1.2** (RDNA 4 compatível) ou **DLSS Super Resolution** (RTX compatível). Leia e aceite os termos do fabricante no launcher para instalar o componente opcional. Salve e inicie o jogo com o runtime atualizado. O painel mostra o método e as dimensões informados pelo jogo. A resolução interna pode ser arredondada para se ajustar aos alvos de renderização.
+
+No jogo, abra **F1 → Ajustes → Vídeo** para escolher a ampliação integrada ou um provedor instalado e disponível neste PC. Todos os temas do Menu usam a mesma lista. Para carregar outro provedor temporal, reabra o jogo pelo launcher. Com o launcher aberto, as alterações feitas no jogo também aparecem em Configurações e no seletor de idioma da tela Jogar.
+
+FSR 1 e bilinear já vêm disponíveis. Se o provedor recusar o recurso, o jogo usa a ampliação integrada. A opção separada de geração de quadros usa a interpolação própria do runtime. Ative o contador para comparar os FPS do jogo, os FPS de saída e os milissegundos por quadro do jogo.
+
+### Upscaling e frame generation (opcional)
+
+Nada de propriedade de fornecedor vai nos pacotes. O launcher baixa cada componente da fonte/release oficial fixada
+pelo próprio fornecedor depois que você aceita os termos, confere tamanho e SHA-256 e, quando não existe binário
+para Linux, compila localmente a partir das fontes do fornecedor ou deste projeto:
+
+- **AMD FSR** — no Linux, upscaling FSR 3.1.6 e 4.1.2 e frame generation FSR 3 / FSR 4 (MLFI) são compilados
+  localmente a partir do SDK FidelityFX MIT da AMD e do port GPL-3.0 de FSR 4.1.2 deste projeto. No Windows, as DLLs
+  Vulkan assinadas da AMD são baixadas e verificadas. Nenhum binário, shader ou modelo da AMD é redistribuído.
+- **NVIDIA DLSS** — Super Resolution e Frame Generation carregam os plugins NGX oficiais para Linux em tempo de
+  execução (exigem GPU e driver RTX). DLSS 5 Neural Rendering não tem plugin público e não está disponível.
+- **Intel XeSS** — somente Windows, porque a Intel não publica biblioteca para Linux. Super Resolution está
+  implementado e verificado sob Wine; frame generation XeSS e XeLL são exclusivos de D3D12.
+
+Uma guarda de release falha o build se qualquer biblioteca de provider, banco de modelos ou blob de shader gerado
+entrar nos pacotes.
+
+### Novidades da 0.4.0
+
+**Multijogador online nativo com o Nextendo.** Selecione **Jogar → Jogar no Nextendo** no launcher, entre na sua conta pelo navegador e abra **Online Play → Mundial → Corrida** no Mario Kart para jogar com outras pessoas. Pressione **F1** dentro do jogo para consultar salas e amigos. As sessões Nextendo usam as pistas originais.
+
+A edição portátil pode ser movida entre unidades do Windows. Com o jogo preparado, `Launcher.exe --play` abre o modo solo diretamente. Os controles ganharam direção por movimento, vibração HD e a opção de usar cada Joy-Con na horizontal no multijogador local. Saves e replays temporários do Grand Prix ficam separados, e o troféu da Copa Casco permaneceu após reiniciar nos testes. As correções gráficas abrangem as cores das copas, a contagem da largada e a iluminação em tela dividida. Ao atualizar, mantenha sua pasta de dados e siga **Instalação → Ferramentas → Build do jogo**.
+
+
+Vozes de áudio novas começam com volume anterior zero e usam a rampa existente no primeiro bloco do mixer. O patch aborda estalos em efeitos repetidos da pista e exige reconstruir o jogo/runtime; outros sons e a qualificação completa de áudio permanecem em aberto.
+
+**Atribuição de controles nas builds de desenvolvimento.** Na tela de título, pressione um botão no controle que deseja usar como jogador 1. Uma tecla, um clique ou um toque na tela seleciona o teclado. Pressione **SL** ou **SR** para usar um Joy-Con na horizontal. Com apenas um Joy-Con esquerdo e um direito, um botão frontal seleciona o par. Com várias metades conectadas, segure **L** no esquerdo e **R** no direito que deseja combinar e solte os dois. Volte ao título para escolher de novo.
+
+Para jogar com teclado, Pro Controller e dois Joy-Con na horizontal, pressione **K** na tela de título para usar o teclado como jogador 1 ou **A** no Pro Controller para assumir essa posição. Na seleção de personagens, cada Joy-Con na horizontal entra com **SL + SR**. Um teclado disponível entra com **Enter**.
+
+Em corridas locais com tela dividida, o jogador que desconecta fica sem comandos e os demais podem continuar correndo. Ao reconectar, um controle identificável volta ao mesmo jogador, mesmo que o Windows liste os dispositivos em outra ordem. Um par de Joy-Con volta a responder quando as duas metades estão conectadas. Se não for possível distinguir dois controles iguais, registre-os de novo na seleção de personagens.
+
+Se faltar um controle ao entrar na seleção de personagens, a tela **Controller assignment** destaca a primeira vaga. Se apenas o jogador 1 já estiver registrado, a seleção começa no jogador 2 e avança conforme cada participante entra. O rodapé mostra os ícones do jogo para **L + R** no controle e **SL + SR** em um Joy-Con na horizontal. Pressione os dois botões ao mesmo tempo para entrar ou use **Enter** se o teclado estiver disponível. Quem já entrou mantém a posição. Enquanto houver uma vaga, o botão central **Cancel**, a tecla **Esc** ou o botão Voltar do jogador 1 cancela o registro. Quando todos entrarem, o botão muda para **OK** e o jogador 1 confirma para continuar. Builds antigas e mods com um layout de menu compartilhado próprio podem exibir o aviso de texto com os mesmos comandos.
+
+O menu de controles funciona na seleção de personagens com qualquer tema do Menu. Com dois a quatro jogadores locais, use **+** no controle do jogador 1 ou a tecla atribuída a Start. No multijogador local também é possível clicar ou tocar em **−/+**. Na LAN com dois jogadores, esse botão fica oculto. Selecione uma linha para atribuir um controle livre ou trocar dois jogadores de posição, ou limpe as linhas e registre os jogadores por ordem de entrada. Se outro jogador ativo já usar o controle, um aviso identifica quem o está usando. **Apply** aplica as atribuições e **Cancel** mantém as anteriores. Durante corridas e batalhas em tela dividida, o atalho das configurações exibe um aviso breve para que todos possam continuar jogando. As configurações continuam disponíveis nos menus e durante a corrida com um único jogador local.
+
+Para separar um par em **Controller assignment**, selecione o jogador que vai receber um Joy-Con, escolha **Assign controller** e segure **SL + SR** nessa metade. O jogador que usava o par fica com a outra metade na horizontal. Escolha **Apply** para aplicar a troca ou **Cancel** para manter o par. Para combinar duas metades disponíveis, segure **L** no Joy-Con esquerdo e **R** no direito e solte os dois.
+
+O Pro Controller original do Switch, os Joy-Con individuais e um único par identificável de Joy-Con oficiais via Bluetooth têm vibração HD. No modo combinado, o jogo controla a frequência e a intensidade de cada lado separadamente. No modo horizontal, cada Joy-Con recebe os dois canais de vibração daquele jogador. Com o giroscópio ativado em um controle Nintendo, o runtime aguarda uma nova leitura desse controle antes de enviar o próximo efeito HD ativo. Isso evita que envios repetidos de vibração interrompam a leitura dos controles. Os demais controles compatíveis usam a vibração da SDL. Abrir as configurações ou trocar de janela interrompe a vibração.
+
+
+No Windows, a opção **60 FPS em tela dividida**, em Vídeo, permite atualizar todas as vistas a cada quadro nas corridas locais com três ou quatro jogadores. Ela vem desligada. Salve a escolha antes de iniciar a corrida. Resoluções internas mais altas podem reduzir a taxa de quadros. Quem já preparou o jogo deve recompilá-lo por completo para atualizar o código da corrida.
+
+No Windows, **Vídeo → Bloom** controla o halo em torno das superfícies luminosas. A opção vem ligada. Ao desligá-la, as próprias luzes continuam visíveis. Uma instalação preparada anteriormente precisa atualizar o runtime para aplicar a preferência.
+
+A versão 0.4.0 acrescenta **Ultrawide (experimental)** às configurações de vídeo do launcher e do menu dentro do jogo. Clique em **Salvar configurações** no launcher antes de iniciar. A opção amplia câmeras solo suportadas de Contra o Relógio, Grand Prix e VS sem equipes entre 16:9 e 32:9, preserva o enquadramento vertical e mantém o HUD proporcional nas bordas. As vistas suportadas incluem direção frontal/traseira nesses modos solo, sobrevoos GP/VS e close-ups iniciais GP/VS/Contra o Relógio. Original 16:9 e Esticar continuam disponíveis. Cenas/modos sem suporte, tela dividida e geração de quadros usam 16:9; câmeras online e de replay não recebem suporte ultrawide. Reconstrua o jogo, incluindo as unidades guest afetadas, para aplicar.
+
+Após recompilar o launcher e o jogo para Windows a partir desta branch, perfis novos começam com o tema **Nativo**. Em **Vídeo → Tema do menu**, também é possível escolher **Simples escuro**, **Simples claro**, **NES escuro** ou **NES claro**. O launcher mostra uma captura dos ajustes rápidos para cada opção. Clique em **Salvar configurações** para usar o tema na próxima vez que iniciar o jogo. No jogo, Tema do menu é a primeira opção em Vídeo. Escolha um tema, feche o Menu e abra-o de novo para ver a mudança. Perfis existentes mantêm a aparência escolhida. O antigo tema Padrão passou a se chamar Simples escuro, e o NES passou a se chamar NES escuro. Perfis que ativaram a opção antiga do menu nativo continuam usando o Nativo.
+
+A chave inglesa do menu principal, F1, Home/Guide e Menos + Mais abrem o Menu. Shift+F1 abre o painel convencional.
+
+Pressione F1 durante o carregamento de uma pista no modo solo para abrir o Menu nativo. Você pode continuar ajustando as opções quando a apresentação da pista começar. A linha selecionada e o valor que estiver digitando são preservados. Se você pressionar F1 na inicialização, o Menu abrirá assim que a interface do jogo estiver pronta.
+
+No Windows, a opção **Distância da câmera de pilotagem**, em Vídeo, ajusta a vista frontal e a traseira no Contra o Relógio, Grand Prix e VS solo sem equipes. A distância original é 100%. Use as setas para mudar de dez em dez pontos percentuais ou digite um número inteiro de 75 a 150. Valores maiores afastam a câmera do kart. O close-up inicial mantém a distância original e, quando começa a pilotagem, a câmera passa gradualmente para a distância escolhida. O jogo continua verificando a colisão com paredes. Salve a configuração no launcher ou ajuste-a no jogo com F1. Recompile o jogo e o runtime juntos para usar a opção.
+
+**CTGP Deluxe e o menu de configurações.** O relançamento corrige o crash ao abrir o menu principal com as duas opções ligadas. Atualize a build para o launcher regenerar o layout do menu a partir dos arquivos do jogo.
+
+#### Instalação e runtime
+
+A versão 0.4.0 restaura a sombra ausente do banner de largada de Rock Rock Mountain, respeitando o estado de depth clamp solicitado pelo jogo. Reconstrua o runtime para aplicar o fix. Condições verificadas no [estado técnico](docs/STATUS.md).
+
+O instalador pode abrir o launcher na mesma janela após a instalação. A opção vem marcada, e o launcher usa a pasta de dados escolhida durante a instalação, inclusive em outro disco.
+
+Se uma atualização exigir a reinstalação das ferramentas, a tela Instalação abre em **Ferramentas**. Após a verificação, ela segue para **Build do jogo** quando os arquivos estão prontos, ou para **Arquivos do jogo** se faltar alguma entrada. A instalação bem-sucedida remove as cópias obsoletas de ferramentas reconhecidas nas versões anteriores.
+
+Abra **Uninstall.exe**, ao lado de **Launcher.exe**, para desinstalar. A opção padrão guarda saves, Miis, configurações e o jogo preparado. Para reutilizá-los, escolha a mesma pasta de dados na reinstalação. A remoção completa mostra a pasta de dados e exige confirmação.
+
+O runtime da 0.4.0 inclui um ajuste Vulkan para a GTX 1070 desktop (dispositivo PCI `10de:1b81`). Consultas elegíveis de tamanho de textura constante são movidas para fora de ramificações de shaders de fragmento. As demais GPUs seguem pelo caminho atual. Recompile o runtime para aplicar o ajuste. A validação está no [estado técnico](docs/STATUS.md).
+
+**Inicialização direta:** `Launcher.exe --play` abre o jogo solo já preparado sem a janela do launcher. Para selecionar seus dados: `Launcher.exe --play --data-dir "D:\\MK8\\data"`. Mantém validações, bloqueios e logs; não instala ferramentas nem recompila. Salas Steam continuam pelo launcher.
+
+**Modo portátil Windows:** extraia `MK8-online-0.5.0-portable.zip` e mantenha `portable.txt` ao lado do executável. Fontes, ferramentas e dados ficam em `portable/`, sem executar setup. Para atualizar, substitua o executável e preserve essa pasta; atualização por instalador fica desativada. `--data-dir` tem prioridade para a pasta de dados. Não migra instalações existentes automaticamente.
+
+**Mudança de pasta/unidade:** abra esta versão uma vez antes de mover, feche o jogo e o launcher e copie/mova a pasta inteira, incluindo `portable/`. Na próxima abertura, caminhos internos do jogo, builds, Miis, fontes e Python são ajustados automaticamente. Os metadados anteriores ficam em `portable/.relocation-backups/`; saves e arquivos binários do jogo não são reescritos. Recursos selecionados fora da pasta portátil continuam externos: mantenha dentro dela o que precisar levar. O ZIP portátil requer Windows x64 e drivers Vulkan compatíveis. No Linux, use o AppImage indicado acima.
+
+
+Em **Jogar**, volte à partida ou abra o Perfil Mii. Em **Nextendo**, consulte as salas e a lista de amigos com a presença de cada um. Selecione uma sala para ver os detalhes e use Voltar para retornar à lista. Para disputar uma corrida, use **Online Play** no Mario Kart.
+
+#### Recursos disponíveis desde a 0.3.0
+
+- **CTGP Deluxe no MK8 4.0.1:** importe os recursos das pistas do CTGP Deluxe 1.1.1 (originalmente para 3.0.3), incluindo 64 pistas em 16 copas adicionais com nomes, imagens, ícones e músicas. A adaptação não executa o plugin original; a compatibilidade é incompleta e ainda há bugs.
+- **Launcher redesenhado:** instalação horizontal em etapas, configurações em módulos, idioma do jogo acessível, criação guiada de Mii, amigos/salas Steam e relatórios de suporte mais claros.
+- **DLC opcional:** importe seu Booster Course Pass na preparação ou depois e ative/desative sem excluí-lo. Jogo, DLC e chaves nunca são distribuídos.
+- **Correções e melhorias:** congelamento ao carregar recursos Mii, óculos, verificação Vulkan, memória/texturas, miniaturas MKTV, manual local, fontes, shaders de partículas, áudio, seleção de controles e esperas de shaders na tela dividida em dois jogadores.
+- **Configurações e apresentação:** leitura CRLF do INI corrigida. A geração experimental de quadros pode apresentar cerca de 120 FPS nos trechos medidos, mantendo a simulação em 60 Hz; continua desligada por padrão.
+
+O histórico do CTGP e do redesenho do launcher está nas [notas da 0.3.0](docs/releases/0.3.0.md). Para as limitações da versão atual, consulte o [estado técnico](docs/STATUS.md).
+
+### Onde estamos
+
+**Correções no Windows na 0.5.0.** Recompilar o runtime do Windows habilita caminhos com caracteres não ASCII para o jogo, os saves e as configurações. Se o jogo fechar com erro, o launcher mostra a última mensagem fatal disponível e guarda um ZIP de diagnóstico em **Suporte**. Isso também funciona com `Launcher.exe --play`. A integração Steam tenta a próxima DLL instalada quando uma candidata carrega, mas falha ao inicializar as interfaces necessárias. O launcher também aceita o Booster Course Pass v65536 verificado em NSP ou NSZ.
+
+Recompile o jogo depois de instalar o instalador 0.5.0 para aplicar a correção da votação de pistas quando faltam modelos Mii. Durante a preparação do jogo, o gerador agora tenta novamente se o Windows bloquear temporariamente a renomeação de um módulo concluído.
+
+**Apresentação a 120 FPS:** a opção experimental de geração de quadros já existente interpola uma imagem entre quadros reais, mantendo o jogo a 60 Hz. Exige monitor de alta frequência e folga na GPU; não desbloqueia a simulação nativa nem elimina engasgos de shaders. A investigação local mediu cerca de 120 quadros apresentados por segundo em um trecho solo estável com RX 580 2048SP e monitor a 180 Hz. Isso não qualifica uma corrida completa ou multiplayer. O runtime da 0.3.0 também corrige a leitura de INI com CRLF, que podia desativar silenciosamente `frame_gen = 120` e interpretar outras opções textuais incorretamente. Detalhes e limites em [STATUS.md](docs/STATUS.md).
+
+As correções de desempenho da 0.3.0 usam o temporizador de alta resolução do Windows nas esperas limitadas de shaders, aplicam esse orçamento à cena de tela dividida de dois jogadores e cancelam a configuração de controles quando faltam jogadores. Recompile o jogo/runtime para aplicá-las. Na versão 0.3.0, para teclado e um controle no multijogador local, ative **Controles começam no jogador 2** em Vídeo e controles. A primeira compilação de shaders ainda pode causar pausas; essas correções não qualificam todas as pistas CTGP nem o multiplayer entre PCs.
+
+A versão 0.3.0 integra as PRs #27–31 e #33: guia local, leitura de miniaturas dos replays, lifetime de texturas, suporte limitado de shader, fontes privadas e melhorias Steam/Mii/DLC. O commit `8202c32` também integrou a fase B do CTGP (copas adicionais e seus hooks de guest). Verificações da integração e limites estão em [STATUS.md](docs/STATUS.md).
+
+Melhorias Steam da 0.3.0: descoberta da DLL Steam em bibliotecas adicionais e pastas internas dos jogos, com acessores C versionados; busca de todos os amigos, inclusive offline; fragmentação confiável de datagramas LAN maiores; e liberação da sessão Steam ao fechar o jogo, permitindo aceitar outro convite sem reiniciar o launcher. Atualize os dois PCs; uma corrida completa entre máquinas ainda não foi qualificada.
+
+O Multijogador oferece **Criar Sala (Automático)** e **Jogar (Sala Manual)**. Ambos criam a sala Steam do anfitrião; convidados aceitam um convite e escolhem navegação automática ou manual dentro do jogo. A automação mantém o Mii ativo selecionado. O conversor corrige os canais da textura dos óculos: regenere os recursos Mii derivados e recompile o runtime para aplicar essas correções Mii.
+
+Na `fix-chore`, **Instalar → Arquivos do jogo** aceita um NSP ou NSZ opcional do Booster Course Pass, importado após a build bem-sucedida na mesma preparação pelo importador verificado existente. Campo vazio preserva a DLC atual. A importação posterior continua em **Instalar → Conteúdo adicional**, com atalho em **Jogar**; ativar/desativar continua em **Configurações**. A Steam continua exigindo DLC e CTGP equivalentes. Nenhuma DLL Valve ou arquivo do jogo é distribuído.
+
+| Área | Progresso atual | Próxima etapa |
+| --- | --- | --- |
+| Launcher | Janela nativa, preparação guiada, instalador, atualizações e relatórios; espanhol, inglês e PT-BR | Atualização 0.3.0 → 0.4.0 em mais PCs |
+| Corrida solo | Mushroom Cup concluída; batalha, MKTV e contrarrelógio alcançados | Qualificação conjunta de imagem, áudio, controle e reinício/save |
+| Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, trajes, piloto, minimapa) | Mii nas salas LAN, comparação com recursos do console |
+| Multijogador | Busca de partidas no Online Play nativo pelo Nextendo, convites Steam e testes de LAN local | Completar uma corrida Nextendo no relançamento e uma corrida Steam entre dois PCs |
+| Desempenho | Cerca de 60 FPS nos trechos medidos no PC de teste | Copas repetidas, estabilidade de VRAM e mais hardware |
+
+São marcos observados, não um percentual de conclusão. `gameplay_verified` e `multiplayer_verified` continuam `false` até a qualificação completa.
+
+A leitura de miniaturas do MKTV agora copia a imagem renderizada pela GPU ao gravar um replay. Arquivos existentes já podem conter JPEGs corrompidos; a mudança preserva esses arquivos e vale para miniaturas gravadas depois dela.
+
+### O que este projeto faz
+
+O pipeline traduz o executável AArch64 do jogo para C e o compila para Windows x64 ou Linux amd64 nativo. Um runtime C/C++ fornece gráficos, áudio, entrada e serviços de sistema; o launcher em Rust/Tauri cuida da preparação, builds, atualizações, Miis e salas.
+
+RatOne desenvolve e mantém a adaptação do MK8, o launcher e a integração. A base de tradução/runtime vem do **SMM2Recomp e do LASRecomp**, com outros trabalhos creditados. Veja [fontes de terceiros e licenças](docs/THIRD_PARTY.md).
+
+### Entre na pista
+
+#### Requisitos no Windows
+
+- **Windows x64** e WebView2. O launcher instala sozinho um **Python 3.12 x64** privado.
+- GPU e driver com **Vulkan 1.3 ou mais novo**. Não há especificação mínima geral de CPU/GPU qualificada.
+- Seu próprio jogo base, a **atualização 4.0.1** e o `prod.keys` do seu console, ou uma pasta do jogo já extraída e suportada.
+- Cerca de **28 GiB livres** para extração e preparação (incluindo 4 GiB de reserva de segurança), além de espaço para ferramentas e caches. SSD recomendado.
+- Internet para o primeiro download das ferramentas (cerca de 0,4 GiB) e para atualizações.
+- **Para Miis:** ao abrir o criador, o launcher baixa `AFLResHigh_2_3.dat` de uma cópia do antigo CDN Miitomo no Internet Archive. Confere tamanho e SHA-256 do ZIP e da biblioteca, depois guarda o arquivo na pasta de dados para uso offline. O arquivo não acompanha o GitHub nem o instalador. Se o arquivo online estiver indisponível, tente novamente ou selecione uma cópia local compatível; sem a biblioteca, as opções ficam numeradas e os rostos não são desenhados.
+- **Para multijogador:** entre na Steam e use uma DLL Steamworks compatível de 64 bits de um jogo já instalado. Nesta branch, o launcher tenta primeiro as DLLs configuradas e locais e procura nas bibliotecas Steam se nenhuma fornecer as funções necessárias. Se o launcher informar que falta `SteamAPI_SteamFriends_v017`, aponte `MK8_STEAM_DLL` para o caminho completo de uma `steam_api64.dll` compatível, reabra o launcher e entre em **Multijogador** para conferir a lista de amigos. A cópia testada de Brawlhalla funcionou na 0.3.0. As cópias testadas de Counter-Strike 2 e Deadlock exportam `v018` e são recusadas pela 0.3.0. Nenhum arquivo da Valve é distribuído.
+
+#### Instalar e jogar
+
+1. Baixe `MK8-online-0.5.0-setup.exe` em [Releases](https://github.com/Vnnc1/MK8-online/releases) e escolha as pastas do aplicativo e dos dados. A instalação é por usuário, sem administrador. Já tem uma versão anterior? Use **Suporte → Atualizar agora**: a pasta de dados e os saves são mantidos.
+2. Abra **Instalar**. Conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo** (o launcher encontra as chaves junto do jogo, ou selecione as suas).
+3. Rode a etapa **Build do jogo**. Depois de atualizar de uma versão anterior, rode de novo: o jogo é recompilado com o runtime novo.
+4. Escolha **Jogar solo**.
+
+A etapa **Ferramentas** do launcher prepara o Python privado diretamente, sem PowerShell ou carregamento de ZIP pelo .NET. O CPython vem do pacote oficial NuGet fixado; o arquivo e as dependências são conferidos por hash. Ambientes interrompidos são preservados antes do reparo. Mantenha a proteção do antivírus ativa.
+
+Uma pasta extraída precisa conter `exefs`, `romfs` e `control.nacp` (ou `control/control.nacp`): use **Já tenho o jogo extraído numa pasta**. O perfil ativo é o 4.0.1 AArch64; outras versões do jogo e importação de XCI/XCZ não foram validadas. O DLC suportado é importado separadamente.
+
+A importação direta de NSP/NSZ aceita duas variantes verificadas do programa base, mantendo a conferência integral dos hashes e da atualização 4.0.1. Outros conteúdos base continuam sem suporte; nesse caso, use uma pasta extraída compatível. Os detalhes da validação estão no [estado técnico](docs/STATUS.md).
+
+Os dados ficam por padrão em `%LOCALAPPDATA%\MK8-online` e sobrevivem a atualizações e à desinstalação. Para usar outro disco com o launcher portátil: `.\Launcher.exe --data-dir E:\MK8-Local`, e continue usando a mesma pasta.
+
+**Idioma:** o launcher e o instalador oferecem **English**, **Português (Brasil)** e **Español** (**Language / Idioma**). O idioma do jogo é independente.
+
+#### Crie seu Mii
+
+1. Abra **Perfil Mii** e aguarde o primeiro download da biblioteca. A origem Internet Archive aparece no criador. Para escolher um arquivo existente, abra **Usar um arquivo local**, depois **Procurar** e **Usar**. Uma biblioteca válida já configurada é reutilizada automaticamente.
+2. Digite um nome e toque em **Criar Mii**. Passe pelas abas e toque na opção que quiser: cada botão mostra seu Mii com aquela opção. Em **Corpo** ficam tipo, altura, porte e cor favorita, e a prévia mostra o corpo inteiro (ou só o rosto).
+3. Toque em **Salvar Mii**. Na primeira vez o launcher prepara os modelos Mii do jogo; o jogo usa seu Mii na próxima vez que abrir.
+
+**Jogar** informa quando a preparação Mii está em andamento e libera o botão ao concluir. Os recursos já preparados são reutilizados. Você pode manter a Entrada Steam ativada para o Spacewar ao jogar solo ou em uma sala Steam. Na `fix-chore`, um controle virtual inativo da Steam deixa a vaga do jogador disponível para o controle físico detectado pelo GameInput do Windows. Se o seu controle não responder, informe o modelo e o tipo de conexão junto com o relatório de **Suporte → Gerar relatório**.
+
+Você pode ter vários Miis e trocar entre eles no topo. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente.
+
+### Corra com amigos (Steam)
+
+Cada jogador precisa da própria cópia do jogo preparada (mesma versão 4.0.1), de um Mii e da Steam aberta. Deixe o launcher aberto em **Multijogador**: a Steam o mostra como **Spacewar** (AppID 480, o aplicativo de testes da Steam), e é assim que os convites chegam até ele.
+
+1. **Anfitrião:** **Multijogador → Criar sala**, depois **Convidar** ao lado do amigo (ou **Convidar pela Steam**). O jogo do anfitrião abre e cria a sala LAN sozinho.
+2. **Convidado:** escolha um ou dois jogadores locais ao entrar na sala de um amigo pelo launcher. Aceitar um convite diretamente pela Steam inicia a sessão com um jogador local. Com a navegação automática ativada e uma compilação compatível, o jogo abre a lista de salas LAN. Para dois jogadores, conclua primeiro as etapas de controle e Mii. Selecione a sala do anfitrião na lista.
+3. Todos escolhem personagem e kart; o anfitrião define as regras.
+
+Se a entrada automática parar (ela é experimental e prefere desistir a apertar a coisa errada), continue à mão: no menu principal do jogo segure **L + R** e clique o **analógico esquerdo** para mostrar **LAN Play**. O anfitrião usa **Create Room**; os convidados escolhem a sala do anfitrião em **Lobby**.
+
+Limites conhecidos:
+
+- Um amigo com o launcher fechado vai ver a Steam tentar abrir o Spacewar ao aceitar: abra o launcher e use **Entrar**.
+- Um convidado entrando pela Steam a partir de outro PC é o que esta release precisa confirmar.
+- O jogo suporta até 12 jogadores em LAN, mas só dois foram testados.
+
+### Desempenho, com contexto
+
+Num **Xeon E5-2666 v3 / 16 GB RAM / RX 580 2048SP**, trechos medidos de uma Mushroom Cup completa:
+
+| Pista | FPS médio | Tempo de quadro p95 |
+| --- | ---: | ---: |
+| Mario Kart Stadium | 59,99 | 17,46 ms |
+| Water Park | 59,98 | 17,45 ms |
+| Sweet Sweet Canyon | 59,97 | 17,46 ms |
+| Thwomp Ruins | 59,99 | 17,33 ms |
+
+As medições excluem as janelas de captura e não garantem 60 FPS em toda cena nem em outros PCs. Shaders usados pela primeira vez ainda podem engasgar, principalmente quando o conteúdo de outros jogadores aparece pela primeira vez, e **a VRAM ainda cresce entre pistas**. Veja [medições e investigações em aberto](docs/STATUS.md).
+
+### Ajude a melhorar a próxima volta
+
+Em **Suporte → Gerar relatório**, crie o ZIP de diagnóstico e anexe a uma [issue](https://github.com/Vnnc1/MK8-online/issues), com CPU/GPU, versão do launcher, o que você fez e o que aconteceu. Para multijogador, anexe relatórios dos **dois** PCs. Os relatórios incluem logs do jogo, da build e das ferramentas. Na `fix-chore`, incluem também `dlc.log` após uma tentativa de importação do DLC. Caminhos pessoais e nomes de conta são ocultados, e saves e chaves ficam de fora. Revise os anexos antes de compartilhar. Nunca publique ROMs, chaves do console ou arquivos privados.
+
+### Pacote de pistas CTGP Deluxe (opcional, experimental)
+
+O CTGP Deluxe 1.1.1 foi feito para o MK8 3.0.3 (32 bits). A 0.3.0 adapta seus recursos de pistas ao MK8 4.0.1
+(64 bits), sem executar o plugin original. Escolha 16 copas adicionais com as 64 pistas ou um layout de substituição,
+descrito abaixo. A compatibilidade é incompleta: persistem bugs por pista, defeitos gráficos e quedas de desempenho.
+
+1. Baixe o CTGP Deluxe em [ctgpdx.com](https://www.ctgpdx.com/download) (uso pessoal) e extraia o ZIP.
+2. **Instalar → Conteúdo adicional → CTGP Deluxe**: escolha a pasta extraída (a que tem `atmosphere/`) e clique em **Importar CTGP…**.
+   No mesmo disco da pasta de dados leva segundos e não ocupa espaço extra (hardlinks).
+   Escolha onde ficam as pistas: **no lugar das copas do jogo base** (48 pistas, +16 com o DLC), **no lugar das
+   copas do DLC** (48 pistas ao lado das 48 originais; requer o Booster Course Pass importado e ativado) ou **em 16
+   copas novas** (as 64 pistas em mais duas páginas da tela de copas, L/R, com nomes, imagens, músicas e ícones
+   próprios; nenhuma pista original sai do lugar).
+3. **Ativar CTGP Deluxe** liga o pacote; desligue para jogar o jogo original. O jogo, o DLC e os seus saves nunca são
+   alterados; com o CTGP ligado o jogo usa saves próprios, criados uma vez como cópia dos seus.
+
+Nas salas da Steam todos precisam do mesmo pacote (o mesmo CTGP ativado ou todos sem ele). O MK8-online não distribui
+o CTGP: ele é lido da sua cópia e fica no seu PC. Limites conhecidos: menus próprios e botão aleatório do CTGP
+dependem do código dele (indisponível); os fantasmas de staff do contra-relógio são os da pista original; nas copas
+novas, cada pista do CTGP guarda os recordes junto com os da pista original cuja vaga ela usa (nos saves do CTGP), e
+as sessões online usam as copas do jogo (senão cada máquina decidiria sozinha quais corridas são de copa CTGP). Veja
+[STATUS.md](docs/STATUS.md).
+
+### Compilar e contribuir
+
+A build aceita unidades C geradas do MK8 4.0.1 com quebras de linha do Windows (CRLF) ou do Unix (LF). Nos dois casos, os bytes precisam reproduzir o mesmo SHA-256 registrado antes de aplicar os hooks do jogo. O pacote Windows usa x64.
+
+O botão **Info** abre a janela local **How to Play**. **Back to game**, Esc ou fechar a janela retorna ao jogo. O guia cobre botões padrão, drift, itens, assistências e modos; mapeamentos de PC ficam em F1 → Ajustes → Controle. Não exige extrair manual nem conexão à internet. Recompile launcher e runtime para este suporte. O guia inicial está em inglês.
+
+Para experimentar a direção por movimento na 0.4.0, conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** (seta curva amarela). Segure o controle como um volante e incline-o para a esquerda ou para a direita. Recompile o runtime uma vez para obter esse recurso.
+
+No Windows, diálogos que usam a fonte compartilhada preferem Segoe UI a Arial quando não há dump das fontes do console nem `LARECOMP_FONT` explícito. Isso evita a aparência alta e estreita do fallback Arial na confirmação de saída da corrida. Continuam sendo fontes substitutas; dumps do console têm prioridade.
+
+Em **Configurações → Fontes do jogo**, **Importar pasta de fontes** copia fontes do seu próprio Switch. Requer `FontStandard.ttf` ou `nintendo_udsg-r_std_003.ttf/.bfttf`; fontes regionais/de botões são opcionais. Nomes do SharedFontDumper são normalizados automaticamente. Os controles de fontes seguem o idioma do launcher: português brasileiro, inglês ou espanhol. Limites TrueType e hashes são conferidos; isso não autentica a origem Nintendo. **Padrão do sistema** desativa sem apagar; **Fontes do console importadas** reativa. Vale no próximo início, sem nova build do jogo após instalar o launcher/runtime com este suporte. Pastas legadas e overrides `LARECOMP_FONT` continuam suportados.
+
+Com homebrew já funcionando: baixe o `.nro` dos [releases do SharedFontDumper](https://github.com/simontime/SharedFontDumper/releases), coloque em `switch/` no SD e abra pelo Homebrew Menu. **A** extrai TTFs individuais; **+** sai após concluir. Copie a pasta `fonts` do SD para o PC e importe-a. Os controles/nomes estão no [fonte](https://github.com/simontime/SharedFontDumper/blob/master/source/main.c). A compatibilidade desta ferramenta antiga com firmware/homebrew atuais não foi testada aqui. `shared_font.bin` e arquivos de firmware não são aceitos.
+
+O desenvolvimento acontece na `fix-chore`. São necessários Rust, Python 3.12 x64, PowerShell 7 e .NET 10 x64 (para o importador). Na raiz do repositório:
+
+```powershell
+.\scripts\start-launcher.ps1
+```
+
+O script baixa as fontes upstream fixadas, confere os hashes, compila o launcher e o abre. Para empacotar o launcher portátil: `python scripts/package-launcher.py` (saída: `target/portable/Launcher.exe`). Os passos de release estão em [RELEASING.md](docs/RELEASING.md).
+
+Para gerar um instalador local de teste sem publicar uma release, execute `python scripts/release.py`. O setup fica em `<diretório target do Cargo>/dist/MK8-online-<versão>-setup.exe`. Instale manualmente builds de teste com a mesma versão; o atualizador só oferece versões mais novas. O pacote inclui o novo design padrão e as operações reais de instalação/build, sem o storyboard debug.
+
+Mantenha as adaptações em `runtime/mk8` e `toolchain`; a preparação as aplica a uma cópia verificada. Não edite os snapshots upstream nem o código gerado do jogo. Siga o [AGENTS.md](AGENTS.md) e rode os testes da área alterada. Caminhos só de desenvolvimento estão documentados no [estado técnico](docs/STATUS.md):
+
+- transportes LAN/relay/P2P pela API;
+- o conversor estático de cabeça Mii.
+
+Para usar o Nextendo, atualize a build do jogo e selecione **Jogar → Jogar no Nextendo**. No primeiro acesso, o launcher mostra a impressão digital da chave pública do servidor de corrida e pergunta se você confia nela neste PC. Os demais serviços de jogo usam a autoridade certificadora do Nextendo e a verificação do nome do servidor. Faça login pelo navegador e abra **Online Play** no MK8. Na versão de teste, a autorização fica na memória enquanto o launcher estiver aberto. O CTGP é desativado nessa sessão. A reconexão continua experimental.
+
+Se o Nextendo retornar `discord_unlinked` após o login, vincule o Discord à mesma conta Nextendo e selecione **Jogar no Nextendo** novamente.
+
+| Local | Responsabilidade |
+| --- | --- |
+| `apps/launcher` | Launcher nativo, interface web, instalador, atualizações e relatórios |
+| `crates/installer`, `crates/manifest`, `crates/build-manager` | Instalação, validação, Miis e supervisão de builds |
+| `crates/session`, `crates/transport` | Salas, Steam, relay e transporte autenticado |
+| `toolchain`, `runtime/mk8` | Pipeline de recompilação e adaptações do runtime do MK8 |
+| `games/mk8d` | Perfis de versão, símbolos e configuração do jogo |
+| `scripts`, `tests` | Preparação, empacotamento e testes de regressão |
+| `upstream/manifests` | Manifestos das fontes fixadas; os snapshots baixados ficam fora do Git |
+| `local`, `target`, `prebuilt` | Dados privados e artefatos gerados, ignorados pelo Git |
+
+#### Configurações do jogo
+
+Os avisos do launcher aparecem em um painel fixo no topo da janela, visível durante a rolagem e ao trocar de aba. Use **Fechar aviso** (×) para dispensá-los. A entrada tem uma animação curta, desativada quando o sistema solicita redução de movimento.
+
+As opções gerais ficam em **Configurações**: vídeo, áudio, idioma do jogo, ícones dos botões, posição dos controles e mapeamento de teclado/controle. O launcher usa o mesmo `user-no-mii/mk8d.ini` do menu F1. Clique em **Salvar configurações** para aplicar no próximo início do jogo; **Recarregar do jogo** recupera os valores gravados pelo menu F1. Alterações não salvas permanecem na tela durante as atualizações de estado. Durante o salvamento e a leitura de confirmação, os campos e os botões Salvar/Recarregar ficam bloqueados; uma falha libera a edição sem descartar os valores pendentes. Comentários e opções não editadas são preservados.
+
+As configurações não podem ser salvas enquanto o jogo ou uma preparação usa os dados. Os mapeamentos são selecionados em listas; atribuir uma tecla ou botão já usado troca os dois destinos, como no menu F1. Ações de conta, instalação de mods e saída continuam no menu do jogo. Salas continuam em **Multijogador**.
+
+#### Conteúdo adicional no launcher
+
+Após preparar o jogo, abra **Instalar → Conteúdo adicional**. Selecione o NSP ou NSZ do Booster Course Pass v65536 e, quando necessário, as chaves do seu console; clique em **Importar DLC NSP/NSZ…**. O launcher mostra o estado da operação e seu log. Uma build antiga precisa ser atualizada antes de habilitar esses controles.
+
+O controle **Ativar Booster Course Pass** fica em **Configurações → Conteúdo adicional** e vale ao iniciar o jogo. Importação e reparo permanecem em **Instalar**. Desativar mantém os arquivos importados e os saves. A preferência é salva por pasta de dados e permanece após reiniciar o launcher ou reconstruir o jogo. Importação e alterações ficam bloqueadas enquanto o jogo ou outra preparação usa os dados. Uma instalação inválida oferece **Reparar importação…**; a substituição só acontece após validar os novos arquivos, preservando a pasta anterior em um backup local.
+
+Mesmo com o DLC instalado, **Instalar → Conteúdo adicional → Reinstalar ou selecionar outro NSP/NSZ** permite escolher novamente o pacote e as chaves. **Reinstalar DLC…** valida e extrai o pacote selecionado, sem reutilizar automaticamente a instalação existente. Os arquivos atuais só são substituídos após a validação; ficam preservados em um backup local. A preferência de ativação e os saves são mantidos. Apenas o pacote do perfil verificado continua aceito.
+
+Os campos de NSP e chaves mostram contorno verde e marca de confirmação quando os arquivos são encontrados, como na etapa 2. O campo de chaves também considera a configuração já salva e a detecção automática. Essa indicação confirma a presença dos arquivos; o conteúdo do pacote e as chaves continuam sendo validados durante a importação.
+
+O perfil aceito continua restrito ao Booster Course Pass verificado (`0100152000023001`, versão de conteúdo 65536) com o MK8 4.0.1 AArch64. Para testes por linha de comando, use uma pasta de dados isolada já preparada, seu NSP adicional e as chaves do seu console:
+
+```powershell
+.\local\python\Scripts\python.exe toolchain/import_dlc.py --package 'D:\Switch\BoosterCoursePass.nsp' --keys 'D:\Switch\prod.keys' --local 'E:\MK8-TESTE'
+.\local\python\Scripts\python.exe toolchain/build.py --config 'E:\MK8-TESTE\config.json' --local 'E:\MK8-TESTE' --runtime-only
+```
+
+A importação confere os hashes dos NCAs e a associação do CNMT ao jogo, usa o ticket e as chaves para descriptografar o conteúdo e verifica os arquivos extraídos. O runtime oferece o índice instalado e monta esses arquivos reais; arquivos ausentes, vazios ou alterados são recusados. O comando de runtime reaproveita a biblioteca recompilada do jogo. Ainda não há alternância durante uma sessão do jogo, remoção automática nem suporte genérico a outros pacotes ou versões. Evidências e limites ficam em [STATUS.md](docs/STATUS.md).
+
+### Créditos e licença
+
+**O MK8-online é criado e mantido por RatOne.** Os autores upstream mantêm o crédito e a autoria das suas contribuições. Atribuições e avisos de dependências estão em [THIRD_PARTY.md](docs/THIRD_PARTY.md) e [docs/licenses](docs/licenses). O criador de Mii desenha os rostos com o [FFL.js](https://github.com/ariankordi/FFL.js) (AGPL-3.0).
+
+O código do projeto é licenciado sob **[GPL-3.0-or-later](LICENSE)**. As dependências mantêm suas licenças:
+
+- o snapshot do SMM2Recomp inclui GPLv3;
+- o LASRecomp inclui avisos MIT;
+- o setup leva o FFmpeg (LGPL 2.1), com o código-fonte anexado a cada release.
+
+A licença não concede direitos sobre o código, os recursos ou as marcas da Nintendo.
+
+Projeto comunitário independente, sem afiliação nem endosso da Nintendo ou da Valve. Mario Kart e nomes relacionados pertencem aos respectivos donos.
+
+A renderização condicional aguarda reports de oclusão pendentes nos dois operandos antes de comparar as contagens reais. Corrige desaparecimentos transitórios nos previews, preservando resultados legítimos de objetos ocultos. A preparação aplica o patch; é necessário reconstruir o jogo/runtime.
+
+O tradutor de shaders Maxwell passou a respeitar a interpolação declarada pelo jogo para entradas de fragmento. Isso reduziu a cintilação no trecho testado de Boo Lake em tela dividida. Recompile o runtime para aplicar a correção.
+
+Na `fix-chore`, recompilar o runtime do Windows também mostra o jogo em chinês simplificado ou tradicional quando selecionado (#99). O ajuste de shader da GTX 1070 passa a valer para todas as GPUs NVIDIA GTX 10 (Pascal), para tratar a perda do dispositivo da GTX 1060 na primeira corrida (#114). O log do jogo registra o driver Vulkan e as camadas disponíveis antes de criar o dispositivo. Anexe esse log se o jogo fechar ao iniciar.
+
+Se os emblemas das copas e os números da largada aparecem azuis na 0.3.0, o runtime da 0.4.0 corrige as cores dessas texturas RGB565. Recompile o jogo com o runtime atualizado para aplicar a correção.

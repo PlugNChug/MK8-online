@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Build the native Linux FidelityFX FSR 3.1 upscaler provider from AMD's MIT-licensed SDK sources.
+
+Why this exists: AMD publishes the FidelityFX SDK sources under the MIT licence, but ships the upscaler
+provider only as a signed Windows DLL and does not include the SDK's generated shader-permutation tables in
+the source tree. This script derives the Linux provider locally from the user's own downloaded SDK:
+
+  1. verify the pinned SDK source archive (size + SHA-256) if given an archive;
+  2. apply the small, explicit Linux portability edits (Win32 shim declarations, GCC 16 fixes, wchar_t
+     context sizing);
+  3. compile the FSR 3.1 upscaler shaders with DXC and generate the blob tables;
+  4. build libamd_fidelityfx_upscaler_vk.so and run the version/context/dispatch self-tests.
+
+Nothing from AMD's signed binaries is used or redistributed. The output is installed beside the user's data
+with AMD's licence text, and the game loads it only when the user enables FSR in the launcher.
+
+Usage:
+  build_upscaler_provider.py --sdk-archive <SDK v2.4.0 archive> --dxc <dxc binary> --self-test
+  build_upscaler_provider.py --sdk-src <extracted SDK tree> --dxc-archive <DXC archive>
+"""
+
+import argparse
+import hashlib
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+UPSCALER_DIR = REPO / "tools" / "fg-linux-upscaler"
+GEN_BLOBS = REPO / "tools" / "gen_upscaler_blobs.py"
+
+SDK_TAG = "v2.4.0"
+
+# Textual portability edits. Each entry is (relative path, old text, new text). The build fails closed if the SDK
+# does not contain the expected text, so a different SDK version is rejected instead of silently miscompiled.
+API_H = "Kits/FidelityFX/api/include/ffx_api.h"
+PROVIDER_H = "Kits/FidelityFX/api/internal/ffx_provider.h"
+VK_CPP = "Kits/FidelityFX/backend/vk/ffx_vk.cpp"
+FSR3UPSCALER_H = "Kits/FidelityFX/upscalers/fsr3/include/ffx_fsr3upscaler.h"
+PROV_UPSCALE_CPP = "Kits/FidelityFX/upscalers/fsr3/internal/ffx_provider_fsr3upscale.cpp"
+
+PROVIDER_EXTERNAL_STUB = '''
+// Linux provider build: the SDK source does not include the loader-internal external-provider type, and this module
+// never selects a driver-side provider. A minimal definition keeps the shared API object compiling.
+class ffxProviderExternal : public ffxProvider
+{
+public:
+    ffxProviderExternal() : ffxProvider(0, 0, "") {}
+    ffxProviderExternal(void*, uint64_t) : ffxProvider(0, 0, "") {}
+    bool Valid() const { return false; }
+    ffxReturnCode_t CreateContext(ffxContext*, ffxCreateContextDescHeader*, Allocator&) override { return FFX_API_RETURN_ERROR; }
+    ffxReturnCode_t DestroyContext(ffxContext*, Allocator&) override { return FFX_API_RETURN_ERROR; }
+    ffxReturnCode_t Configure(ffxContext*, const ffxConfigureDescHeader*) const override { return FFX_API_RETURN_ERROR; }
+    ffxReturnCode_t Query(ffxContext*, ffxQueryDescHeader*) const override { return FFX_API_RETURN_ERROR; }
+    ffxReturnCode_t Dispatch(ffxContext*, const ffxDispatchDescHeader*) const override { return FFX_API_RETURN_ERROR; }
+};
+'''
+
+PATCHES = [
+    (
+        API_H,
+        "#define FFX_API_ENTRY __declspec(dllexport)",
+        "#ifndef FFX_API_ENTRY\n#define FFX_API_ENTRY __declspec(dllexport)\n#endif",
+    ),
+    (
+        PROVIDER_H,
+        "    virtual ffxReturnCode_t Dispatch(ffxContext* context, const ffxDispatchDescHeader* desc) const = 0;\n\n"
+        "protected:\n    size_t RefCount = 0;\n    uint64_t Id;\n    uint64_t EffectId;\n"
+        "    const char* VersionName;\n};\n",
+        "    virtual ffxReturnCode_t Dispatch(ffxContext* context, const ffxDispatchDescHeader* desc) const = 0;\n\n"
+        "protected:\n    size_t RefCount = 0;\n    uint64_t Id;\n    uint64_t EffectId;\n"
+        "    const char* VersionName;\n};\n" + PROVIDER_EXTERNAL_STUB,
+    ),
+    (
+        VK_CPP,
+        "    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;\n"
+        "    wcscpy_s(outputBuffer, outputLen, converter.from_bytes(inputName).c_str());",
+        "    mk8_utf8_to_utf16(inputName, outputBuffer, outputLen);",
+    ),
+    (
+        VK_CPP,
+        "    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;\n"
+        "    strcpy_s(outputBuffer, outputLen, converter.to_bytes(inputName).c_str());",
+        "    mk8_utf16_to_utf8(inputName, outputBuffer, outputLen);",
+    ),
+    (
+        FSR3UPSCALER_H,
+        "#define FFX_FSR3UPSCALER_CONTEXT_SIZE (FFX_SDK_DEFAULT_CONTEXT_SIZE)",
+        "#if defined(_WIN32)\n"
+        "#define FFX_FSR3UPSCALER_CONTEXT_SIZE (FFX_SDK_DEFAULT_CONTEXT_SIZE)\n"
+        "#else\n"
+        "// Linux: wchar_t is 4 bytes, so FfxPipelineState (259 bindings, each with a wchar_t name) is about twice the\n"
+        "// Win32 size. The context is private to this provider build; callers only hold an opaque ffxContext.\n"
+        "#define FFX_FSR3UPSCALER_CONTEXT_SIZE (FFX_SDK_DEFAULT_CONTEXT_SIZE * 2)\n"
+        "#endif",
+    ),
+    (
+        # MSVC's ui64 suffix and digit separators in a literal. GCC accepts the separator (C++14) but not ui64.
+        PROV_UPSCALE_CPP,
+        "0xF5A5'CA1Eui64",
+        "0xF5A5CA1Eull",
+    ),
+    (
+        # The generated blobs cover the bridge's context flags only: low-resolution motion vectors, no HDR,
+        # no jitter cancellation, normal depth. The effect does not unwind partially created pipelines when a
+        # blob lookup fails (it crashes), so reject an unsupported context before creating any.
+        PROV_UPSCALE_CPP,
+        "        InternalFsr3UpscalerUContext* internal_context = alloc.construct<InternalFsr3UpscalerUContext>();",
+        "        if (desc->flags & (FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE |\n"
+        "                           FFX_UPSCALE_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS |\n"
+        "                           FFX_UPSCALE_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION |\n"
+        "                           FFX_UPSCALE_ENABLE_DEPTH_INVERTED))\n"
+        "        {\n"
+        "            // Generated blobs: low-resolution motion vectors, no HDR/jitter/inverted depth. Return a\n"
+        "            // parameter error instead of letting a failed pipeline lookup leave partial state behind.\n"
+        "            return FFX_API_RETURN_ERROR_PARAMETER;\n"
+        "        }\n"
+        "        InternalFsr3UpscalerUContext* internal_context = alloc.construct<InternalFsr3UpscalerUContext>();",
+    ),
+]
+
+
+def fail(message):
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def unpack_sdk(source: Path, work: Path) -> Path:
+    if source.is_dir():
+        candidates = list(source.glob("*/Kits")) + list(source.glob("Kits"))
+        for candidate in candidates:
+            if (candidate / "FidelityFX" / "api" / "include" / "ffx_api.h").is_file():
+                # Patch a copy, never the user's tree.
+                copy = work / "sdk-copy"
+                if copy.exists():
+                    shutil.rmtree(copy)
+                shutil.copytree(candidate.parent, copy)
+                return copy
+        fail(f"{source} does not look like an extracted FidelityFX SDK tree")
+
+    extract = work / "sdk-extract"
+    if extract.exists():
+        shutil.rmtree(extract)
+    extract.mkdir(parents=True)
+    with tarfile.open(source, "r:*") as archive:
+        archive.extractall(extract)
+    for candidate in sorted(extract.glob("*/Kits")):
+        if (candidate / "FidelityFX" / "api" / "include" / "ffx_api.h").is_file():
+            return candidate.parent
+    fail("the archive does not contain the expected FidelityFX SDK layout")
+
+
+def apply_patches(sdk_root: Path):
+    for rel, old, new in PATCHES:
+        path = sdk_root / rel
+        if not path.is_file():
+            fail(f"missing SDK file: {rel}")
+        text = path.read_text(encoding="utf-8")
+        # A previously patched tree is acceptable if the replacement is already present. This check must come first:
+        # several edits append after an anchor, so the original text remains and would otherwise be applied twice.
+        if new in text:
+            continue
+        # The shared prepared tree may already carry the loader-internal external-provider stub from the
+        # frame-generation build, whose comment/constructor wording differs from this script's. A second class
+        # definition would be a compile error, so treat any existing stub as done.
+        if rel == PROVIDER_H and "class ffxProviderExternal" in text:
+            continue
+        count = text.count(old)
+        if count == 0:
+            fail(f"cannot apply Linux portability edit to {rel}: expected text not found (not SDK {SDK_TAG}?)")
+        if count > 1:
+            fail(f"ambiguous Linux portability edit in {rel}: {count} matches")
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    # Normalise Windows-style include paths anywhere in the SDK (some Vulkan headers use ..\\..\\..\\backend\\...).
+    for path in sdk_root.rglob("*"):
+        if path.suffix.lower() not in (".h", ".hpp", ".cpp", ".c"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        fixed = re.sub(r'#include\s+"([^"]*)"', lambda m: '#include "%s"' % m.group(1).replace("\\", "/"), text)
+        if fixed != text:
+            path.write_text(fixed, encoding="utf-8")
+
+    # The Windows sample build generates this header from the git checkout; the published source tree does not
+    # ship it and ffx_fsr3upscaler.cpp includes it unconditionally on non-Xbox. The hash is not used by the
+    # effect, so a fixed placeholder keeps the source build reproducible.
+    git_hash = sdk_root / "Kits" / "FidelityFX" / "api" / "internal" / "git_hash_branch.h"
+    if not git_hash.is_file():
+        git_hash.write_text('#pragma once\n#define FFX_SDK_GIT_HASH "unknown"\n', encoding="utf-8")
+
+
+def resolve_dxc(args, work: Path) -> Path:
+    if args.dxc:
+        path = Path(args.dxc)
+        if not path.is_file():
+            fail(f"dxc not found: {path} (pass --dxc /path/to/dxc)")
+        return path
+    archive = args.dxc_archive
+    if not archive.is_file():
+        fail(f"DXC archive not found: {archive}")
+    if args.dxc_size and archive.stat().st_size != args.dxc_size:
+        fail(f"DXC archive size mismatch: expected {args.dxc_size}, got {archive.stat().st_size}")
+    if args.dxc_sha256:
+        actual = sha256_of(archive)
+        if actual.lower() != args.dxc_sha256.lower():
+            fail(f"DXC archive SHA-256 mismatch: expected {args.dxc_sha256}, got {actual}")
+    extract = work / "dxc-extract"
+    if extract.exists():
+        shutil.rmtree(extract)
+    extract.mkdir(parents=True)
+    with tarfile.open(archive, "r:*") as tar:
+        tar.extractall(extract)
+    for candidate in sorted(extract.rglob("dxc")):
+        if candidate.is_file() and candidate.parent.name == "bin":
+            candidate.chmod(0o755)
+            return candidate
+    fail("no bin/dxc in the DXC archive")
+
+
+def run(cmd, cwd=None, env=None):
+    print("+", " ".join(str(c) for c in cmd))
+    proc = subprocess.run([str(c) for c in cmd], cwd=cwd, env=env)
+    if proc.returncode != 0:
+        fail(f"command failed with exit code {proc.returncode}: {' '.join(str(c) for c in cmd)}")
+
+
+def build(args):
+    work = args.work_dir
+    work.mkdir(parents=True, exist_ok=True)
+
+    if args.sdk_archive:
+        archive = args.sdk_archive
+        if not archive.is_file():
+            fail(f"SDK archive not found: {archive}")
+        if args.sdk_size and archive.stat().st_size != args.sdk_size:
+            fail(f"SDK archive size mismatch: expected {args.sdk_size}, got {archive.stat().st_size}")
+        if args.sdk_sha256:
+            actual = sha256_of(archive)
+            if actual.lower() != args.sdk_sha256.lower():
+                fail(f"SDK archive SHA-256 mismatch: expected {args.sdk_sha256}, got {actual}")
+        print(f"sdk archive ok: {archive.stat().st_size} bytes sha256={sha256_of(archive)}")
+        sdk_src = archive
+    else:
+        sdk_src = args.sdk_src
+
+    sdk_root = unpack_sdk(sdk_src, work)
+    print(f"sdk tree: {sdk_root}")
+    apply_patches(sdk_root)
+
+    src = work / "src"
+    if src.exists():
+        shutil.rmtree(src)
+    src.mkdir()
+    for name in ("CMakeLists.txt", "upscaler_compat.h", "upscaler_provider_list.cpp"):
+        shutil.copy2(UPSCALER_DIR / name, src / name)
+    shutil.copytree(UPSCALER_DIR / "win32compat", src / "win32compat")
+    shutil.copytree(UPSCALER_DIR / "miniz", src / "miniz")
+
+    dxc = resolve_dxc(args, work)
+
+    run([sys.executable, GEN_BLOBS, "--sdk", sdk_root, "--dxc", str(dxc),
+         "--out", src / "upscaler_blobs.cpp", "--tmp", work / "blobgen"])
+
+    build_dir = work / "build"
+    env_note = os.environ.copy()
+    env_note["FFX_SDK"] = str(sdk_root)
+    print(f"FFX_SDK={sdk_root}")
+    run(["cmake", "-S", src, "-B", build_dir, "-G", "Ninja", f"-DCMAKE_BUILD_TYPE=Release"], cwd=work,
+        env=env_note)
+    run(["cmake", "--build", build_dir, "-j", str(args.jobs)], env=env_note)
+
+    produced = build_dir / "libamd_fidelityfx_upscaler_vk.so"
+    if not produced.is_file():
+        fail("build produced no provider library")
+
+    install = args.install_dir
+    install.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(produced, install / produced.name)
+
+    license_candidates = [sdk_root / "Kits" / "FidelityFX" / "docs" / "license.md",
+                          sdk_root / "Kits" / "FidelityFX" / "LICENSE.md",
+                          sdk_root / "license.md"]
+    for license_path in license_candidates:
+        if license_path.is_file():
+            shutil.copy2(license_path, install / "LICENSE-AMD-FSR-SDK.md")
+            break
+
+    print(f"installed {install / produced.name} ({produced.stat().st_size} bytes)")
+
+    if args.self_test:
+        test_src = UPSCALER_DIR
+        common = ["g++", "-std=c++20", "-DFFX_API_ENTRY=",
+                  "-I", sdk_root / "Kits" / "FidelityFX" / "api" / "include",
+                  "-I", sdk_root / "Kits" / "FidelityFX" / "upscalers" / "include",
+                  "-lvulkan", "-ldl", "-include", "cstdint"]
+        query_bin = work / "test_query"
+        run(common + [test_src / "test_query.cpp", "-o", query_bin])
+        run([query_bin, str(install / produced.name)])
+        context_bin = work / "test_context"
+        run(common + [test_src / "test_context.cpp", "-o", context_bin])
+        run([context_bin, str(install / produced.name), "1920", "1080", "2560", "1440"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--sdk-archive", type=Path, help="official FidelityFX SDK v2.4.0 source archive")
+    source.add_argument("--sdk-src", type=Path, help="already extracted SDK tree")
+    parser.add_argument("--sdk-size", type=int, help="expected SDK archive size in bytes")
+    parser.add_argument("--sdk-sha256", help="expected SDK archive SHA-256")
+    dxc_source = parser.add_mutually_exclusive_group(required=True)
+    dxc_source.add_argument("--dxc", help="path to the DXC compiler binary")
+    dxc_source.add_argument("--dxc-archive", type=Path, help="official DXC release archive (Linux x86-64)")
+    parser.add_argument("--dxc-size", type=int, help="expected DXC archive size in bytes")
+    parser.add_argument("--dxc-sha256", help="expected DXC archive SHA-256")
+    parser.add_argument("--work-dir", type=Path, default=Path.home() / ".cache" / "mk8online" / "fsr-upscaler-build")
+    parser.add_argument("--install-dir", type=Path,
+                        default=Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+                        / "mk8online" / "fsr")
+    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
+    parser.add_argument("--self-test", action="store_true", help="build and run the headless query/context tests")
+    args = parser.parse_args()
+    build(args)
+
+
+if __name__ == "__main__":
+    main()

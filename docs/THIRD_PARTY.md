@@ -10,6 +10,59 @@ A atribuição de controles dentro do jogo e a recuperação da posição dos jo
 
 O AppImage amd64 e o tarball vêm do porte de mitch030504 (DieMitchell). O empacotamento fixa o SHA-256 do appimagetool e do runtime AppImage Type 2 e inclui a licença MIT do runtime no AppImage. As licenças e os créditos do porte acompanham a revisão Linux. [PR #83](https://github.com/Vnnc1/MK8-online/pull/83) · [Licenças e dependências do porte](https://github.com/Vnnc1/MK8-online/blob/edfc423697977594b49db64b67c433c73086664f/docs/THIRD_PARTY.md)
 
+## Headers do FidelityFX Frame Generation — 20/11/2026
+
+`runtime/mk8/graphics/ffx/ffx_framegeneration.h`, `ffx_framegeneration_api_types.h` e
+`vk/ffx_api_framegeneration_vk.h` são cópias não modificadas dos headers públicos do
+[FidelityFX SDK 2.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK), licença MIT, Copyright (C) 2026
+Advanced Micro Devices, Inc.; apenas os caminhos de `#include` foram ajustados à árvore deste projeto e o aviso MIT
+foi preservado em cada arquivo. O provedor Vulkan é construído localmente a partir do SDK baixado pelo próprio
+usuário; nenhum binário da AMD é distribuído (ver `docs/FSR3-4-FG.md`).
+
+O mesmo SDK 2.4.0 (MIT) é a fonte de `tools/gen_upscaler_blobs.py`, `tools/fg-linux-upscaler/` e
+`tools/build_upscaler_provider.py`: o upscaler FSR 3.1.6 é compilado localmente a partir do HLSL do SDK, com
+SPIR-V gerado no build pelo DXC. Nenhum binário, SPIR-V ou modelo da AMD é distribuído (ver
+`docs/FSR3-UPSCALER.md`).
+
+## Porta nativa FSR 4.1.2 — 20/11/2026
+
+`tools/fsr4-linux/` é a porta nativa Linux FSR 4.1.2 do próprio projeto, GPL-3.0-only, derivada do
+[fsr4-vk](https://github.com/Astyyyyy/fsr4-vk) na revisão `b0125ea9798633750f83ebabbc00279bcb49d8dd`, com a
+base vendorizada em `tools/fsr4-linux/third_party/fsr4-vk/`. O texto integral da GPL-3.0 está em
+`tools/fsr4-linux/LICENSE-GPL-3.0.txt` e os avisos de terceiros (AMD FidelityFX SDK, Vulkan, SPIR-V, zstd,
+dxil-spirv, glslang) em `third_party/fsr4-vk/LICENSES/` e `THIRD_PARTY_NOTICES.md`. A licença do projeto é
+GPL-3.0, então a incorporação é compatível; a licença do código não se estende aos recursos gráficos do jogo.
+
+`tools/build_fsr4_provider.py` compila a biblioteca e extrai localmente, da DLL assinada que acompanha o SDK
+2.4.0 baixado pelo próprio usuário, os módulos SPIR-V e os bancos de modelos do FSR 4.1.2. A DLL, os assets
+gerados e o modelo ML não são commitados, empacotados nem redistribuídos; o cabeçalho e a oferta de fonte
+ficam ao lado da biblioteca instalada (`LICENSE-GPL-3.0.txt`, `LICENSE-AMD-FidelityFX-SDK*.md`,
+`SOURCE-OFFER.md`). O provedor é um componente opcional carregado por `MK8_FSR_LIB`; ver
+`docs/FSR4-UPSCALER.md`.
+
+## DLSS / XeSS — pesquisa e downloader, 20/11/2026
+
+Consultados, sem incorporar código, binário, shader ou modelo ao repositório ou aos pacotes:
+
+- [NVIDIA/DLSS, tag `v310.9.16`](https://github.com/NVIDIA/DLSS/tree/v310.9.16): cabeçalhos NGX (`nvsdk_ngx*.h`) e bibliotecas Linux x86-64 `libnvidia-ngx-dlss.so`, `-dlssd.so`, `-dlssg.so`, sob a [NVIDIA RTX SDKs License](https://github.com/NVIDIA/DLSS/blob/v310.9.16/LICENSE.txt) (26.620 bytes). A licença permite distribuir o SDK em formato de objeto dentro de uma aplicação com funcionalidade adicional, mas não como produto isolado nem de forma que o sujeite a licença open source; este projeto mantém a regra mais restrita de não empacotar nada da NVIDIA.
+- [NVIDIA-RTX/Streamline, tag `v2.14.16`](https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16): pacote Windows x64; o arcabouço é MIT (1.591 bytes) e as DLLs DLSS/NGX que ele acompanha estão sob a mesma licença RTX SDKs (`bin/x64/nvngx_dlss.license.txt`). O `sl.dlss_nr` (DLSS 5 Neural Rendering) é declarado nos cabeçalhos, mas não é distribuído no pacote público.
+- [intel/xess, tag `v3.0.2`](https://github.com/intel/xess/releases/tag/v3.0.2): XeSS SDK 3.0.2 (Windows x64), sob a [Intel Simplified Software License (October 2022)](https://github.com/intel/xess/blob/v3.0.2/LICENSE.txt) (4.194 bytes), que permite usar e redistribuir o software binário sem modificação, com o aviso, e proíbe engenharia reversa/descompilação.
+- [NVIDIA — DLSS / Smooth Motion / Reflex no driver Linux](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/610/gaming.html): confirma DLSS SR/FG/RR em Linux nativo e via Proton, `PROTON_ENABLE_NGX_UPDATER=1`, DXVK-NVAPI e Reflex por `VK_NV_low_latency2`.
+- [NVIDIA — DLSS 4.5](https://developer.nvidia.com/blog/nvidia-dlss-4-5-delivers-super-resolution-upgrades-and-new-dynamic-multi-frame-generation/) e [DLSS 5](https://www.nvidia.com/en-us/geforce/news/dlss-5-3d-guided-neural-rendering/): modelo transformer de segunda geração para SR (todas as RTX), MFG 6x/Dynamic nas RTX 50, DLSS 5 Neural Rendering nas RTX 50 com driver 616.64.
+- [intel/xess issue #37](https://github.com/intel/xess/issues/37): pedido de suporte Linux ainda aberto; não há `libxess.so` no SDK 3.0.2.
+
+O downloader `tools/fetch_vendor_sdk.py` fixa URL, tamanho e SHA-256, exige aceite da licença e grava em `$XDG_DATA_HOME/mk8online/<fornecedor>/`; os arquivos não entram no repositório nem nos pacotes. Hashes e matriz de compatibilidade em [DLSS-XESS-NEURAL.md](DLSS-XESS-NEURAL.md).
+
+## Pré-aquecimento de pipelines — referência externa, 19/11/2026
+
+O projeto [dougchansan/mk8-recomp](https://github.com/dougchansan/mk8-recomp) documenta, em [native-pipeline-catalogs.md](https://github.com/dougchansan/mk8-recomp/blob/main/docs/native-pipeline-catalogs.md) (R248/R299), um catálogo de receitas de pipeline que reduz picos de entrada de pista de 3,0–3,4 s para 319–417 ms; em [native-counter-retirement-performance.md](https://github.com/dougchansan/mk8-recomp/blob/main/docs/native-counter-retirement-performance.md) (R324), a coleta de consultas concluídas; e em [native-command-recording-performance.md](https://github.com/dougchansan/mk8-recomp/blob/main/docs/native-command-recording-performance.md) (R330), a redução de bloqueios na gravação de comandos. Foram consultados como referência de abordagem e de medição, não como fonte de código. O repositório não tinha arquivo `LICENSE` na consulta (a API do GitHub informa `license: null`), embora o README declare GPL-3.0-or-later; por isso nenhum código foi copiado. A implementação própria em `toolchain/pipeline_warm.py` grava as chaves e os bytes de shader localmente, em `cache/pipeline_recipes2.bin`, e não usa catálogos, receitas, caches, capturas ou dados de título daquele projeto. Os números deles são de outra máquina, outro runtime e outro título de entrada e não qualificam esta build; as medições desta adaptação estão em [STATUS.md](STATUS.md).
+
+## Build e distribuição Linux
+
+O runtime usa a camada Linux da revisão fixada de SMM2Recomp. O bootstrap reutiliza os avisos do SDL 3.4.18, dos headers Vulkan 1.4.363 e do Vulkan Memory Allocator 3.4.0. O loader Vulkan e os drivers são do sistema. [SDL 3.4.18](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18) · [Vulkan-Headers 1.4.363](https://github.com/KhronosGroup/Vulkan-Headers/releases/tag/v1.4.363) · [Vulkan Memory Allocator 3.4.0](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/releases/tag/v3.4.0)
+
+O pacote usa appimagetool 1.9.1 na preparação e inclui o runtime Type 2 de 20251108 com licença MIT. Os avisos do runtime .NET acompanham o extrator LibHac. [appimagetool 1.9.1](https://github.com/AppImage/appimagetool/releases/tag/1.9.1) · [Type 2 runtime](https://github.com/AppImage/type2-runtime/releases/tag/20251108)
+
 ## Controles Steam no Windows
 
 A integração usa a interface GameInput v0 fornecida pelo Windows e a API pública de controles virtuais da SDL 3. As assinaturas COM e os formatos de leitura e vibração foram conferidos com o Windows SDK 10.0.26100.0. [Windows SDK — GameInput.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/GameInput.h) · [SDL — controles virtuais](https://wiki.libsdl.org/SDL3/SDL_AttachVirtualJoystick)
@@ -61,7 +114,6 @@ O launcher resolve `nex.nextendo.network` para os serviços gerais e `nat.nexten
 Listagem de salas: contrato de `/api/status/live` e tratamento de `games[].titles`, `lobbies`, `players` e `roomsAvailable` conferidos no [cliente público de status do Nextendo](https://nextendo.network/assets/js/pages.js). Implementação própria, sem copiar o cliente. `0100152000022000` filtra exclusivamente MK8 Deluxe; posição de sala na lista nunca é tratada como identificador NEX. Pesquisa de ingresso: [Matchmake Extension](https://github.com/Kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol) e [extensões MK8D](https://github.com/kinnay/NintendoClients/wiki/Matchmake-Extension-Protocol-%28MK8D%29), referências de protocolo, sem incorporar biblioteca/código. Métodos documentados não constituem validação contra o servidor atual Nextendo ou contra esta build.
 
 Contrato consultado na [documentação oficial de desenvolvedores](https://wiki.nextendo.network/developers) e no [guia de integração](https://wiki.nextendo.network/integration): escopo OAuth `friends`, leitura de `/api/friends?images=0`, presença retornada por amigo e consulta `/api/my-lobby` com `game.matchmaking`. Implementação própria em `runtime/mk8/net/social.inc`, sem copiar código do serviço. Tokens permanecem em memória. A referência documenta leitura da sala atual; não documenta operação HTTP para entrar em uma sala. Não se infere que consulta HTTP substitua o matchmaking NEX do MK8.
-
 ## Revisão de compatibilidade — 16/11/2026
 
 Relatos, comentários e anexos das [Issues abertas do projeto](https://github.com/Vnnc1/MK8-online/issues) foram consultados para a triagem registrada em STATUS; anexos permanecem privados. Códigos de falha de alocação conferidos na [referência oficial Khronos de VkResult](https://docs.vulkan.org/refpages/latest/refpages/source/VkResult.html). Nenhum código ou recurso externo incorporado; reprodução de reconexão usa as APIs e o backend de teste do próprio projeto.

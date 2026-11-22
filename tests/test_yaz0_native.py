@@ -5,6 +5,7 @@ compiled next to runtime/mk8/support/yaz0.c; both decode the same streams, and a
 expected output."""
 import hashlib
 import os
+import shutil
 from pathlib import Path
 import random
 import struct
@@ -21,10 +22,11 @@ import yaz0_native
 
 
 def generated_unit():
-    builds = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'builds'
-    for unit in sorted(builds.glob('*/generated/main/' + yaz0_native.UNIT)):
-        if hashlib.sha256(unit.read_bytes()).hexdigest() == yaz0_native.SHA256:
-            return unit
+    data = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))
+    for base in (data/'builds', ROOT/'local/qualification/builds'):
+        for unit in sorted(base.glob('*/generated/main/' + yaz0_native.UNIT)):
+            if hashlib.sha256(unit.read_bytes()).hexdigest() == yaz0_native.SHA256:
+                return unit
     return None
 
 
@@ -127,6 +129,38 @@ int main(int argc, char **argv) {
 }
 '''
 
+COPY_HARNESS = r"""
+#include "cpu.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+int mk8_yaz0_loop(Cpu *c);
+void rt_log(const char *fmt, ...) { (void)fmt; }
+uint64_t plat_now_ns(void) { struct timespec t; timespec_get(&t, TIME_UTC); return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec; }
+#define SLACK 512
+int main(int argc, char **argv) {
+    FILE *f = fopen(argv[1], "rb");
+    static uint8_t src[1 << 22], dst[1 << 22];
+    size_t n = fread(src, 1, sizeof src, f);
+    fclose(f);
+    uint32_t size = (uint32_t)src[4] << 24 | (uint32_t)src[5] << 16 | (uint32_t)src[6] << 8 | src[7];
+    memset(dst, 0xcd, size + SLACK);
+    Cpu h = {0};
+    h.x[19] = (uint64_t)(uintptr_t)src;
+    h.x[20] = (uint64_t)(uintptr_t)dst;
+    h.x[8] = size;
+    h.x[12] = 0x5a;
+    if (!mk8_yaz0_loop(&h)) return 2;
+    FILE *o = fopen(argv[2], "wb");
+    fwrite(dst, 1, size + SLACK, o);
+    fclose(o);
+    (void)n;
+    return 0;
+}
+"""
+
 
 class Yaz0NativeTests(unittest.TestCase):
     def test_patch_inserts_one_hook_before_the_loop_and_checks_boundaries(self):
@@ -139,6 +173,32 @@ class Yaz0NativeTests(unittest.TestCase):
         for broken in (text.replace('L_7000a88af0', 'L_other'), text.replace('f_7000a88a44', 'f_other'), patched):
             with self.assertRaises(ValueError):
                 yaz0_native.patch(broken)
+
+    @unittest.skipUnless(shutil.which('clang'), 'Clang required (the runtime headers use Clang builtins)')
+    def test_copy_path_matches_the_reference(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out/'host')
+            (out/'harness.c').write_text(COPY_HARNESS, encoding='utf-8')
+            exe = out/'yaz0copy'
+            subprocess.run(['clang', '-O1', '-I'+str(runtime), str(out/'harness.c'),
+                            str(ROOT/'runtime/mk8/support/yaz0.c'), '-o', str(exe)], check=True, capture_output=True)
+            rng = random.Random(20112026)
+            cases = []
+            for length in (1, 2, 3, 17, 18, 273, 274, 5000, 20000):
+                words = [bytes(rng.choice(b'MK8yaz0 ') for _ in range(rng.randint(1, 12))) for _ in range(64)]
+                data = b''.join(rng.choice(words) for _ in range(length // 4 + 1))[:length]
+                cases.append((data, len(data)))
+            runs = bytes([7]) * 600 + bytes(range(256)) * 20 + b'ab' * 300
+            cases.append((runs, len(runs)))
+            cases.append((runs, len(runs) - 5))
+            for index, (data, size) in enumerate(cases):
+                stream = encode(data, rng)
+                path = out/f'case{index}.yaz0'
+                path.write_bytes(b'Yaz0' + struct.pack('>I', size) + bytes(8) + stream)
+                subprocess.run([str(exe), str(path), str(path.with_suffix('.out'))], check=True, capture_output=True, timeout=60)
+                written = path.with_suffix('.out').read_bytes()
+                self.assertEqual(written, decode(stream, size, 512), index)
 
     @unittest.skipUnless(DEFAULT_COMPILER.is_file() and generated_unit(), 'Native compiler and the verified generated unit required')
     def test_native_loop_matches_the_game_loop(self):

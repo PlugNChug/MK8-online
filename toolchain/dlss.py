@@ -1,5 +1,24 @@
-"""Enable NGX extensions on request for the optional DLSS Super Resolution bridge."""
+"""DLSS SR/FG host hooks: enable the NGX device extensions before vkCreateDevice.
 
+NGX's Vulkan backend requires four device extensions and one instance extension that the
+runtime does not otherwise enable:
+
+    instance: VK_KHR_get_physical_device_properties2
+    device:   VK_NVX_binary_import, VK_NVX_image_view_handle,
+              VK_KHR_buffer_device_address, VK_KHR_push_descriptor
+
+This step runs after toolchain/fsr.py and toolchain/fsr_fg.py and before
+toolchain/dlss_fg.py, so the FSR FG/MLFI extension lists are already in place and are not
+reordered. It is inert when neither MK8_DLSS nor MK8_DLSS_FG is on: with both unset (or
+"0"), the instance/device extension lists and the created objects are the same as before.
+FSR frame generation wins when MK8_FSR_FG is also set, matching the bridge's own refusal
+and toolchain/dlss_fg.py's helper.
+
+Every extension is added only when advertised. A missing required extension logs one
+exact line naming it and adds none of the NGX set; the bridge then fails closed at Init
+and the existing FSR/bilinear path runs.
+"""
+from pathlib import Path
 
 
 def _replace(text, old, new, what):
@@ -15,9 +34,15 @@ def prepare_device(runtime):
     text = device.read_text(encoding='utf-8')
 
     helpers = '''static atomic_bool ui_ready;
+// DLSS SR/FG: true only when a DLSS mode was requested; FSR frame generation wins.
 static bool mk8_dlss_requested(void) {
     const char *sr = getenv("MK8_DLSS");
-    return sr && *sr && strcmp(sr, "0") != 0;
+    const char *fg = getenv("MK8_DLSS_FG");
+    const char *fsr = getenv("MK8_FSR_FG");
+    bool sr_on = sr && *sr && strcmp(sr, "0") != 0;
+    bool fg_on = fg && *fg && strcmp(fg, "0") != 0;
+    bool fsr_on = fsr && *fsr && strcmp(fsr, "0") != 0;
+    return (sr_on || fg_on) && !fsr_on;
 }
 
 static bool mk8_dlss_listed(const char **list, uint32_t count, const char *name) {

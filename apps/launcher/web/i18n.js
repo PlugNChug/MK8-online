@@ -4,8 +4,7 @@
 window.i18n = (() => {
   const languages = ["es", "en", "pt-BR"];
   const saved = document.querySelector('meta[name="mk8-language"]').content;
-  const browser = navigator.language.toLowerCase();
-  let language = languages.includes(saved) ? saved : browser.startsWith("pt") ? "pt-BR" : browser.startsWith("en") ? "en" : "es";
+  let language = languages.includes(saved) ? saved : "en";
   let catalog = {};
   let patterns = [];
   const catalogs = new Map();

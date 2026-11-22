@@ -1,0 +1,22 @@
+// MLFI provider copy shader: sample the application's depth image and store it in the provider's
+// R32_SFLOAT `depth` image.  The view may be R32_SFLOAT or D32_SFLOAT: both are sampled as a
+// single float with texelFetch and neither is filtered.
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, r32f) uniform writeonly image2D dst;
+
+layout(push_constant) uniform PushConstants
+{
+    uvec2 size;
+} pc;
+
+void main()
+{
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y)
+        return;
+    imageStore(dst, ivec2(p), vec4(texelFetch(src, ivec2(p), 0).r, 0.0, 0.0, 0.0));
+}

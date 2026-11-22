@@ -3,7 +3,7 @@
 Prefetch mode (the default) makes a draw wait for its program and pipeline, running a still-queued build inline.
 The first sight of a new effect then stops the whole frame while the driver compiles: 244-375 ms frames in the
 Grand Prix and Water Park runs of 06-07/11/2026 (docs/STATUS.md). The draws of one presented frame now share
-MK8_SHADER_WAIT_MS of waiting (default 4 ms). A build that is not done within it keeps going on the worker threads,
+MK8_SHADER_WAIT_MS of waiting (default 4 ms, full waits on Linux Intel iGPUs). A build that is not done within it keeps going on the worker threads,
 and its draws are skipped until it is ready, as in skip mode (LARECOMP_ASYNC_SHADERS), normally for a few frames.
 Compute dispatches still wait in full, because the game may read their results. A negative value keeps the
 upstream behaviour. Full Grand Prix with async translation (07/11/2026): one draw skipped in 11,400 frames, no
@@ -45,10 +45,34 @@ BUDGET = '''
 // their shaders and pipelines; past it a build goes on in the background and its draws are skipped meanwhile.
 int mk8_job_wait_for(BuildJob *j, double max_ms);
 uint64_t vk_frame_counter(void);
+int build_inflight(void);
 static uint64_t mk8_sb_skips;
 static double mk8_shader_budget_ms(void) {
-    static double v = -2;
-    if (v < -1) { const char *e = getenv("MK8_SHADER_WAIT_MS"); v = e && *e ? atof(e) : 4; }
+    static double v = -2, burst = -2;
+    static uint64_t burst_until;
+    if (v < -1) {
+        const char *e = getenv("MK8_SHADER_WAIT_MS");
+        double fallback = 4;
+#if defined(__linux__)
+        // shortcut: full waits on Intel iGPUs until one-time scene draws can be identified reliably.
+        if (g_vk.props.vendorID == 0x8086 && g_vk.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+            fallback = -1;
+#endif
+        v = e && *e ? atof(e) : fallback;
+    }
+    // MK8 (toolchain/shader_budget.py): optional burst grace for diagnosis. A course entry queues hundreds of builds
+    // at once; skipping the scene draws then punched holes in the loading frame (836 skipped in the first entry frame,
+    // 7,118 in the next, 19/11/2026) but did shorten the hitch (2.36 s with full waits against 1.20 s with the 4 ms
+    // budget; the full cost is 2,221 image views, ~1.19 s). MK8_SHADER_BURST_WAIT_MS (0: off, the default) waits that
+    // much during a >64-build burst and MK8_SHADER_BURST_FRAMES (120) frames after it; a negative value waits fully.
+    if (burst < -1) { const char *e = getenv("MK8_SHADER_BURST_WAIT_MS"); burst = e && *e ? atof(e) : 0; }
+    if (burst != 0) {
+        static long frames = -1;
+        if (frames < 0) { const char *e = getenv("MK8_SHADER_BURST_FRAMES"); frames = e && *e ? atol(e) : 120; }
+        uint64_t f = vk_frame_counter();
+        if (build_inflight() > 64) burst_until = f + (uint64_t)frames;
+        if (burst_until && f < burst_until) return burst;
+    }
     return v;
 }
 // MK8 4.0.1's two-player scene has a color/depth pair at 8:9, including dynamic resolution. It is redrawn each
@@ -142,10 +166,13 @@ def replace(text, old, new):
 def prepare(runtime):
     buildsync = runtime/'nvn/buildsync.c'
     text = buildsync.read_text(encoding='utf-8')
+    execute = runtime/'nvn/vulkan/exec.c'
+    current = execute.read_text(encoding='utf-8')
+    if 'mk8_job_wait_for' in text and 'mk8_job_ready' in current:
+        return  # already prepared
     buildsync.write_text(replace(text, 'void build_test_delay(void) {\n', WAIT_FOR + '\nvoid build_test_delay(void) {\n'),
                          encoding='utf-8')
-    execute = runtime/'nvn/vulkan/exec.c'
-    text = replace(execute.read_text(encoding='utf-8'), ANCHOR, BUDGET + ANCHOR)
+    text = replace(current, ANCHOR, BUDGET + ANCHOR)
     for old, new in SITES:
         text = replace(text, old, new)
     execute.write_text(text, encoding='utf-8')

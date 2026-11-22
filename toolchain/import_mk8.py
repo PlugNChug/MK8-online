@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import hashlib
+import os
 from importlib.metadata import PackageNotFoundError, version
 import json
 from pathlib import Path
@@ -181,7 +182,7 @@ def extract(base, patch, control, keys, title_keys, scratch, output, tool, worke
     data = ("\n".join(title_keys) + "\n").encode("ascii")
     print("Importação: aplicando atualização e extraindo arquivos com verificação de integridade.", flush=True)
     # Tickets travel by pipe. Suppress extractor diagnostics that may contain private material.
-    result = subprocess.run([tool / "dotnet/dotnet.exe", tool / "mk8-import.dll", base, patch, control, keys, output,
+    result = subprocess.run([tool / ("dotnet/dotnet.exe" if os.name == "nt" else "dotnet/dotnet"), tool / "mk8-import.dll", base, patch, control, keys, output,
                              str(workers)], cwd=scratch, input=data,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode:

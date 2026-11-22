@@ -11,7 +11,8 @@ VkShaderModule fsr_vk_compile_glsl(const char *src, int stage, const char *name)
     return vk_compile_glsl(src, stage, name);
 }
 
-VkDescriptorBufferInfo fsr_vk_uniform(const float *values, uint32_t size) {
-    VkSpan span = vk_transient_copy(values, size, g_vk.props.limits.minUniformBufferOffsetAlignment);
-    return (VkDescriptorBufferInfo){span.buf, span.off, size};
+VkSpan fsr_vk_uniform(uint64_t bytes) {
+    return vk_transient(bytes, g_vk.props.limits.minUniformBufferOffsetAlignment);
 }
+uint64_t fsr_vk_pending_seq(void) { return vk_pending_seq(); }
+uint64_t fsr_vk_completed_seq(void) { return vk_completed_seq(); }

@@ -14,7 +14,7 @@ GAME_MENU = Path(os.environ.get('MK8_TEST_DATA', ROOT/'local'))/'imports/mk8-4.0
 sys.path.insert(0, str(ROOT/'toolchain'))
 import ctgp_pack as P
 import import_ctgp
-from native import DEFAULT_COMPILER, compiler_env
+from native import DEFAULT_COMPILER, TARGET_FLAGS, cc, compiler_env
 
 TAG = '\x0e\x00\x02\x02Z'
 END = '\x0e\x00\x02\x02d'
@@ -560,6 +560,9 @@ class CtgpPackTests(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#ifndef _WIN32
+#define _putenv_s(name, value) (*(value) ? setenv(name, value, 1) : unsetenv(name))
+#endif
 int fatal_calls; char logged[2048];
 static const char *settings;
 const char *mk8_settings_romfs_overlay(void) { return settings; }
@@ -613,7 +616,7 @@ int main(int argc, char **argv) {
     return 0;
 }''', encoding='utf-8')
             exe = out/'harness.exe'
-            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', '-I', str(out/'inc'),
+            subprocess.run([*cc(), *TARGET_FLAGS, '-O1', '-I', str(out/'inc'),
                             str(harness), str(ROOT/'runtime/mk8/support/romfs_overlay.c'), '-o', str(exe)],
                            env=compiler_env(), check=True, capture_output=True)
             (out/'pack').mkdir()

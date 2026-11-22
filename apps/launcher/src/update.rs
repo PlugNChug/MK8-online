@@ -2,15 +2,20 @@
 //!
 //! The repository comes from `MK8_UPDATE_REPO` (`owner/name`), set when the release is packaged or at launch.
 //! The newest non-draft release is used, pre-releases included, because the project is experimental.
-//! Its `*-setup.exe` asset is downloaded over HTTPS. The asset must match the SHA-256 that GitHub reports
-//! for it, or the `<asset>.sha256` file published next to it. The installer then runs silently and
-//! restarts the launcher.
+//! The published package must match its GitHub SHA-256 digest or the adjacent checksum file.
+//! Windows runs the setup silently. Linux replaces its current package after the launcher exits.
 use mk8_manifest::{hash_file, Result};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+
+#[cfg(target_os = "linux")]
+#[path = "update_linux.rs"]
+mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::{is_handoff, mark_ready, recover_interrupted, run_handoff};
 
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const AGENT: &str = "MK8-online-launcher";
@@ -32,22 +37,29 @@ pub fn repository() -> Option<String> {
 
 /// Whether this executable can replace itself: only the packaged launcher; a source checkout updates with git.
 pub fn installable() -> bool {
-    if !cfg!(mk8_portable) {
-        return false;
+    #[cfg(target_os = "linux")]
+    {
+        cfg!(mk8_portable) && linux::package_present()
     }
-    // After interactive setup the window stays in the installer process. A portable
-    // marker next to the downloaded setup does not describe the installed launcher.
-    #[cfg(windows)]
-    if matches!(
-        crate::installer::mode(&std::env::args().collect::<Vec<_>>()),
-        Some(crate::installer::Mode::Install { .. })
-    ) {
-        return true;
+    #[cfg(not(target_os = "linux"))]
+    {
+        if !cfg!(mk8_portable) {
+            return false;
+        }
+        // After interactive setup the window stays in the installer process. A portable
+        // marker next to the downloaded setup does not describe the installed launcher.
+        #[cfg(windows)]
+        if matches!(
+            crate::installer::mode(&std::env::args().collect::<Vec<_>>()),
+            Some(crate::installer::Mode::Install { .. })
+        ) {
+            return true;
+        }
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| crate::startup::portable_home(&exe).ok())
+            .is_some_and(|home| home.is_none())
     }
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| crate::startup::portable_home(&exe).ok())
-        .is_some_and(|home| home.is_none())
 }
 
 /// (major, minor, patch, release-after-prerelease, prerelease text) of "v1.2.3-alpha.1".
@@ -131,7 +143,7 @@ impl Release {
 }
 
 /// The newest published release with a setup asset, from the API's release list.
-pub fn pick(releases: &Value) -> Option<Release> {
+fn pick(releases: &Value, suffix: &str) -> Option<Release> {
     releases.as_array()?.iter().find_map(|release| {
         if release["draft"] == true {
             return None;
@@ -140,7 +152,7 @@ pub fn pick(releases: &Value) -> Option<Release> {
         let setup = assets.iter().find(|a| {
             a["name"]
                 .as_str()
-                .is_some_and(|n| n.to_ascii_lowercase().ends_with("-setup.exe"))
+                .is_some_and(|n| n.to_ascii_lowercase().ends_with(suffix))
         })?;
         let setup_name = setup["name"].as_str()?.to_owned();
         let https = |v: &Value| {
@@ -184,7 +196,11 @@ pub fn latest() -> Result<Release> {
     )?;
     let releases: Value =
         serde_json::from_str(&text).map_err(|_| "Resposta inválida do GitHub.")?;
-    pick(&releases).ok_or_else(|| "Nenhuma versão com instalador publicada ainda.".into())
+    #[cfg(target_os = "linux")]
+    let suffix = linux::release_suffix();
+    #[cfg(not(target_os = "linux"))]
+    let suffix = "-setup.exe";
+    pick(&releases, suffix).ok_or_else(|| "Nenhuma versão com este pacote publicada ainda.".into())
 }
 
 pub fn check() -> Result<Value> {
@@ -203,9 +219,12 @@ pub fn check() -> Result<Value> {
     }))
 }
 
-/// Downloads and verifies the newest setup into `updates/`, then starts it; the caller exits the launcher.
+/// Starts the verified package update. The caller exits the launcher after the handoff starts.
 pub fn download_and_start(local: &Path) -> Result<PathBuf> {
     if !installable() {
+        #[cfg(target_os = "linux")]
+        return Err("Esta instalação não oferece atualização automática.".into());
+        #[cfg(not(target_os = "linux"))]
         return Err("Edição de desenvolvimento: atualize o código com git e recompile.".into());
     }
     let release = latest()?;
@@ -228,36 +247,23 @@ pub fn download_and_start(local: &Path) -> Result<PathBuf> {
     if !release.setup_name.chars().all(safe) {
         return Err("Nome de instalador inesperado.".into());
     }
+    #[cfg(target_os = "linux")]
+    {
+        linux::download_and_start(local, &release, &expected)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        windows_install(local, &release, &expected)
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn windows_install(local: &Path, release: &Release, expected: &str) -> Result<PathBuf> {
     let folder = local.join("updates");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let target = folder.join(&release.setup_name);
     let partial = folder.join(format!("{}.partial", release.setup_name));
-    let output = curl()
-        .args([
-            "--max-time",
-            "1800",
-            "--max-filesize",
-            &(2u64 << 30).to_string(),
-            "--output",
-        ])
-        .arg(&partial)
-        .args(["--url", &release.setup_url])
-        .output()
-        .map_err(|_| "Não foi possível iniciar o cliente HTTPS (curl).")?;
-    if !output.status.success() {
-        let _ = std::fs::remove_file(&partial);
-        return Err(format!(
-            "Download falhou: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let actual = hash_file(&partial)?.sha256;
-    if actual != expected {
-        let _ = std::fs::remove_file(&partial);
-        return Err(
-            "O instalador baixado não confere com o SHA-256 publicado; nada foi instalado.".into(),
-        );
-    }
+    download_verified(&release.setup_url, expected, &partial, 2u64 << 30)?;
     std::fs::rename(&partial, &target).map_err(|e| e.to_string())?;
     // The setup (installer.rs) installs silently over this copy, with its folders, and starts the new launcher.
     Command::new(&target)
@@ -270,6 +276,40 @@ pub fn download_and_start(local: &Path) -> Result<PathBuf> {
         .spawn()
         .map_err(|e| format!("Falha ao iniciar o instalador: {e}"))?;
     Ok(target)
+}
+
+fn download_verified(url: &str, expected: &str, partial: &Path, max_bytes: u64) -> Result<()> {
+    let output = curl()
+        .args([
+            "--max-time",
+            "1800",
+            "--max-filesize",
+            &max_bytes.to_string(),
+            "--output",
+        ])
+        .arg(partial)
+        .args(["--url", url])
+        .output()
+        .map_err(|_| "Não foi possível iniciar o cliente HTTPS (curl).")?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(partial);
+        return Err(format!(
+            "Download falhou: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    verify_download(expected, partial)
+}
+
+fn verify_download(expected: &str, partial: &Path) -> Result<()> {
+    let actual = hash_file(partial)?.sha256;
+    if actual != expected {
+        let _ = std::fs::remove_file(partial);
+        return Err(
+            "O instalador baixado não confere com o SHA-256 publicado; nada foi instalado.".into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -288,6 +328,41 @@ mod tests {
     }
 
     #[test]
+    fn checksum_mismatch_discards_staged_download() {
+        let name: String = mk8_transport::random::<8>()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let partial = std::env::temp_dir().join(format!("mk8-download-{name}"));
+        std::fs::write(&partial, b"staged update").unwrap();
+        let digest = hash_file(&partial).unwrap().sha256;
+        verify_download(&digest, &partial).unwrap();
+        assert!(partial.is_file());
+        assert!(verify_download(&"0".repeat(64), &partial).is_err());
+        assert!(!partial.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn release_selection_matches_format_and_architecture() {
+        let asset = |name: &str| json!({"name": name, "browser_download_url": "https://x/a"});
+        let releases = json!([
+            {"tag_name": "v0.5.0", "assets": [asset("MK8-online-0.5.0-linux-aarch64.AppImage"),
+                                             asset("MK8-online-0.5.0-setup.exe")]},
+            {"tag_name": "v0.4.0", "assets": [asset("MK8-online-0.4.0-linux-x86_64.AppImage")]},
+            {"tag_name": "v0.3.0", "assets": [asset("MK8-online-0.3.0-linux-x86_64.tar.gz")]}
+        ]);
+        assert_eq!(
+            pick(&releases, "-linux-x86_64.appimage").unwrap().tag,
+            "v0.4.0"
+        );
+        assert_eq!(
+            pick(&releases, "-linux-x86_64.tar.gz").unwrap().tag,
+            "v0.3.0"
+        );
+    }
+
+    #[test]
     fn picks_newest_release_with_setup_and_digest() {
         let releases = json!([
             {"draft": true, "tag_name": "v9.0.0", "assets": [{"name": "MK8-online-9.0.0-setup.exe", "browser_download_url": "https://x/a"}]},
@@ -298,7 +373,7 @@ mod tests {
                  "digest": "sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789"},
                 {"name": "MK8-online-0.2.0-alpha.1-setup.exe.sha256", "browser_download_url": "https://github.com/o/r/s.sha256"}]}
         ]);
-        let release = pick(&releases).unwrap();
+        let release = pick(&releases, "-setup.exe").unwrap();
         assert_eq!(release.tag, "v0.2.0-alpha.1");
         assert!(release.prerelease);
         assert_eq!(
@@ -310,6 +385,6 @@ mod tests {
             Some("https://github.com/o/r/s.sha256")
         );
         let insecure = json!([{"tag_name": "v1.0.0", "assets": [{"name": "a-setup.exe", "browser_download_url": "http://x/a"}]}]);
-        assert!(pick(&insecure).is_none());
+        assert!(pick(&insecure, "-setup.exe").is_none());
     }
 }

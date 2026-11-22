@@ -6,7 +6,7 @@
 // the runtime's Vulkan device and is compiled out with -DMK8_DLSS_PROBE_ONLY.
 //
 // Nothing NVIDIA is bundled: the plugin and core come from the driver and from
-// the optional launcher component. Every failure returns
+// tools/fetch_vendor_sdk.py ($XDG_DATA_HOME/mk8online/nvidia). Every failure returns
 // VK_NULL_HANDLE with one reasoned log line, so the caller keeps the existing path.
 #pragma once
 
@@ -64,6 +64,14 @@ const char *mk8_dlss_status_name(Mk8DlssLoadStatus status);
 // Prints exactly one line: "[dlss] DLSS unavailable: <reason>\n".
 void mk8_dlss_log_unavailable(const Mk8DlssProbe *probe);
 
+// DLSS Frame Generation (MK8_DLSS_FG=1). The probe and gate are independent of Vulkan so
+// they run on a machine without an NVIDIA GPU; the feature path is compiled out with
+// -DMK8_DLSS_PROBE_ONLY.
+bool mk8_dlss_fg_enabled(void);
+bool mk8_dlss_fg_probe(Mk8DlssProbe *out);
+const char *mk8_dlss_fg_status_name(Mk8DlssLoadStatus status);
+// Prints exactly one line: "[dlss_fg] DLSS Frame Generation unavailable: <reason>\n".
+void mk8_dlss_fg_log_unavailable(const Mk8DlssProbe *probe);
 // Decodes NVSDK_NGX_Feature_Support_Result bits (driver too old, GPU unsupported, ...).
 // Returns "supported" for 0 and fills `buffer` otherwise. Never returns NULL.
 const char *mk8_dlss_requirement_text(unsigned bits, char *buffer, size_t size);
@@ -86,6 +94,114 @@ VkImage mk8_dlss_test_output_image(void);
 VkFormat mk8_dlss_test_output_format(void);
 #endif
 
+// ---------------------------------------------------------------------------------------
+// DLSS Frame Generation present-time API.
+//
+// NGX DLSS-G does not present and does not replace the swapchain: the application keeps its
+// normal swapchain, evaluates the feature into one display-size interpolated image and
+// presents that image after the real (backbuffer) frame. This module owns the feature and the
+// interpolated image; the WSI images, semaphores and queue submission stay with the caller.
+// The real frame is the caller's backbuffer and is not modified (OutputReal is not set).
+//
+// Everything is gated on MK8_DLSS_FG=1. No function below is called by the runtime today;
+// with the variable unset the module has no effect on the existing FSR FG/upscaler paths.
+// ---------------------------------------------------------------------------------------
+
+typedef struct Mk8DlssFgInit {
+    VkInstance instance;
+    VkPhysicalDevice physical_device;
+    VkDevice device;
+    VkQueue present_queue;
+    // Optional open command buffer on the present queue. When null, the bridge records feature
+    // creation and the output-image barrier into a one-shot buffer and submits it on g_vk.queue;
+    // the call must then happen at a device-idle point (swapchain creation/recreation). When
+    // non-null, the caller owns the submission and must submit it before the first evaluate.
+    VkCommandBuffer command_buffer;
+    VkSwapchainKHR swapchain;
+    VkFormat format;      // swapchain/backbuffer format (also the two output images' format)
+    uint32_t width, height;              // display size (what DLSS-G outputs)
+    uint32_t render_width, render_height; // game render size (for internal-resolution hints)
+    bool color_hdr;       // tagged color buffers are HDR
+    bool depth_inverted;  // depth is reverse-Z (value closer to the camera is larger)
+} Mk8DlssFgInit;
+
+typedef struct Mk8DlssFgInputs {
+    VkCommandBuffer command_buffer;
+    // The final display-size image of the current rendered frame (after upscaling/UI).
+    VkImage backbuffer;
+    VkImageView backbuffer_view;
+    VkFormat backbuffer_format;
+    VkImageLayout backbuffer_layout; // current layout; restored after EvaluateFeature
+    uint32_t backbuffer_width, backbuffer_height;
+    VkImage depth;
+    VkImageView depth_view;
+    VkFormat depth_format;
+    VkImageLayout depth_layout;
+    uint32_t depth_width, depth_height;
+    VkImageAspectFlags depth_aspect;
+    VkImage motion;
+    VkImageView motion_view;
+    VkFormat motion_format;
+    VkImageLayout motion_layout;
+    uint32_t motion_width, motion_height;
+    // Jitter in render pixels (the same values the FSR bridge uses); converted to clip space.
+    float jitter_x, jitter_y;
+    // Row-major view (3x4) and projection (4x4) matrices from the main draw (toolchain/fsr.py).
+    float view[12];
+    float projection[16];
+    // Optional camera parameters; pass 0 to derive FOV/aspect from the projection and use
+    // the bridge defaults (0.1 / 1000) for near/far.
+    float camera_near, camera_far, camera_fov, camera_aspect;
+    uint64_t frame_id; // increments once per rendered frame, even while DLSS-G is paused
+    bool reset;        // cut, mode change, or invalid history
+    bool not_rendering; // menu/pause: DLSS-G should not interpolate
+} Mk8DlssFgInputs;
+
+typedef struct Mk8DlssFgFrame {
+    bool valid;        // a feature exists and EvaluateFeature succeeded
+    bool interpolated; // an intermediate frame is available
+    VkImage real_image; // borrowed: the caller's backbuffer (not modified by NGX)
+    VkImageView real_view;
+    VkImage interpolated_image; // owned by this module until the next evaluate/shutdown
+    VkImageView interpolated_view;
+    VkFormat format;
+    uint32_t width, height;
+    uint64_t frame_id;
+} Mk8DlssFgFrame;
+
+enum {
+    MK8_DLSS_FG_MARKER_SIMULATION_START = 0,
+    MK8_DLSS_FG_MARKER_SIMULATION_END = 1,
+    MK8_DLSS_FG_MARKER_RENDERSUBMIT_START = 2,
+    MK8_DLSS_FG_MARKER_RENDERSUBMIT_END = 3,
+    MK8_DLSS_FG_MARKER_PRESENT_START = 4,
+    MK8_DLSS_FG_MARKER_PRESENT_END = 5,
+    MK8_DLSS_FG_MARKER_INPUT_SAMPLE = 6,
+    MK8_DLSS_FG_MARKER_TRIGGER_FLASH = 7,
+};
+
+// Creates NGX + the FrameGeneration feature for this swapchain. Requires VK_NV_low_latency2
+// to be enabled on the device (it is not today; docs/DLSS-IMPL.md has the device.c hand-off).
+// Returns false with one log line on any failure; the existing path must then run unchanged.
+bool mk8_dlss_fg_init(const Mk8DlssFgInit *init);
+void mk8_dlss_fg_shutdown(void);
+bool mk8_dlss_fg_ready(void);
+// Records one EvaluateFeature into inputs->command_buffer. On failure returns a zeroed frame
+// (valid=false) and leaves the caller's existing path untouched; no fake image is returned.
+// The real frame is the caller's backbuffer; only the interpolated image is owned here.
+Mk8DlssFgFrame mk8_dlss_fg_evaluate(const Mk8DlssFgInputs *inputs);
+// Records a copy of the interpolated result into an acquired swapchain image, transitioning
+// it from `destination_layout` to PRESENT_SRC_KHR and leaving the internal image in GENERAL.
+bool mk8_dlss_fg_copy_interpolated(VkCommandBuffer cb, VkImage destination, VkImageLayout destination_layout);
+// Presents the real and interpolated swapchain images in that order, with VK_NV_low_latency2
+// PRESENT markers when the device has them. The caller owns the two acquired images and the
+// two semaphores (two binary semaphores, or timeline semaphores with distinct values).
+VkResult mk8_dlss_fg_present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t real_index,
+                             uint32_t interpolated_index, VkSemaphore real_ready, VkSemaphore interpolated_ready);
+// vkLatencySleepNV wrapper for the simulation loop; false when low latency is unavailable.
+bool mk8_dlss_fg_latency_sleep(VkSemaphore signal, uint64_t value);
+// vkSetLatencyMarkerNV wrapper; markers use MK8_DLSS_FG_MARKER_*.
+void mk8_dlss_fg_latency_marker(int marker, uint64_t present_id);
 #endif
 
 #ifdef __cplusplus

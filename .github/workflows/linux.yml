@@ -9,16 +9,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: platforms/linux
     env:
       MK8_UPDATE_REPO: ${{ github.repository }}
       MK8_RELAY_URL: ${{ vars.MK8_RELAY_URL }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -58,7 +53,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             python scripts/release-linux.py --tag "$GITHUB_REF_NAME"
           else
-            version=$(python -c 'import tomllib; print(tomllib.load(open("../../Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+            version=$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
             python scripts/release-linux.py --tag "v$version"
           fi
           python scripts/smoke-linux-packages.py
@@ -66,8 +61,8 @@ jobs:
         with:
           name: linux-packages
           path: |
-            platforms/linux/target/dist/*-linux-x86_64.AppImage
-            platforms/linux/target/dist/*-linux-x86_64.AppImage.sha256
-            platforms/linux/target/dist/*-linux-x86_64.tar.gz
-            platforms/linux/target/dist/*-linux-x86_64.tar.gz.sha256
+            target/dist/*-linux-x86_64.AppImage
+            target/dist/*-linux-x86_64.AppImage.sha256
+            target/dist/*-linux-x86_64.tar.gz
+            target/dist/*-linux-x86_64.tar.gz.sha256
           if-no-files-found: error

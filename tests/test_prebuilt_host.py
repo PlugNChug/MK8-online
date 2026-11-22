@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'toolchain'))
@@ -77,11 +78,16 @@ class PrebuiltHostTests(unittest.TestCase):
             sources = [source / 'runtime/a.c', output / 'runtime/b.c']
             return host.host_key({'headers': host.prepared_headers(output / 'runtime')}, flags, sources, source, output)
 
-        first = layout('one')
-        self.assertEqual(first, layout('elsewhere/two'))
-        self.assertNotEqual(first, layout('three', 'int x = 1;'))
-        self.assertNotEqual(first, layout('one', rows='int y = 2;'))
-        self.assertNotEqual(first, host.host_key({'headers': {'x.h': '2'}}, ['-O2'], [], self.root, self.root))
+        deps = self.root / 'deps'
+        (deps / 'lib').mkdir(parents=True)
+        for name in ('SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared'):
+            (deps / 'lib' / f'lib{name}.dll.a').write_text(name, encoding='ascii')
+        with patch.object(host, 'DEPS', deps), patch.object(host, 'DEFAULT_COMPILER', Path(sys.executable)):
+            first = layout('one')
+            self.assertEqual(first, layout('elsewhere/two'))
+            self.assertNotEqual(first, layout('three', 'int x = 1;'))
+            self.assertNotEqual(first, layout('one', rows='int y = 2;'))
+            self.assertNotEqual(first, host.host_key({'headers': {'x.h': '2'}}, ['-O2'], [], self.root, self.root))
 
 
 class PrebuiltFFmpegTests(unittest.TestCase):

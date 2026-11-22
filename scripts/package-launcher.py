@@ -1,54 +1,24 @@
-"""Build one Windows executable containing only the source payload it needs."""
-import hashlib
-import json
+"""Build the launcher with its allowlisted preparation payload embedded."""
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from cargo_target import target_dir
+from launcher_payload import write_payload
+from package_guard import audit_archive
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = target_dir()
 OUTPUT = TARGET / "portable"
 # (its own target folder: the packaged build embeds the payload, unlike target/release used in development)
 BUILD = TARGET / "package"
-MANIFEST = ROOT / "upstream/manifests/smm2recomp.json"
-SOURCE_EXTENSIONS = {".c", ".cpp", ".h", ".inc", ".glsl", ".json", ".mk", ".ps1", ".py", ".txt", ".cs"}
+WINDOWS = os.name == "nt"
+LAUNCHER = "Launcher.exe" if WINDOWS else "Launcher"
 
 
-def payload_files():
-    yield ROOT / "LICENSE"
-    yield MANIFEST
-    yield ROOT / "toolchain/mii_assembly.html"
-    yield ROOT / "runtime/mk8/graphics/ffx/LICENSE"
-    yield ROOT / "runtime/mk8/windows.manifest"
-    yield ROOT / "runtime/mk8/windows.rc"
-    importer = ROOT / "tools/mk8-import"
-    for name in ("mk8-import.dll", "mk8-import.runtimeconfig.json", "LibHac.dll", "build-sha256.txt"):
-        yield importer / name
-    yield importer / "dotnet/dotnet.exe"
-    for path in sorted((importer / "dotnet").rglob("*")):
-        if path.is_file() and path.suffix in {".dll", ".json", ".txt"}:
-            yield path
-    for folder in ("runtime", "toolchain", "games/mk8d", "scripts", "docs/licenses"):
-        for path in sorted((ROOT / folder).rglob("*")):
-            if path.is_file() and path.suffix in SOURCE_EXTENSIONS:
-                yield path
-    # The runtime executable built from these same sources (scripts/prebuild-host.py); a build checks its key.
-    for name in ("mk8drecomp.exe", "mk8drecomp.dll.a", "manifest.json"):
-        yield ROOT / "prebuilt/host" / name
-    # The minimal FFmpeg (scripts/build-ffmpeg.py) with its LGPL notices; the build checks every hash.
-    manifest = json.loads((ROOT / "prebuilt/ffmpeg/manifest.json").read_text(encoding="utf-8"))
-    for name in (*manifest["files"], "manifest.json", "LICENSE.md", "COPYING.LGPLv2.1", "configuration.txt"):
-        yield ROOT / "prebuilt/ffmpeg" / name
-    for name, digest in sorted(json.loads(MANIFEST.read_text(encoding="utf-8"))["files"].items()):
-        path = ROOT / "upstream/smm2recomp" / name
-        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            raise ValueError(f"Upstream alterado: {name}")
-        yield path
 
 
 def main():
@@ -56,15 +26,11 @@ def main():
     # The repository publishes only the upstream manifests; the pinned sources are fetched and verified here.
     subprocess.run([sys.executable, ROOT / "scripts/fetch-upstream.py"], check=True)
     subprocess.run([sys.executable, ROOT / "scripts/setup-import-tool.py"], check=True)
-    subprocess.run([sys.executable, ROOT / "scripts/build-ffmpeg.py"], check=True)
-    subprocess.run([sys.executable, ROOT / "scripts/prebuild-host.py"], check=True)
+    if WINDOWS:
+        subprocess.run([sys.executable, ROOT / "scripts/build-ffmpeg.py"], check=True)
+        subprocess.run([sys.executable, ROOT / "scripts/prebuild-host.py"], check=True)
     payload = OUTPUT / "launcher-source.zip"
-    with ZipFile(payload, "w", ZIP_DEFLATED) as archive:
-        for path in payload_files():
-            if not path.resolve().is_relative_to(ROOT.resolve()):
-                raise ValueError(f"Fonte fora do projeto: {path}")
-            archive.writestr(ZipInfo(path.relative_to(ROOT).as_posix()), path.read_bytes(), compress_type=ZIP_DEFLATED)
-    digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+    digest = write_payload(payload, WINDOWS)
     env = dict(os.environ, MK8_LAUNCHER_PAYLOAD=str(payload), MK8_LAUNCHER_PAYLOAD_ID=digest)
     flags = env["CARGO_ENCODED_RUSTFLAGS"].split("\x1f") if env.get("CARGO_ENCODED_RUSTFLAGS") else env.get("RUSTFLAGS", "").split()
     # Rust panic/source locations otherwise expose the packager's Windows account in the executable.
@@ -77,20 +43,22 @@ def main():
         cwd=ROOT, env=env,
         check=True,
     )
-    launcher = OUTPUT / "Launcher.exe"
-    shutil.copyfile(BUILD / "release/Launcher.exe", launcher)
-    # A separate archive opts into sibling storage without changing the setup executable's behavior.
-    with ZipFile(OUTPUT / "MK8-online-portable.zip", "w", ZIP_DEFLATED) as archive:
-        archive.write(launcher, "Launcher.exe")
-        archive.writestr("portable.txt", "MK8-online portable mode\n")
-        archive.write(ROOT / "LICENSE", "LICENSE")
-        archive.writestr("README.txt", "Extract to a writable folder. Run Launcher.exe to prepare your own game files.\n"
-                         "Run Launcher.exe --play to start an already prepared game without the launcher window.\n"
-                         "Data is stored in portable/. Keep this folder when updating Launcher.exe.\n"
-                         "Open this version once before moving it. Close all MK8 processes, then move the whole folder.\n"
-                         "Internal paths are repaired automatically on next start; metadata backups are retained.\n"
-                         "Files selected outside portable/ are external dependencies: include them inside the tree before preparing.\n"
-                         "Windows x64 only; game files and keys are not included.\n")
+    launcher = OUTPUT / LAUNCHER
+    shutil.copy2(BUILD / "release" / LAUNCHER, launcher)
+    if WINDOWS:
+        # A separate archive opts into sibling storage without changing the setup executable's behavior.
+        with ZipFile(OUTPUT / "MK8-online-portable.zip", "w", ZIP_DEFLATED) as archive:
+            archive.write(launcher, LAUNCHER)
+            archive.writestr("portable.txt", "MK8-online portable mode\n")
+            archive.write(ROOT / "LICENSE", "LICENSE")
+            archive.writestr("README.txt", "Extract to a writable folder. Run Launcher.exe to prepare your own game files.\n"
+                             "Run Launcher.exe --play to start an already prepared game without the launcher window.\n"
+                             "Data is stored in portable/. Keep this folder when updating Launcher.exe.\n"
+                             "Open this version once before moving it. Close all MK8 processes, then move the whole folder.\n"
+                             "Internal paths are repaired automatically on next start; metadata backups are retained.\n"
+                             "Files selected outside portable/ are external dependencies: include them inside the tree before preparing.\n"
+                             "Windows x64 only; game files and keys are not included.\n")
+        audit_archive(OUTPUT / "MK8-online-portable.zip")
     print(launcher)
 
 

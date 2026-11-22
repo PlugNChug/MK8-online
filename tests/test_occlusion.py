@@ -168,6 +168,16 @@ int main(void) {
         assert(st.render_off && mk8_oq[0].nrep==2);
         locked=0; // mock lock is still held by the fatal zero-sequence path
     }
+    /* MK8_OCCL_STALE (experiment, default off): a pending report keeps the last resolved value; no flush, no wait. */
+    memset(mk8_oq,0,sizeof mk8_oq); mk8_samples_total=0; query_ok=true; timeout=false;
+    mk8_oq_stale=0; pair[0]=77; pair[2]=77; cmd.x[0]=0; cmd.x[1]=(uintptr_t)pair; cmd.x[2]=1;
+    reports(200,pair,other,0,0);
+    {   unsigned w0=waits, f0=flushes;
+        mk8_oq_stale=1;
+        condition(&cmd);
+        if (waits!=w0 || flushes!=f0 || pair[0]!=77 || pair[2]!=77 || st.render_off) return 11;
+        mk8_oq_stale=0;
+    }
     return 0;
 }
 ''', encoding='utf-8')

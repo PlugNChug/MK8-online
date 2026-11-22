@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <windows.h>
-#include <shellapi.h>
+#include <SDL3/SDL.h>
+#include "mbedtls/platform_util.h"
 #include "net/nextendo.h"
 #include "net/netcfg.h"
 #include "net/token.h"
@@ -20,7 +20,7 @@ static bool open_login(bool open_browser) {
     }
     puts(url); fflush(stdout); // PKCE challenge only, never the verifier or callback code.
     if (open_browser && !strncmp(url, "https://", 8))
-        ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+        SDL_OpenURL(url);  // (portable: Windows and Linux)
     return true;
 }
 
@@ -44,7 +44,7 @@ int mk8_nextendo_probe(bool keep_session) {
                 net_config_reload();
                 char jwt[4096];
                 ok = net_backend() == NET_BACKEND_NEXTENDO && net_id_token(jwt, sizeof jwt) > 0;
-                SecureZeroMemory(jwt, sizeof jwt);
+                mbedtls_platform_zeroize(jwt, sizeof jwt);
                 puts(ok ? "BAAS adapter generated a token; server acceptance not verified." : "BAAS adapter unavailable or online access refused.");
             }
             if (ok && getenv("MK8_NEXTENDO_SOCIAL_TEST")) {
@@ -54,7 +54,7 @@ int mk8_nextendo_probe(bool keep_session) {
                 for (int j=0;j<250;++j) {
                     mk8_social_snapshot(social);
                     if (!social->busy) break;
-                    Sleep(100);
+                    SDL_Delay(100);
                 }
                 printf("Social: friends=%d count=%d lobby=%d in_lobby=%d players=%d/%d\n",
                     social->friends_ok,social->count,social->lobby_ok,social->in_lobby,social->players,social->capacity);
@@ -75,7 +75,7 @@ int mk8_nextendo_probe(bool keep_session) {
             nextendo_sign_out();
             return 1;
         }
-        Sleep(100);
+        SDL_Delay(100);
     }
     nextendo_sign_out();
     return 3;

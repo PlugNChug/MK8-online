@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 
-from repair import cleanup_stale, remove_owned, unlink_links_on_the_way, is_link
+from repair import cleanup_stale, remove_owned, unlink_link, unlink_links_on_the_way, is_link
 from build_lock import exclusive_build
 from storage import require_space, describe_io_error
 
@@ -35,7 +35,7 @@ def atomic_json(path, data):
 
 
 def python_tool():
-    path = ROOT / "local/python/Scripts/python.exe"
+    path = ROOT / ("local/python/Scripts/python.exe" if os.name == "nt" else "local/python/bin/python")
     return str(path) if path.is_file() else sys.executable
 
 
@@ -75,7 +75,7 @@ def preflight(config):
                 errors.append(f"Módulo {name} não corresponde ao perfil selecionado; não misture versões.")
     result = subprocess.run([python_tool(), "-c", "import capstone, lz4.block, unicorn"], capture_output=True)
     if result.returncode:
-        errors.append("Dependências de geração ausentes. Execute scripts/setup-tools.ps1")
+        errors.append("Dependências de geração ausentes. Execute a etapa Ferramentas no launcher")
     return errors
 
 
@@ -157,6 +157,9 @@ def build(config, local):
     for p in sorted((ROOT / "games/mk8d").rglob("*")):
         if p.is_file() and "__pycache__" not in p.parts:
             inputs[str(p.relative_to(ROOT))] = sha(p)
+    from native import TARGET, WINDOWS
+    if not WINDOWS:
+        inputs["target"] = TARGET
     identity = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
     if os.name == 'nt':
         validate_romfs_paths(config.get('romfs'), local/'game-data'/identity[:16]/'extracted/romfs')
@@ -183,14 +186,14 @@ def build(config, local):
         host_workers = min(4, max(1, default_workers() // 3))
         host = pool.submit(build_host, prepared, job / "host-optimized", workers=host_workers)
         dll_link = pool.submit(prepare_dll_link, job / "linker-check")
-        print("Etapa: traduzir AArch64 para C e preparar runtime Windows em paralelo.", flush=True)
+        print("Etapa: traduzir AArch64 para C e preparar runtime em paralelo.", flush=True)
         subprocess.run([python_tool(), ROOT / "toolchain/recompiler/generate.py", "--source", prepared, "--exefs", imported, "--output", job / "generated", "--profile", profile_path], check=True)
         receipt = {"identity": identity, "inputs": inputs, "source": str(prepared), "generated": str(job / "generated"), "state": "generated", "gameplay_verified": False,
                    "remaining": ["link native graphics and game code", "boot and complete a race"]}
         atomic_json(job / "generation-receipt.json", receipt)
         atomic_json(local / "generation.json", receipt)
         generated_at = time.perf_counter()
-        print(f"Geração C concluída em {generated_at-started:.1f} s. Compilando código nativo Windows.", flush=True)
+        print(f"Geração C concluída em {generated_at-started:.1f} s. Compilando código nativo.", flush=True)
         if host.done():
             host.result()
         result = compile_modules(prepared, job / "generated", job / "native-optimized", profile["modules"],
@@ -257,8 +260,7 @@ def mirror(path, target, copy_ok=False):
             sources.append(src)
     if not target.is_dir():
         raise ValueError(f'Pasta de origem indisponível: {target}')
-    if path.is_junction() or path.is_symlink():
-        os.rmdir(path)  # only the link left by older builds; its target is untouched
+    unlink_link(path)  # only the link left by older builds; its target is untouched
     wanted = set()
     for src in sources:
         rel = src.relative_to(target)
@@ -328,10 +330,12 @@ def guest_has_direct_lan(files):
 
 def finish(config, local, executable=None):
     # A candidate enables only the explicit diagnostic launch, never normal/online play.
-    from host import build_host, link_game
-    from native import compiler_path
+    from host import GAME_NAME, build_host, link_game
+    from native import TARGET, WINDOWS, compiler_path
     generated = json.loads((local/'generation.json').read_text(encoding='utf-8'))
     native = json.loads((local/'native.json').read_text(encoding='utf-8'))
+    if native.get('target', 'x86_64-windows-gnu') != TARGET:
+        raise ValueError('Objetos nativos pertencem a outra plataforma; execute Build.')
     if native['identity'] != generated['identity'] or sha(native['archive']) != native['sha256']:
         raise ValueError('Objetos nativos não correspondem à geração atual')
     for obj in native.get('object_files', []):
@@ -358,7 +362,11 @@ def finish(config, local, executable=None):
     settings_layout = prepare_settings_layout(romfs, output)
     exe = executable if executable is not None else build_host(source, output)
     dll = link_game(native['archive'], output, source, native['modules'])
-    subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
+    if not WINDOWS:
+        subprocess.run([exe, "--check-game-library", dll], check=True)
+    if WINDOWS:
+        subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
+    # Deep build hashes made Win32 stat silently omit 192 RomFS files at MAX_PATH.
     data = local/'game-data'/generated['identity'][:16]
     print('Etapa: preparar os dados do jogo.', flush=True)
     for removed in [*unlink_links_on_the_way(data/'extracted/exefs', local), *unlink_links_on_the_way(data/'extracted/romfs', local)]:
@@ -366,9 +374,9 @@ def finish(config, local, executable=None):
     mirror(data/'extracted/exefs', job/'inputs/exefs')
     mirror(data/'extracted/romfs', romfs)
     prepare_system_data(config, local)
-    files = {p.name: file_record(p) for p in output.glob('*.dll')}
+    files = {p.name: file_record(p) for p in output.glob('*.dll' if WINDOWS else '*.so')}
     files['gamelib'] = files.pop(dll.name)
-    files['gamelib-id'] = file_record(output/'mk8dgame.dll.id')
+    files['gamelib-id'] = file_record(output/(GAME_NAME+'.id'))
     files['nacp'] = file_record(nacp)
     files['settings-layout'] = file_record(settings_layout)
     files['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))
@@ -393,8 +401,8 @@ def finish(config, local, executable=None):
 
 def refresh_runtime(local):
     """Relink only host-side fixes; the generated code and ABI must remain unchanged."""
-    from host import build_host
-    from native import compiler_path
+    from host import GAME_NAME, build_host
+    from native import WINDOWS, compiler_path
     generated = json.loads((local/'generation.json').read_text(encoding='utf-8'))
     candidate = json.loads((local/'candidate.json').read_text(encoding='utf-8'))
     source = compiler_path(generated['source'])
@@ -402,21 +410,25 @@ def refresh_runtime(local):
         if sha(source/rel) != expected:
             raise ValueError('Runtime preparado alterado; use uma preparação completa: '+rel)
     output = Path(candidate['executable']['path']).parent
+    if Path(candidate['files']['gamelib']['path']).name != GAME_NAME:
+        raise ValueError('Biblioteca de outra plataforma; execute Build.')
     from settings_layout import CONTROLLER_RELATIVE, prepare as prepare_settings_layout
     # Derived layouts are private build data; old candidates can predate this entry.
     candidate['files'].pop('settings-layout', None)
     candidate['files'].pop('settings-common-layout', None)
     candidate['files'].pop('controller-layout', None)
-    settings_layout = prepare_settings_layout(Path(candidate['data_root'])/'extracted/romfs', output)
-    exe = build_host(source, output)
     for file in candidate['files'].values():
         if sha(file['path']) != file['sha256']:
             raise ValueError('Biblioteca/dado alterado; use --finish: '+file['path'])
-    subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
-    candidate['files'] = {name: record for name, record in candidate['files'].items() if not name.lower().endswith('.dll')}
-    for dll in output.glob('*.dll'):
-        if dll.resolve() != Path(candidate['files']['gamelib']['path']).resolve():
-            candidate['files'][dll.name] = file_record(dll)
+    settings_layout = prepare_settings_layout(Path(candidate['data_root'])/'extracted/romfs', output)
+    exe = build_host(source, output, game_library=None if WINDOWS else candidate["files"]["gamelib"]["path"])
+    if WINDOWS:
+        subprocess.run([python_tool(), ROOT/'scripts/runtime-dlls.py', output], check=True)
+        candidate['files'] = {name: record for name, record in candidate['files'].items()
+                              if not name.lower().endswith('.dll')}
+        for dll in output.glob('*.dll'):
+            if dll.resolve() != Path(candidate['files']['gamelib']['path']).resolve():
+                candidate['files'][dll.name] = file_record(dll)
     candidate['executable'] = {'path': str(exe), 'sha256': sha(exe), 'bytes': exe.stat().st_size}
     candidate['files']['settings-layout'] = file_record(settings_layout)
     candidate['files']['settings-common-layout'] = file_record(settings_layout.with_name('common.sarc'))

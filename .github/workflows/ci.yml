@@ -7,13 +7,20 @@ on:
   pull_request:
 
 jobs:
+  windows-ffmpeg:
+    uses: ./.github/workflows/windows-ffmpeg.yml
+
   windows:
+    needs: windows-ffmpeg
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
       - name: Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
       - run: cargo fmt --all -- --check
@@ -31,3 +38,19 @@ jobs:
         run: >-
           python -m unittest -v test_pipeline test_import_mk8 test_dlc test_package_payload
           test_runtime_windows_paths test_vulkan_loader_shim
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-ffmpeg
+      - name: Prepare Windows compiler and headers
+        run: |
+          python scripts/setup-native.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/setup-runtime-deps.py
+      - name: Start the packaged portable launcher and verify its host key
+        run: |
+          python scripts/package-launcher.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/smoke-windows-portable.py
+
+  linux:
+    uses: ./.github/workflows/linux.yml

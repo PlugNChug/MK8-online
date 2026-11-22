@@ -1,4 +1,4 @@
-"""Compile generated AArch64 C to a resumable Windows object archive (not a playable app)."""
+"""Compile generated AArch64 C to a resumable native object archive."""
 import concurrent.futures
 import hashlib
 import json
@@ -13,12 +13,28 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 # The launcher shares one tool folder between its unpacked versions (no junction: WinError 448).
 TOOLS = Path(os.environ.get('MK8_NATIVE_TOOLS') or ROOT / 'local/native-tools')
-DEFAULT_COMPILER = TOOLS / 'zig-x86_64-windows-0.17.0/zig.exe'
+WINDOWS = os.name == 'nt'
+TARGET = 'x86_64-windows-gnu' if WINDOWS else 'x86_64-linux-gnu'
+GAME_ABI_ID = 'dev' if WINDOWS else 'mk8-linux-x86_64-v1'
+DEFAULT_COMPILER = (TOOLS / 'zig-x86_64-windows-0.17.0/zig.exe' if WINDOWS
+                    else Path(shutil.which('clang') or 'clang'))
+TARGET_FLAGS = (['-target', TARGET, '-mcpu=x86_64_v2'] if WINDOWS
+                else ['--target=' + TARGET, '-march=x86-64-v2'])
+
+
+def cc(compiler=DEFAULT_COMPILER, cpp=False):
+    if WINDOWS:
+        return [compiler, 'c++' if cpp else 'cc']
+    return [shutil.which('clang++') or 'clang++'] if cpp else [compiler]
+
+
+def archiver(compiler=DEFAULT_COMPILER):
+    """Zig is a multicall binary; the Linux build uses the system LLVM archiver."""
+    return [str(Path(compiler).absolute()), 'ar'] if WINDOWS else [shutil.which('llvm-ar') or 'llvm-ar']
 
 
 def write_archive(compiler, archive, objects):
     """Thin archive references follow the objects when their containing tree moves."""
-    compiler = Path(compiler).absolute()
     archive = Path(archive).absolute()
     names = []
     for obj in objects:
@@ -30,7 +46,7 @@ def write_archive(compiler, archive, objects):
     response = archive.parent / 'archive.rsp'
     response.write_text('\n'.join(names), encoding='utf-8')
     pending = archive.with_suffix(f'.{time.time_ns()}.pending.a')
-    subprocess.run([str(compiler), 'ar', 'rcsT', pending.name, '@archive.rsp'],
+    subprocess.run([*archiver(compiler), 'rcsT', pending.name, '@archive.rsp'],
                    cwd=archive.parent, check=True, env=compiler_env())
     pending.replace(archive)
 
@@ -181,7 +197,7 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     output.mkdir(parents=True, exist_ok=True)
     headers = {str(p.relative_to(source)): digest(p) for p in sorted((source/'runtime').rglob('*.h'))}
     identity = hashlib.sha256(json.dumps({'headers': headers, 'compiler': digest(compiler)}, sort_keys=True).encode()).hexdigest()
-    flags = ['-target', 'x86_64-windows-gnu', '-mcpu=x86_64_v2', optimization, '-fno-strict-aliasing',
+    flags = [*TARGET_FLAGS, *([] if WINDOWS else ['-fPIC', '-mcmodel=large', '-DGAMELIB_ID="'+GAME_ABI_ID+'"']), optimization, '-fno-strict-aliasing',
              '-Wno-return-type', '-Wno-unused-label', '-D_FILE_OFFSET_BITS=64', '-I' + str(source/'runtime')]
     if optimization != '-O0':
         flags.append('-g0')
@@ -207,23 +223,31 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
         print(f'Cache de objetos: {seeded} objetos de builds anteriores registrados.', flush=True)
     reused = []
 
-    def compile_one(pair):
+    # Validate all bounded guest patches before scheduling the expensive compilation.
+    from experimental import patch_no_mii_unit
+    from yaz0_native import patch_unit as patch_yaz0_unit
+    from cup_relocation import patch_unit as patch_cup_unit
+    from ultrawide import patch_unit as patch_ultrawide_unit
+    from ultrawide_hud import patch_unit as patch_ultrawide_hud_unit
+    from settings_menu import patch_guest as patch_settings_guest
+    from split_race_cadence import patch_unit as patch_split_race_unit
+    from auto_lan import patch_guest as patch_lan_guest
+
+    def patch_guest(pair):
         src, obj = pair
         original = src
-        from experimental import patch_no_mii_unit
-        from yaz0_native import patch_unit as patch_yaz0_unit
-        from cup_relocation import patch_unit as patch_cup_unit
-        from ultrawide import patch_unit as patch_ultrawide_unit
-        from ultrawide_hud import patch_unit as patch_ultrawide_hud_unit
-        from split_race_cadence import patch_unit as patch_split_race_unit
         src = patch_ultrawide_unit(src, output)
         src = patch_ultrawide_hud_unit(src, output)
         src = patch_cup_unit(patch_yaz0_unit(patch_no_mii_unit(src, output), output), output)
         src = patch_split_race_unit(src, output, original)
-        from settings_menu import patch_guest as patch_settings_guest
         src = patch_settings_guest(src, original, output)
-        from auto_lan import patch_guest as patch_lan_guest
         src = patch_lan_guest(src, original, output)
+        return src, obj
+
+    entries = [patch_guest(pair) for pair in entries]
+
+    def compile_one(pair):
+        src, obj = pair
         obj.parent.mkdir(parents=True, exist_ok=True)
         stamp = obj.with_suffix('.json')
         key = {'source': digest(src), 'environment': identity, 'flags': flags}
@@ -244,7 +268,7 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
             return obj
         pending = obj.with_suffix('.pending.o')
         require_space(output)
-        args = [str(compiler), 'cc', *flags, '-c', str(src), '-o', str(pending)]
+        args = [*map(str, cc(compiler)), *flags, '-c', str(src), '-o', str(pending)]
         started = time.perf_counter()
         result = subprocess.run(args, capture_output=True, env=env)
         seconds = round(time.perf_counter() - started, 2)
@@ -273,7 +297,7 @@ def compile_modules(source, generated, output, modules, compiler=DEFAULT_COMPILE
     write_archive(compiler, archive, objects)
     receipt = {'state': 'native_objects', 'archive': str(archive), 'sha256': digest(archive),
                'object_files': [{'path': str(p), 'sha256': digest(p)} for p in objects],
-               'modules': list(modules), 'objects': len(objects), 'optimization': optimization, 'gameplay_verified': False,
+               'target': TARGET, 'modules': list(modules), 'objects': len(objects), 'optimization': optimization, 'gameplay_verified': False,
                'remaining': ['link with native graphics and platform runtime', 'boot and race qualification']}
     (output/'native-receipt.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     return receipt

@@ -1,6 +1,7 @@
 """Importação local do Booster Course Pass verificado para o perfil MK8 4.0.1."""
 import argparse
 import hashlib
+import os
 import json
 from pathlib import Path
 import shutil
@@ -160,7 +161,7 @@ def install(package, keys, local, *, reinstall=False):
         require_space(ROOT / "tools", 4 * GIB + 128 * 1024**2)
         subprocess.run([sys.executable, ROOT / "scripts/setup-import-tool.py"], check=True)
         tool = ROOT / "tools/mk8-import"
-        result = subprocess.run([tool / "dotnet/dotnet.exe", tool / "mk8-import.dll", "--dlc", stage, keys, stage / "output"],
+        result = subprocess.run([tool / ("dotnet/dotnet.exe" if os.name == "nt" else "dotnet/dotnet"), tool / "mk8-import.dll", "--dlc", stage, keys, stage / "output"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode:
             raise ValueError("DLC: falha na validação de metadados, chaves ou integridade do arquivo.")

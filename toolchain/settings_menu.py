@@ -1,5 +1,4 @@
 """Opt-in Settings entry experiment for the verified MK8 4.0.1 top menu."""
-import hashlib
 from pathlib import Path
 
 from guest_source import verified_bytes

@@ -1,5 +1,5 @@
 """Packaged source must include the headers needed by a runtime rebuild."""
-import importlib.util
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
-import cargo_target
+import launcher_payload as package
 
 
 class PackagePayloadTests(unittest.TestCase):
@@ -47,15 +47,10 @@ class PackagePayloadTests(unittest.TestCase):
             manifest = root/'upstream/manifests/smm2recomp.json'
             manifest.parent.mkdir(parents=True)
             manifest.write_text('{"files": {}}', encoding='utf-8')
-            ffmpeg = root/'prebuilt/ffmpeg/manifest.json'
-            ffmpeg.parent.mkdir(parents=True)
-            ffmpeg.write_text('{"files": {}}', encoding='utf-8')
-            spec = importlib.util.spec_from_file_location('package_launcher', ROOT/'scripts/package-launcher.py')
-            package = importlib.util.module_from_spec(spec)
-            with patch.object(cargo_target, 'target_dir', return_value=root/'target'):
-                spec.loader.exec_module(package)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
             with patch.object(package, 'ROOT', root), patch.object(package, 'MANIFEST', manifest):
-                selected = {path.relative_to(root).as_posix() for path in package.payload_files()}
+                selected = {name for _, name in package.payload_files(False, root/'importer', None, None, None)}
             self.assertFalse(set(required) - selected, 'Required build sources omitted: '+repr(set(required) - selected))
             self.assertFalse(set(excluded) & selected, 'Private fixture data entered the payload')
 

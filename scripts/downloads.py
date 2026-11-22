@@ -13,7 +13,7 @@ import threading
 
 # Official MSYS2 mirrors with the same repository layout; the first one is what upstream pins.
 MSYS2 = ['https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/ucrt64/', 'https://repo.msys2.org/mingw/ucrt64/']
-CURL = ['curl.exe', '-L', '--fail', '--retry', '2', '--connect-timeout', '30', '--max-time', '600', '--silent',
+CURL = ['curl.exe' if os.name == 'nt' else 'curl', '-L', '--fail', '--retry', '2', '--connect-timeout', '30', '--max-time', '600', '--silent',
         '--show-error']
 _lock = threading.Lock()
 

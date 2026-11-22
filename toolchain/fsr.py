@@ -27,10 +27,19 @@ CALL = ANCHOR + """    if (mk8_temporal_requested()) { extern VkImageView mk8_fs
       if (fsr4) { vk_full_barrier(cb); vk_frame_resume(); return fsr4; } }
 """
 
-CAPTURE = """    if (mk8_temporal_requested() && g_pass_depth && g_pass_depth->backend) {
+CAPTURE = """    if ((mk8_temporal_requested() || getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) &&
+        g_pass_depth && g_pass_depth->backend) {
         TexBackend *db = (TexBackend *)g_pass_depth->backend;
         if (db->image && db->width >= 640 && db->height >= 360 && db->width * 9 == db->height * 16) {
+            // Frame generation consumes the depth at the presented size: its FFX context is created
+            // for the swapchain extent (displaySize == maxRenderSize). The game's depth pass uses its
+            // own render size (2304x1296 for a 2560x1440 window), so resample it here with the same
+            // depth_copy pass the upscaler uses. Only for FG, and only when the aspects match;
+            // FG off keeps the render-size capture unchanged.
             uint32_t cw = db->width, ch = db->height;
+            if (getenv("MK8_FSR_FG") && g_vk.sc_extent.width && g_vk.sc_extent.height &&
+                db->width * g_vk.sc_extent.height == db->height * g_vk.sc_extent.width)
+                cw = g_vk.sc_extent.width, ch = g_vk.sc_extent.height;
             static int cap_log;
             if (cap_log++ < 3) LOG("[fsr] capture scene depth %ux%u fmt %d%s\\n", db->width, db->height, db->format,
                                    cw != db->width || ch != db->height ? " (resampled to the presented size)" : "");
@@ -117,17 +126,29 @@ static bool mk8_temporal_requested(void) {
         requested = getenv("MK8_DLSS") ? UPSCALE_DLSS : !getenv("MK8_FSR4") ? 0 :
                     version && !strcmp(version, "4.1.2") ? UPSCALE_FSR4 : UPSCALE_FSR3;
     }
+#ifdef _WIN32
     return requested && requested == g_settings.upscaler;
+#else
+    // Linux selects the provider on the launcher's FSR page (apps/launcher/src/fsr), not in the game menu.
+    return requested != 0;
+#endif
 }
 ''', 1)
     old = 'static NvnTexture *g_pass_depth;'
     if text.count(old) != 1:
         raise ValueError('Pass depth declaration changed upstream')
     if 'TexBackend *g_fsr_captured;' not in text:
-        text = text.replace(old, old + '\nTexBackend *g_fsr_captured;'
+        text = text.replace(old, old + '\nNvnTexture *g_fsr_depth;\nTexBackend *g_fsr_captured;'
                             '\nfloat g_fsr_view[12], g_fsr_proj[16];'
-                            '\nint g_fsr_vp_valid;'
-                            '\nfloat g_fsr_jitter_x, g_fsr_jitter_y;', 1)
+                            '\nint g_fsr_vp_valid;', 1)
+    if 'NvnTexture *mk8_fsr_last_depth(void)' not in text:
+        text = text.replace('TexBackend *g_fsr_captured;',
+                            'TexBackend *g_fsr_captured;\nNvnTexture *mk8_fsr_last_depth(void) { return g_fsr_depth; }', 1)
+    old = '    g_pass_depth = st.rt.depth;'
+    if text.count(old) != 1:
+        raise ValueError('Pass depth assignment changed upstream')
+    if 'g_fsr_depth = st.rt.depth;' not in text:
+        text = text.replace(old, old + '\n    if (st.rt.depth) g_fsr_depth = st.rt.depth;', 1)
     if 'FG_DUMMY = 20, N_POST = 21' in text:
         text = text.replace('FG_DUMMY = 20, N_POST = 21', 'FG_DUMMY = 20, N_POST = 23', 1)
     elif 'FG_DUMMY = 20, FSR_DEPTH = 21, N_POST = 22' in text:
@@ -142,7 +163,7 @@ static bool mk8_temporal_requested(void) {
     new = ('            VkDescriptorPoolSize sizes[6] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},\n'
            '                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},\n'
            '                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};\n'
-           '            bool fsr_mv_pool = mk8_temporal_requested();\n'
+           '            bool fsr_mv_pool = mk8_temporal_requested() || getenv("MK8_FSR_FG") || getenv("MK8_DLSS_FG");\n'
            '            if (fsr_mv_pool) sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};\n'
            '            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,\n'
            '                                             .poolSizeCount = fsr_mv_pool ? 6 : 5, .pPoolSizes = sizes};')
@@ -272,7 +293,7 @@ def prepare_settings(runtime):
         t->target == 1 && t->samples <= 1 && t->levels == 1 && t->width == 1920 && t->height == 1080)
         b->scalable = true;""")
     replace('nvn/vulkan/exec.c', 'g_settings.upscaler == UPSCALE_FSR1 &&', 'g_settings.upscaler >= UPSCALE_FSR1 &&')
-    replace('nvn/vulkan/exec.c', 'if (!smaa && !fsr) return v;', '''if (!smaa && !fsr) {
+    replace('nvn/vulkan/exec.c', 'if (!smaa && !fsr) return v;', '''if (!smaa && !fsr && !mk8_temporal_requested()) {
         mk8_graphics_result("native", b->width, b->height, ow, oh);
         return v;
     }''')

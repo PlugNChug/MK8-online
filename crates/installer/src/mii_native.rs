@@ -53,7 +53,11 @@ pub fn tools(root: &Path, local: &Path) -> Result<Tools> {
         return load(&config);
     }
     Ok(Tools {
-        python: root.join("local/python/Scripts/python.exe"),
+        python: root.join(if cfg!(windows) {
+            "local/python/Scripts/python.exe"
+        } else {
+            "local/python/bin/python"
+        }),
         libraries: root.join("local/mii-library-research/python-libs"),
         original: root.join("local/mii-native-probe/MiiM.bfres"),
         original_female: Some(root.join("local/mii-native-probe/MiiF.bfres")),

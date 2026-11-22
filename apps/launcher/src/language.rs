@@ -20,7 +20,7 @@ pub fn read(local: &Path) -> String {
     load::<String>(&local.join("language.json"))
         .ok()
         .filter(|value| valid(value))
-        .unwrap_or_default()
+        .unwrap_or_else(|| "en".into())
 }
 
 /// The language the launcher pages show: the saved choice, otherwise the system
@@ -79,7 +79,7 @@ mod tests {
             b"preserve game configuration"
         );
         std::fs::remove_file(root.join("language.json")).unwrap();
-        assert_eq!(read(&root), "");
+        assert_eq!(read(&root), "en");
         std::fs::remove_file(config).unwrap();
         std::fs::remove_dir(root).unwrap();
     }

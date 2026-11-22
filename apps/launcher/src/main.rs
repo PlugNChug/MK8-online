@@ -6,16 +6,25 @@ mod debug_options;
 #[cfg(debug_assertions)]
 mod debug_web;
 mod fonts;
+mod fsr;
 mod game_session;
 mod game_settings;
 mod graphics;
+#[cfg(windows)]
 mod installer;
+#[cfg(target_os = "linux")]
+#[path = "installer_linux.rs"]
+mod installer;
+#[cfg(any(windows, mk8_portable))]
+mod installer_ui;
 mod language;
+#[cfg(windows)]
 mod managed;
 mod manual;
 mod mii_download;
 mod nextendo_session;
 mod portable;
+#[cfg(windows)]
 mod python_setup;
 mod relay;
 mod report;
@@ -67,6 +76,24 @@ pub(crate) fn canonical(path: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+pub(crate) fn archive_command() -> mk8_manifest::Result<std::process::Command> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let path = std::env::var_os("SystemRoot")
+            .map(|root| Path::new(&root).join("System32/tar.exe"))
+            .filter(|path| path.is_file())
+            .ok_or("tar.exe do Windows não encontrado.")?;
+        let mut command = std::process::Command::new(path);
+        command.creation_flags(0x08000000);
+        Ok(command)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(std::process::Command::new("bsdtar"))
+    }
+}
+
 pub(crate) fn fatal(message: &str) {
     eprintln!("MK8-online: {message}");
     rfd::MessageDialog::new()
@@ -77,7 +104,32 @@ pub(crate) fn fatal(message: &str) {
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        // Steam reads its application ID from the process environment.
+        mk8_session::steam::configure_process();
+    }
     let args: Vec<String> = std::env::args().collect();
+    let headless = args
+        .iter()
+        .any(|v| v == "--headless" || v == "--no-browser" || v == "--play");
+    #[cfg(target_os = "linux")]
+    if update::is_handoff(&args) {
+        if let Err(error) = update::run_handoff(&args) {
+            if headless {
+                eprintln!("MK8-online: {error}");
+            } else {
+                fatal(&error);
+            }
+            std::process::exit(1);
+        }
+        return;
+    }
+    #[cfg(all(target_os = "linux", mk8_portable))]
+    if let Err(error) = installer::initialize() {
+        eprintln!("MK8-online: {error}");
+        std::process::exit(1);
+    }
     if args.get(1).is_some_and(|arg| arg == "--how-to-play") {
         if let Err(error) = manual::run() {
             fatal(&error.to_string());
@@ -92,6 +144,7 @@ fn main() {
         println!("{}", serde_json::json!(graphics::probe(Path::new(local))));
         return;
     }
+    #[cfg(windows)]
     if args.get(1).is_some_and(|arg| arg == "--setup-python") {
         let result = args
             .get(2)
@@ -118,7 +171,7 @@ fn main() {
             .and_then(|folder| vulkan::probe(Path::new(folder)));
         match result {
             Ok(()) => {
-                println!("Vulkan e SDL carregados; dependências resolvidas pelo Windows. Gameplay não qualificado.");
+                println!("Vulkan e SDL carregados. Gameplay não qualificado.");
                 std::process::exit(0);
             }
             Err(error) => {
@@ -126,6 +179,16 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    }
+    if args.get(1).is_some_and(|arg| arg == "--fsr-install") {
+        let code = match fsr::install::run_from_stdin() {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("{error}");
+                1
+            }
+        };
+        std::process::exit(code);
     }
     if let Some(mode) = args
         .get(1)
@@ -145,6 +208,7 @@ fn main() {
         };
         std::process::exit(code);
     }
+    #[cfg(windows)]
     if let Some(mode) = installer::mode(&args) {
         if let Err(error) = installer::run(mode, &args) {
             fatal(&format!("O instalador não pôde continuar: {error}"));
@@ -152,9 +216,14 @@ fn main() {
         }
         return;
     }
-    let headless = args
-        .iter()
-        .any(|v| v == "--headless" || v == "--no-browser" || v == "--play");
+    #[cfg(all(target_os = "linux", mk8_portable))]
+    if !headless && installer::should_setup(&args) {
+        if let Err(error) = installer_ui::window(None) {
+            fatal(&format!("A instalação não pôde continuar: {error}"));
+            std::process::exit(1);
+        }
+        return;
+    }
     if headless {
         console::attach_parent();
     }
@@ -169,6 +238,10 @@ fn main() {
 }
 
 fn run(args: &[String], headless: bool) -> Result<(), Error> {
+    #[cfg(target_os = "linux")]
+    if update::recover_interrupted()? {
+        return Ok(());
+    }
     startup::validate_args(args)?;
     let root = project_root()?;
     run_at(root, args, headless)
@@ -183,7 +256,7 @@ fn project_root() -> Result<PathBuf, Error> {
         .to_path_buf())
 }
 
-#[cfg(mk8_portable)]
+#[cfg(all(windows, mk8_portable))]
 fn project_root() -> Result<PathBuf, Error> {
     let home = if let Some(home) = startup::portable_home(&std::env::current_exe()?)? {
         Some(home)
@@ -198,9 +271,14 @@ fn project_root() -> Result<PathBuf, Error> {
     unpack_payload(&base)
 }
 
+#[cfg(all(target_os = "linux", mk8_portable))]
+fn project_root() -> Result<PathBuf, Error> {
+    installer::project_root()
+}
+
 /// This version's sources under `<base>/<payload id>` (unpacked once; the installer does it ahead of the first
 /// start), with the shared tool folder set up.
-#[cfg(mk8_portable)]
+#[cfg(all(windows, mk8_portable))]
 pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
     const PAYLOAD: &[u8] = include_bytes!(env!("MK8_LAUNCHER_PAYLOAD"));
     let root = base.join(&env!("MK8_LAUNCHER_PAYLOAD_ID")[..16]);
@@ -249,14 +327,18 @@ fn extract_payload(archive: &Path, stage: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
+#[cfg(any(windows, mk8_portable, test))]
 fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> Result<(), Error> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match fs::rename(stage, root) {
             Ok(()) => return Ok(()),
+            Err(_) if root.is_dir() => {
+                let _ = fs::remove_dir_all(stage);
+                return Ok(());
+            }
             Err(error)
-                if matches!(error.raw_os_error(), Some(5 | 32 | 33))
+                if cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32 | 33))
                     && std::time::Instant::now() < deadline =>
             {
                 // Scanners may still hold the freshly extracted directory. Never delete to retry.
@@ -278,7 +360,7 @@ fn publish_payload(stage: &Path, root: &Path, timeout: std::time::Duration) -> R
 /// an older one, is moved into it, so an update does not download again; the scripts still verify
 /// every archive by SHA-256. Only a junction to the shared folder (made by an earlier build of this
 /// launcher) is removed: the link itself, never its target.
-#[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
+#[cfg(all(windows, any(mk8_portable, test)))]
 fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
     let shared = base.join("native-tools");
     managed::direct(&shared)?;
@@ -316,7 +398,7 @@ fn share_tools(base: &Path, root: &Path) -> Result<PathBuf, Error> {
 
 /// The folder chosen in setup.exe for the unpacked versions and the data (`mk8-online.json` next to the
 /// executable, `{"home": "D:\\MK8-online"}`); `None` keeps the default under `%LOCALAPPDATA%`.
-#[cfg(mk8_portable)]
+#[cfg(all(windows, mk8_portable))]
 fn home_from_setup() -> Result<Option<PathBuf>, Error> {
     let exe = std::env::current_exe()?;
     let file = exe.with_file_name("mk8-online.json");
@@ -338,6 +420,21 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     // The packaged launcher unpacks each version beside the others; its data stays in one folder for all
     // versions, so an update keeps the import, tools, builds and saves.
     let portable_home = startup::portable_home(&std::env::current_exe()?)?;
+    #[cfg(target_os = "linux")]
+    let default_data = if let Some(home) = &portable_home {
+        home.join("data")
+    } else {
+        // (the AppImage/tarball install records the data folder chosen in setup)
+        #[cfg(mk8_portable)]
+        {
+            installer::data_root()?
+        }
+        #[cfg(not(mk8_portable))]
+        {
+            root.join("local")
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
     let default_data = if let Some(home) = &portable_home {
         home.join("data")
     } else if cfg!(mk8_portable) {
@@ -365,6 +462,8 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     let (server, app, authority, page, token) = launcher_server(app, &local, args)?;
     println!("MK8-online: {page}");
     let Some(parent) = parent else {
+        #[cfg(target_os = "linux")]
+        update::mark_ready();
         server::serve(app, server, authority, page, token);
         return Ok(());
     };
@@ -374,9 +473,21 @@ fn run_at(root: PathBuf, args: &[String], headless: bool) -> Result<(), Error> {
     }
     std::thread::spawn(move || server::serve(app, server, authority, page, token));
     let origin = target.origin();
+    #[cfg(target_os = "linux")]
+    let ready_url = target.clone();
     tauri::Builder::default()
         .setup(move |tauri_app| {
-            let window = WebviewWindowBuilder::new(tauri_app, "main", WebviewUrl::External(target))
+            let builder =
+                WebviewWindowBuilder::new(tauri_app, "main", WebviewUrl::External(target));
+            #[cfg(target_os = "linux")]
+            let builder = builder.on_page_load(move |_, payload| {
+                if payload.event() == tauri::webview::PageLoadEvent::Finished
+                    && payload.url() == &ready_url
+                {
+                    update::mark_ready();
+                }
+            });
+            let window = builder
                 .title("MK8-online")
                 .inner_size(1280.0, 880.0)
                 .min_inner_size(400.0, 560.0)
@@ -440,16 +551,16 @@ fn launcher_server(
     Ok((server, app, authority, url, token))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, mk8_portable))]
 fn launcher_after_setup(
     base: &Path,
     parent: Arc<OnceLock<tauri::WebviewWindow>>,
 ) -> Result<tauri::Url, Error> {
-    #[cfg(mk8_portable)]
+    #[cfg(all(windows, mk8_portable))]
     let root = unpack_payload(base)?;
-    #[cfg(not(mk8_portable))]
+    #[cfg(not(all(windows, mk8_portable)))]
     let root = project_root()?;
-    let local = canonical(&base.join("data"))?;
+    let local = canonical(&installer::launcher_data(base))?;
     let app = launcher_app(root, &local, Some(parent))?;
     let (server, app, authority, page, token) = launcher_server(app, &local, &[])?;
     let target = page.parse()?;
@@ -459,9 +570,14 @@ fn launcher_after_setup(
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical, share_tools};
-    use std::{fs, process::Command};
+    #[cfg(windows)]
+    use super::share_tools;
+    use super::{canonical, publish_payload};
+    use std::fs;
+    #[cfg(windows)]
+    use std::process::Command;
 
+    #[cfg(windows)]
     #[test]
     fn versions_share_one_tool_folder() {
         let base = std::env::temp_dir().join(format!("mk8-share-tools-{}", std::process::id()));
@@ -518,6 +634,28 @@ mod tests {
         assert!(found, "{}", path.display());
     }
 
+    #[test]
+    fn concurrent_payload_publication_keeps_the_first_complete_copy() {
+        let base = std::env::temp_dir().join(format!("mk8-payload-race-{}", std::process::id()));
+        let destination = base.join("ready");
+        let first = base.join("first");
+        let second = base.join("second");
+        for stage in [&first, &second] {
+            fs::create_dir_all(stage).unwrap();
+            fs::write(
+                stage.join("payload.txt"),
+                stage.file_name().unwrap().as_encoded_bytes(),
+            )
+            .unwrap();
+        }
+        publish_payload(&first, &destination, std::time::Duration::ZERO).unwrap();
+        publish_payload(&second, &destination, std::time::Duration::ZERO).unwrap();
+        assert_eq!(fs::read(destination.join("payload.txt")).unwrap(), b"first");
+        assert!(!second.exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(windows)]
     #[test]
     fn payload_publication_waits_for_a_real_directory_lock_and_preserves_on_failure() {
         use std::{os::windows::fs::OpenOptionsExt, time::Duration};

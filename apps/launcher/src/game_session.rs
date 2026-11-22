@@ -47,6 +47,8 @@ pub fn run() -> Result<i32> {
     crate::fonts::configure(&request.local)?;
     let wrench_layout =
         crate::game_settings::configure_menu(&request.local, (&request.install).into())?;
+    #[cfg(target_os = "linux")]
+    crate::fsr::configure(&request.local)?;
     crate::debug_options::configure(&request.local)?;
     let saved = crate::language::read(&request.local);
     let overlay_language = if !saved.is_empty() {

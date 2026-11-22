@@ -141,6 +141,11 @@ async function loadGraphics() {
 function updateGraphics() {
   const scaler = document.querySelector('[data-key="upscaler"]'), panel = $("graphics-components");
   if (!panel || !scaler) return;
+  if (window.mk8Platform === "linux") {
+    for (const option of scaler.options) if (vendorModes[option.value]) option.hidden = option.disabled = true;
+    panel.hidden = true;
+    return;
+  }
   const mode = scaler.value, vendor = vendorModes[mode], caps = graphicsCaps;
   for (const option of scaler.options) {
     if (!vendorModes[option.value]) continue;
@@ -500,6 +505,9 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
       }
       if (input.id === "ctgp-source") return { message: "Pasta selecionada." };
       if (input.id === "prepare-dlc-package") return { message: "Arquivo selecionado." };
+      if (input.id === "fsr-provider" || input.id === "fsr-dxc") {
+        return await window.mk8Fsr.afterBrowse(input.id);
+      }
       await saveGameFileConfig();
       return { message: "Arquivo selecionado." };
     });
@@ -1004,6 +1012,10 @@ $("open-data").onclick = () => action(() => api("open", { what: "data" }));
 
 async function refresh() {
   const status = await api("status");
+  // Windows installs the verified AMD/NVIDIA components (Graphics); Linux builds them on the FSR page.
+  window.mk8Platform = status.platform;
+  const fsrTab = document.querySelector('[data-tab="fsr"]');
+  if (fsrTab) fsrTab.hidden = status.platform !== "linux";
   if (status.steam_join_after_mii && !busy) {
     const lobby = await api("steam/claim-join", {});
     if (lobby) await action(() => joinSteam(lobby));
@@ -1145,7 +1157,7 @@ async function refresh() {
       history.replaceState(null, "", "#play");
       await withPilot("play", playSolo);
     }
-    else if (["install", "settings", "play", "miis", "session", "support"].includes(linkedTab)) showTab(linkedTab);
+    else if (["install", "settings", "play", "miis", "session", "support", "fsr"].includes(linkedTab)) showTab(linkedTab);
     else if (!pendingPilotPlay && status.tools_ready && (status.candidate || status.installed) && !status.candidate_stale) showTab("play");
     i18n.text($("update-state"), "Versão instalada: " + status.version);
     if (status.updates.configured) api("update/check", {}).then(renderUpdate).catch(() => {});
