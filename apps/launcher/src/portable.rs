@@ -14,7 +14,10 @@ struct Location {
 }
 
 fn mapped(value: &str, old: &Path, new: &Path) -> Option<String> {
-    let clean = |v: &str| v.trim_start_matches(r"\\?\").replace('\\', "/");
+    let clean = |v: &str| match v.strip_prefix(r"\\?\UNC\") {
+        Some(unc) => format!("//{}", unc.replace('\\', "/")),
+        None => v.trim_start_matches(r"\\?\").replace('\\', "/"),
+    };
     let value = clean(value);
     let prefix = clean(&old.to_string_lossy());
     let prefix = prefix.trim_end_matches('/');
@@ -359,6 +362,18 @@ mod tests {
             .starts_with(std::env::temp_dir().canonicalize().unwrap()));
         fs::remove_dir_all(base).unwrap();
     }
+    #[test]
+    fn rebases_verbatim_and_ordinary_unc_resources_within_the_share() {
+        let old = Path::new(r"\\server\share\portable");
+        let new = Path::new(r"\\server\share\renamed");
+        let ordinary = r"\\server\share\portable\data\ShapeMid.dat";
+        let verbatim = r"\\?\UNC\server\share\portable\data\ShapeMid.dat";
+        let rebased = new.join("data/ShapeMid.dat").to_string_lossy().into_owned();
+        assert_eq!(mapped(ordinary, old, new).as_ref(), Some(&rebased));
+        assert_eq!(mapped(verbatim, old, new).as_ref(), Some(&rebased));
+        assert!(mapped(r"\\?\UNC\server\share2\portable\data", old, new).is_none());
+    }
+
     #[test]
     fn mapping_requires_component_boundary_and_rejects_traversal() {
         let old = Path::new("C:/portable");
