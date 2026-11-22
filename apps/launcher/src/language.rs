@@ -20,11 +20,12 @@ pub fn read(local: &Path) -> String {
     load::<String>(&local.join("language.json"))
         .ok()
         .filter(|value| valid(value))
-        .unwrap_or_else(|| "en".into())
+        .unwrap_or_default()
 }
 
 /// The language the launcher pages show: the saved choice, otherwise the system
-/// language with the same fallback as `web/i18n.js` (Portuguese, English, else Spanish).
+/// language with the same fallback as `web/i18n.js` (Portuguese, Spanish, else English).
+/// An unset choice stays empty in `read`, so the pages and the game Menu can follow the browser.
 pub fn effective(local: &Path) -> String {
     let saved = read(local);
     if !saved.is_empty() {
@@ -40,8 +41,8 @@ pub fn effective(local: &Path) -> String {
 fn from_primary_language(primary: u16) -> &'static str {
     match primary {
         0x16 => "pt-BR",
-        0x09 => "en",
-        _ => "es",
+        0x0a => "es",
+        _ => "en",
     }
 }
 
@@ -79,7 +80,7 @@ mod tests {
             b"preserve game configuration"
         );
         std::fs::remove_file(root.join("language.json")).unwrap();
-        assert_eq!(read(&root), "en");
+        assert_eq!(read(&root), "");
         std::fs::remove_file(config).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
@@ -89,7 +90,7 @@ mod tests {
         assert_eq!(from_primary_language(0x16), "pt-BR");
         assert_eq!(from_primary_language(0x09), "en");
         assert_eq!(from_primary_language(0x0a), "es");
-        assert_eq!(from_primary_language(0x07), "es");
+        assert_eq!(from_primary_language(0x07), "en");
         let root =
             std::env::temp_dir().join(format!("mk8-language-effective-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();

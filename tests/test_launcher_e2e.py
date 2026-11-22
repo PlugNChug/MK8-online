@@ -500,6 +500,7 @@ class LauncherTests(unittest.TestCase):
         finally:
             page.close()
 
+    @unittest.skipUnless(os.name != 'nt', 'The FSR page is Linux-only; Windows uses Video > Graphics (apps/launcher/web/app.js)')
     def test_fsr_terms_precede_the_managed_install(self):
         page = self.page(index=1)
         page.evaluate("() => api('fsr/settings', {upscaling: '3.1.6', provider_lib: '', frame_generation: 'off', dxc: ''})")
@@ -536,6 +537,7 @@ class LauncherTests(unittest.TestCase):
         expect(page.locator('#fsr-install')).to_be_enabled()
         expect(page.locator('#fsr-provider')).to_be_hidden()
 
+    @unittest.skipUnless(os.name != 'nt', 'The FSR page is Linux-only; Windows uses Video > Graphics (apps/launcher/web/app.js)')
     def test_fsr_picker_save_survives_an_overlapping_status_refresh(self):
         page = self.page()
         page.evaluate("() => api('fsr/settings', {upscaling: '3.1.6', provider_lib: '', frame_generation: 'off', dxc: ''})")

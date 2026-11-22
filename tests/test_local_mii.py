@@ -168,6 +168,10 @@ int main(int argc,char **argv) {
 '''+default+'''
 #include "mii/local_mii.inc"
 #include "mii/mii_editor.inc"
+#include <bcrypt.h>
+bool mk8_random(void *buffer, size_t size) {  // (runtime/mk8/services/csrng.c needs the HLE headers)
+ return BCryptGenRandom(NULL, buffer, (ULONG)size, BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+}
 static int confirm=1;
 static int opened;
 void mk8_open_mii_menu(void) { opened++; }
@@ -197,9 +201,12 @@ int main(int argc,char **argv) {
 ''', encoding='utf-8')
             exe = root/'editor.exe'
             env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
-            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG', '-I'+str(ROOT/'runtime/mk8'), str(program), '-lbcrypt', '-o', str(exe)], env=env, check=True)
+            from host import DEPS  # the editor validates names with SDL_StepUTF8
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG', '-I'+str(ROOT/'runtime/mk8'),
+                            '-I'+str(DEPS/'include'), str(program), str(DEPS/'lib/libSDL3.dll.a'), '-lbcrypt', '-o', str(exe)], env=env, check=True)
             profile = root/'mii-profile.json'
-            subprocess.run([str(exe), str(profile)], check=True)
+            subprocess.run([str(exe), str(profile)], check=True,
+                           env=dict(os.environ, PATH=str(DEPS/'bin') + os.pathsep + os.environ['PATH']))
             stored = json.loads(profile.read_text())
             self.assertEqual({k:stored['appearance'][k] for k in ['name','color','gender']}, {'name': 'Jo\u00e3o', 'color': 3, 'gender': 0})
             self.assertEqual(stored['appearance']['face'], {'skin':4,'shape':2,'hair':3,'hair_color':5,'eyes':2,'eye_color':1,'glasses':True,'height':90,'build':45})

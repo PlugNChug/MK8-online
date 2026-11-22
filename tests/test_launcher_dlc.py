@@ -17,8 +17,6 @@ class LauncherDlcTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory(prefix="mk8-dlc-ui-")
         cls.folder = Path(cls.temporary.name)
-        # These checks read the Portuguese strings; the launcher defaults to English since 4395931.
-        (cls.folder / "language.json").write_text('"pt-BR"', encoding="utf-8")
         cls.process = subprocess.Popen(
             [os.environ.get("MK8_LAUNCHER_EXE", str(ROOT / "target/release/Launcher.exe")),
              "--headless", "--data-dir", str(cls.folder)],

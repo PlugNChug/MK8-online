@@ -29,7 +29,8 @@ class LauncherPayloadTests(unittest.TestCase):
                 "runtime/mk8/graphics/fsr.cpp", "runtime/mk8/graphics/ffx/LICENSE",
                 "tools/fsr4-linux/src/provider/ffx_provider.cpp", "tools/fg-linux/CMakeLists.txt",
             }
-            for name in (*sources, "LICENSE", "toolchain/mii_assembly.html"):
+            for name in (*sources, "LICENSE", "toolchain/mii_assembly.html",
+                         "runtime/mk8/windows.manifest", "runtime/mk8/windows.rc"):
                 add(name)
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             for name in ("mk8-import.dll", "mk8-import.runtimeconfig.json", "LibHac.dll", "build-sha256.txt",
