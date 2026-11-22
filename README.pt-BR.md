@@ -339,4 +339,6 @@ A renderização condicional aguarda reports de oclusão pendentes nos dois oper
 
 O tradutor de shaders Maxwell passou a respeitar a interpolação declarada pelo jogo para entradas de fragmento. Isso reduziu a cintilação no trecho testado de Boo Lake em tela dividida. Recompile o runtime para aplicar a correção.
 
+Na `fix-chore`, recompilar o runtime do Windows também mostra o jogo em chinês simplificado ou tradicional quando selecionado (#99). O ajuste de shader da GTX 1070 passa a valer para todas as GPUs NVIDIA GTX 10 (Pascal), para tratar a perda do dispositivo da GTX 1060 na primeira corrida (#114). O log do jogo registra o driver Vulkan e as camadas disponíveis antes de criar o dispositivo. Anexe esse log se o jogo fechar ao iniciar.
+
 Se os emblemas das copas e os números da largada aparecem azuis na 0.3.0, o runtime da 0.4.0 corrige as cores dessas texturas RGB565. Recompile o jogo com o runtime atualizado para aplicar a correção.

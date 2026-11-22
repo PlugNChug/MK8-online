@@ -63,6 +63,8 @@ The runtime preserves visibility-counter reports across the 256-query submission
 
 Rebuilding the Windows runtime also reduces flicker around the starting banner in Bowser’s Castle and fixes the repeated outlines around small lights at higher internal resolutions. Some flicker remains as the camera moves.
 
+On `fix-chore`, rebuilding the Windows runtime also shows the game in Simplified or Traditional Chinese when you select it (#99). The shader workaround for the GTX 1070 now applies to every NVIDIA GTX 10-series (Pascal) GPU, which is meant to address the GTX 1060 losing the device at the first race (#114). The game log now records the Vulkan driver and the available layers before it creates the device. Attach that log if the game closes at startup.
+
 If cup emblems and countdown numbers appear blue in 0.3.0, the 0.4.0 runtime corrects their RGB565 colours. Rebuild the game with the updated runtime to see the change.
 
 Controller discovery now tries subsequent devices for player one if the first device cannot be opened, and ignores duplicate connection events without changing existing player assignments. The separate DSX compatibility report still needs testing on the affected setup.
