@@ -6,6 +6,12 @@ O runtime desenha os blocos de reflexão na vista inteira de 128 bits da imagem 
 
 Em uma build local integrada para Windows (`7c29eb5e`), a validação Vulkan acompanhou a escrita das seis faces do primeiro nível e o início do seguinte sem repetir os avisos de vista incompatível e de saída em ponto flutuante para um destino inteiro. Com a validação desligada, o usuário completou uma corrida em Mario Kart Stadium nessa mesma build e confirmou que o kart e o asfalto mantiveram a aparência normal durante toda a prova, sem cintilação nem superfícies esbranquiçadas. A verificação desta branch isolada foi feita com os testes nativos.
 
+## Bloom na largada de Bowser's Castle
+
+O runtime do Windows preserva a cobertura de realces estreitos na extração de bloom e nas reduções com dimensões ímpares. O primeiro desfoque cobre os pixels intermediários quando a resolução interna aumenta. Isso corrige os contornos repetidos em 4×. A primeira redução da pirâmide aplica o filtro `[1, 2, 1]/4` quando o jogo usa a sequência conhecida, amostragem linear no nível zero e uma redução próxima de 2:1.
+
+Nos testes anteriores em corrida solo a 1× e com a resolução do monitor, o brilho acima e abaixo das letras ficou mais estável e sua média na imagem final variou menos de 1%. Ainda houve oscilação. Em quatro jogadores, a comparação da imagem final foi inconclusiva para o halo inferior. Na base `6217eca`, os testes nativos compilaram os shaders sintéticos e os programas correspondentes do MK8 4.0.1 para SPIR-V. A reprodução das capturas confirmou os pesos do filtro nas fases fracionárias. O porte isolado não passou por nova corrida nem por teste no Linux.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
