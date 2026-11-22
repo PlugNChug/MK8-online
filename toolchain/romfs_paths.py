@@ -48,6 +48,13 @@ RT_ON_RESET(installed_mods_reset) {
         ('    if (g_n >= MAX_MODS || find_id(id) >= 0) return;', '''    if (!*id || *id == '#' || !strcmp(id, ".") || !strcmp(id, "..") || strpbrk(id, "/\\\\:=\\r\\n") ||
         strlen(id) >= sizeof g_e[0].m.id || g_n >= MAX_MODS || find_id(id) >= 0) return;'''),
     ])
+    # Videos open by path, outside the RomFS index: serve a mod's or pack's copy like every other file.
+    adapt('hle/movie.c', [
+        ('    snprintf(host, sizeof host, "%s/%s", g_romfs_dir, rel ? rel : "");',
+         '    extern bool mods_romfs_override(const char *, char *, size_t);\n'
+         '    if (!rel || !mods_romfs_override(rel, host, sizeof host))\n'
+         '        snprintf(host, sizeof host, "%s/%s", g_romfs_dir, rel ? rel : "");'),
+    ])
     adapt('romfs_build.c', [
         ('#include "platform.h"', '#include "mk8_romfs_paths.h"\n#include "platform.h"'),
         ('static Dir *scan(', 'static void free_tree(Dir *);\n\nstatic Dir *scan('),
