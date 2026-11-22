@@ -190,6 +190,8 @@ Data defaults to `%LOCALAPPDATA%\MK8-online` and survives updates and uninstalli
 
 **Language:** the Launcher and installer offer **English**, **Português (Brasil)** and **Español** (**Language / Idioma**). The game's own language is separate.
 
+To play in Simplified or Traditional Chinese, select it under **Game language** and restart the game. Existing `zh-CN` and `zh-TW` selections work with the updated runtime. The game loads the corresponding Chinese messages and fonts from your game files.
+
 ### Create your Mii
 
 1. Open **Mii profile** and wait for the first library download. Its Internet Archive origin is shown in the creator. To use an existing file, expand **Use a local file**, then **Browse** and **Use**. A valid configured library is reused automatically.

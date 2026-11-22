@@ -1,5 +1,11 @@
 # Estado técnico — 20/11/2026
 
+## Idioma chinês no MK8 4.0.1 para Windows (#99)
+
+Na 0.5.0, tanto `zh-CN` quanto `zh-TW` fizeram o jogo ler `UI/USen/message.sarc` e `UI/USen/font.sarc`. Os seis arquivos de fontes do console estavam disponíveis. O valor gravado no INI estava correto; o seletor de idioma do jogo reconhece as variantes chinesas pelos códigos `zh-Hans` e `zh-Hant` na resposta de `GetDesiredLanguage`.
+
+A correção ajusta apenas essa resposta ao aplicativo. O INI e a consulta de idioma do sistema mantêm os valores antigos. Com a mesma biblioteca do jogo e os mesmos arquivos originais, o rastreamento confirmou a leitura de `UI/CNzh/message.sarc` e `UI/TWzh/message.sarc`, cada um acompanhado de `font.szs` da própria região. A opção de um jogador passou de **Single Player** para **单人** no simplificado e **單人** no tradicional. O controle em japonês exibiu **ひとりで** e leu os arquivos de `UI/JPja` nas duas versões.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
