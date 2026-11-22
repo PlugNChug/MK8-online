@@ -27,7 +27,7 @@ O relato é de imagem cortada e de resolução diferente de 16:9 ao ativar a ger
 
 ### Verificação
 
-Passaram a formatação, o Clippy com avisos negados e 138 testes Rust. A bateria Python roda módulo a módulo, porque a execução única esgotou a memória da máquina. Todos os módulos que falharam na primeira passada passaram depois das correções acima. O Clippy do launcher para Linux não roda neste Windows, porque depende da `libdbus` nativa. Fica para o CI Linux. Na build isolada em `D:\Project\MK8-online-build`, a corrida em Mario Kart Stadium renderizou com o cache frio e com o cache pronto, o FPS ficou próximo ao de antes do merge e os menus abriram em chinês. O pacote Linux não foi gerado nesta máquina.
+Passaram a formatação, o Clippy com avisos negados e 138 testes Rust. A bateria Python roda módulo a módulo, porque a execução única esgotou a memória da máquina. Ela reuniu 550 testes em 161 módulos. Os 17 módulos que falharam na primeira passada passaram depois das correções acima, com o launcher recompilado. Depois da correção do import, uma build completa regenerou o C dos três módulos, aplicou os patches guest e ligou as 483 unidades em 3 min. Na corrida em Mario Kart Stadium com essa build, a imagem saiu correta e o jogo ficou perto de 60 FPS (`play/full-check`). O Clippy do launcher para Linux não roda neste Windows, porque depende da `libdbus` nativa. Fica para o CI Linux. Na build isolada em `D:\Project\MK8-online-build`, a corrida em Mario Kart Stadium renderizou com o cache frio e com o cache pronto, o FPS ficou próximo ao de antes do merge e os menus abriram em chinês. O pacote Linux não foi gerado nesta máquina.
 
 ### Issues
 
