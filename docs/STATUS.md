@@ -2735,3 +2735,9 @@ Pendências priorizadas para publicação: [docs/ROADMAP.md](ROADMAP.md). Priori
 Validação desta branch: **11 testes nativos/Python aprovados**, zero skips, cobrindo oclusão, compute flush e runtime stalls. Não foi refeita uma build do jogo nem uma corrida nesta separação de PR.
 
 Patch focado sobre fix-chore `15d1106`: resolve reports pendentes dos dois operandos antes de CMD_SET_RENDER_ENABLE. Espera somente a maior sequência necessária, libera cq_lock antes de submit/wait e não faz flush sem dependência. Queries indisponíveis após conclusão conhecida e timeout com reports pendentes falham explicitamente. Mantém zeros legítimos, modos equal/not-equal, q nulo e enable/disable. Teste nativo executa helper/case preparados, com dependências atuais/anteriores, ambos os operandos, produtores distintos, reset, lock e falhas. Evidência manual anterior veio da branch integrada com recorder: usuário não observou flicker em Electrodrome, DK Jungle e Rainbow Road após o fix; não é qualificação desta branch isolada. Não inclui recorder nem outros patches gráficos. `gameplay_verified=false`.
+
+## Comparação de profundidade em texturas Vulkan
+
+Quando falta uma textura para comparação de profundidade, o runtime fornece uma imagem de profundidade zerada com a dimensão esperada pelo shader. Para arrays de sombras R32, ele copia os níveis de mip e as camadas selecionados para uma imagem D32 antes do desenho. Uma escrita posterior na origem invalida a cópia. O cache de vistas também passa a reutilizar a entrada inserida quando as 16 posições de busca estão ocupadas.
+
+Os testes nativos exercitam a escolha dos descritores, a cópia dos sub-recursos e a reutilização da vista após colisões. Na compilação integrada anterior, a camada de validação apontou o aviso Vulkan `06479` para uma vista de cor no vínculo 32 do estágio de vértices. A repetição após a correção registrou quatro usos da textura substituta de profundidade e nenhum aviso nesse vínculo.

@@ -279,6 +279,8 @@ def prepare_host_sources(source, output):
     prepare_texture_init(runtime)
     from texture_pool import prepare as prepare_texture_pool
     prepare_texture_pool(runtime)
+    from shadow_fallback import prepare as prepare_shadow_fallback
+    prepare_shadow_fallback(runtime)
     from bc_render import prepare as prepare_bc_render
     prepare_bc_render(runtime)
     from split_screen import prepare as prepare_split_screen
