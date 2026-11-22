@@ -67,6 +67,10 @@ static void check_tips(void) {
 }
 int main(int argc,char **argv) {
     assert(argc==3 || argc==4); settings_load();
+    if(argc==4 && !strncmp(argv[3],"bloom:",6)) {
+        assert(mk8_bloom_enabled()==(argv[3][6]=='1'));
+        return 0;
+    }
     assert(mk8_settings_input_native()==(g_settings.theme==THEME_NATIVE));
     mk8_settings_values_context(true); mk8_settings_values_sync();
     if(argc==4 && !strncmp(argv[3],"theme:",6)) {
@@ -99,11 +103,12 @@ int main(int argc,char **argv) {
         assert(volume.current==150 && !strcmp(volume.value,"150%"));
         assert(mk8_settings_camera_distance()==117);
         assert(mk8_split_screen_60fps_enabled());
+        assert(!mk8_bloom_enabled());
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==14 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -171,6 +176,10 @@ int main(int argc,char **argv) {
     assert(rate.id==MK8_MENU_SPLIT_SCREEN_60FPS && !mk8_split_screen_60fps_enabled() && !strcmp(rate.value,"Off"));
     request(SETTINGS_STEP,rate.id,1);
     assert(mk8_split_screen_60fps_enabled() && !strcmp(find(0,"Split-screen 60 FPS").value,"On"));
+    Mk8Setting bloom=find(0,"Bloom");
+    assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
+    request(SETTINGS_STEP,bloom.id,1);
+    assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -332,11 +341,17 @@ int main(int argc,char **argv) {
             self.assertEqual(result.returncode,0,result.stderr[-2000:])
             reload=subprocess.run([str(exe),str(ini),str(root/'missing/settings.ini'),'reload'],env=env,capture_output=True,text=True,timeout=25)
             self.assertEqual(reload.returncode,0,reload.stderr[-2000:])
+            probe = root/'bloom.ini'
+            for value,expected in [('0',0), ('0  \t',0), ('1',1), ('',1), ('off',1), ('00',1), ('0junk',1)]:
+                probe.write_bytes(f'bloom = {value}\r\n'.encode())
+                subprocess.run([exe,probe,root/'missing/settings.ini',f'bloom:{expected}'],
+                               env={**env,'LARECOMP_SETTINGS':str(probe)},check=True,timeout=25)
             text=ini.read_text()
             self.assertIn('theme = Native',text)
             self.assertIn('aspect = ultrawide',text)
             self.assertIn('volume = 1.50',text)
             self.assertIn('split_screen_60fps = 1',text)
+            self.assertIn('bloom = 0',text)
             self.assertIn('joycon_mode = horizontal',text)
             self.assertIn('pads_from_p2 = 1',text)
             self.assertIn('camera_distance = 117',text)

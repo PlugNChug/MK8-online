@@ -283,6 +283,7 @@ mod tests {
             menu_themes_supported: false,
             menu_light_themes_supported: false,
             split_screen_60fps_supported: false,
+            bloom_supported: false,
             files: BTreeMap::new(),
         }
     }

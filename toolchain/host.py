@@ -285,6 +285,15 @@ def prepare_host_sources(source, output):
     prepare_shadow_fallback(runtime)
     from bc_render import prepare as prepare_bc_render
     prepare_bc_render(runtime)
+    # The Vulkan translator already emits a tint uniform for floating-point RGB outputs.
+    executor = runtime/'nvn/vulkan/exec.c'
+    text = executor.read_text(encoding='utf-8')
+    tint = '            bi[n] = ubo_span(copy_dedupe(DEDUPE_TINT, tint ? tint : zero, 32, 256), 32);'
+    if text.count(tint) != 1:
+        raise ValueError('Vulkan fragment tint upload boundary changed')
+    mask = ROOT/'runtime/mk8/graphics/bloom_mask.h'
+    executor.write_text(mask.read_text(encoding='utf-8') + '\n' + text.replace(tint,
+        '            if (stage == 1) tint = mk8_bloom_tint(mk8_bloom_enabled(), g_cur_fs_hash, tint);\n' + tint), encoding='utf-8')
     from split_screen import prepare as prepare_split_screen
     prepare_split_screen(runtime)
     from online_notice import prepare as prepare_online_notice

@@ -229,6 +229,13 @@ async function loadGameSettings(force = false) {
         i18n.text(note, "Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.");
         card.append(note);
       }
+      if (group.fields.some((field) => field.key === "bloom")) {
+        const note = document.createElement("p");
+        note.id = "bloom-runtime-upgrade";
+        note.className = "hint";
+        i18n.text(note, "Atualize o runtime do jogo para ajustar o bloom.");
+        card.append(note);
+      }
       if (group.binding) {
         const reset = document.createElement("button");
         reset.type = "button";
@@ -355,8 +362,11 @@ async function loadGameSettings(force = false) {
   settingsBaseline = data.values;
   const splitUnsupported = data.split_screen_60fps_supported === false;
   $("video-runtime-upgrade").hidden = !splitUnsupported;
+  const bloomUnsupported = data.bloom_supported === false;
+  $("bloom-runtime-upgrade").hidden = !bloomUnsupported;
   for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
     if (input.dataset.key === "split_screen_60fps") input.disabled = splitUnsupported;
+    else if (input.dataset.key === "bloom") input.disabled = bloomUnsupported;
     const value = data.values[input.dataset.key];
     if (input.type === "checkbox") input.checked = value !== "0";
     else {

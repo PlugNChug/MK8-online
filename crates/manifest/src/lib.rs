@@ -73,6 +73,9 @@ pub struct Installation {
     /// The prepared game imports the split-screen cadence hook provided by the host.
     #[serde(default)]
     pub split_screen_60fps_supported: bool,
+    /// The prepared runtime can enable or suppress the bloom contribution.
+    #[serde(default)]
+    pub bloom_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

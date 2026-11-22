@@ -703,6 +703,12 @@ impl App {
             .is_none_or(|game| game.split_screen_60fps_supported)
     }
 
+    fn bloom_supported(&self) -> bool {
+        self.installation()
+            .or_else(|| self.candidate())
+            .is_none_or(|game| game.bloom_supported)
+    }
+
     fn identity(&self) -> String {
         self.installation()
             .or_else(|| self.candidate())
@@ -843,6 +849,7 @@ impl App {
             // An existing host can predate the capability fields within the same test version.
             // A matching host alone does not establish that the guest calls the cadence hook.
             !game.split_screen_60fps_supported
+                || !game.bloom_supported
                 || (!game.temporal_upscaling_supported
                     || !game.romfs_long_paths_supported
                     || !game.nextendo_session_supported
@@ -932,6 +939,7 @@ impl App {
                 let mut settings = crate::game_settings::read(&self.local, self.menu_build())?;
                 settings["split_screen_60fps_supported"] =
                     json!(self.split_screen_60fps_supported());
+                settings["bloom_supported"] = json!(self.bloom_supported());
                 Ok(settings)
             }
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
@@ -998,6 +1006,18 @@ impl App {
                     let mut value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
+                    }
+                    if value.get("bloom").is_some() && !self.bloom_supported() {
+                        // A full-form client can echo an unavailable option while saving another preference.
+                        if value["bloom"]
+                            != crate::game_settings::read(&self.local, self.menu_build())?["values"]
+                                ["bloom"]
+                        {
+                            return Err("Atualize o runtime do jogo para ajustar o bloom.".into());
+                        }
+                        if let Some(patch) = value.as_object_mut() {
+                            patch.remove("bloom");
+                        }
                     }
                     if value.get("split_screen_60fps").is_some()
                         && !self.split_screen_60fps_supported()
@@ -2632,6 +2652,7 @@ mod tests {
             menu_themes_supported: false,
             menu_light_themes_supported: false,
             split_screen_60fps_supported: false,
+            bloom_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
