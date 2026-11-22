@@ -261,6 +261,8 @@ def prepare_host_sources(source, output):
     prepare_interpolation(runtime)
     from texture_size_hoist import prepare as prepare_texture_size_hoist
     prepare_texture_size_hoist(runtime)
+    from castle_bloom import prepare as prepare_castle_bloom
+    prepare_castle_bloom(runtime)
     from texture_lifetime import prepare as prepare_texture_lifetime
     prepare_texture_lifetime(runtime)
     from gpu_sync import prepare as prepare_gpu_sync
@@ -445,6 +447,8 @@ def prepare_host_sources(source, output):
     prepare_mixed_gamepads(runtime)
     from romfs_paths import prepare as prepare_romfs_paths
     prepare_romfs_paths(runtime)
+    from castle_blur import prepare as prepare_castle_blur
+    prepare_castle_blur(runtime)
     return runtime
 
 

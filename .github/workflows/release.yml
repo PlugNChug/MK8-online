@@ -49,6 +49,8 @@ jobs:
           python scripts/setup-native.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/setup-runtime-deps.py
+      - name: Compile synthetic bloom shaders
+        run: python -m unittest discover -s tests -p 'test_castle_b*.py' -v
       - name: Build setup
         shell: pwsh
         run: |
