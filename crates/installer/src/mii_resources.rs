@@ -93,7 +93,17 @@ pub fn launch_directory(local: &Path) -> Result<Option<PathBuf>> {
         return Err("Manifesto Mii incompleto; configure os recursos novamente.".into());
     }
     for (name, file) in FILES.into_iter().zip(value.files.iter()) {
-        if value.directory.join(name).canonicalize().ok().as_ref() != Some(&file.path) {
+        // Portable relocation writes ordinary Windows paths. Keep the recorded target literal
+        // so a junction that redirects the resource after configuration is still rejected.
+        if !value
+            .directory
+            .join(name)
+            .canonicalize()
+            .is_ok_and(|resolved| {
+                resolved == file.path
+                    || (file.path.is_absolute() && runtime_path(&resolved) == file.path)
+            })
+        {
             return Err("Caminho de recurso Mii alterado.".into());
         }
         verify(file)?;
