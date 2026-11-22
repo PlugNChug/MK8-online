@@ -336,6 +336,11 @@ class SettingsModulesTests(unittest.TestCase):
         page.evaluate('refresh()')
         expect(split).to_be_disabled()
         expect(bloom).to_be_disabled()
+        for capability in ('menu_themes_supported', 'menu_light_themes_supported'):
+            old = dict(candidate)
+            del old[capability]
+            path.write_text(json.dumps(old))
+            self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         # Check the Steam guest capability without the qualified installation written above.
         (self.local/'active.json').unlink()
         del candidate['direct_lan_guest_supported']
@@ -398,12 +403,6 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertIn('future_setting = preserve', saved)
         ini.write_text(saved.replace('split_screen_60fps = 1','split_screen_60fps = 0'))
         expect(split).not_to_be_checked()
-
-        for capability in ('menu_themes_supported', 'menu_light_themes_supported'):
-            old = dict(candidate)
-            del old[capability]
-            path.write_text(json.dumps(old))
-            self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
 
     def test_bloom_reads_and_writes_the_shared_ini(self):
         page = self.page
