@@ -4,6 +4,8 @@
 
 A opção vem ligada e controla a contribuição das máscaras de bloom do MK8 4.0.1. O launcher e o menu do jogo compartilham a preferência `bloom`. A alteração independe do filtro da PR #102 e mantém o brilho do material que origina o halo.
 
+Em Bowser’s Castle com quatro jogadores, a comparação de três instantes da contagem regressiva mediu a luminância da imagem final (escala de 0 a 255). Sem a chave no INI, o halo acima e abaixo da placa mediu 108,49 e 104,24. Desligado, caiu para 64,25 e 56,09. Ao religar, voltou a 108,81 e 104,72. A amostra do asfalto permaneceu entre 79,75 e 79,76. O teste cobre a largada; o código do jogo foi preservado na atualização do runtime.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
