@@ -21,6 +21,13 @@ sys.path.insert(0, str(ROOT / 'toolchain'))
 
 import fsr
 import fsr_fg
+
+
+def vulkan_upscaler(runtime):
+    """toolchain/fsr.py without prepare_settings, which needs the full runtime (settings.c, ui/menu.mm)."""
+    fsr.prepare_exec(runtime)
+    fsr.prepare_shaders(runtime)
+    fsr.prepare_device(runtime)
 import submit_profile
 import acquire_bound
 
@@ -37,7 +44,7 @@ class FsrFgPatchTests(unittest.TestCase):
         runtime = self.runtime()
         # The real order in toolchain/host.py: the upscaler, the WSI instrumentation, then this
         # bridge last (it wraps the acquire/present calls those patches rewrite).
-        fsr.prepare(runtime)
+        vulkan_upscaler(runtime)
         submit_profile.prepare(runtime)
         acquire_bound.prepare(runtime)
         fsr_fg.prepare(runtime)
@@ -140,7 +147,7 @@ class FsrFgPatchTests(unittest.TestCase):
 
     def test_rejects_a_changed_present_call(self):
         runtime = self.runtime()
-        fsr.prepare(runtime)
+        vulkan_upscaler(runtime)
         path = runtime / 'nvn/vulkan/device.c'
         text = path.read_text(encoding='utf-8').replace(
             '        VkResult r = vkQueuePresentKHR(g_vk.queue, &pi);',

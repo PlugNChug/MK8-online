@@ -1,5 +1,6 @@
 """The vendor SDK fetcher fails closed and never leaves an unverified file."""
 import hashlib
+import os
 import http.server
 from pathlib import Path
 import sys
@@ -176,6 +177,7 @@ class FetcherTests(unittest.TestCase):
                              disk_usage=lambda _: Usage())
         self.assertEqual(Handler.requests, [])
 
+    @unittest.skipIf(os.name == 'nt', 'XDG paths are POSIX (the Linux FSR page); /data is not absolute on Windows')
     def test_xdg_data_home_and_home_fallback(self):
         self.assertEqual(sdk.data_root({'XDG_DATA_HOME': '/data'}),
                          Path('/data/mk8online'))

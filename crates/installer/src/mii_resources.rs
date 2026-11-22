@@ -93,7 +93,10 @@ pub fn launch_directory(local: &Path) -> Result<Option<PathBuf>> {
         return Err("Manifesto Mii incompleto; configure os recursos novamente.".into());
     }
     for (name, file) in FILES.into_iter().zip(value.files.iter()) {
-        if value.directory.join(name).canonicalize().ok().as_ref() != Some(&file.path) {
+        // Both sides are resolved: a moved portable tree rewrites the manifest without the
+        // verbatim `\\?\` prefix that `canonicalize` returns on Windows (#115).
+        let expected = value.directory.join(name).canonicalize().ok();
+        if expected.is_none() || expected != file.path.canonicalize().ok() {
             return Err("Caminho de recurso Mii alterado.".into());
         }
         verify(file)?;
@@ -255,6 +258,27 @@ mod tests {
         assert_eq!(selected, runtime_path(&root.canonicalize().unwrap()));
         assert!(!selected.to_string_lossy().starts_with(r"\\?\"));
         assert!(std::path::Path::new(&format!("{}/ShapeMid.dat", selected.display())).is_file());
+        // A moved portable tree (apps/launcher/src/portable.rs) stores the paths without `\\?\` (#115).
+        let mut moved = read(&root).unwrap().unwrap();
+        let plain = |path: &std::path::Path| {
+            std::path::PathBuf::from(path.to_string_lossy().trim_start_matches(r"\\?\"))
+        };
+        moved.directory = plain(&moved.directory);
+        for file in &mut moved.files {
+            file.path = plain(&file.path);
+        }
+        save(&root.join("mii-resources.json"), &moved).unwrap();
+        assert_eq!(launch_directory(&root).unwrap(), Some(selected.clone()));
+        // Another folder with the same names is still refused.
+        let other = root.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        for name in FILES {
+            std::fs::copy(root.join(name), other.join(name)).unwrap();
+        }
+        moved.directory = other.clone();
+        save(&root.join("mii-resources.json"), &moved).unwrap();
+        assert!(launch_directory(&root).is_err());
+        configure(&root, &root, true).unwrap();
         std::fs::write(root.join(FILES[2]), b"changed").unwrap();
         assert!(launch_directory(&root).is_err());
         configure(&root, &root, false).unwrap();

@@ -280,12 +280,8 @@ def prepare_host_sources(source, output):
         raise ValueError('TLD4S translator boundary changed')
     text = text.replace(boundary, (ROOT/'runtime/mk8/graphics/maxwell_gather.inc').read_text(encoding='utf-8')+'\n'+boundary)
     text = text.replace(opcode, '    } else if (OPM(0xdf00000000000000ull, 0xffc0000000000000ull)) {  // TLD4S F32\n        mk8_emit_tld4s(c, w);\n'+opcode)
-    # Point draws without a guest size use the default pixel size. Vulkan 1.3 requires
-    # the vertex shader to write it even for point topology selected dynamically.
-    point_size = '        if (info->writes_point_size) sp(&s, "  gl_PointSize = 0.0f;\\n");'
-    if text.count(point_size) != 1:
-        raise ValueError('Vulkan vertex point-size emission changed')
-    text = text.replace(point_size, '        sp(&s, "  gl_PointSize = 1.0f;\\n");')
+    # (Point lists without a shader-written size: toolchain/point_size.py writes the guest's fixed
+    # size through a specialization constant, which covers the Linux point-size fix as well.)
     translator.write_text(text, encoding='utf-8')
     from maxwell_mip_query import prepare as prepare_maxwell_mip_query
     prepare_maxwell_mip_query(runtime)
@@ -393,8 +389,9 @@ def prepare_host_sources(source, output):
     from depth_clamp import prepare as prepare_depth_clamp
     prepare_depth_clamp(runtime)
     # Local Vulkan-path experiments run after the upstream runtime patches above.
-    from view_batch import prepare as prepare_view_batch
-    prepare_view_batch(runtime)
+    # toolchain/view_batch.py (parallel attachment views, Linux branch) is not applied: it predates the
+    # view-table and attachment changes of toolchain/shadow_fallback.py (#105) and bc_render.py (#104),
+    # and its worker threads would also create the R32 shadow copies. It needs a port onto those first.
     from gmem_cap import prepare as prepare_gmem_cap
     prepare_gmem_cap(runtime)
     from gmem_map import prepare as prepare_gmem_map

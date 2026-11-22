@@ -112,7 +112,9 @@ def build_image() -> bytes:
 class SyntheticLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory(prefix='mlfi-test-', dir=Path.home() / '.cache' / 'mk8online')
+        cache = Path.home() / '.cache' / 'mk8online'
+        cache.mkdir(parents=True, exist_ok=True)
+        cls.tmp = tempfile.TemporaryDirectory(prefix='mlfi-test-', dir=cache)
         cls.image, cls.pool_at, cls.model_at = build_image()
         cls.dll = Path(cls.tmp.name) / 'synthetic_framegeneration_vk.dll'
         cls.dll.write_bytes(cls.image)

@@ -167,6 +167,7 @@ pub fn configure(local: &Path, build: crate::game_settings::MenuBuild) -> Result
         "MK8_READY_FSR4",
         "MK8_READY_DLSS",
         "MK8_FSR4",
+        "MK8_FSR4_CAPTURE",
         "MK8_FSR_VERSION",
         "MK8_FSR_LIB",
         "MK8_FSR_FG",
@@ -203,6 +204,8 @@ pub fn configure(local: &Path, build: crate::game_settings::MenuBuild) -> Result
         return Ok(());
     }
     let dir = crate::canonical(&directory(local)).map_err(|e| e.to_string())?;
+    // The temporal providers read the captured scene depth for camera motion vectors.
+    std::env::set_var("MK8_FSR4_CAPTURE", "1");
     if mode == "dlss" {
         std::env::set_var("MK8_DLSS", "1");
         std::env::set_var("MK8_DLSS_LIB", dir.join(NVIDIA.name));

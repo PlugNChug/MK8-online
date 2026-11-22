@@ -11,6 +11,7 @@ import fsr
 
 
 EXEC = '''\
+#include "vk.h"
 static NvnTexture *g_pass_depth;  // (its depth target)
 enum { FG_DUMMY = 20, N_POST = 21 };
 static void render_pass(void) {
@@ -67,25 +68,27 @@ class FsrPatchTests(unittest.TestCase):
             '}\n', encoding='utf-8')
         return root
 
+    # prepare_exec patches exec.c/device.c; prepare_settings (the in-game choice and the native
+    # gate) needs the full runtime and is covered by the host preparation tests.
     def test_inserts_the_present_call_and_depth_getter(self):
         runtime = self.runtime()
-        fsr.prepare(runtime)
+        fsr.prepare_exec(runtime)
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
         self.assertIn('mk8_fsr4_upscale', exec_c)
-        self.assertIn('if (!smaa && !fsr && !getenv("MK8_FSR4") && !getenv("MK8_DLSS")) return v;', exec_c)
+        self.assertIn('static bool mk8_temporal_requested(void)', exec_c)
         self.assertIn('mk8_fsr_last_depth', exec_c)
         self.assertIn('g_fsr_depth = st.rt.depth;', exec_c)
         self.assertGreater(exec_c.index('mk8_fsr4_upscale'), exec_c.index('vk_frame_suspend();'))
 
     def test_defines_the_matrix_globals_and_scans_the_main_draw(self):
         runtime = self.runtime()
-        fsr.prepare(runtime)
+        fsr.prepare_exec(runtime)
         exec_c = (runtime / 'nvn/vulkan/exec.c').read_text(encoding='utf-8')
         self.assertIn('float g_fsr_view[12], g_fsr_proj[16];', exec_c)
         self.assertNotIn('g_fsr_jitter_', exec_c)
         # The log format must survive as an escape, not as a real newline in the C string.
         self.assertIn('view/proj captured in main draw\\n")', exec_c)
-        self.assertLess(exec_c.index('if (getenv("MK8_FSR4") || getenv("MK8_DLSS"))'),
+        self.assertLess(exec_c.index('if (getenv("MK8_FSR4") || getenv("MK8_DLSS")) {'),
                         exec_c.index('debug_draw(pr, r, indexed);'))
 
     def test_rejects_a_missing_main_draw(self):
@@ -93,12 +96,14 @@ class FsrPatchTests(unittest.TestCase):
         path = runtime / 'nvn/vulkan/exec.c'
         path.write_text(EXEC.replace('debug_draw(pr, r, indexed);', 'debug_draw(pr, r, 0);'), encoding='utf-8')
         with self.assertRaises(ValueError):
-            fsr.prepare(runtime)
+            fsr.prepare_exec(runtime)
 
     def test_enables_the_fp8_device_features(self):
         runtime = self.runtime()
-        fsr.prepare(runtime)
+        fsr.prepare_device(runtime)
         device = (runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
+        # Only when the ML provider (FSR 4.1.2) is requested; other devices keep their feature set.
+        self.assertIn('bool ml = getenv("MK8_FSR_VERSION")', device)
         self.assertIn('VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME', device)
         self.assertIn('VK_EXT_SHADER_FLOAT8_EXTENSION_NAME', device)
         self.assertIn('FSR features', device)
@@ -109,7 +114,7 @@ class FsrPatchTests(unittest.TestCase):
         path = runtime / 'nvn/vulkan/exec.c'
         path.write_text(EXEC.replace('g_pass_depth = st.rt.depth;', 'g_pass_depth = NULL;'), encoding='utf-8')
         with self.assertRaises(ValueError):
-            fsr.prepare(runtime)
+            fsr.prepare_exec(runtime)
 
 
 if __name__ == '__main__':

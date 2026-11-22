@@ -6,10 +6,14 @@ def verified_bytes(path, expected, error):
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() == expected:
         return raw
-    # Windows pins were recorded after text-mode CRLF translation. Only a pure LF
-    # unit that produces the exact same pinned bytes after that conversion is accepted.
-    if b'\r' not in raw:
-        crlf = raw.replace(b'\n', b'\r\n')
-        if hashlib.sha256(crlf).hexdigest() == expected:
-            return crlf
+    # Pins were recorded on Windows (CRLF) or Linux (LF). A unit whose only difference is a
+    # uniform line-ending convention is accepted, returned with the pinned bytes. Mixed or
+    # bare-CR endings are never normalized.
+    lf = raw.replace(b'\r\n', b'\n')
+    crlf = lf.replace(b'\n', b'\r\n')
+    if b'\r' in lf or raw not in (lf, crlf):
+        raise ValueError(error)
+    for candidate in (lf, crlf):
+        if candidate != raw and hashlib.sha256(candidate).hexdigest() == expected:
+            return candidate
     raise ValueError(error)

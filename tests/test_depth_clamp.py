@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 from host import DEPS, prepare_host_sources
 from native import DEFAULT_COMPILER, compiler_env
+import pipeline_warm
 
 
 def between(text, start, end):
@@ -56,7 +57,7 @@ static void set_clamp_capability(VkBool32 supported) {
     CHECK(enabled.depthClamp==supported && available.depthClamp==supported);
     CHECK(g_vk.depth_clamp==(supported!=VK_FALSE));
 }
-typedef struct { ShaderInfo *vi,*fi,*gi; ShaderKey fkey; VkShaderModule vs,fs,gs; VkPipelineLayout layout; } Prog;
+typedef struct { ShaderInfo *vi,*fi,*gi; ShaderKey fkey; VkShaderModule vs,fs,gs; VkPipelineLayout layout; uint64_t code[3], cmax[3]; } Prog;  // (code: toolchain/pipeline_warm.py)
 static _Atomic int stat_compiles;
 static unsigned creations,async_finishes;
 static VkBool32 observed_clamp;
@@ -275,7 +276,10 @@ class DepthClampTests(unittest.TestCase):
                 'BLEND': between(text,'static VkBlendFactor blend_factor(','static VkCompareOp compare_fn('),
                 'RT_KIND': between(text,'static int rt_kind(','// ================================================================== graphics pipelines'),
                 'DYNAMIC': between(text,'static const VkDynamicState DYN[]','// Fixed-function state'),
-                'BUILD': between(text,'static VkPrimitiveTopology topo_class_base(','// ================================================================== feedback snapshots'),
+                # (the pipeline warm-up recorder sits after the build; it has its own tests)
+                'BUILD': between(text,'static VkPrimitiveTopology topo_class_base(','// ================================================================== feedback snapshots')
+                    .replace(pipeline_warm.WARM, '')
+                    .replace('    if (r == VK_SUCCESS) mk8_pipe_record(&pp->k);  // MK8 (toolchain/pipeline_warm.py)\n', ''),
                 'KEY': between(text,'static float fixed_point_key(','static void pipe_key(')
                     +between(text,'static void pipe_key(','\n}\n')+'\n}\n',
                 'APPLY': between(text,'static bool apply_state(','static void exec_list('),

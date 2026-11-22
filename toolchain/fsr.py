@@ -27,8 +27,9 @@ CALL = ANCHOR + """    if (mk8_temporal_requested()) { extern VkImageView mk8_fs
       if (fsr4) { vk_full_barrier(cb); vk_frame_resume(); return fsr4; } }
 """
 
-CAPTURE = """    if ((mk8_temporal_requested() || getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) &&
-        g_pass_depth && g_pass_depth->backend) {
+# (toolchain/fsr_fg.py and dlss_fg.py extend this exact condition. The Windows launcher sets
+# MK8_FSR4_CAPTURE with a temporal provider: apps/launcher/src/graphics.rs.)
+CAPTURE = """    if ((getenv("MK8_FSR4_CAPTURE") || getenv("MK8_FSR_FG")) && g_pass_depth && g_pass_depth->backend) {
         TexBackend *db = (TexBackend *)g_pass_depth->backend;
         if (db->image && db->width >= 640 && db->height >= 360 && db->width * 9 == db->height * 16) {
             // Frame generation consumes the depth at the presented size: its FFX context is created
@@ -55,7 +56,7 @@ CAPTURE = """    if ((mk8_temporal_requested() || getenv("MK8_FSR4_CAPTURE") || 
     }
 """
 
-MATRIX_SCAN = """    if (mk8_temporal_requested()) {
+MATRIX_SCAN = """    if (getenv("MK8_FSR4") || getenv("MK8_DLSS")) {  // (toolchain/fsr_fg.py extends this condition)
         for (int c = 3; c < 21; c++) {
             Range ub = st.ubuf[0][c - 3];
             if (!((pr->vi->cbuf_mask >> c) & 1) || !ub.addr || ub.size < 44 * 4) continue;
@@ -163,7 +164,8 @@ static bool mk8_temporal_requested(void) {
     new = ('            VkDescriptorPoolSize sizes[6] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},\n'
            '                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},\n'
            '                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};\n'
-           '            bool fsr_mv_pool = mk8_temporal_requested() || getenv("MK8_FSR_FG") || getenv("MK8_DLSS_FG");\n'
+           '            bool fsr_mv_pool = getenv("MK8_FSR4") || getenv("MK8_FSR_FG") ||\n'
+           '                               getenv("MK8_DLSS") || getenv("MK8_DLSS_FG");\n'
            '            if (fsr_mv_pool) sizes[5] = (VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024};\n'
            '            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,\n'
            '                                             .poolSizeCount = fsr_mv_pool ? 6 : 5, .pPoolSizes = sizes};')
@@ -248,7 +250,7 @@ def prepare_device(runtime):
     if text.count(old) != 1:
         raise ValueError('Device creation boundary changed upstream')
     text = text.replace(old, new, 1)
-    text = text.replace('const char *ext[8];', 'const char *ext[16];')
+    # (toolchain/fsr_fg.py grows the extension array to 16 for the WSI and MLFI extensions)
     device.write_text(text, encoding='utf-8')
 
 

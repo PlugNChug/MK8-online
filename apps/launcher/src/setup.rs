@@ -90,8 +90,12 @@ fn find_python312() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut candidates: Vec<PathBuf> = ["python3.12", "python3"].map(PathBuf::from).into();
     candidates.extend(
-        ["/usr/bin/python3.12", "/usr/local/bin/python3.12", "/opt/python3.12/bin/python3.12"]
-            .map(PathBuf::from),
+        [
+            "/usr/bin/python3.12",
+            "/usr/local/bin/python3.12",
+            "/opt/python3.12/bin/python3.12",
+        ]
+        .map(PathBuf::from),
     );
     if let Some(home) = &home {
         candidates.push(home.join(".local/bin/python3.12"));
@@ -111,7 +115,12 @@ fn find_python312() -> Result<PathBuf, String> {
                     })
                     .collect();
                 found.sort();
-                candidates.extend(found.into_iter().rev().map(|path| path.join("bin/python3.12")));
+                candidates.extend(
+                    found
+                        .into_iter()
+                        .rev()
+                        .map(|path| path.join("bin/python3.12")),
+                );
             }
         }
     }
