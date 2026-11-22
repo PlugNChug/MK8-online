@@ -1,5 +1,9 @@
 # Estado técnico — 20/11/2026
 
+## Opção de 60 FPS em tela dividida no Windows
+
+A opção afeta as corridas locais de três e quatro jogadores. Com a preferência desligada, o jogo mantém a alternância das vistas. Ao ativá-la, cada câmera pode atualizar a cada quadro apresentado. O ajuste preserva a seleção do mapa de profundidade adequado para o bloom. Na build combinada anterior, quatro vistas mudaram em cada um dos 691 intervalos amostrados de um único quadro na largada de Bowser’s Castle; com a opção desligada, cada vista registrou 30,02 atualizações/s. A taxa obtida depende da máquina, da pista e da resolução.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.

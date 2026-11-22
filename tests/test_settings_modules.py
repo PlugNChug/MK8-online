@@ -32,6 +32,7 @@ class SettingsModulesTests(unittest.TestCase):
         (user/'mk8d.ini').write_text('future_setting = preserve\ntheme = Default\n', encoding='utf-8')
         (user/'save/marker').write_bytes(b'keep-save')
         env = {**os.environ, **({} if os.environ.get('MK8_TEST_EMBEDDED') == '1' else {'MK8_WEB_ROOT': str(ROOT/'apps/launcher/web')})}
+        env.pop('MK8_SPLITSCREEN_60FPS', None)
         self.process = subprocess.Popen([os.environ['MK8_LAUNCHER_EXE'], '--headless', '--data-dir', str(self.local)],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
@@ -180,7 +181,7 @@ class SettingsModulesTests(unittest.TestCase):
         if host.is_file():
             candidate['executable']['sha256'] = json.loads(host.read_text())['files']['mk8drecomp.exe']
             path.write_text(json.dumps(candidate))
-            self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+            self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['executable']['sha256'] = '1'*64
         candidate['temporal_upscaling_supported'] = True
         path.write_text(json.dumps(candidate))
@@ -193,7 +194,50 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
         candidate['live_settings_supported'] = True
         path.write_text(json.dumps(candidate))
+        self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
+        split = page.locator('#config-field-split_screen_60fps')
+        page.evaluate('refresh()')
+        expect(split).to_be_disabled()
+        expect(page.locator('#video-runtime-upgrade')).to_be_visible()
+        self.assertTrue(page.evaluate("""async () => { try { await api('settings', {split_screen_60fps:'1'}); return false; }
+            catch (_) { return true; } }"""))
+        candidate['split_screen_60fps_supported'] = True
+        path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+        page.evaluate('refresh()')
+        expect(split).to_be_enabled()
+        expect(page.locator('#video-runtime-upgrade')).to_be_hidden()
+        active = dict(candidate, profile='mk8d-smm2-qualified', gameplay_verified=True)
+        active.pop('split_screen_60fps_supported')
+        (self.local/'active.json').write_text(json.dumps(active))
+        page.evaluate('refresh()')
+        expect(split).to_be_disabled()
+
+    def test_split_screen_rate_uses_the_shared_ini(self):
+        page = self.page
+        split = page.locator('#config-field-split_screen_60fps')
+        expect(split).not_to_be_checked()
+        self.assertEqual(page.locator('#settings-groups [data-key]').evaluate_all(
+            'els => els.slice(0,4).map(e => e.dataset.key)'), ['theme','aspect','split_screen_60fps','fullscreen'])
+        for language, label in (
+            ('en', '60 FPS in 3–4 player split-screen'),
+            ('es', '60 FPS en pantalla dividida con 3 o 4 jugadores'),
+            ('pt-BR', '60 FPS em tela dividida com 3 ou 4 jogadores'),
+        ):
+            page.locator('#language').select_option(language)
+            expect(page.get_by_role('checkbox', name=label)).to_be_visible()
+        split.check()
+        with page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method=='POST') as response:
+            page.locator('#settings-save').click()
+        self.assertTrue(response.value.json()['ok'])
+        page.reload()
+        expect(split).to_be_checked()
+        ini = self.local/'user-no-mii/mk8d.ini'
+        saved = ini.read_text()
+        self.assertIn('split_screen_60fps = 1', saved)
+        self.assertIn('future_setting = preserve', saved)
+        ini.write_text(saved.replace('split_screen_60fps = 1','split_screen_60fps = 0'))
+        expect(split).not_to_be_checked()
 
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page

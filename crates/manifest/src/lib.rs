@@ -64,6 +64,9 @@ pub struct Installation {
     pub nextendo_session_supported: bool,
     #[serde(default)]
     pub live_settings_supported: bool,
+    /// The prepared game imports the split-screen cadence hook provided by the host.
+    #[serde(default)]
+    pub split_screen_60fps_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

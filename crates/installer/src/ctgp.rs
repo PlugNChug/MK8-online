@@ -280,6 +280,7 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            split_screen_60fps_supported: false,
             files: BTreeMap::new(),
         }
     }

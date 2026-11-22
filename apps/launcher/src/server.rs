@@ -685,6 +685,12 @@ impl App {
                     && install.gameplay_verified
             })
     }
+    fn split_screen_60fps_supported(&self) -> bool {
+        self.installation()
+            .or_else(|| self.candidate())
+            .is_none_or(|game| game.split_screen_60fps_supported)
+    }
+
     fn identity(&self) -> String {
         self.installation()
             .or_else(|| self.candidate())
@@ -820,16 +826,18 @@ impl App {
             .is_some_and(|game| game.nextendo_supported);
         let runtime_upgrade = candidate.as_ref().is_some_and(|game| {
             // An existing host can predate the capability fields within the same test version.
-            (!game.temporal_upscaling_supported
-                || !game.romfs_long_paths_supported
-                || !game.nextendo_session_supported
-                || !game.live_settings_supported)
-                && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
-                    |host| {
-                        host["files"]["mk8drecomp.exe"].as_str()
-                            == Some(game.executable.sha256.as_str())
-                    },
-                )
+            // A matching host alone does not establish that the guest calls the cadence hook.
+            !game.split_screen_60fps_supported
+                || (!game.temporal_upscaling_supported
+                    || !game.romfs_long_paths_supported
+                    || !game.nextendo_session_supported
+                    || !game.live_settings_supported)
+                    && !load::<Value>(&self.root.join("prebuilt/host/manifest.json")).is_ok_and(
+                        |host| {
+                            host["files"]["mk8drecomp.exe"].as_str()
+                                == Some(game.executable.sha256.as_str())
+                        },
+                    )
         });
         let candidate_stale = candidate_exists
             && (candidate_version.as_deref() != Some(update::CURRENT)
@@ -905,7 +913,12 @@ impl App {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 self.graphics.start(&self.local, &value)
             }
-            ("GET", "/api/settings") => crate::game_settings::read(&self.local),
+            ("GET", "/api/settings") => {
+                let mut settings = crate::game_settings::read(&self.local)?;
+                settings["split_screen_60fps_supported"] =
+                    json!(self.split_screen_60fps_supported());
+                Ok(settings)
+            }
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
             ("POST", "/api/debug-options") => {
                 let options: crate::debug_options::Options =
@@ -959,6 +972,11 @@ impl App {
                     let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
+                    }
+                    if value.get("split_screen_60fps").is_some()
+                        && !self.split_screen_60fps_supported()
+                    {
+                        return Err("Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.".into());
                     }
                     crate::game_settings::write(&self.local, &value)?;
                     return Ok(
@@ -2492,6 +2510,34 @@ mod tests {
     }
 
     #[test]
+    fn matching_prebuilt_host_does_not_vouch_for_an_old_guest() {
+        let root = std::env::temp_dir().join(format!("mk8-guest-upgrade-{}", std::process::id()));
+        fs::create_dir_all(root.join("prebuilt/host")).unwrap();
+        let hash = "a".repeat(64);
+        save(
+            &root.join("prebuilt/host/manifest.json"),
+            &json!({"files":{"mk8drecomp.exe":hash}}),
+        )
+        .unwrap();
+        save(
+            &root.join("built-with.json"),
+            &json!({"version":update::CURRENT}),
+        )
+        .unwrap();
+        let mut candidate = json!({"schema":2, "identity":"fixture", "profile":"mk8d-smm2-experimental",
+            "executable":{"path":"fixture.exe","sha256":hash,"bytes":1}, "files":{},
+            "data_root":".","shader_root":".","gameplay_verified":false,"nextendo_supported":true});
+        let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
+        save(&root.join("candidate.json"), &candidate).unwrap();
+        assert_eq!(app.status()["candidate_stale"], true);
+        candidate["split_screen_60fps_supported"] = json!(true);
+        save(&root.join("candidate.json"), &candidate).unwrap();
+        assert_eq!(app.status()["candidate_stale"], false);
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn candidate_network_identity_uses_content_and_launch_still_checks_hashes() {
         let root =
             std::env::temp_dir().join(format!("mk8-network-manifest-{}", std::process::id()));
@@ -2519,6 +2565,7 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            split_screen_60fps_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

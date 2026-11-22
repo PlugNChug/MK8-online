@@ -223,6 +223,28 @@ class PipelineTests(unittest.TestCase):
 
 
 class RuntimeDependencyManifestTests(unittest.TestCase):
+    def test_split_cadence_capability_checks_the_linked_main_module(self):
+        from native import DEFAULT_COMPILER, compiler_env
+        if not DEFAULT_COMPILER.is_file():
+            self.skipTest('Requires the native compiler')
+        with tempfile.TemporaryDirectory() as folder:
+            stage = Path(folder)
+            env = compiler_env()
+            definitions = stage/'host.def'
+            definitions.write_text('LIBRARY mk8drecomp.exe\nEXPORTS\nmk8_split_race_full_speed\nother_symbol\n')
+            lib = stage/'host.a'
+            subprocess.run([DEFAULT_COMPILER, 'dlltool', '-m', 'i386:x86-64', '-d', definitions, '-l', lib],
+                           env=env, check=True)
+            for symbol, expected in [('other_symbol', False), ('mk8_split_race_full_speed', True)]:
+                source = stage/'main.c'
+                source.write_text(f'__declspec(dllimport) int {symbol}(void);\n'
+                                  f'__declspec(dllexport) int guest(void) {{ return {symbol}(); }}\n')
+                dll = stage/'mk8d-code-main.dll'
+                subprocess.run([DEFAULT_COMPILER, 'cc', '-target', 'x86_64-windows-gnu', '-shared',
+                                source, lib, '-o', dll], env=env, check=True)
+                self.assertEqual(pipeline.guest_has_split_screen_hook({'mk8d-code-main.dll': {'path': str(dll)}}),
+                                 expected)
+
     def test_runtime_refresh_records_new_dll_without_changing_game_or_saves(self):
         with tempfile.TemporaryDirectory(prefix='mk8-runtime-refresh-') as temporary:
             local = Path(temporary).resolve()
@@ -263,6 +285,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['gamelib'], pipeline.file_record(game))
             self.assertEqual(candidate['files']['settings-layout'], pipeline.file_record(layout))
             self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
+            self.assertFalse(candidate['split_screen_60fps_supported'])
             self.assertEqual(candidate['files']['controller-layout'], pipeline.file_record(controller_layout))
             self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')

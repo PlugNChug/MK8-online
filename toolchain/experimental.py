@@ -200,7 +200,7 @@ def patch_no_mii_unit(src, output):
     if src.name == MII_HEAP_UNIT and src.parent.name == 'main':
         raw = verified_bytes(src, MII_HEAP_SHA256,
                              'Mii heap preparation requires the verified MK8 4.0.1 generated unit')
-        text = raw.decode('utf-8')
+        text = raw.decode('utf-8').replace('\r\n', '\n')
         entry = 'void f_70003e0ea0(Cpu *c) {'
         if text.count(entry) != 1:
             raise ValueError('Mii heap preparation boundary changed')

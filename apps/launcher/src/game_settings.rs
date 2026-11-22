@@ -87,9 +87,17 @@ pub fn read(local: &Path) -> Result<Value> {
             )
         })
         .collect();
+    if std::env::var("MK8_SPLITSCREEN_60FPS").as_deref() == Ok("1") {
+        values.insert("split_screen_60fps".into(), json!("1"));
+    }
     for line in contents(&path(local)?)?.lines() {
         if let Some((key, value)) = entry(line) {
             if let Some(slot) = values.get_mut(key) {
+                let value = if key == "split_screen_60fps" && value != "1" {
+                    "0"
+                } else {
+                    value
+                };
                 *slot = Value::String(value.into());
             }
         }
@@ -165,6 +173,35 @@ pub fn write(local: &Path, patch: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn split_screen_rate_uses_an_explicit_ini_value_before_the_environment_default() {
+        let local = std::env::temp_dir().join(format!("mk8-split-rate-{}", std::process::id()));
+        let ini = local.join("user-no-mii/mk8d.ini");
+        let env_default = if std::env::var("MK8_SPLITSCREEN_60FPS").as_deref() == Ok("1") {
+            "1"
+        } else {
+            "0"
+        };
+        assert_eq!(
+            read(&local).unwrap()["values"]["split_screen_60fps"],
+            env_default
+        );
+        fs::create_dir_all(ini.parent().unwrap()).unwrap();
+        let original = "other_setting = keep\nsplit_screen_60fps = invalid\n";
+        fs::write(&ini, original).unwrap();
+        assert_eq!(read(&local).unwrap()["values"]["split_screen_60fps"], "0");
+        assert!(write(&local, &json!({"split_screen_60fps":"2"})).is_err());
+        assert_eq!(fs::read_to_string(&ini).unwrap(), original);
+        for value in ["1", "0"] {
+            write(&local, &json!({"split_screen_60fps":value})).unwrap();
+            assert_eq!(read(&local).unwrap()["values"]["split_screen_60fps"], value);
+            assert!(fs::read_to_string(&ini)
+                .unwrap()
+                .contains("other_setting = keep"));
+        }
+        fs::remove_dir_all(local).unwrap();
+    }
 
     #[test]
     fn patches_shared_ini_preserving_unknown_fields_and_rejecting_invalid_values() {

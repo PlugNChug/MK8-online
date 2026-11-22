@@ -254,6 +254,13 @@ async function loadGameSettings(force = false) {
       const title = document.createElement(group.binding ? "summary" : "h2");
       i18n.text(title, group.title);
       card.append(title);
+      if (group.fields.some((field) => field.key === "split_screen_60fps")) {
+        const note = document.createElement("p");
+        note.id = "video-runtime-upgrade";
+        note.className = "hint";
+        i18n.text(note, "Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.");
+        card.append(note);
+      }
       if (group.binding) {
         const reset = document.createElement("button");
         reset.type = "button";
@@ -348,7 +355,10 @@ async function loadGameSettings(force = false) {
     settingsLoaded = true;
   }
   settingsBaseline = data.values;
+  const splitUnsupported = data.split_screen_60fps_supported === false;
+  $("video-runtime-upgrade").hidden = !splitUnsupported;
   for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
+    if (input.dataset.key === "split_screen_60fps") input.disabled = splitUnsupported;
     const value = data.values[input.dataset.key];
     if (input.type === "checkbox") input.checked = value !== "0";
     else {

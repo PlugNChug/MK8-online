@@ -113,7 +113,27 @@ def prepare(runtime):
     # Windows runtime defaults to binary I/O; explicitly translate CRLF in user INIs.
     settings = runtime / 'settings.c'
     if settings.is_file():
+        header = runtime / 'settings.h'
+        fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    bool split_screen_60fps;
+} Settings;
+bool mk8_split_screen_60fps_enabled(void);
+void mk8_set_split_screen_60fps(bool enabled);''')
+        header.write_text(fields, encoding='utf-8')
         original = settings.read_text(encoding='utf-8')
+        original = replace(original, 'void settings_load(void) {', '''bool mk8_split_screen_60fps_enabled(void) {
+    return __atomic_load_n(&g_settings.split_screen_60fps, __ATOMIC_RELAXED);
+}
+void mk8_set_split_screen_60fps(bool enabled) {
+    __atomic_store_n(&g_settings.split_screen_60fps, enabled, __ATOMIC_RELAXED);
+}
+void settings_load(void) {''')
+        original = replace(original, '    loaded = true;', '''    loaded = true;
+    const char *legacy_split = getenv("MK8_SPLITSCREEN_60FPS");
+    mk8_set_split_screen_60fps(legacy_split && !strcmp(legacy_split, "1"));''')
+        original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "split_screen_60fps"))
+            mk8_set_split_screen_60fps(*val == '1' && !val[1 + strspn(val + 1, " \t")]);
+        else if (!strcmp(key, "volume"))''')
+        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "split_screen_60fps = %d\\n", mk8_split_screen_60fps_enabled());\n    fprintf(f, "volume =')
         original = replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")')
         original = '#include <SDL3/SDL_filesystem.h>\n#include <pthread.h>\n' + original
         original = replace(original, 'void settings_save(void) {', '''static pthread_mutex_t settings_write_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -140,6 +160,11 @@ bool settings_ahead_fast''')
         settings.write_text(original, encoding='utf-8')
     path = runtime / 'ui/menu.mm'
     text = path.read_text(encoding='utf-8')
+    marker = '    bool fs = g_settings.fullscreen;'
+    text = replace(text, marker, '''    bool split_60 = mk8_split_screen_60fps_enabled();
+    if (opt_toggle("Split-screen 60 FPS", &split_60, false, "Target 60 FPS per view with 3-4 players."))
+        mk8_set_split_screen_60fps(split_60);
+''' + marker)
     marker = '// ------------------------------------------------------------------ state shared with the main thread'
     own = (ROOT / 'runtime/mk8/ui/settings_entry.inc').read_text(encoding='utf-8')
     own += '\n' + (ROOT / 'runtime/mk8/ui/settings_controls.inc').read_text(encoding='utf-8')
