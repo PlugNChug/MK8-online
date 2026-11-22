@@ -50,6 +50,17 @@ def prepare_host_sources(source, output):
         raise ValueError('Language buffer implementation changed upstream')
     # The guest's output buffer may be only four-byte aligned; cpu.h defines u64u for this ABI.
     language.write_text(text.replace(old, 'u64u *out = (u64u *)(uintptr_t)b->addr;'), encoding='utf-8')
+    am = runtime/'services/am.c'
+    text = am.read_text(encoding='utf-8')
+    old = '        snprintf(lang, sizeof lang, "%s", settings_language());'
+    if text.count(old) != 1:
+        raise ValueError('Application language reply changed upstream')
+    # MK8 4.0.1 selects its CNzh/TWzh archives using the script codes. Keep the system codes and INI intact.
+    new = '''        const char *code = settings_language();
+        if (!strcmp(code, "zh-CN")) code = "zh-Hans";
+        else if (!strcmp(code, "zh-TW")) code = "zh-Hant";
+        snprintf(lang, sizeof lang, "%s", code);'''
+    am.write_text(text.replace(old, new), encoding='utf-8')
     objects = runtime/'nvn/objects.c'
     text = objects.read_text(encoding='utf-8')
     old = 'TB(uint64_t, 0x50) = A(1) ? *(uint64_t *)AP(1) : 0;'
