@@ -1,5 +1,13 @@
 # Estado técnico — 20/11/2026
 
+## Entrada pela Steam com um ou dois jogadores locais
+
+O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.
+
+O protocolo Steam do anfitrião permanece o da base `fix-chore`. A [ocorrência #32](https://github.com/Vnnc1/MK8-online/issues/32) descreve a falha de navegação do convidado que motivou esse fluxo. A qualificação multiplayer desta revisão exige uma corrida completa entre duas máquinas.
+
+No teste local com dois processos e um relay, o convidado iniciou com o save de teste vazio, registrou um controle virtual no P1 e o teclado no P2, escolheu o segundo Mii e encontrou a sala de um anfitrião sem a alteração. Os três pilotos escolheram personagens, votaram e chegaram à primeira volta no Mario Kart Stadium, com as duas câmeras ativas no convidado. Os processos encerraram normalmente e os 50 arquivos protegidos mantiveram os mesmos hashes. Em outro teste, o convidado com um jogador registrou o teclado e entrou na mesma pista com o anfitrião.
+
 ## Distribuição da 0.5.0
 
 O instalador e o ZIP portátil do Windows são os pacotes da revisão validada pelo mantenedor. O ZIP abriu em uma pasta temporária, respondeu pela interface local e reutilizou o runtime pré-compilado após a verificação da chave e dos hashes. Os testes de pistas, Miis, áudio, controles e gráficos abaixo descrevem o Windows.
