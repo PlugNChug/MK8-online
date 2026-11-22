@@ -64,6 +64,8 @@ pub struct Installation {
     pub nextendo_session_supported: bool,
     #[serde(default)]
     pub live_settings_supported: bool,
+    #[serde(default)]
+    pub direct_lan_guest_supported: bool,
 }
 
 pub fn hash_file(path: &Path) -> Result<FileIdentity> {

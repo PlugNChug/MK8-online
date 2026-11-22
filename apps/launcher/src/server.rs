@@ -31,6 +31,7 @@ pub type DialogParent = Arc<OnceLock<tauri::WebviewWindow>>;
 struct PendingPlay {
     role: &'static str,
     automatic: bool,
+    two_player_guest: bool,
 }
 
 impl PendingPlay {
@@ -285,6 +286,7 @@ impl App {
         self.pending_play = Some(PendingPlay {
             role: "host",
             automatic,
+            two_player_guest: false,
         });
         self.steam_error = None;
         let _ = fs::write(self.local.join("steam-enabled"), b"1");
@@ -297,9 +299,17 @@ impl App {
         )
     }
 
-    fn steam_join(&mut self, lobby: &str) -> Result<()> {
+    fn steam_join(&mut self, lobby: &str, two_player_guest: bool) -> Result<()> {
         self.check_room_preparation()?;
         self.mii_name()?;
+        let automatic = self.steam_auto_join
+            && self
+                .installation()
+                .or_else(|| self.candidate())
+                .is_some_and(|game| game.direct_lan_guest_supported);
+        if two_player_guest && !automatic {
+            return Err("Para abrir a lista LAN de 2 jogadores, atualize o jogo preparado e ative a entrada automática.".into());
+        }
         self.prepare_steam_join()?;
         let identity = self.identity();
         let (room, gateway) = SteamRoom::join_live(
@@ -315,7 +325,8 @@ impl App {
         self.gateway = Some(gateway);
         self.pending_play = Some(PendingPlay {
             role: "guest",
-            automatic: self.steam_auto_join,
+            automatic,
+            two_player_guest,
         });
         self.steam_error = None;
         let _ = fs::write(self.local.join("steam-enabled"), b"1");
@@ -395,7 +406,7 @@ impl App {
                 self.pending_play = None;
             } else if self.gateway.as_ref().is_some_and(|g| g.connected()) {
                 self.pending_play = None;
-                if let Err(error) = self.start_game(true, play.auto_lan(), false) {
+                if let Err(error) = self.start_game(true, Some(play), false) {
                     self.steam_error = Some(error);
                 }
             }
@@ -416,11 +427,14 @@ impl App {
         Ok(())
     }
 
-    fn start_game(&mut self, online: bool, auto_lan: Option<&str>, nextendo: bool) -> Result<u32> {
+    fn start_game(
+        &mut self,
+        online: bool,
+        play: Option<PendingPlay>,
+        nextendo: bool,
+    ) -> Result<u32> {
         let pilot = self.mii_name()?;
-        if nextendo
-            && (!mk8_installer::nextendo_trusted(&self.local) || online || auto_lan.is_some())
-        {
+        if nextendo && (!mk8_installer::nextendo_trusted(&self.local) || online || play.is_some()) {
             return Err("Nextendo indisponível nesta sessão.".into());
         }
         self.dlc_import.poll();
@@ -463,7 +477,8 @@ impl App {
             network: net,
             username: pilot,
             candidate,
-            auto_lan: auto_lan.map(str::to_owned),
+            auto_lan: play.and_then(PendingPlay::auto_lan).map(str::to_owned),
+            two_player_guest: play.is_some_and(|p| p.two_player_guest),
             nextendo,
             nextendo_session: if nextendo {
                 self.nextendo_session.name()?
@@ -489,7 +504,7 @@ impl App {
             self.steam_join_after_mii = Some(lobby_id.to_owned());
             return;
         }
-        match self.steam_join(lobby_id) {
+        match self.steam_join(lobby_id, false) {
             Ok(()) => self.room_menu += 1,
             Err(error) => self.steam_error = Some(error),
         }
@@ -834,6 +849,9 @@ impl App {
         let candidate_stale = candidate_exists
             && (candidate_version.as_deref() != Some(update::CURRENT)
                 || !nextendo_supported
+                || candidate
+                    .as_ref()
+                    .is_some_and(|game| !game.direct_lan_guest_supported)
                 || runtime_upgrade);
         let dlc =
             mk8_installer::dlc::status(&self.local, install.as_ref().or(self.candidate().as_ref()));
@@ -868,6 +886,10 @@ impl App {
             .or_else(|| self.steam_room.as_ref().map(|room| room.code.clone()))
             .or(p2p_code);
         let mut status = json!({"dlc":dlc,"dlc_import":self.dlc_import.status(),"ctgp":ctgp,"ctgp_import":self.ctgp_import.status(),"mii_preparation":mii_preparation,"package_import":package_import,"import_ready":package_import && imported.is_dir(),"room_menu":self.room_menu,"setup":self.setup.status(),"tools":self.tools,"tools_ready":self.tools.iter().all(|c|c["ok"]==true),"native_dialogs":self.window.is_some(),"build":build,"candidate":candidate_exists,"candidate_stale":candidate_stale,"candidate_version":candidate_version,"game_exit":self.game_exit,"installed":install.is_some(),"profile":install.as_ref().map(|i|&i.profile),"gameplay_verified":install.as_ref().is_some_and(|i|i.gameplay_verified),"game_pid":self.game.as_ref().map(|c|c.id()),"session":{"hosting":self.host.is_some(),"internet_available":relay::url().is_some(),"room_code":room_code,"stun_endpoint":self.host.as_ref().and_then(|h|h.stun_endpoint.map(|e|e.to_string())),"steam_available":steam_status.dll_found,"steam_active":self.steam_room.is_some(),"steam_lobby_id":self.steam_room.as_ref().map(|r|r.lobby_id.to_string()),"steam_persona":steam_status.persona,"steam_ready":steam_status.ready,"steam_invites":self.steam_invites.len(),"steam_error":self.steam_error,"pending_play":self.pending_play.map(|play| play.role),"steam_auto_join":self.steam_auto_join,"relay":self.host.as_ref().map(|h|h.address.to_string()),"participants":self.host.as_ref().map(|h|h.connected()).unwrap_or(0),"connected":self.gateway.as_ref().is_some_and(|g|g.connected()),"slot":self.gateway.as_ref().map(|g|g.slot),"bridge_port":self.gateway.as_ref().map(|g|g.local_addr.port()),"diagnostic_only":install.is_none() && self.candidate().is_none()},"checks":mk8_installer::inspect(&paths),"files":game_files(&self.config, package_import && imported.is_dir()),"upstream":"Runtime local","root":self.root,"version":update::CURRENT,"updates":{"configured":update::repository().is_some(),"installable":update::installable()},"last_report":self.last_report,"data_dir":self.local,"windowed":self.window.is_some()});
+        status["session"]["direct_lan_guest_supported"] = json!(install
+            .as_ref()
+            .or(candidate.as_ref())
+            .is_some_and(|game| game.direct_lan_guest_supported));
         status["nextendo_trusted"] = json!(mk8_installer::nextendo_trusted(&self.local));
         status["nextendo_refusal_message"] = json!(self.nextendo_refusal.as_deref().map(|code| {
             crate::game_session::nextendo_message(code, &crate::language::effective(&self.local))
@@ -1506,12 +1528,19 @@ impl App {
                 if lobby.is_empty() || !lobby.chars().all(|c| c.is_ascii_digit()) {
                     return Err("Sala inválida.".into());
                 }
-                self.steam_join(&lobby)?;
-                Ok(json!({"message": if self.steam_auto_join {
-                    "Conectado à sala do seu amigo. O jogo abre sozinho e entra na sala."
-                } else {
-                    "Conectado pela Steam. No jogo, escolha seu Mii e abra LAN Play → Lobby para entrar na sala do amigo."
-                }}))
+                let two_player_guest = match value.get("players").map(Value::as_u64) {
+                    None | Some(Some(1)) => false,
+                    Some(Some(2)) => true,
+                    _ => return Err("Escolha 1 ou 2 jogadores neste PC.".into()),
+                };
+                self.steam_join(&lobby, two_player_guest)?;
+                Ok(
+                    json!({"message": if self.pending_play.is_some_and(|play| play.automatic) {
+                        "Conectado pela Steam. Escolha a sala do anfitrião na lista LAN."
+                    } else {
+                        "Conectado pela Steam. No jogo, escolha seu Mii e abra LAN Play → Lobby para entrar na sala do amigo."
+                    }}),
+                )
             }
             ("POST", "/api/steam/dismiss") => {
                 let value: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -2409,7 +2438,8 @@ mod tests {
             assert_eq!(
                 PendingPlay {
                     role,
-                    automatic: true
+                    automatic: true,
+                    two_player_guest: false,
                 }
                 .auto_lan(),
                 Some(role)
@@ -2417,6 +2447,7 @@ mod tests {
             let manual = PendingPlay {
                 role,
                 automatic: false,
+                two_player_guest: false,
             };
             assert_eq!(manual.role, role);
             assert_eq!(manual.auto_lan(), None);
@@ -2429,6 +2460,14 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
         assert!(app.steam_auto_join);
+        for players in ["0", "3", "null", "true", "\"2\""] {
+            let body = format!(r#"{{"lobby":"123","players":{players}}}"#);
+            assert_eq!(
+                app.handle(&Method::Post, "/api/steam/join", &body)
+                    .unwrap_err(),
+                "Escolha 1 ou 2 jogadores neste PC."
+            );
+        }
         app.handle(
             &Method::Post,
             "/api/steam/navigation",
@@ -2519,6 +2558,7 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            direct_lan_guest_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);

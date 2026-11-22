@@ -75,7 +75,7 @@ window.addEventListener("miireadytoplay", () => {
   showTab(tab);
   action(start);
 });
-const joinSteam = lobby => withPilot("session", () => api("steam/join", { lobby }));
+const joinSteam = (lobby, players = 1) => withPilot("session", () => api("steam/join", { lobby, players }));
 function config() {
   return {
     ...savedConfig,
@@ -859,19 +859,24 @@ function steamButton(text, fn, primary = false) {
   button.onclick = () => action(fn);
   return button;
 }
+function steamJoinButtons(lobby, manualLabel = "Entrar") {
+  if (!previousSession?.directJoin) return [steamButton(manualLabel, () => joinSteam(lobby), true)];
+  return [
+    steamButton("Entrar (1P)", () => joinSteam(lobby, 1), true),
+    steamButton("Entrar (2P)", () => joinSteam(lobby, 2)),
+  ];
+}
 function renderSteam() {
   const data = steamData;
   const hosting = !!data?.room && !!previousSession?.hosting;
   $("steam-invites").replaceChildren(...(data?.invites ?? []).map((invite) =>
     listItem(i18n.t("Convite de {0}").replace("{0}", invite.friend), [
-      steamButton("Aceitar", () => joinSteam(invite.lobby), true),
+      ...steamJoinButtons(invite.lobby, "Aceitar"),
       steamButton("Recusar", () => api("steam/dismiss", { lobby: invite.lobby })),
     ])));
   const rooms = (data?.friends ?? []).filter((friend) => friend.room && friend.room !== data.room);
   $("steam-rooms").replaceChildren(...rooms.map((friend) =>
-    listItem(i18n.t("Sala de {0}").replace("{0}", friend.name), [
-      steamButton("Entrar", () => joinSteam(friend.room), true),
-    ])));
+    listItem(i18n.t("Sala de {0}").replace("{0}", friend.name), steamJoinButtons(friend.room))));
   $("steam-empty").hidden = !!(data?.invites?.length || rooms.length);
   const filter = $("friend-filter").value.trim().toLowerCase();
   const friends = (data?.friends ?? []).filter((friend) => friend.name.toLowerCase().includes(filter));
@@ -1069,8 +1074,11 @@ async function refresh() {
   if (previousSession && session.hosting && guests > previousSession.guests) {
     notice("Um amigo entrou na sua sala.");
   }
-  if (previousSession && !previousSession.hosting !== !session.hosting) renderSteam();
-  previousSession = { connected: session.connected, guests, hosting: session.hosting };
+  const directJoin = !!session.direct_lan_guest_supported && session.steam_auto_join !== false;
+  $("steam-direct-upgrade").hidden = !(status.installed || status.candidate) || !!session.direct_lan_guest_supported;
+  const joinsChanged = previousSession?.directJoin !== directJoin || previousSession?.hosting !== session.hosting;
+  previousSession = { connected: session.connected, guests, hosting: session.hosting, directJoin };
+  if (joinsChanged) renderSteam();
   const gameLog = await api("game/log");
   $("game-log").textContent = gameLog.text || i18n.t("Nenhum teste iniciado.");
   const applied = [...(gameLog.text || "").matchAll(/^\[graphics\] (fsr1|3\.1\.6|4\.1\.2|dlss|native) (\d+x\d+) -> (\d+x\d+)\s*$/gm)].at(-1);

@@ -280,6 +280,7 @@ mod tests {
             romfs_long_paths_supported: false,
             nextendo_session_supported: false,
             live_settings_supported: false,
+            direct_lan_guest_supported: false,
             files: BTreeMap::new(),
         }
     }

@@ -173,7 +173,7 @@ class SettingsModulesTests(unittest.TestCase):
         candidate = {'schema':2, 'identity':'test', 'profile':'mk8d-smm2-experimental',
                      'executable':{'path':'old.exe', 'sha256':'0'*64, 'bytes':1},
                      'files':{}, 'data_root':'.', 'shader_root':'.', 'gameplay_verified':False,
-                     'dlc_supported':True, 'nextendo_supported':True}
+                     'dlc_supported':True, 'nextendo_supported':True, 'direct_lan_guest_supported':True}
         path = self.local/'candidate.json'
         path.write_text(json.dumps(candidate))
         self.assertTrue(page.evaluate("api('status')")['candidate_stale'])
@@ -194,6 +194,17 @@ class SettingsModulesTests(unittest.TestCase):
         candidate['live_settings_supported'] = True
         path.write_text(json.dumps(candidate))
         self.assertFalse(page.evaluate("api('status')")['candidate_stale'])
+        del candidate['direct_lan_guest_supported']
+        path.write_text(json.dumps(candidate))
+        state = page.evaluate("api('status')")
+        self.assertTrue(state['candidate_stale'])
+        self.assertFalse(state['session']['direct_lan_guest_supported'])
+        current = {**candidate, 'direct_lan_guest_supported':True}
+        path.write_text(json.dumps(current))
+        self.assertTrue(page.evaluate("api('status')")['session']['direct_lan_guest_supported'])
+        active = {**candidate, 'profile':'mk8d-smm2-qualified', 'gameplay_verified':True}
+        (self.local/'active.json').write_text(json.dumps(active))
+        self.assertFalse(page.evaluate("api('status')")['session']['direct_lan_guest_supported'])
 
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page

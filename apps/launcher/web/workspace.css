@@ -284,6 +284,11 @@
   .mp-social #friend-filter { width: 100%; max-width: none; }
 }
 
+@media (max-width: 520px) {
+  .mp-social .mp-list li:has(button + button) { flex-wrap: wrap; }
+  .mp-social .mp-list li:has(button + button) > span { flex-basis: calc(100% - 44px); }
+}
+
 .mii-guided { gap: 0; }
 .mii-guided .mii-head-row { justify-content: space-between; margin-bottom: .3rem; }
 .mii-guided .mii-head-row + p { margin: 0 0 1.5rem; }
