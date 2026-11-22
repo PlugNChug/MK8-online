@@ -213,6 +213,8 @@ def prepare_host_sources(source, output):
     fs.write_text(text, encoding='utf-8')
     am = runtime/'services/am.c'
     am.write_text(adapt_mii_applet(am.read_text(encoding='utf-8')), encoding='utf-8')
+    from desired_language import prepare as prepare_desired_language
+    prepare_desired_language(runtime)
     from manual_applet import prepare as prepare_manual_applet
     prepare_manual_applet(runtime)
     movie = runtime/'hle/movie.c'
