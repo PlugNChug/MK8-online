@@ -2656,9 +2656,12 @@ mod tests {
         .unwrap();
         let mut candidate = json!({"schema":2, "identity":"fixture", "profile":"mk8d-smm2-experimental",
             "executable":{"path":"fixture.exe","sha256":hash,"bytes":1}, "files":{},
-            "data_root":".","shader_root":".","gameplay_verified":false,"nextendo_supported":true});
+            "data_root":".","shader_root":".","gameplay_verified":false,"nextendo_supported":true,
+            "menu_themes_supported":true,"menu_light_themes_supported":true,"bloom_supported":true,
+            "direct_lan_guest_supported":true});
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
         save(&root.join("candidate.json"), &candidate).unwrap();
+        // Every other capability is current: only the missing guest cadence hook makes it stale.
         assert_eq!(app.status()["candidate_stale"], true);
         candidate["split_screen_60fps_supported"] = json!(true);
         save(&root.join("candidate.json"), &candidate).unwrap();
