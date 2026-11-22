@@ -78,6 +78,8 @@ Após recompilar o launcher e o jogo para Windows a partir desta branch, perfis 
 
 A chave inglesa do menu principal, F1, Home/Guide e Menos + Mais abrem o Menu. Shift+F1 abre o painel convencional.
 
+Pressione F1 durante o carregamento de uma pista no modo solo para abrir o Menu nativo. Você pode continuar ajustando as opções quando a apresentação da pista começar. A linha selecionada e o valor que estiver digitando são preservados. Se você pressionar F1 na inicialização, o Menu abrirá assim que a interface do jogo estiver pronta.
+
 **CTGP Deluxe e o menu de configurações.** O relançamento corrige o crash ao abrir o menu principal com as duas opções ligadas. Atualize a build para o launcher regenerar o layout do menu a partir dos arquivos do jogo.
 
 ### Instalação e runtime

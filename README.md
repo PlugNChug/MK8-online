@@ -90,6 +90,8 @@ After rebuilding the Windows launcher and game from this branch, fresh profiles 
 
 The main-menu wrench, F1, Home/Guide, and Back + Start open the Menu. Shift+F1 opens the regular overlay.
 
+Press F1 during a solo course load to open the Native Menu. You can keep changing settings as the course preview appears. The selected row and any value you are typing stay in place. If you press F1 at startup before the game initializes its interface, the Menu opens as soon as the interface is ready.
+
 **CTGP Deluxe and the settings menu.** The re-release fixes the crash when both are enabled. Update the game build so the launcher regenerates the menu layout from your game files.
 
 ### Installation and runtime

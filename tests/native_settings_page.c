@@ -13,6 +13,7 @@ static Cpu cpu;
 static int returns, text_calls, save_state, resets, restart_choice=-1;
 static bool finish_queue_full;
 static int finish_mode;
+static unsigned begin_requests,finish_requests;
 static bool overlay, finger, decided, capturing;
 static unsigned cursor_mask=11, cursor_writes;  // P1, P2 and P4 are visible before entering Settings.
 #define cursor_shown (cursor_mask&1)
@@ -112,9 +113,16 @@ bool mk8_room_menu_available(void) { return rooms_available; }
 void mk8_open_mii_menu(void) { assert(mii_available); ++mii_requests; }
 void mk8_open_room_menu(void) { assert(rooms_available); ++rooms_requests; }
 bool mk8_settings_style_active(void) { return native_style; }
-bool mk8_settings_layout_available(void) { return true; }
+static bool missing_layout,loading_layout;
+bool mk8_settings_input_native(void) { return native_style; }
+bool mk8_settings_layout_available(void) { return !missing_layout && !loading_layout; }
+bool mk8_settings_layout_unavailable(void) { return missing_layout; }
 static unsigned overlay_opens;
 void mk8_menu_request_overlay(void) { ++overlay_opens; }
+static uint64_t fader_mount;
+uint64_t mk8_settings_fader_root(uint64_t page) { (void)page; return fader_mount; }
+static bool loading_pane;
+bool mk8_settings_fader_covers(uint64_t page) { (void)page; return loading_pane; }
 bool mk8_settings_values_main_menu(void) { return in_main; }
 void mk8_settings_values_context(bool value) { in_main=value; }
 uint64_t plat_now_ns(void) { return now; }
@@ -142,10 +150,10 @@ uint64_t mk8_settings_values_revision(void) { return revision; }
 int mk8_settings_values_saved(void) { return save_state; }
 bool mk8_settings_values_capturing(void) { return capturing; }
 bool mk8_settings_values_request(int op,int id,int value) {
-    if(op==SETTINGS_BEGIN) { save_state=0; return true; }
+    if(op==SETTINGS_BEGIN) { ++begin_requests; save_state=0; return true; }
     if(op==SETTINGS_FINISH) {
         if(finish_queue_full && value!=SETTINGS_DETACHED) return false;
-        finish_mode=value; save_state=1; return true;
+        ++finish_requests; finish_mode=value; save_state=1; return true;
     }
     if(op==SETTINGS_RESTART) { restart_choice=value; save_state=value ? 4 : 2; return true; }
     if(op==SETTINGS_ACTIVATE) { if(id==20)capturing=true; else if(id==19)resets++; else assert(0); return true; }
@@ -296,11 +304,11 @@ static float pane_float(uint64_t pane,unsigned offset) {
 }
 static void check_keycap(unsigned i,const char *key,const char *action) {
     assert(!strcmp(key_strings[i],key) && !strcmp(action_strings[i],action));
-    assert((LD8(keycaps[i]+0x58)&1) && (LD8(key_labels[i]+0x58)&1) && (LD8(action_labels[i]+0x58)&1));
-    assert(pane_float(keycaps[i],0x30)==pane_float(key_labels[i],0x30));
-    assert(pane_float(keycaps[i],0x34)+9==pane_float(action_labels[i],0x34));
-    assert(pane_float(keycaps[i],0x30)+pane_float(keycaps[i],0x50)/2 <
-           pane_float(action_labels[i],0x30)-pane_float(action_labels[i],0x50)/2);
+    assert((LD8(panes->keycaps[i]+0x58)&1) && (LD8(panes->key_labels[i]+0x58)&1) && (LD8(panes->action_labels[i]+0x58)&1));
+    assert(pane_float(panes->keycaps[i],0x30)==pane_float(panes->key_labels[i],0x30));
+    assert(pane_float(panes->keycaps[i],0x34)+9==pane_float(panes->action_labels[i],0x34));
+    assert(pane_float(panes->keycaps[i],0x30)+pane_float(panes->keycaps[i],0x50)/2 <
+           pane_float(panes->action_labels[i],0x30)-pane_float(panes->action_labels[i],0x50)/2);
 }
 static void *handoff_reader(void *argument) {
     *(bool *)argument=mk8_settings_page_active();
@@ -468,10 +476,10 @@ static void check_native_friends(void) {
     }
     press(1); assert(menu_level==MENU_ROOMS && !offset);
     press(1ull<<13); assert(service_header && !offset);
-    press(1); assert(service_header && menu_level==MENU_FRIENDS && !menu_cursor_active);
+    press(1); assert(service_header && menu_level==MENU_FRIENDS && !panes->menu_cursor_active);
     press(1ull<<15);
-    assert(!service_header && menu_level==MENU_FRIENDS && focus==0 && menu_cursor_active);
-    assert(LD8(labels[1]+0x59)<255 && LD8(values[1]+0x59)==LD8(labels[1]+0x59));
+    assert(!service_header && menu_level==MENU_FRIENDS && focus==0 && panes->menu_cursor_active);
+    assert(LD8(panes->labels[1]+0x59)<255 && LD8(panes->values[1]+0x59)==LD8(panes->labels[1]+0x59));
     assert(strstr(rendered[0],"Friends: 8") && strstr(rendered[0],"2 in / 3 sent"));
     assert(!strcmp(rendered[1],"Unknown") && !strcmp(rendered[2],"Offline") &&
            !strcmp(rendered[3],"Online") && !strcmp(rendered[4],"Playing"));
@@ -505,7 +513,7 @@ static void check_native_friends(void) {
     finger=true; tx=620; ty=260; sample(0); finger=false; sample(0); settle_slide();
     assert(menu_level==MENU_OPTIONS && category==MENU_ACCOUNT);
     int before=back_pulses; press(2);
-    assert(back_pulses==before+1 && menu_level==MENU_FRIENDS && focus==0 && menu_cursor_active);
+    assert(back_pulses==before+1 && menu_level==MENU_FRIENDS && focus==0 && panes->menu_cursor_active);
     rooms_connected=true; test_rooms=(Mk8Social){.friends_ok=true,.count=300,.sent=2147483647,.requests=2147483647};
     for(int i=0;i<300;i++) { test_rooms.friends[i].pid=1000+i; snprintf(test_rooms.friends[i].name,128,"Friend %d",i); }
     refresh_room_frame();
@@ -690,16 +698,22 @@ static void popup_open(uint64_t manager) {
     popup_buttons=0;
     mk8_settings_page_input(0,st,0);
 }
+static void register_page(uint64_t manager,uint64_t page,uint64_t vtable,unsigned id) {
+    const uint64_t registry=HEAP_BASE+31520;
+    ST64(manager+0x30,registry); ST64(registry+8*id,page);
+    ST64(page,MAIN_BASE+vtable); ST64(page+0x20,manager); ST32(page+0xe8,id);
+}
 static void check_controller_footer(uint64_t manager) {
     int opens=open_sounds, moves=select_sounds, confirms=decide_sounds, cancels=cancel_sounds;
-    top=owner=root=HEAP_BASE;
+    selector_absent=false; top=owner=panes->root=HEAP_BASE;
+    register_page(manager,owner,0x1271df0,13);
     ST64(owner+0x1d0,HEAP_BASE+11000);
-    dialog_cursor=HEAP_BASE+16000;
-    cursor_animation=HEAP_BASE+15800;
-    dialog_animations[0]=HEAP_BASE+15400; dialog_animations[1]=HEAP_BASE+15500;
-    dialog_buttons[0]=HEAP_BASE+14500; dialog_buttons[1]=HEAP_BASE+14600;
-    title_label=HEAP_BASE+3600;
-    dialog_labels[1]=HEAP_BASE+3700; dialog_labels[2]=HEAP_BASE+3800;
+    panes->dialog_cursor=HEAP_BASE+16000;
+    panes->cursor_animation=HEAP_BASE+15800;
+    panes->dialog_animations[0]=HEAP_BASE+15400; panes->dialog_animations[1]=HEAP_BASE+15500;
+    panes->dialog_buttons[0]=HEAP_BASE+14500; panes->dialog_buttons[1]=HEAP_BASE+14600;
+    panes->title_label=HEAP_BASE+3600;
+    panes->dialog_labels[1]=HEAP_BASE+3700; panes->dialog_labels[2]=HEAP_BASE+3800;
     const uint64_t list=LD64(manager+0xb58), layout=HEAP_BASE+20200, drivers=HEAP_BASE+21200;
     ST32(manager+0xb50,3); ST64(list+8,layout); ST64(list+16,drivers);
     ST64(layout,0x7001279040ull); ST32(layout+0xe8,0x14); ST32(layout+0x120,4);
@@ -734,12 +748,12 @@ static void check_controller_footer(uint64_t manager) {
     assert(!memcmp(shown_tips[0],u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all",sizeof u"\ue000 Assign  \ue002 Swap  \ue003 Clear  \ue046 Clear all"));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J","Keyboard X","Delete","Backspace"}};
     // A previously prepared title control has only the original two text panes.
-    const uint64_t prepared_keycap=keycaps[0];
-    keycaps[0]=0;
+    const uint64_t prepared_keycap=panes->keycaps[0];
+    panes->keycaps[0]=0;
     mk8_settings_page_frame(manager);
     assert(!memcmp(shown_tips[0],u"Return Assign  Keyboard X Swap",sizeof u"Return Assign  Keyboard X Swap"));
     assert(!memcmp(shown_tips[1],u"Delete Clear row  Backspace Clear all",sizeof u"Delete Clear row  Backspace Clear all"));
-    keycaps[0]=prepared_keycap;
+    panes->keycaps[0]=prepared_keycap;
     popup_tips.label[MK8_TIP_UP][0]='W'; mk8_settings_page_frame(manager);
     check_keycap(0,"Return","Assign"); check_keycap(1,"Keyboard X","Swap");
     check_keycap(2,"Delete","Clear row"); check_keycap(3,"Backspace","Clear all");
@@ -748,33 +762,33 @@ static void check_controller_footer(uint64_t manager) {
     mk8_settings_page_frame(manager);
     check_keycap(0,"MediaTrackPrevious","Assign"); check_keycap(1,"Keypad Hexadecimal","Swap");
     for(unsigned i=0;i<2;i++) {
-        assert(pane_float(keycaps[i],0x30)==pane_float(keycaps[i+2],0x30));
-        assert(pane_float(action_labels[i],0x30)-pane_float(action_labels[i],0x50)/2==
-               pane_float(action_labels[i+2],0x30)-pane_float(action_labels[i+2],0x50)/2);
+        assert(pane_float(panes->keycaps[i],0x30)==pane_float(panes->keycaps[i+2],0x30));
+        assert(pane_float(panes->action_labels[i],0x30)-pane_float(panes->action_labels[i],0x50)/2==
+               pane_float(panes->action_labels[i+2],0x30)-pane_float(panes->action_labels[i+2],0x50)/2);
     }
-    assert(pane_float(keycaps[0],0x34)==pane_float(keycaps[1],0x34));
-    assert(pane_float(keycaps[2],0x34)==pane_float(keycaps[3],0x34));
-    assert(pane_float(keycaps[0],0x34)>pane_float(keycaps[2],0x34));
-    assert((LD8(hint_double+0x58)&1) && !(LD8(hint_single+0x58)&1) && pane_float(hint_plate,0x50)>880);
-    assert(pane_float(hint_double,0x54)==112);
-    assert(pane_float(hint_double,0x50)==pane_float(hint_plate,0x50));
-    assert(pane_float(hint_double,0x34)==pane_float(hint_plate,0x34));
-    assert(pane_float(keycaps[0],0x34)==-10 && pane_float(keycaps[2],0x34)==-66);
+    assert(pane_float(panes->keycaps[0],0x34)==pane_float(panes->keycaps[1],0x34));
+    assert(pane_float(panes->keycaps[2],0x34)==pane_float(panes->keycaps[3],0x34));
+    assert(pane_float(panes->keycaps[0],0x34)>pane_float(panes->keycaps[2],0x34));
+    assert((LD8(panes->hint_double+0x58)&1) && !(LD8(panes->hint_single+0x58)&1) && pane_float(panes->hint_plate,0x50)>880);
+    assert(pane_float(panes->hint_double,0x54)==112);
+    assert(pane_float(panes->hint_double,0x50)==pane_float(panes->hint_plate,0x50));
+    assert(pane_float(panes->hint_double,0x34)==pane_float(panes->hint_plate,0x34));
+    assert(pane_float(panes->keycaps[0],0x34)==-10 && pane_float(panes->keycaps[2],0x34)==-66);
     strcpy(popup_tips.label[MK8_TIP_CLEAR_ALL],"(none)");
     mk8_settings_page_frame(manager);
     check_keycap(0,"MediaTrackPrevious","Assign"); check_keycap(1,"Keypad Hexadecimal","Swap"); check_keycap(2,"Delete","Clear row");
-    assert(!(LD8(keycaps[3]+0x58)&1) && LD8(hint_second+0x58)&1);
+    assert(!(LD8(panes->keycaps[3]+0x58)&1) && LD8(panes->hint_second+0x58)&1);
     assert(!memcmp(shown_tips[1],u"Click a player for assignment options.",sizeof u"Click a player for assignment options."));
-    assert(pane_float(hint_plate,0x50)*0.55 < 1280);
-    const uint64_t prepared_double=hint_double;
-    hint_double=0;
+    assert(pane_float(panes->hint_plate,0x50)*0.55 < 1280);
+    const uint64_t prepared_double=panes->hint_double;
+    panes->hint_double=0;
     popup_tips.label[MK8_TIP_UP][0]='S'; mk8_settings_page_frame(manager);
-    assert(pane_float(hint_plate,0x54)==96);
-    hint_double=prepared_double;
+    assert(pane_float(panes->hint_plate,0x54)==96);
+    panes->hint_double=prepared_double;
     popup_tips=(struct Mk8ControlTips){MK8_TIP_PLAYSTATION,{"Cross","Circle","Square","Triangle","Create"}};
     mk8_settings_page_frame(manager);
     assert(shown_tips[0][0]==0x00d7);
-    assert(!(LD8(keycaps[0]+0x58)&1));
+    assert(!(LD8(panes->keycaps[0]+0x58)&1));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B","X","Y",""}};
     mk8_settings_page_frame(manager);
     assert(!memcmp(shown_tips[1],u"Click a player for assignment options.",sizeof u"Click a player for assignment options."));
@@ -879,10 +893,10 @@ static void check_controller_footer(uint64_t manager) {
     // Mouse-only assignment, including when the player controlling the menu has disconnected.
     assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
     mk8_settings_page_frame(manager); assert(controller_panel==ROW_ACTIONS && action_player==1);
-    for(unsigned i=1;i<=4;i++) assert(pane_float(labels[i],0x30)==0);
+    for(unsigned i=1;i<=4;i++) assert(pane_float(panes->labels[i],0x30)==0);
     assert(mk8_controller_pointer(640,285,1) && mk8_controller_pointer(640,285,2));
     mk8_settings_page_frame(manager); assert(last_edit==MK8_EDIT_KEYBOARD && edit_row==1);
-    for(unsigned i=1;i<=4;i++) assert(pane_float(labels[i],0x30)==-245);
+    for(unsigned i=1;i<=4;i++) assert(pane_float(panes->labels[i],0x30)==-245);
     wait_apply=true;
     popup_key(manager,1ull<<14); popup_key(manager,1);
     assert(last_edit==MK8_EDIT_APPLY && controller_visible && !cursor_mask);
@@ -950,8 +964,8 @@ static void check_controller_footer(uint64_t manager) {
         assert(controller_visible && controller_focus==1 && reveal==1 && footer_drawn[0]==0);
     }
     opens+=2;
-    for(unsigned i=0;i<4;i++) join_buttons[i]=HEAP_BASE+18304+128*i;
-    for(unsigned i=0;i<2;i++) join_plus[i]=HEAP_BASE+18816+128*i;
+    for(unsigned i=0;i<4;i++) panes->join_buttons[i]=HEAP_BASE+18304+128*i;
+    for(unsigned i=0;i<2;i++) panes->join_plus[i]=HEAP_BASE+18816+128*i;
     edit_row=3; join_keyboard=false;
     mk8_settings_page_frame(manager);
     assert(controller_focus==3 && open_sounds==opens+1);
@@ -959,17 +973,17 @@ static void check_controller_footer(uint64_t manager) {
     assert(!wcscmp(shown_title,L"Player 4: choose how to join"));
     assert(!shown_tips[0][0]);
     assert(!strcmp(action_strings[0],"Controller or paired Joy-Cons") && !strcmp(action_strings[1],"Sideways Joy-Con"));
-    assert(pane_float(action_labels[0],0x34)>pane_float(action_labels[1],0x34));
-    assert(pane_float(join_plus[0],0x30)==pane_float(join_plus[1],0x30));
+    assert(pane_float(panes->action_labels[0],0x34)>pane_float(panes->action_labels[1],0x34));
+    assert(pane_float(panes->join_plus[0],0x30)==pane_float(panes->join_plus[1],0x30));
     for(unsigned i=0;i<2;i++) {
-        assert(!(LD8(keycaps[i]+0x58)&1) && !(LD8(key_labels[i]+0x58)&1));
-        assert((LD8(join_buttons[2*i]+0x58)&1) && (LD8(join_buttons[2*i+1]+0x58)&1) && (LD8(join_plus[i]+0x58)&1));
-        assert(pane_float(join_buttons[2*i],0x30)+(i==1 ? 48 : 40)==pane_float(join_plus[i],0x30));
-        assert(pane_float(join_buttons[2*i+1],0x30)-40==pane_float(join_plus[i],0x30));
-        assert(pane_float(join_buttons[2*i],0x34)+20==pane_float(join_plus[i],0x34)-9);
-        assert(pane_float(join_plus[i],0x34)==pane_float(action_labels[i],0x34)+3.5f);
+        assert(!(LD8(panes->keycaps[i]+0x58)&1) && !(LD8(panes->key_labels[i]+0x58)&1));
+        assert((LD8(panes->join_buttons[2*i]+0x58)&1) && (LD8(panes->join_buttons[2*i+1]+0x58)&1) && (LD8(panes->join_plus[i]+0x58)&1));
+        assert(pane_float(panes->join_buttons[2*i],0x30)+(i==1 ? 48 : 40)==pane_float(panes->join_plus[i],0x30));
+        assert(pane_float(panes->join_buttons[2*i+1],0x30)-40==pane_float(panes->join_plus[i],0x30));
+        assert(pane_float(panes->join_buttons[2*i],0x34)+20==pane_float(panes->join_plus[i],0x34)-9);
+        assert(pane_float(panes->join_plus[i],0x34)==pane_float(panes->action_labels[i],0x34)+3.5f);
     }
-    assert(!(LD8(keycaps[2]+0x58)&1));
+    assert(!(LD8(panes->keycaps[2]+0x58)&1));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
     check_keycap(2,"J","Cancel");
@@ -988,22 +1002,22 @@ static void check_controller_footer(uint64_t manager) {
     assert(!wcscmp(shown_cancel,L"\ue000 OK"));
     assert(mk8_controller_pointer(640,606,2)); mk8_settings_page_frame(manager);
     assert(editor_state==MK8_EDIT_READY); // Releasing the earlier Cancel press cannot click OK.
-    for(unsigned i=0;i<4;i++) assert(!(LD8(join_buttons[i]+0x58)&1));
-    for(unsigned i=0;i<2;i++) assert(!(LD8(join_plus[i]+0x58)&1));
+    for(unsigned i=0;i<4;i++) assert(!(LD8(panes->join_buttons[i]+0x58)&1));
+    for(unsigned i=0;i<2;i++) assert(!(LD8(panes->join_plus[i]+0x58)&1));
     assert(!wcscmp((const wchar_t *)shown_tips[1],L"\ue000 OK"));
-    symbol_help=symbol_dialog=HEAP_BASE+14400;
-    symbol_parts[0][0]=HEAP_BASE+26000; symbol_parts[1][1]=HEAP_BASE+26128;
-    symbol_parts[2][1]=HEAP_BASE+26256; symbol_parts[4][1]=HEAP_BASE+26384;
-    symbol_parts[4][0]=HEAP_BASE+26896;
-    symbol_parts[3][4]=HEAP_BASE+26512; symbol_parts[3][5]=HEAP_BASE+26640;
-    symbol_parts[0][1]=HEAP_BASE+26768;
+    panes->symbol_help=panes->symbol_dialog=HEAP_BASE+14400;
+    panes->symbol_parts[0][0]=HEAP_BASE+26000; panes->symbol_parts[1][1]=HEAP_BASE+26128;
+    panes->symbol_parts[2][1]=HEAP_BASE+26256; panes->symbol_parts[4][1]=HEAP_BASE+26384;
+    panes->symbol_parts[4][0]=HEAP_BASE+26896;
+    panes->symbol_parts[3][4]=HEAP_BASE+26512; panes->symbol_parts[3][5]=HEAP_BASE+26640;
+    panes->symbol_parts[0][1]=HEAP_BASE+26768;
     editor_state=MK8_EDIT_LISTEN; edit_row=2; join_keyboard=false;
     mk8_settings_page_frame(manager);
-    assert(shown_symbols[2]==symbol_parts[2][1] && shown_symbols[4]==symbol_parts[4][1]);
+    assert(panes->shown_symbols[2]==panes->symbol_parts[2][1] && panes->shown_symbols[4]==panes->symbol_parts[4][1]);
     assert(!wcscmp(shown_cancel,L"Cancel"));
     popup_tips=(struct Mk8ControlTips){MK8_TIP_PLAYSTATION,{"Cross","Circle"}};
     mk8_settings_page_frame(manager);
-    assert(!shown_symbols[2] && !shown_symbols[4] && !(LD8(keycaps[2]+0x58)&1));
+    assert(!panes->shown_symbols[2] && !panes->shown_symbols[4] && !(LD8(panes->keycaps[2]+0x58)&1));
     assert(!strcmp(action_strings[2],"Circle Cancel") && !wcscmp(shown_cancel,L"Circle Cancel"));
     join_keyboard=true;
     mk8_settings_page_frame(manager);
@@ -1015,19 +1029,19 @@ static void check_controller_footer(uint64_t manager) {
         mk8_settings_page_frame(manager);
         assert(!wcscmp(shown_title,L"Player 3: pair Joy-Cons"));
         assert(!strcmp(action_strings[3],"Press") && !strcmp(last_hint,"on other Joy-Con to pair."));
-        assert(shown_symbols[3]==symbol_parts[3][4+i]);
-        assert(pane_float(action_labels[3],0x30)<pane_float(shown_symbols[3],0x30));
-        assert(pane_float(shown_symbols[3],0x30)<pane_float(hint,0x30));
+        assert(panes->shown_symbols[3]==panes->symbol_parts[3][4+i]);
+        assert(pane_float(panes->action_labels[3],0x30)<pane_float(panes->shown_symbols[3],0x30));
+        assert(pane_float(panes->shown_symbols[3],0x30)<pane_float(panes->hint,0x30));
     }
     editor_state=MK8_EDIT_READY; edit_row=-1;
     mk8_settings_page_frame(manager);
-    assert(shown_symbols[0]==symbol_parts[0][0] && shown_symbols[4]==symbol_parts[4][0]);
-    assert(!shown_symbols[1] && !shown_symbols[2] && !shown_symbols[3]);
+    assert(panes->shown_symbols[0]==panes->symbol_parts[0][0] && panes->shown_symbols[4]==panes->symbol_parts[4][0]);
+    assert(!panes->shown_symbols[1] && !panes->shown_symbols[2] && !panes->shown_symbols[3]);
     assert(!shown_tips[0][0] || !strcmp(last_hint,"All players are ready."));
-    symbol_help=symbol_dialog=0;
+    panes->symbol_help=panes->symbol_dialog=0;
     popup_tips=(struct Mk8ControlTips){MK8_TIP_KEYBOARD,{"Return","J"}};
     mk8_settings_page_frame(manager);
-    check_keycap(0,"Return","OK"); assert(!(LD8(keycaps[1]+0x58)&1));
+    check_keycap(0,"Return","OK"); assert(!(LD8(panes->keycaps[1]+0x58)&1));
     // The guest applet can hold the stock animation clock while waiting for the popup to close.
     int ok_sounds=decide_sounds;
     assert(mk8_controller_pointer(640,606,1) && mk8_controller_pointer(640,606,2));
@@ -1086,21 +1100,21 @@ int main(void) {
     catalogue[1][0].kind=SETTING_NUMBER; catalogue[1][0].maximum=200; catalogue[1][0].current=100; strcpy(catalogue[1][0].value,"100%");
     catalogue[2][0].kind=SETTING_BINDING; catalogue[2][1].kind=SETTING_RESET;
     memset(&cpu,0x17,sizeof cpu); cpu.sp=GUEST_HI-16;
-    top=owner=root=HEAP_BASE; hint=HEAP_BASE+3500; hint_second=HEAP_BASE+14680; back_icon=HEAP_BASE+14780; from_button=true;
-    hint_plate=HEAP_BASE+16256; hint_single=HEAP_BASE+18032; hint_double=HEAP_BASE+18160;
-    for(unsigned i=0;i<4;i++) { keycaps[i]=TEST_KEYCAP(i); key_labels[i]=keycaps[i]+128; action_labels[i]=keycaps[i]+256; }
+    selector_absent=false; top=owner=panes->root=HEAP_BASE; panes->hint=HEAP_BASE+3500; panes->hint_second=HEAP_BASE+14680; panes->back_icon=HEAP_BASE+14780; from_button=true;
+    panes->hint_plate=HEAP_BASE+16256; panes->hint_single=HEAP_BASE+18032; panes->hint_double=HEAP_BASE+18160;
+    for(unsigned i=0;i<4;i++) { panes->keycaps[i]=TEST_KEYCAP(i); panes->key_labels[i]=panes->keycaps[i]+128; panes->action_labels[i]=panes->keycaps[i]+256; }
     ST32(top+0x120,4); ST8(HEAP_BASE+14000+0x3ca,1);
-    back_animation=HEAP_BASE+15200;
+    panes->back_animation=HEAP_BASE+15200;
     ST64(owner+0x1b0,HEAP_BASE+9000); ST32(HEAP_BASE+9000+0x10,12); ST32(HEAP_BASE+9000+0x28,5);
     ST64(HEAP_BASE+9000+0x18,HEAP_BASE+9200); ST64(HEAP_BASE+9200+88,HEAP_BASE+14000+0x30);
     ST32(HEAP_BASE+14000+0x48,107); ST8(HEAP_BASE+12000+0x58,1); ST64(HEAP_BASE+10000+0x1d0,HEAP_BASE+11000);
     for(unsigned i=0;i<4;i++) ST64(owner+0x1d0+8*i,HEAP_BASE+11000+i*224);
-    ST64(top+0x448,root);
-    for(unsigned i=0;i<=SETTINGS_VISIBLE;i++) { labels[i]=HEAP_BASE+1000+i*256; values[i]=HEAP_BASE+2000+i*256; rows[i]=HEAP_BASE+4000+i*512; }
+    ST64(top+0x448,panes->root);
+    for(unsigned i=0;i<=SETTINGS_VISIBLE;i++) { panes->labels[i]=HEAP_BASE+1000+i*256; panes->values[i]=HEAP_BASE+2000+i*256; panes->rows[i]=HEAP_BASE+4000+i*512; }
     Cpu saved=cpu; mk8_settings_page_tick(HEAP_BASE,true);
     check_keycap(0,"Enter","Select"); check_keycap(1,"Esc","Close");
-    assert(pane_float(hint_single,0x54)==56 && (LD8(hint_single+0x58)&1) && !(LD8(hint_double+0x58)&1));
-    assert(!(LD8(back_icon+0x58)&1));
+    assert(pane_float(panes->hint_single,0x54)==56 && (LD8(panes->hint_single+0x58)&1) && !(LD8(panes->hint_double+0x58)&1));
+    assert(!(LD8(panes->back_icon+0x58)&1));
     assert(active && confirming && cursor_shown && !memcmp(&saved,&cpu,sizeof cpu));
     assert(open_sounds==0);
     now=2000000000; sample(1ull<<14); assert(confirming && !category && (LD8(HEAP_BASE+12000+0x58)&1));
@@ -1109,9 +1123,9 @@ int main(void) {
     now+=80000000; sample(1ull<<14); assert(!entering && !category && LD8(HEAP_BASE+12200+0x59)==255); sample(0);
     assert(open_sounds==1 && menu_level==MENU_HOME && focus==MENU_PLAY);
     ST8(HEAP_BASE+12064+0x58,1);
-    dialog_cursor=HEAP_BASE+16000; cursor_animation=HEAP_BASE+15800;
+    panes->dialog_cursor=HEAP_BASE+16000; panes->cursor_animation=HEAP_BASE+15800;
     revision++; sample(0);
-    assert(menu_cursor_active && cursor_x==0 && cursor_y==145 && cursor_width==1700);
+    assert(panes->menu_cursor_active && cursor_x==0 && cursor_y==145 && cursor_width==1700);
     assert((LD8(HEAP_BASE+15100+0x58)&1) && !(LD8(HEAP_BASE+14200+0x58)&1));
     press(1); now+=80000000; sample(0);
     assert(LD8(HEAP_BASE+12200+0x59)==255);
@@ -1120,13 +1134,13 @@ int main(void) {
     press(1ull<<15);
     check_native_rooms();
     check_native_friends(); press(1ull<<15);
-    press(1); assert(menu_level==MENU_OPTIONS && category==SETTINGS_QUICK && !menu_cursor_active);
+    press(1); assert(menu_level==MENU_OPTIONS && category==SETTINGS_QUICK && !panes->menu_cursor_active);
     assert(!(LD8(HEAP_BASE+15100+0x58)&1) && (LD8(HEAP_BASE+14200+0x58)&1));
     for(int group=MENU_QUIT;group>=MENU_ACCOUNT;group--) {
         press(1ull<<12); assert(rich_group==group && focus==0);
         assert(!rendered_labels[1][0] && !strcmp(rendered[1],"Yes, quit to Start Screen"));
-        assert(pane_float(values[1],0x30)==-195);
-        assert(LD8(values[1]+0x59)<LD8(values[2]+0x59));
+        assert(pane_float(panes->values[1],0x30)==-195);
+        assert(LD8(panes->values[1]+0x59)<LD8(panes->values[2]+0x59));
         if(group==MENU_QUIT) {
             press(1ull<<15); press(1ull<<15);
             sample(1); assert(rich_level==1 && !slide_direction && focus==1);
@@ -1143,7 +1157,7 @@ int main(void) {
     press(2); assert(menu_level==MENU_HOME && focus==HOME_SETTINGS && rich_group<0);
     finger=true; tx=640; ty=355; sample(0); finger=false; sample(0); settle_slide();
     assert(menu_level==MENU_OPTIONS && category==SETTINGS_QUICK);
-    press(1ull<<14); assert(menu_level==MENU_OPTIONS && category==0 && pane_float(values[1],0x30)==0);
+    press(1ull<<14); assert(menu_level==MENU_OPTIONS && category==0 && pane_float(panes->values[1],0x30)==0);
     finger=true; tx=640; ty=205; sample(0); finger=false; sample(0); assert(category==1);
     finger=true; tx=240; ty=205; sample(0); finger=false; sample(0); assert(category==0);
     mk8_settings_page_fixed(1ull<<15); sample(0); assert(focus==1);
@@ -1164,13 +1178,13 @@ int main(void) {
     struct Mk8ControlTips keyboard=fixed_tips;
     fixed_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"B","A"}};
     sample(0);
-    assert(!(LD8(back_icon+0x58)&1));
+    assert(!(LD8(panes->back_icon+0x58)&1));
     assert(!strcmp(last_hint,"Up/down: 1   Left/right: 10"));
     assert(!memcmp(shown_tips[1],u"\ue001 OK  \ue000 Cancel",sizeof u"\ue001 OK  \ue000 Cancel"));
     fixed_tips=(struct Mk8ControlTips){MK8_TIP_NINTENDO,{"A","B"}};
-    sample(0); assert(LD8(back_icon+0x58)&1);
+    sample(0); assert(LD8(panes->back_icon+0x58)&1);
     fixed_tips=keyboard; sample(0);
-    assert(!(LD8(back_icon+0x58)&1));
+    assert(!(LD8(panes->back_icon+0x58)&1));
     check_keycap(0,"Enter","OK"); check_keycap(1,"Esc","Cancel");
     apply_number("80"); assert(!editing && catalogue[1][0].current==80);
     press(1); apply_number("201"); assert(editing && invalid && catalogue[1][0].current==80);
@@ -1209,6 +1223,7 @@ int main(void) {
     assert(exiting); save_state=2; now+=160000000; sample(0);
     assert(!active && cursor_shown && returns==4 && text_calls>0);
     uint64_t manager=HEAP_BASE+16000;
+    register_page(manager,owner,0x1271df0,13);
     ST32(manager+0xb50,1); ST64(manager+0xb58,HEAP_BASE+20000); ST64(HEAP_BASE+20000,owner);
     ST32(top+0x120,4); mk8_settings_page_frame(manager); assert(in_main && available);
     top=HEAP_BASE+21000; mk8_settings_page_frame(manager); assert(!in_main && available);
@@ -1222,10 +1237,10 @@ int main(void) {
     assert(!mk8_settings_page_toggle()); native_style=true;
     assert(!active && cursor_shown && returns==4);
     ST32(manager+0xb50,0); ST64(manager+0xb58,0); mk8_settings_page_frame(manager);
-    assert(!available && !mk8_settings_page_toggle());
+    assert(!available && mk8_settings_page_toggle() && requested); requested=false; selector_absent=false;
     top=owner; in_main=true; available=true; from_button=true;
-    dialog=HEAP_BASE+15600; dialog_animations[0]=HEAP_BASE+15400; dialog_animations[1]=HEAP_BASE+15500;
-    dialog_cursor=HEAP_BASE+16000; cursor_animation=HEAP_BASE+15800;
+    panes->dialog=HEAP_BASE+15600; panes->dialog_animations[0]=HEAP_BASE+15400; panes->dialog_animations[1]=HEAP_BASE+15500;
+    panes->dialog_cursor=HEAP_BASE+16000; panes->cursor_animation=HEAP_BASE+15800;
     const int nav_decides=decide_sounds;
     open_page(); back_done=false; int cancels_before=cancel_sounds, pulses_before=back_pulses, previous_cursor_pulses=cursor_pulses;
     press(2); save_state=3; now+=400000000; sample(2);
@@ -1252,11 +1267,12 @@ int main(void) {
     button_done=true; sample(0); assert(!restart_wait); // The cursor also has a native Decide pulse.
     cursor_done=true; sample(0); assert(!restart_wait); now+=160000000; sample(0); assert(restart_choice==1 && restart_wait && active);
     sample(1); assert(decide_sounds==nav_decides+3 && cursor_pulses==previous_cursor_pulses+4); // Wait for the real reboot.
-    settings_page_reset(); assert(!owner && !active && !suppressed); check_capture_state(false);
-    owner=root=HEAP_BASE; top=HEAP_BASE+21000; available=in_main=true;
-    back_animation=HEAP_BASE+15200; dialog=HEAP_BASE+15600;
-    dialog_cursor=HEAP_BASE+16000; cursor_animation=HEAP_BASE+15800;
-    ST64(top+0x1b0,HEAP_BASE+9000); ST64(top+0x448,root); ST32(top+0x120,4);
+    MenuPanes synthetic=*panes; settings_page_reset(); assert(!owner && !active && !suppressed); check_capture_state(false);
+    *panes=synthetic;
+    owner=panes->root=HEAP_BASE; top=HEAP_BASE+21000; available=in_main=true;
+    panes->back_animation=HEAP_BASE+15200; panes->dialog=HEAP_BASE+15600;
+    panes->dialog_cursor=HEAP_BASE+16000; panes->cursor_animation=HEAP_BASE+15800;
+    ST64(top+0x1b0,HEAP_BASE+9000); ST64(top+0x448,panes->root); ST32(top+0x120,4);
     for(unsigned icon=0;icon<2;icon++) for(unsigned prompt=0;prompt<2;prompt++) {
         int opened=open_sounds;
         int cancels=cancel_sounds, decides=decide_sounds, restored=returns;
@@ -1280,11 +1296,12 @@ int main(void) {
     mk8_settings_page_tick(top,true); assert(!requested && !overlay_opens);
     decided=true; mk8_settings_page_tick(top,false); mk8_settings_page_tick(top,false);
     assert(overlay_opens==1 && returns==restored+1 && !mk8_settings_page_toggle());
-    native_style=true; available=false; mk8_settings_page_tick(top,true);
-    assert(overlay_opens==2 && !requested && !mk8_settings_page_toggle());
+    native_style=true; available=false; missing_layout=true; mk8_settings_page_tick(top,true);
+    assert(overlay_opens==2 && !requested && !mk8_settings_page_toggle()); missing_layout=false;
     available=true;
     // Use the real frame hook and public request API, not a synthetic atomic exchange.
     manager=HEAP_BASE+24000;
+    register_page(manager,owner,0x1271df0,13);
     ST32(manager+0xb50,1); ST64(manager+0xb58,HEAP_BASE+28000); ST64(HEAP_BASE+28000,owner);
     fixed_buttons=buttons=raw_buttons=0;
     assert(!mk8_settings_page_active() && mk8_settings_page_toggle());
@@ -1308,8 +1325,65 @@ int main(void) {
     mk8_native_menu_exit(); sample(0); assert(exiting); sample(0);
     save_state=2; now+=160000000; sample(0); assert(!active);
     assert(mk8_settings_page_toggle()); mk8_settings_page_frame(manager); assert(active);
+    // The two separate guest layout owners share one settings session, even through an empty active list.
+    const uint64_t fader=HEAP_BASE+28500;
+    register_page(manager,fader,0x12733d8,4);
+    ST64(HEAP_BASE+28008,fader); ST32(manager+0xb50,2);
+    fader_mount=HEAP_BASE+28576;
+    fader_panes=selector_panes; fader_panes.page=fader; fader_panes.mount=fader_mount; fader_panes.visible=false;
+    loading_pane=false; now+=160000000; mk8_settings_page_frame(manager); assert(active && !entering && panes==&selector_panes);
+    Cpu paint_cpu=cpu; paint_cpu.sp-=512;
+    menu_level=MENU_OPTIONS; category=1; focus=1; offset=0; draw(&paint_cpu);
+    unsigned opened_before=begin_requests,saved_before=finish_requests;
+    press(1); assert(editing); assert(mk8_settings_page_key('8')); sample(0);
+    loading_pane=true; mk8_settings_page_frame(manager);
+    assert(active && panes==&fader_panes && fader_panes.visible && !selector_panes.visible && focus==1 && category==1);
+    assert(editing && !strcmp(number,"8")); assert(mk8_settings_page_key('0') && mk8_settings_page_key(13));
+    mk8_settings_page_frame(manager); assert(!editing && catalogue[1][0].current==80);
+    ST32(manager+0xb50,1); ST64(HEAP_BASE+28000,fader);
+    mk8_settings_page_frame(manager); assert(active && selector_absent && panes==&fader_panes);
+    mk8_settings_page_fixed(1ull<<15); mk8_settings_page_frame(manager);
+    mk8_settings_page_fixed(0); mk8_settings_page_frame(manager); assert(focus==2);
+    pulse_slot(&paint_cpu,1); uint64_t animated_pane=pulse_pane;
+    ST32(manager+0xb50,0); mk8_settings_page_frame(manager); mk8_settings_page_frame(manager);
+    assert(active && menu_level==MENU_OPTIONS && focus==2);
+    assert(fader_panes.held_pulse==animated_pane && animated_pane!=0);
+    ST64(HEAP_BASE+28000,owner); ST32(manager+0xb50,2); loading_pane=false; mk8_settings_page_frame(manager);
+    assert(active && panes==&selector_panes && !fader_panes.visible && selector_panes.visible && focus==2 && category==1);
+    assert(!fader_panes.held_pulse && pane_float(animated_pane,0x48)==1);
+    assert(begin_requests==opened_before && finish_requests==saved_before);
+    // Reused former addresses must not receive guest calls under the wrong class or registry slot.
+    ST32(manager+0xb50,1); ST64(owner,MAIN_BASE+0x12723e0); mk8_settings_page_frame(manager);
+    assert(active && selector_absent && !available);
+    ST64(owner,MAIN_BASE+0x1271df0); ST64(LD64(manager+0x30)+13*8,0); mk8_settings_page_frame(manager);
+    assert(active && selector_absent && !available);
+    register_page(manager,owner,0x1271df0,13); ST32(manager+0xb50,2); mk8_settings_page_frame(manager);
+    mk8_native_menu_exit(); sample(0); sample(0); save_state=3; now+=160000000; sample(0); assert(restart_prompt);
+    int open_feedback=open_sounds;
+    loading_pane=true; mk8_settings_page_frame(manager);
+    assert(panes==&fader_panes && restart_prompt && !panes->menu_cursor_active);
+    assert(LD8(HEAP_BASE+15100+0x59)==255 && (LD8(HEAP_BASE+15100+0x58)&1));
+    loading_pane=false; mk8_settings_page_frame(manager);
+    assert(panes==&selector_panes && open_feedback==open_sounds && restart_prompt);
+    // Close while only the fader exists. Restore the stock selector's exact old cursor mask on its return.
+    unsigned previous_mask=cursor_visibility;
+    ST32(manager+0xb50,1); ST64(HEAP_BASE+28000,fader); mk8_settings_page_frame(manager);
+    mk8_settings_page_fixed(1); mk8_settings_page_frame(manager);
+    mk8_settings_page_fixed(0); mk8_settings_page_frame(manager);
+    now+=160000000; mk8_settings_page_frame(manager); mk8_settings_page_frame(manager);
+    assert(!active && restore_menu_cursors);
+    ST32(manager+0xb50,0); mk8_settings_page_frame(manager);
+    ST32(manager+0xb50,1); ST64(HEAP_BASE+28000,owner); mk8_settings_page_frame(manager);
+    assert(!restore_menu_cursors && !cursor_owner && cursor_mask==previous_mask);
+    assert(mk8_settings_page_toggle()); mk8_settings_page_frame(manager);
     check_shared_race(manager);
     settings_page_reset();
-    check_controller_footer(manager);
+    *panes=synthetic; check_controller_footer(manager);
     settings_page_reset();
+    // An early native request stays pending until lookup completes. A missing layout falls back once.
+    native_style=true; loading_layout=true; unsigned overlays=overlay_opens;
+    assert(mk8_settings_page_toggle()); mk8_settings_page_frame(manager);
+    assert(requested && overlay_opens==overlays);
+    loading_layout=false; missing_layout=true; mk8_settings_page_frame(manager); mk8_settings_page_frame(manager);
+    assert(!requested && overlay_opens==overlays+1);
 }

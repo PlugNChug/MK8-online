@@ -39,6 +39,7 @@ void renderer_get_scale(float *,float *);
 double output_scale_dynamic_factor(void);
 static _Atomic bool native_theme;
 bool mk8_settings_style_active(void) { return native_theme; }
+bool mk8_settings_input_native(void) { return g_settings.theme==THEME_NATIVE; }
 void menu_notice(const char *,double);
 
 // Sample on the renderer thread, including after a controller binding finishes.

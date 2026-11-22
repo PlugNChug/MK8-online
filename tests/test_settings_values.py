@@ -66,7 +66,9 @@ static void check_tips(void) {
     }
 }
 int main(int argc,char **argv) {
-    assert(argc==3 || argc==4); settings_load(); mk8_settings_values_context(true); mk8_settings_values_sync();
+    assert(argc==3 || argc==4); settings_load();
+    assert(mk8_settings_input_native()==(g_settings.theme==THEME_NATIVE));
+    mk8_settings_values_context(true); mk8_settings_values_sync();
     if(argc==4 && !strncmp(argv[3],"theme:",6)) {
         const char *name=argv[3]+6;
         assert(!strcmp(find(0,"Menu theme").value,name));

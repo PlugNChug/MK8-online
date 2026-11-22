@@ -88,6 +88,30 @@ int main() {
             with self.assertRaises(ValueError):
                 settings_menu.prepare(root)
 
+    def test_fader_widgets_hook_runs_inside_only_the_original_constructor(self):
+        selector = 'void f_700049a8fc(Cpu *c) {\n    { uint64_t ea = c->x[19] + 0x1f0ull; ST32(ea, 0u); }\n}'
+        marker = '    { uint64_t ea = c->x[19] + 0x1e8ull; ST32(ea, 0u); }'
+        fader = 'void f_70004a01c0(Cpu *c) {\n    build_stock_parts();\n' + marker + '\n    restore_registers();'
+        unrelated = 'void another(Cpu *c) {\n' + marker + '\n}'
+        source = '\n'.join([selector, unrelated, fader, '}'])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            original = root / 'main/main_100.c'
+            original.parent.mkdir()
+            original.write_text(source, encoding='utf-8')
+            prepared = root / 'prepared.c'
+            with patch.dict(settings_menu.SHARED_HASHES, {original.name: hashlib.sha256(original.read_bytes()).hexdigest()}), \
+                 patch.object(settings_menu, 'FADER_BUILD_SHA256', hashlib.sha256(fader.encode()).hexdigest()):
+                path = settings_menu.patch_guest(original, original, root / 'out')
+                result = path.read_text(encoding='utf-8')
+                self.assertIn(unrelated, result)
+                self.assertIn(fader.replace(marker, marker + '\n    mk8_settings_fader_build(c->x[19]);'), result)
+                self.assertEqual(result.count('mk8_settings_fader_build(c->x[19])'), 1)
+                for changed in (source.replace('build_stock_parts();', 'different_scope();'), source + '\n' + fader + '\n}'):
+                    prepared.write_text(changed, encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, 'fader constructor changed'):
+                        settings_menu.patch_guest(prepared, original, root / 'out')
+
     @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
     def test_native_button_routes_only_its_own_events_and_preserves_original_actions(self):
         with tempfile.TemporaryDirectory() as folder:

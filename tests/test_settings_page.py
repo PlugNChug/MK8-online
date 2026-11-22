@@ -29,7 +29,7 @@ extern unsigned char memory[32768];
 #define GUEST_LO HEAP_BASE
 #define GUEST_HI (HEAP_BASE+HEAP_MAX)
 #define LOG(...) ((void)0)
-#define FATAL(...) abort()
+#define FATAL(...) do { fprintf(stderr,__VA_ARGS__); abort(); } while(0)
 #define RT_ON_RESET(name) void name(void)
 uint64_t test_read(uint64_t);
 #undef LD64

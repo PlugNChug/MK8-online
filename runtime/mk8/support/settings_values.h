@@ -23,3 +23,4 @@ bool mk8_settings_values_capturing(void);
 void mk8_settings_values_context(bool main_menu);
 bool mk8_settings_values_main_menu(void);
 bool mk8_settings_style_active(void);
+bool mk8_settings_input_native(void); // Renderer input can arrive before the first values sync.

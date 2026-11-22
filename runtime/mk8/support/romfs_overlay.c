@@ -11,8 +11,10 @@
 #include <sys/stat.h>
 
 static char g_pack[1024];
-static _Atomic bool g_controller_layout, g_settings_layout;
-bool mk8_settings_layout_available(void) { return g_settings_layout; }
+static _Atomic bool g_controller_layout;
+static _Atomic enum { LAYOUT_PENDING, LAYOUT_PRESENT, LAYOUT_MISSING } g_settings_layout;
+bool mk8_settings_layout_available(void) { return g_settings_layout==LAYOUT_PRESENT; }
+bool mk8_settings_layout_unavailable(void) { return g_settings_layout==LAYOUT_MISSING; }
 bool mk8_controller_layout_available(void) { return g_controller_layout; }
 
 static bool has_layout(const char *folder, const char *prefix, const char *file) {
@@ -43,7 +45,7 @@ const char *game_romfs_overlay(void) {
     bool conflict=has_layout(mod,"/romfs","common") || has_layout(mod,"/romfs","menu") ||
                   ((custom_common || custom_menu) && !(combined && *combined));
     const char *settings = conflict ? NULL : mk8_settings_romfs_overlay();
-    g_settings_layout=settings!=NULL;
+    g_settings_layout=settings ? LAYOUT_PRESENT : LAYOUT_MISSING;
     if (!settings) {
         // Keep a mod's own common.sarc intact. Older builds may lack the standalone layout.
         g_controller_layout=false;

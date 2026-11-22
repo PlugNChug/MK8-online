@@ -1,10 +1,12 @@
-# Estado técnico — 20/11/2026
+# Estado técnico — 21/11/2026
 
 ## Menu do jogo no Windows
 
 F1, Home e a chave inglesa do menu principal abrem o tema escolhido no launcher. Perfis novos usam Nativo. Os temas Simples escuro, Simples claro, NES escuro e NES claro compartilham os ajustes com o Nativo. O idioma acompanha o launcher. No tema Nativo, a lista de salas abre os detalhes e mantém a seleção ao voltar.
 
 Perfis existentes mantêm a aparência e os valores salvos. O launcher reconhece builds anteriores da 0.5.0 que precisam ser recompiladas para oferecer os cinco temas. A distribuição Linux segue a revisão própria descrita abaixo.
+
+No modo solo, o Menu nativo acompanha a tela de carregamento e a apresentação da pista com a mesma seleção. A atualização requer regenerar a unidade guest `main_100.c`, recompilar a biblioteca do jogo e atualizar o host e o layout privado. O teste nativo desta branch cobre a edição de um valor durante a troca de página, a confirmação de reinício, a restauração do cursor e o bloqueio durante corridas com vários jogadores locais. Na build integrada para Windows, os Ajustes rápidos permaneceram visíveis durante o carregamento de Bowser’s Castle e na apresentação da pista.
 
 Na build isolada, F1 abriu o tema Nativo e o volume passou de 145% para 150%. Após reiniciar o jogo, a chave inglesa mostrou 150%. Passaram os 26 testes de launcher, navegador e ciclo de vida do jogo e os 32 testes de preparação, DLC, empacotamento e runtime do Windows.
 

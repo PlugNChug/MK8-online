@@ -202,8 +202,8 @@ static void draw_nextendo_header(Cpu *c) {
         const char *format=mk8_menu_text(lang,"Players online: %d  ·  Rooms: %d","Jogadores online: %d  ·  Salas: %d","Jugadores en línea: %d  ·  Salas: %d");
         snprintf(summary,sizeof summary,format,service_state.online_players,service_state.lobby_count); status=summary;
     }
-    text(c,values[0],status);
-    visible(c,rows[0]+0x30,"L_Btn_LR",menu_level!=MENU_ROOM_DETAILS);
+    text(c,panes->values[0],status);
+    visible(c,panes->rows[0]+0x30,"L_Btn_LR",menu_level!=MENU_ROOM_DETAILS);
 }
 
 // Keep the full ID visible, splitting on a character boundary when it spans two rows.
@@ -261,12 +261,12 @@ static void draw_nextendo_row(Cpu *c,unsigned slot,unsigned index) {
         case SERVICE_RESUME: left=mk8_menu_label(lang,mk8_play_back); break;
         }
     }
-    controller_place(c,labels[slot],detail || *right ? -245 : 0,0);
-    list_text(c,labels[slot],left,24); list_text(c,values[slot],right,36);
-    call(c,!detail && !service_header && index==focus ? 0x700044ed20ull : 0x700044ee50ull,rows[slot],1,0,0,0);
+    controller_place(c,panes->labels[slot],detail || *right ? -245 : 0,0);
+    list_text(c,panes->labels[slot],left,24); list_text(c,panes->values[slot],right,36);
+    call(c,!detail && !service_header && index==focus ? 0x700044ed20ull : 0x700044ee50ull,panes->rows[slot],1,0,0,0);
     bool actionable=!detail && service_rows[index].enabled;
-    row_ink(labels[slot],actionable); row_ink(values[slot],actionable);
-    visible(c,rows[slot]+0x30,"L_Btn_LR",false);
+    row_ink(panes->labels[slot],actionable); row_ink(panes->values[slot],actionable);
+    visible(c,panes->rows[slot]+0x30,"L_Btn_LR",false);
 }
 
 static void nextendo_input(Cpu *c,uint64_t edge,bool close,bool confirm,bool click,int x,int y) {

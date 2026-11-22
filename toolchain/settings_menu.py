@@ -1,4 +1,5 @@
 """Opt-in Settings entry experiment for the verified MK8 4.0.1 top menu."""
+import hashlib
 from pathlib import Path
 
 from guest_source import verified_bytes
@@ -10,6 +11,7 @@ ENTRY = 'void f_70004d92e8(Cpu *c) {'
 BUILD_SHA256 = '4b4cf4a1aec1b9d1d0479a920a3fbf46fe518d23d7624a19caea00808f7d88f7'
 NAV_SHA256 = 'c6d46af3e71b558fa38894d3b26de9569671c93a026f7a0cce99eb2e16707082'
 TICK_SHA256 = 'e7f979c9bae346fca7da9f76349d27eeec5fcc4b23c87b43d396c39b605ef048'
+FADER_BUILD_SHA256 = '62e1f3c522ad9e61462a0fe27cd842afd0598d4c570872321caeeef4b6ebe362'
 SHARED_HASHES = {'main_100.c': '187122fd53c501e91020efb776088154977181fd647ba02cf084d1e9d4c518cc',
                  'main_191.c': 'f61eefe25d08a209796ba4519ea8aa491121f2f85089715fe63fbb7fa029d133'}
 
@@ -33,6 +35,19 @@ def patch_guest(source, original, output):
             at += len(marker)
         body = body[:at]+'\n    '+hook+'(c->x[19]);\n'+body[at:]
         text = text[:start]+body+text[end:]
+        if original.name == 'main_100.c':
+            signature = 'void f_70004a01c0(Cpu *c) {'
+            if text.count(signature) != 1:
+                raise ValueError('Settings fader constructor changed')
+            start = text.index(signature)
+            end = text.index('\n}', start)
+            body = text[start:end]
+            if hashlib.sha256(body.encode('utf-8')).hexdigest() != FADER_BUILD_SHA256:
+                raise ValueError('Settings fader constructor changed')
+            # All stock parts exist here, and guest layout allocation is still active.
+            marker = '    { uint64_t ea = c->x[19] + 0x1e8ull; ST32(ea, 0u); }'
+            body = replace(body, marker, marker + '\n    mk8_settings_fader_build(c->x[19]);')
+            text = 'extern void mk8_settings_fader_build(uint64_t);\n' + text[:start] + body + text[end:]
     elif original.name == UNIT:
         text = replace(text, ENTRY, ENTRY + '\n    if (mk8_settings_top_event(c->x[0], c->x[1])) return;')
     elif original.name == 'main_115.c':

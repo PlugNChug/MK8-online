@@ -157,12 +157,54 @@ static unsigned collect_intro(const uint8_t *root, const uint8_t *all, SavedPane
     return 8;
 }
 
+static bool pane_shown(const uint8_t *pane) {
+    return pane && (pane[0x58]&1) && pane[0x59];
+}
+
+static uint8_t *fader_layout_root(uint64_t address) {
+    uint8_t *page=mk8_ultrawide_memory(address,0xf0,false);
+    if(!page || u64(page,0)!=MAIN_BASE+0x12733d8 || u32(page,0xe8)!=4) return NULL;
+    uint8_t *layout=mk8_ultrawide_memory(u64(page,0x28),0x90,false);
+    if(!layout || u64(layout,0)!=MAIN_BASE+0x12d5ee0 || u64(layout,0x80)!=address) return NULL;
+    uint8_t *root=mk8_ultrawide_memory(u64(layout,0x18),0xd0,false);
+    return root && named(root,"RootPane") ? root : NULL;
+}
+
+static const char *const fader_parts[] = {"cm_Fade_00","cm_Fade_01","cm_LoadScreen_00","L_SettingsRoot"};
+
+uint64_t mk8_settings_fader_root(uint64_t address) {
+    uint8_t *root=fader_layout_root(address), *parts[4];
+    if(!root || !intro_children(root,fader_parts,parts,4) || u64(parts[3],0)!=MAIN_BASE+0x12bf1a8) return 0;
+    return (uint64_t)(uintptr_t)parts[3];
+}
+
+// The stock always-resident fader page also exists during normal racing. Its membership
+// alone says nothing about whether the guest Menu is behind a transition.
+bool mk8_settings_fader_covers(uint64_t address) {
+    uint8_t *root=fader_layout_root(address);
+    if(!pane_shown(root)) return false;
+    const char *names[]={"cm_LoadScreen_00","cm_Fade_00","cm_Fade_01"};
+    for(unsigned i=0;i<3;i++) {
+        uint8_t *part=child(root,names[i]);
+        if(!pane_shown(part)) continue;
+        uint8_t *all=child(part,"N_All_00");
+        if(!pane_shown(all)) continue;
+        if(i==0) return true;
+        uint8_t *bg=child(all,"P_FadeBG_00");
+        if(pane_shown(bg)) {
+            bg=mk8_ultrawide_memory((uint64_t)(uintptr_t)bg,0xf8,false);
+            if(bg && (bg[0xeb] || bg[0xef] || bg[0xf3] || bg[0xf7])) return true;
+        }
+    }
+    return false;
+}
+
 static bool collect_fade(const uint8_t *root) {
-    const char *const names[] = {"cm_Fade_00", "cm_Fade_01", "cm_LoadScreen_00"};
     const char *const all_name[] = {"N_All_00"};
     const char *const groups[] = {"P_FadeBG_00", "N_Load_B", "N_Load_W", "N_Logo_00"};
-    uint8_t *parts[3], *all[1], *panes[4];
-    if (!intro_children(root, names, parts, 3)) return false;
+    uint8_t *parts[4], *all[1], *panes[4];
+    if (!intro_children(root, fader_parts, parts, 3) &&
+        (!intro_children(root, fader_parts, parts, 4) || u64(parts[3],0)!=MAIN_BASE+0x12bf1a8)) return false;
     for (unsigned i = 0; i < 3; i++) {
         if (u64(parts[i], 0) != MAIN_BASE + 0x12bf1a8 || !transform(parts[i], true, 0) ||
             f32(parts[i], 0x50) != (i == 2 ? 6100.f : 1280.f) || f32(parts[i], 0x54) != 720.f ||
