@@ -5,7 +5,13 @@ The pinned runtime skips the 3.25 GB guest heap import only when the largest hos
 flagged device-local, so the import still landed in the memory textures spill into. A 0.2.0 report on an
 "AMD Radeon(TM) Graphics" iGPU then failed image creation with VK_ERROR_OUT_OF_DEVICE_MEMORY (textures.c and
 exec.c) one to two minutes into play. Integrated GPUs now use the same size limit whatever the heap flag says.
-Discrete GPUs are unchanged. Every heap is logged so later reports show the budget.
+Every heap is logged so later reports show the budget.
+
+Discrete GPUs always keep the import: host-pointer memory stays in system RAM, never in the GPU's own memory. With
+Resizable BAR and little RAM, the largest host-visible heap is the VRAM itself (an RTX 3050 6 GB laptop with 8 GB of
+RAM: 6001 MB device-local against a 3905 MB system heap, #121), and the upstream rule took the GPU for an integrated
+one: no import, every draw on per-draw storage copies (1.4-2.5 GB uploaded every two seconds, ~36,000 CPU waits on
+compute results) and a driver crash in the heavy cup ending.
 """
 
 OLD = '''    bool low_vram = host_heap >= 0 && (mem_props.memoryHeaps[host_heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) &&
@@ -24,6 +30,9 @@ HELPER = '''// MK8 (toolchain/shared_vram.py): the guest heap import would leave
 // GPUs place images in system memory whatever the heap flag says (AMD APUs: carve-out + host-visible system heap).
 static bool mk8_shared_heap_too_small(const VkPhysicalDeviceMemoryProperties *mem, int host_heap, VkPhysicalDeviceType type) {
     if (host_heap < 0 || (uint32_t)host_heap >= mem->memoryHeapCount) return false;
+    // A discrete GPU's host-pointer import stays in system RAM even when Resizable BAR makes its VRAM the largest
+    // host-visible heap (#121).
+    if (type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) return false;
     bool shared = (mem->memoryHeaps[host_heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ||
                   type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
     return shared && mem->memoryHeaps[host_heap].size < HEAP_MAX + (3ull << 30);

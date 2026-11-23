@@ -33,8 +33,10 @@ int main(void) {
     if (mk8_shared_heap_too_small(&m, 1, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)) return 2;
     m = two(MB(8192), MB(8000), 0);  /* discrete GPU: system heap is not GPU memory */
     if (mk8_shared_heap_too_small(&m, 1, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)) return 3;
+    m = two(MB(6001), MB(3905), 0);  /* RTX 3050 6 GB laptop, Resizable BAR, 8 GB RAM (#121): VRAM is the largest */
+    if (mk8_shared_heap_too_small(&m, 0, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)) return 7;  /* host-visible heap */
     m.memoryHeapCount = 1; m.memoryHeaps[0].size = MB(4000);  /* Intel iGPU, one device-local heap (upstream rule) */
-    if (!mk8_shared_heap_too_small(&m, 0, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)) return 4;
+    if (!mk8_shared_heap_too_small(&m, 0, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)) return 4;
     if (mk8_shared_heap_too_small(&m, -1, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)) return 5;
     if (mk8_shared_heap_too_small(&m, 3, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)) return 6;
     return 0;
