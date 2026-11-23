@@ -104,6 +104,7 @@ pub(crate) fn fatal(message: &str) {
 }
 
 fn main() {
+    game_session::record_steam_launch();
     #[cfg(target_os = "linux")]
     unsafe {
         // Steam reads its application ID from the process environment.

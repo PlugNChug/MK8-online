@@ -49,6 +49,13 @@ pub fn run() -> Result<i32> {
         crate::game_settings::configure_menu(&request.local, (&request.install).into())?;
     #[cfg(target_os = "linux")]
     crate::fsr::configure(&request.local)?;
+    #[cfg(target_os = "linux")]
+    if steam_needs_x11(
+        STEAM_LAUNCH.load(std::sync::atomic::Ordering::Relaxed),
+        |key| std::env::var_os(key).is_some_and(|value| !value.is_empty()),
+    ) {
+        std::env::set_var("SDL_VIDEODRIVER", "x11");
+    }
     crate::debug_options::configure(&request.local)?;
     let saved = crate::language::read(&request.local);
     let overlay_language = if !saved.is_empty() {
@@ -172,6 +179,25 @@ fn ctgp_menu_overlay(request: &Request, pack: &std::path::Path) -> Result<Option
         ));
     }
     Ok(Some(output))
+}
+
+static STEAM_LAUNCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Was the launcher started by Steam? Read at startup, before the launcher sets `SteamAppId` itself for Steam rooms
+/// (crates/session/src/steam.rs).
+pub fn record_steam_launch() {
+    let by_steam = ["SteamGameId", "SteamAppId", "SteamClientLaunch"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()));
+    STEAM_LAUNCH.store(by_steam, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Steam on a Wayland desktop does not follow focus from the launcher to the game window, and the Steam Controller
+/// stays in its desktop ("lizard") mode (#131). Under XWayland it does: started by Steam, in a Wayland session with
+/// XWayland, the game uses SDL's X11 driver unless the player chose a driver.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn steam_needs_x11(steam: bool, set: impl Fn(&str) -> bool) -> bool {
+    steam && set("WAYLAND_DISPLAY") && set("DISPLAY") && !set("SDL_VIDEODRIVER")
 }
 
 /// What to do when Nextendo refused online play for the account; the reason is the one the
@@ -299,6 +325,26 @@ mod tests {
             None
         );
         assert_eq!(exit_reason("[vk] loader initialized", Some(1), "en"), None);
+    }
+
+    #[test]
+    fn steam_on_wayland_uses_xwayland_unless_the_player_chose_a_driver() {
+        use super::steam_needs_x11;
+        let session = |vars: &'static [&'static str]| move |key: &str| vars.contains(&key);
+        assert!(steam_needs_x11(
+            true,
+            session(&["WAYLAND_DISPLAY", "DISPLAY"])
+        ));
+        assert!(!steam_needs_x11(
+            false,
+            session(&["WAYLAND_DISPLAY", "DISPLAY"])
+        ));
+        assert!(!steam_needs_x11(true, session(&["DISPLAY"]))); // (X11 session)
+        assert!(!steam_needs_x11(true, session(&["WAYLAND_DISPLAY"]))); // (no XWayland)
+        assert!(!steam_needs_x11(
+            true,
+            session(&["WAYLAND_DISPLAY", "DISPLAY", "SDL_VIDEODRIVER"])
+        ));
     }
 
     #[test]
