@@ -12,7 +12,7 @@ input copies + 191 model + 1 compose), a fully non-zero output, a changing outpu
 hashes across the two runs (determinism).
 
 It skips when the user's extraction, the model bank, spirv-tools or a C compiler are absent.
-Nothing AMD-owned is required in the repository (docs/MLFI-PROVIDER.md).
+Nothing AMD-owned is required in the repository (docs/en/reports/MLFI-PROVIDER.md).
 
 Environment overrides:
   MK8_MLFI_PROVIDER_SOURCE   extraction root (default $XDG_CACHE_HOME/mk8online/mlfi)

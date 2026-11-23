@@ -13,7 +13,7 @@ a skip. The provider built at the time of writing (20/11/2026) cannot run the in
 its generated blob metadata omits constant-buffer/UAV-buffer bindings, so the FFX pipeline creation
 raises validation errors and `r_counters` stays unbound, which makes every interpolated frame a copy
 of the current frame. Those failures are reported by the harness and skipped by default here; the
-provider needs the fix recorded in docs/FG-HARNESS.md before the summary can be asserted.
+provider needs the fix recorded in docs/en/reports/FG-HARNESS.md before the summary can be asserted.
 """
 import os
 import re
@@ -95,7 +95,7 @@ class FrameGenerationHarnessTests(unittest.TestCase):
             if signature and not os.environ.get('MK8_FG_HARNESS_REQUIRE_PROVIDER'):
                 self.skipTest(
                     'provider cannot run the FFX interpolation path (known provider defect: '
-                    f'{first_line(output, signature)}); see docs/FG-HARNESS.md')
+                    f'{first_line(output, signature)}); see docs/en/reports/FG-HARNESS.md')
             self.fail(f'harness exited {result.returncode}:\n{output}')
 
         summary = re.search(

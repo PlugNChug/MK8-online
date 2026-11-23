@@ -8,7 +8,7 @@ validation layer, and asserts the summary, a non-trivial output that changes wit
 deterministic steady state when the input is frozen.
 
 It skips when the user's extraction, the model bank, the Wine capture, spirv-tools or a C compiler
-are absent; nothing AMD-owned is required in the repository (see docs/MLFI-REPLAY.md).
+are absent; nothing AMD-owned is required in the repository (see docs/en/reports/MLFI-REPLAY.md).
 
 Environment overrides:
   MK8_MLFI_REPLAY_SOURCE   extraction root (default $XDG_CACHE_HOME/mk8online/mlfi)
