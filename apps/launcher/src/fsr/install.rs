@@ -2292,7 +2292,15 @@ mod tests {
         assert!(read_installed(&dir).is_none());
         drop(lock);
 
-        let retry_lock = cache_lock(&dir).unwrap();
+        // (a test running in parallel may fork while the lock is released: the child keeps the flock
+        // until it execs, so the retry waits a moment instead of failing on that race)
+        let retry_lock = (0..200)
+            .find_map(|_| {
+                cache_lock(&dir)
+                    .map_err(|_| std::thread::sleep(std::time::Duration::from_millis(10)))
+                    .ok()
+            })
+            .expect("the released cache lock is taken again");
         fs::write(dir.join("job-id"), "retry").unwrap();
         set_progress(&dir, "build", 70, "building").unwrap();
         record_interrupted_job(&dir, "failed-attempt", "stale");
