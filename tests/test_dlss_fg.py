@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / 'toolchain'))
 from host import linux_pkg_config, prepare_host_sources  # noqa: E402
 import dlss  # noqa: E402
 import dlss_fg  # noqa: E402
+import env_cache  # noqa: E402
 
 
 def prepared_runtime() -> Path | None:
@@ -64,6 +65,10 @@ class DlssFgPatchTests(unittest.TestCase):
             prepare_host_sources(prepared, stage)
         else:
             shutil.copytree(source, cls.runtime)
+        # The prepared tree has its option reads cached (toolchain/env_cache.py, the last patch); the DLSS patches
+        # are applied again here, so they see the plain getenv calls they anchor on.
+        for source_file in (cls.runtime / 'nvn/vulkan').glob('*.c'):
+            source_file.write_text(env_cache.plain(source_file.read_text(encoding='utf-8')), encoding='utf-8')
         dlss.prepare(cls.runtime)
         dlss_fg.prepare(cls.runtime)
         cls.device = (cls.runtime / 'nvn/vulkan/device.c').read_text(encoding='utf-8')
