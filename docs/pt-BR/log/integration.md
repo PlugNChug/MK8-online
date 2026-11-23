@@ -2,6 +2,14 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
+## Quedas de FPS nas corridas (#133) e versão 0.6.3 — 23/11/2026
+
+- **Sintoma.** Dois jogadores relataram 24-30 FPS em câmera lenta em qualquer corrida desde a build da 0.6.0, com menus e cutscenes a 60 (RX 580 2048SP + Xeon E5-2650 v3; o outro rodava a 60 na 0.5.0). A máquina de teste tem a mesma GPU e um Xeon E5-2666 v3: o Time Trial (1 piloto) fica a 60 depois da largada, mas um Grand Prix com 12 pilotos ficou entre 27 e 45 FPS (média 39,5).
+- **Diagnóstico.** `LARECOMP_VK_PROF=1` mostrou a thread de renderização ocupada 1,6 s a cada 2 s, quase tudo na fase `pre` de `draw()` (~15 ms por quadro), com a GPU ocupada só ~30%. Nenhuma das hipóteses de memória ajudou (`MK8_GMEM_MB=0 MK8_GMEM_MAP=0`, `MK8_OCCLUSION_VISIBLE=1`, `MK8_VIEW_BATCH=0`). Uma amostragem do ponteiro de instrução da thread (SuspendThread/GetThreadContext, 2500 amostras) deu 36% em `ucrtbase!getenv`, chamado por `exec.c` em `draw()`: as condições de FSR/DLSS/geração de quadros (`toolchain/fsr.py`, `fsr_fg.py`, `dlss_fg.py`) faziam 4-5 `getenv` por draw e mais 4 por fim de passada, mesmo com tudo desligado. No Windows o `getenv` percorre o ambiente inteiro sob lock, e o launcher/Steam/Nextendo passam um ambiente grande.
+- **Correção.** `toolchain/env_cache.py`, o último patch do renderizador, troca cada `getenv("NOME")` literal de `nvn/vulkan/*.c` (193 pontos) por `MK8_ENV("NOME")`, que lê a variável uma vez por ponto de chamada; os nomes que o próprio processo define durante a execução continuam com a chamada direta. O macro entra depois do primeiro `#include` e é movido em árvores já preparadas.
+- **Resultado.** Mesmo Grand Prix: média 39,5 -> 59,6 FPS, mínimo 26,8 -> 57,0, 0 de 37 intervalos abaixo de 55 (antes 51 de 55); thread de renderização 70% -> 41%. Uma nova amostragem não mostra `getenv` em nenhuma das três threads mais ocupadas.
+- **0.6.2** chegou a ser publicada pelo workflow e voltou a rascunho: a 0.6.3 leva as correções dela (#127, #128, #131) junto com esta.
+
 ## Issues após a 0.6.1 e versão 0.6.2 — 23/11/2026
 
 - **#128, Linux não reconhece a build.** `guest_has_split_screen_hook` e `guest_has_direct_lan` liam os imports PE de `mk8d-code-main.dll`. No Linux os três módulos ficam em `mk8dgame.so`, então as duas capacidades saíam falsas e o launcher marcava a build como desatualizada, bloqueando o conteúdo adicional e as salas. `toolchain/build.py` passou a ler os símbolos dinâmicos não definidos do `.so` (leitor ELF64 próprio, sem dependência nova). O teste compila uma biblioteca sintética e passou no Windows (zig para Linux) e no WSL (gcc).

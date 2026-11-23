@@ -1,6 +1,6 @@
 # Estado do projeto
 
-[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.2
+[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.3
 
 Esta página é o resumo atual. Investigações datadas, medições e evidências por issue ficam no [registro técnico](log/README.md). As pendências estão no [roteiro](ROADMAP.md).
 
@@ -18,7 +18,9 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
 | Linux | Construído da árvore principal; AppImage/tar.gz no CI em Ubuntu 24.04; renderização em Intel Iris Xe | Corrida em Steam Deck físico |
 
-## Versão 0.6.2
+## Versão 0.6.3
+
+- **0.6.3:** as corridas voltam a rodar a 60 FPS. Desde a 0.6.0, as verificações do upscaler e da geração de quadros liam variáveis de ambiente em todo draw; num Grand Prix com 12 pilotos numa RX 580, um terço da thread de renderização ia para isso, e a corrida ficava entre 27 e 45 FPS, em câmera lenta (#133). Agora cada opção é lida uma vez. A 0.6.3 também traz as correções da 0.6.2 abaixo.
 
 - **0.6.2:** no Linux, o launcher volta a reconhecer a build (as capacidades de tela dividida e LAN eram lidas de uma DLL do Windows, #128); com a Steam no Wayland, o jogo usa XWayland para o Steam Controller sair do modo desktop (#131); resultados de oclusão indisponíveis no driver não encerram mais o jogo (#127).
 

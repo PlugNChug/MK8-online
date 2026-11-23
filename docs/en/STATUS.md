@@ -1,6 +1,6 @@
 # Project status
 
-**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.2
+**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.3
 
 This page is the current summary. Dated investigations, measurements and per-issue evidence are kept in the [technical log](log/README.md). Open work is tracked in the [roadmap](ROADMAP.md).
 
@@ -18,7 +18,9 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
 | Linux | AppImage/tar.gz built and smoke-tested in CI on Ubuntu 24.04; rendering on Intel Iris Xe | Physical Steam Deck race |
 
-## 0.6.2 release
+## 0.6.3 release
+
+- **0.6.3:** races run at 60 FPS again. Since 0.6.0 the upscaler and frame-generation checks read environment variables on every draw; a 12-racer Grand Prix on an RX 580 spent a third of the render thread there and ran at 27-45 FPS in slow motion (#133). Each option is now read once. 0.6.3 also carries the 0.6.2 fixes below.
 
 - **0.6.2:** on Linux the launcher recognizes the build again (the split-screen and LAN capabilities were read from a Windows DLL, #128); with Steam on Wayland the game uses XWayland so the Steam Controller leaves desktop mode (#131); occlusion results the driver does not return no longer end the game (#127).
 

@@ -10,7 +10,7 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-![Release](https://img.shields.io/badge/Release-0.6.2-ef795d)
+![Release](https://img.shields.io/badge/Release-0.6.3-ef795d)
 ![Status](https://img.shields.io/badge/Status-Public_test-e6a23c)
 ![Platforms](https://img.shields.io/badge/Windows_x64-Linux_amd64_%28experimental%29-0078D6)
 ![Graphics](https://img.shields.io/badge/Graphics-Vulkan-AC162C)
@@ -40,10 +40,10 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 
 | Platform | Package |
 | --- | --- |
-| Windows x64 | [Installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.2/MK8-online-0.6.2-setup.exe) · [Portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.2/MK8-online-0.6.2-portable.zip) |
-| Linux amd64 (experimental) | [AppImage](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.2/MK8-online-0.6.2-linux-x86_64.AppImage) · [tar.gz](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.2/MK8-online-0.6.2-linux-x86_64.tar.gz) · [Linux guide](docs/en/LINUX.md) |
+| Windows x64 | [Installer](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-setup.exe) · [Portable ZIP](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-portable.zip) |
+| Linux amd64 (experimental) | [AppImage](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-linux-x86_64.AppImage) · [tar.gz](https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-linux-x86_64.tar.gz) · [Linux guide](docs/en/LINUX.md) |
 
-[Release notes for 0.6.2](docs/releases/0.6.2.md) · [All releases](https://github.com/Vnnc1/MK8-online/releases)
+[Release notes for 0.6.3](docs/releases/0.6.3.md) · [All releases](https://github.com/Vnnc1/MK8-online/releases)
 
 ## Requirements
 
