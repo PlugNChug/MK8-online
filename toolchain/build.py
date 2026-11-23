@@ -302,30 +302,57 @@ def prepare_system_data(config, local):
         mirror(local/'user-no-mii/fonts', config['fonts'], copy_ok=True)
 
 
+def elf_undefined_symbols(path):
+    """Names of the undefined dynamic symbols of an ELF64 little-endian shared object (what it takes from the host)."""
+    import struct
+    data = Path(path).read_bytes()
+    if data[:6] != b'\x7fELF\x02\x01':
+        raise ValueError(f'{path} is not an ELF64 little-endian object')
+    shoff, = struct.unpack_from('<Q', data, 0x28)
+    shentsize, shnum = struct.unpack_from('<HH', data, 0x3a)
+    sections = [struct.unpack_from('<IIQQQQIIQQ', data, shoff + i * shentsize) for i in range(shnum)]
+    names = set()
+    for _, kind, _, _, offset, size, link, _, _, entsize in sections:
+        if kind != 11 or not entsize:  # SHT_DYNSYM
+            continue
+        strtab = sections[link][4]
+        for at in range(offset, offset + size, entsize):
+            name, _, _, shndx = struct.unpack_from('<IBBH', data, at)
+            if name and shndx == 0:  # SHN_UNDEF
+                names.add(data[strtab + name:data.index(b'\0', strtab + name)])
+    return names
+
+
+def guest_host_imports(files):
+    """Host functions the linked main module calls: the PE imports of mk8d-code-main.dll from mk8drecomp.exe on Windows,
+    the undefined dynamic symbols of mk8dgame.so on Linux (all modules in one object; #128). None without a module."""
+    record = files.get('mk8d-code-main.dll')
+    if record:
+        import pefile
+        with pefile.PE(record['path'], fast_load=True) as pe:
+            pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+            return {symbol.name for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ())
+                    if module.dll.lower() == b'mk8drecomp.exe' for symbol in module.imports}
+    game = files.get('gamelib')
+    if game and game['path'].endswith('.so'):
+        try:
+            return elf_undefined_symbols(game['path'])
+        except (OSError, ValueError, struct.error, IndexError):
+            return None  # (not an ELF64 object: no capability is claimed)
+    return None
+
+
 def guest_has_split_screen_hook(files):
     # --runtime-only and --finish can reuse guest objects from an earlier build.
-    record = files.get('mk8d-code-main.dll')
-    if not record:
-        return False
-    import pefile
-    with pefile.PE(record['path'], fast_load=True) as pe:
-        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
-        return any(module.dll.lower() == b'mk8drecomp.exe'
-                   and any(symbol.name == b'mk8_split_race_full_speed' for symbol in module.imports)
-                   for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ()))
+    imports = guest_host_imports(files)
+    return bool(imports) and b'mk8_split_race_full_speed' in imports
 
 
 def guest_has_direct_lan(files):
     # A runtime-only build can reuse a main module without one or both boot callbacks.
-    main = files.get('mk8d-code-main.dll')
-    if not main:
-        return False
-    import pefile
-    with pefile.PE(main['path'], fast_load=True) as pe:
-        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
-        required = {b'mk8_guest_lan_start', b'mk8_guest_lan_hide_boot_logo', b'mk8_guest_lan_hold_boot'}
-        return any(module.dll.lower() == b'mk8drecomp.exe' and required <= {item.name for item in module.imports}
-                   for module in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', ()))
+    imports = guest_host_imports(files)
+    required = {b'mk8_guest_lan_start', b'mk8_guest_lan_hide_boot_logo', b'mk8_guest_lan_hold_boot'}
+    return bool(imports) and required <= imports
 
 
 def finish(config, local, executable=None):

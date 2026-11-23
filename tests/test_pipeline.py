@@ -275,6 +275,38 @@ class PipelineTests(unittest.TestCase):
 
 
 class RuntimeDependencyManifestTests(unittest.TestCase):
+    def test_linux_capabilities_read_the_undefined_symbols_of_the_game_library(self):
+        # #128: Linux links every module into mk8dgame.so; the hooks are host functions it leaves undefined.
+        import shutil
+        from native import DEFAULT_COMPILER
+        hooks = ('mk8_split_race_full_speed', 'mk8_guest_lan_hold_boot', 'mk8_guest_lan_hide_boot_logo',
+                 'mk8_guest_lan_start')
+        with tempfile.TemporaryDirectory() as folder:
+            stage = Path(folder)
+            if os.name == 'nt':
+                if not DEFAULT_COMPILER.is_file():
+                    self.skipTest('Requires the native compiler')
+                compiler = [str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-linux-gnu']
+            else:
+                found = shutil.which('cc') or shutil.which('clang')
+                if not found:
+                    self.skipTest('Requires a C compiler')
+                compiler = [found]
+            def library(called):
+                source, so = stage/'game.c', stage/'mk8dgame.so'
+                source.write_text(''.join(f'int {name}(void);' + chr(10) for name in called)
+                                  + 'int guest(void) { return 0' + ''.join(f' + {name}()' for name in called) + '; }' + chr(10))
+                subprocess.run([*compiler, '-shared', '-fPIC', '-nostdlib', str(source), '-o', str(so)], check=True)
+                return {'gamelib': {'path': str(so)}}
+            files = library(hooks)
+            self.assertTrue(set(h.encode() for h in hooks) <= pipeline.elf_undefined_symbols(files['gamelib']['path']))
+            self.assertTrue(pipeline.guest_has_split_screen_hook(files))
+            self.assertTrue(pipeline.guest_has_direct_lan(files))
+            files = library(hooks[1:3])
+            self.assertFalse(pipeline.guest_has_split_screen_hook(files))
+            self.assertFalse(pipeline.guest_has_direct_lan(files))
+            self.assertFalse(pipeline.guest_has_direct_lan({}))
+
     @unittest.skipUnless(os.name == 'nt', 'Windows PE modules (zig dlltool and an x86_64-windows-gnu DLL)')
     def test_split_cadence_capability_checks_the_linked_main_module(self):
         from native import DEFAULT_COMPILER, compiler_env
