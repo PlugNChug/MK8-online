@@ -6,9 +6,13 @@
 #if !defined(_WIN32)
 
 #include <stdbool.h>
+#include <SDL3/SDL.h>
 
+// The 0.5.0 Linux build returned true here without SDL_Init: SDL_WasInit reported only video and events,
+// SDL_GetGamepads() found nothing and no controller worked (#120). Whoever calls this gets the same subsystems
+// as Windows.
 bool mk8_init_window_input(void) {
-    return true;
+    return SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 }
 
 void mk8_poll_steam_gamepads(void) {
