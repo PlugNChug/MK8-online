@@ -275,6 +275,7 @@ class PipelineTests(unittest.TestCase):
 
 
 class RuntimeDependencyManifestTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows PE modules (zig dlltool and an x86_64-windows-gnu DLL)')
     def test_split_cadence_capability_checks_the_linked_main_module(self):
         from native import DEFAULT_COMPILER, compiler_env
         if not DEFAULT_COMPILER.is_file():
@@ -297,6 +298,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
                 self.assertEqual(pipeline.guest_has_split_screen_hook({'mk8d-code-main.dll': {'path': str(dll)}}),
                                  expected)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows PE modules (zig dlltool and an x86_64-windows-gnu DLL)')
     def test_direct_lan_requires_every_boot_hook_in_the_linked_main(self):
         from native import DEFAULT_COMPILER, compiler_env
         if not DEFAULT_COMPILER.is_file():
