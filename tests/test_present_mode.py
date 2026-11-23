@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 from host import prepare_host_sources
 from native import DEFAULT_COMPILER, compiler_env
+import env_cache  # (reads are cached after every other patch)
 import present_mode
 
 FIXTURE = r'''
@@ -53,7 +54,7 @@ class PresentModeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out/'host')
-            text = (runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8')
+            text = env_cache.plain((runtime/'nvn/vulkan/device.c').read_text(encoding='utf-8'))
             self.assertIn('mk8_pick_present_mode(m, n, getenv("LARECOMP_VK_PRESENT"))', text)
             self.assertIn('[vk] present mode %s', text)
             start = text.index('static VkPresentModeKHR mk8_pick_present_mode(')

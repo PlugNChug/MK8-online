@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 from host import prepare_host_sources
 from native import DEFAULT_COMPILER
+import env_cache  # (reads are cached after every other patch)
 import shader_ahead
 
 
@@ -54,8 +55,8 @@ int main(void) {
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out)
-            execute = (runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8')
-            ahead = (runtime/'nvn/vulkan/ahead.c').read_text(encoding='utf-8')
+            execute = env_cache.plain((runtime/'nvn/vulkan/exec.c').read_text(encoding='utf-8'))
+            ahead = env_cache.plain((runtime/'nvn/vulkan/ahead.c').read_text(encoding='utf-8'))
             for relative, old, new in shader_ahead.SWITCHES:
                 text = execute if relative.endswith('exec.c') else ahead
                 self.assertNotIn(old, text)
