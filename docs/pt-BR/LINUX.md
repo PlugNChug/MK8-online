@@ -35,6 +35,10 @@ sudo apt install build-essential clang lld llvm cmake pkg-config python3.12-venv
   libpipewire-0.3-dev libdecor-0-dev libudev-dev
 ```
 
+### Outras distribuições (Arch, CachyOS, Fedora)
+
+A etapa de ferramentas precisa de um **Python 3.12** de 64 bits. Distribuições com `python3` mais novo costumam não ter `python3.12`: instale pelo AUR (`python312`), com `pyenv install 3.12` ou com `uv python install 3.12`. O launcher procura `MK8_PYTHON312`, `python3.12`, um `python3` que seja 3.12 e as instalações do pyenv, uv e asdf; para indicar um específico, abra o launcher com `MK8_PYTHON312=/caminho/para/python3.12`.
+
 ### Steam Deck: Ubuntu via Distrobox
 
 ```sh
