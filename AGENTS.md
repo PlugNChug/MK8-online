@@ -1,6 +1,6 @@
 # Trabalhar neste projeto
 
-Leia `README.md` e `docs/STATUS.md`. Esses arquivos são a documentação operacional; atualize-os quando o estado mudar. Não crie um relatório novo para cada tentativa.
+Leia `README.md`, `docs/pt-BR/STATUS.md` e o registro técnico em `docs/pt-BR/log/`. Esses arquivos são a documentação operacional; atualize-os quando o estado mudar. Não crie um relatório novo para cada tentativa.
 
 - Faça a menor mudança completa. Preserve a separação entre launcher, pipeline, runtime e dados privados; não crie pacotes para funcionalidades hipotéticas.
 - Adaptações próprias ficam em `runtime/mk8` e `toolchain`. Não edite `upstream` nem código gerado diretamente: a preparação verifica hashes e aplica mudanças à cópia de build.
@@ -12,7 +12,7 @@ Leia `README.md` e `docs/STATUS.md`. Esses arquivos são a documentação operac
 - Execute testes da área alterada, formatação e Clippy quando mudar Rust; teste navegador quando mudar interface. Um teste nativo deve exercer o comportamento, não só procurar texto no código.
 - Qualificação requer evidência: menu, corrida inteira, reinício/save, imagem, áudio, controle e velocidade do relógio. `gameplay_verified` permanece falso até isso acontecer. Multiplayer exige validação separada em duas máquinas.
 - Perfis/GLB do editor não são modelos integrados ao motor MK8. Não reative consumidores gráficos Mii com ponteiros ou arquivos vazios.
-- Referências externas e atribuições ficam em `docs/THIRD_PARTY.md` e licenças. Preserve avisos de licença de dependências; não transfira resultados de outros projetos para esta build.
+- Referências externas e atribuições ficam em `docs/pt-BR/THIRD_PARTY.md` e licenças. Preserve avisos de licença de dependências; não transfira resultados de outros projetos para esta build.
 
 ---
 

@@ -1,4 +1,4 @@
-//! Switch CharInfo (88 bytes). Layout references are recorded in docs/THIRD_PARTY.md.
+//! Switch CharInfo (88 bytes). Layout references are recorded in docs/en/THIRD_PARTY.md.
 use mk8_manifest::Result;
 
 pub const SIZE: usize = 0x58;

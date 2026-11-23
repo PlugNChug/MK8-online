@@ -228,4 +228,4 @@ The port and `third_party/fsr4-vk` are GPL-3.0-only; this project is GPL-3.0, so
 compatible. The installed library is accompanied by the full GPL-3.0 text, AMD's FidelityFX SDK licence and
 MIT notice, the vendored third-party notices, and `SOURCE-OFFER.md`, which identifies the corresponding
 source in `tools/fsr4-linux/`. AMD's signed DLL and the extracted SPIR-V/model assets are not distributed by
-the project. Attribution is also recorded in [THIRD_PARTY.md](THIRD_PARTY.md).
+the project. Attribution is also recorded in [THIRD_PARTY.md](../THIRD_PARTY.md).

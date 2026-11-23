@@ -514,7 +514,7 @@ slower pacing; the static frame was identical in every run.)
 
 **Blocker for a race frame.** The host's Mesa 27.0.0-devel segfaults at ~frame 2100 when the game
 enters the race (`vkCmdDrawIndexed`, `libvulkan_radeon.so`), with FG off, fsr3 and fsr4 alike; it is
-the driver issue already recorded in `docs/STATUS.md` (the stable RADV 26.2.6 does not crash). The
+the driver issue already recorded in `docs/pt-BR/log/` (the stable RADV 26.2.6 does not crash). The
 stable driver lacks `VK_EXT_cooperative_matrix_maintenance1`, which the MLFI 4.0.2 provider
 requires, so there is no driver on this host that is both crash-free and MLFI-capable. No race
 screenshot exists; the menu/kart-select/race-transition frames above are the end of the evidence.

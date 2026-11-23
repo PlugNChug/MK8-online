@@ -333,4 +333,4 @@ the shipped package hash must not be quoted for the 2560x1440 result.
 - `scripts/package-windows-portable.py`: cross-built portable tree and zip.
 - `docs/WINDOWS-PACKAGING.md`, `docs/WINDOWS-INGAME-RTX.md`: this record.
 
-`docs/STATUS.md` was not edited for this package.
+`docs/pt-BR/log/` was not edited for this package.

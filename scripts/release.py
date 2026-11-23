@@ -7,7 +7,7 @@ Set MK8_UPDATE_REPO=owner/name (the GitHub repository whose Releases the launche
 MK8_RELAY_URL before building: both are compiled into the launcher. The setup is the packaged launcher itself
 under the name MK8-online-<version>-setup.exe, which opens its own install window (apps/launcher/src/installer.rs).
 Publishing is a separate step: upload the
-setup and its .sha256 to a GitHub Release tagged v<version> (docs/RELEASING.md; CI does it on a tag push).
+setup and its .sha256 to a GitHub Release tagged v<version> (docs/en/RELEASING.md; CI does it on a tag push).
 """
 import argparse
 import hashlib

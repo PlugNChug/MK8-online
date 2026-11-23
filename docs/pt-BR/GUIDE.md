@@ -1,6 +1,8 @@
 # Guia do usuário
 
-[English](GUIDE.md) · **Português**
+[English](../en/GUIDE.md) · **Português**
+
+[English](../en/GUIDE.md) · **Português**
 
 Este guia explica como instalar, configurar e jogar o MK8-online. No Linux, comece pelo [guia Linux](LINUX.md) e volte aqui para os recursos do launcher e do jogo. Tudo abaixo é experimental; o [estado técnico](STATUS.md) registra o que já foi verificado e cada mudança.
 

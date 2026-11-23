@@ -233,5 +233,5 @@ are no external ML models).
 The provider is compiled from AMD's FidelityFX SDK 2.4.0, MIT, Copyright (C) 2026 Advanced Micro
 Devices, Inc. The generated SPIR-V is build output from AMD's HLSL and is not committed. The installed
 library sits next to `LICENSE-AMD-FSR-SDK.md`; attribution is also recorded in
-[THIRD_PARTY.md](THIRD_PARTY.md). AMD's signed DLLs, extracted shaders and reference inputs remain
+[THIRD_PARTY.md](../THIRD_PARTY.md). AMD's signed DLLs, extracted shaders and reference inputs remain
 private under `local/`.

@@ -1,5 +1,7 @@
 # Publicar uma versão
 
+[English](../en/RELEASING.md) · **Português**
+
 Este é o fluxo para o mantenedor e para agentes de IA que preparam uma release. Os testadores recebem o `setup.exe` pelos Releases do GitHub e se atualizam pelo próprio Launcher (**Suporte → Atualizar agora**).
 
 O atualizador consulta a API pública do GitHub sem autenticação. O repositório e os anexos precisam estar públicos; enquanto estiverem privados, a consulta falha. A versão 0.1.6 foi empacotada com `MK8_UPDATE_REPO=Vnnc1/MK8-online`: mudar a visibilidade desse mesmo repositório para público não exige recompilar nem configurar o PC do jogador. Não embuta tokens no launcher.
@@ -23,7 +25,7 @@ A tag dispara `.github/workflows/release.yml`. O Windows compila o FFmpeg em um 
 
 O código Linux desta versão está fixado por SHA no submódulo `platforms/linux`. Use `git submodule update --init platforms/linux` para compilar o porte localmente. Ao preparar uma nova versão, atualize o workspace na linha Linux, publique a revisão no mesmo repositório e registre o novo commit do submódulo na branch principal. O empacotador confere a versão com a tag. [Fonte Linux 0.5.0](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f)
 
-Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/STATUS.md`/`docs/ROADMAP.md` com a evidência nova, rode a verificação do README e só então crie a tag.
+Revise `docs/releases/<versão>.md`: a primeira linha define o título e o restante compõe as notas, junto do SHA-256 e dos avisos gerados. Ao pedir para uma IA preparar a release, peça que ela atualize `docs/{en,pt-BR}/STATUS.md` e `ROADMAP.md` com a evidência nova (detalhes datados em `docs/{en,pt-BR}/log/`), rode a verificação do README e só então crie a tag.
 
 ## Localmente
 
@@ -51,8 +53,8 @@ Para publicar os binários já testados, prepare um rascunho com a revisão de `
 - [ ] `cargo fmt --all -- --check`, Clippy e `cargo test --workspace --locked`
 - [ ] testes de navegador: `python -m unittest discover -s tests -p test_launcher_e2e.py` (com `MK8_TEST_RELAY_EXE` para o relay)
 - [ ] instalar o setup numa pasta temporária (`setup.exe /SILENT /DIR=... /DATADIR=... /DESKTOP=0 /NOLAUNCH`), abrir o Launcher e desinstalar com `Launcher.exe --uninstall /SILENT`; abrir a janela do setup e percorrer as quatro telas
-- [ ] `docs/STATUS.md` e `docs/ROADMAP.md` atualizados; nada de caminhos pessoais ou dados do jogo nos arquivos versionados
-- [ ] `README.md` (inglês) e `README.pt-BR.md` sincronizados; links e imagens verificados
+- [ ] `docs/{en,pt-BR}/STATUS.md` e `ROADMAP.md` atualizados; nada de caminhos pessoais ou dados do jogo nos arquivos versionados
+- [ ] `README.md` (inglês) e `README.pt-BR.md` sincronizados, assim como cada par `docs/en` / `docs/pt-BR`; links e imagens verificados
 - [ ] `python -m unittest discover -s tests -p test_launcher_languages.py`; conferir launcher e instalador nos dois idiomas, incluindo persistência ao reiniciar
 - [ ] Revisar arquivos novos, histórico Git e metadados de autoria antes de abrir o repositório; `.gitignore` não remove informações já registradas em commits. Configurar identidade pública e e-mail `noreply` para commits futuros não altera os antigos
 - [ ] Revisar separadamente anexos de releases, logs públicos e configurações/segredos do GitHub; a varredura local não cobre esses serviços
