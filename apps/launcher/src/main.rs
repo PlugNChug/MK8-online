@@ -306,6 +306,7 @@ pub(crate) fn unpack_payload(base: &Path) -> Result<PathBuf, Error> {
 /// the files: the payload's entries carry the ZIP default date (1980-01-01 local time), the
 /// FAT/exFAT minimum, and east of UTC tar's "Can't restore time: Invalid argument" failed the
 /// setup on exFAT drives.
+#[cfg(windows)]
 #[cfg_attr(not(any(mk8_portable, test)), allow(dead_code))]
 fn extract_payload(archive: &Path, stage: &Path) -> Result<(), Error> {
     use std::{os::windows::process::CommandExt, process::Command};
@@ -686,6 +687,7 @@ mod tests {
     }
 
     /// A stored ZIP entry with the DOS date 1980-01-01 00:00, as `ZipInfo(name)` writes the payload.
+    #[cfg(windows)]
     fn zip_1980(name: &str, data: &[u8]) -> Vec<u8> {
         let crc = data.iter().fold(!0u32, |mut crc, &byte| {
             crc ^= byte as u32;
@@ -731,6 +733,7 @@ mod tests {
         zip
     }
 
+    #[cfg(windows)]
     #[test]
     fn payload_extraction_does_not_restore_the_1980_zip_date() {
         let stage = std::env::temp_dir().join(format!("mk8-payload-time-{}", std::process::id()));

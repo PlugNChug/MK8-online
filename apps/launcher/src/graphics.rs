@@ -125,11 +125,14 @@ pub fn probe(local: &Path) -> Capabilities {
 }
 
 fn inspect(local: &Path) -> Result<Capabilities> {
-    use std::os::windows::process::CommandExt;
-    let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-        .arg("--graphics-gpu")
-        .arg(local)
-        .creation_flags(0x08000000)
+    let mut command = Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    command.arg("--graphics-gpu").arg(local);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -291,92 +294,103 @@ impl Components {
     }
 }
 
-use std::ffi::{c_char, c_void, CStr};
-#[repr(C)]
-struct FfxHeader {
-    type_: u64,
-    next: *mut FfxHeader,
-}
+// The FidelityFX provider is a Windows DLL here; Linux selects its providers on the FSR page (apps/launcher/src/fsr).
+#[cfg(windows)]
+mod ffx {
+    use super::*;
+    use std::ffi::{c_char, c_void, CStr};
+    #[repr(C)]
+    struct FfxHeader {
+        type_: u64,
+        next: *mut FfxHeader,
+    }
 
-#[repr(C)]
-struct FfxQueryDescGetVersions {
-    header: FfxHeader,
-    create_desc_type: u64,
-    device: *mut c_void,
-    output_count: *mut u64,
-    version_ids: *mut u64,
-    version_names: *mut *const c_char,
-}
+    #[repr(C)]
+    struct FfxQueryDescGetVersions {
+        header: FfxHeader,
+        create_desc_type: u64,
+        device: *mut c_void,
+        output_count: *mut u64,
+        version_ids: *mut u64,
+        version_names: *mut *const c_char,
+    }
 
-type FfxQuery = unsafe extern "C" fn(*mut *mut c_void, *mut FfxHeader) -> u32;
+    type FfxQuery = unsafe extern "C" fn(*mut *mut c_void, *mut FfxHeader) -> u32;
 
-fn provider_versions_for(path: &Path, create_desc_type: u64) -> Result<Vec<String>> {
-    unsafe {
-        let library = libloading::os::windows::Library::load_with_flags(
-            path,
-            windows_sys::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_SYSTEM32
-                | windows_sys::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
-        )
-        .map(libloading::Library::from)
-        .map_err(|error| {
-            format!(
-                "Não foi possível abrir o provedor {}: {error}",
-                path.display()
+    pub(super) fn provider_versions_for(path: &Path, create_desc_type: u64) -> Result<Vec<String>> {
+        unsafe {
+            let library = libloading::os::windows::Library::load_with_flags(
+                path,
+                windows_sys::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_SYSTEM32
+                    | windows_sys::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
             )
-        })?;
-        let query: libloading::Symbol<FfxQuery> = library
-            .get(b"ffxQuery\0")
-            .map_err(|error| format!("O provedor não exporta ffxQuery: {error}"))?;
-        let mut count = 0u64;
-        let mut desc = FfxQueryDescGetVersions {
-            header: FfxHeader {
-                type_: 4,
-                next: std::ptr::null_mut(),
-            },
-            create_desc_type,
-            device: std::ptr::null_mut(),
-            output_count: &mut count,
-            version_ids: std::ptr::null_mut(),
-            version_names: std::ptr::null_mut(),
-        };
-        let rc = query(std::ptr::null_mut(), &mut desc.header);
-        if rc != 0 {
-            return Err(format!(
-                "ffxQuery não enumerou versões do provedor (código 0x{rc:x})."
-            ));
-        }
-        if count == 0 {
-            return Err("O provedor compilado não anuncia nenhuma versão.".into());
-        }
-        let capacity = count.min(16);
-        let mut ids = vec![0u64; capacity as usize];
-        let mut names: Vec<*const c_char> = vec![std::ptr::null(); capacity as usize];
-        let mut available = capacity;
-        desc.output_count = &mut available;
-        desc.version_ids = ids.as_mut_ptr();
-        desc.version_names = names.as_mut_ptr();
-        let rc = query(std::ptr::null_mut(), &mut desc.header);
-        if rc != 0 {
-            return Err(format!(
-                "ffxQuery falhou ao ler o nome da versão do provedor (código 0x{rc:x})."
-            ));
-        }
-        let mut versions = Vec::new();
-        for name in names.iter().take(available as usize) {
-            if name.is_null() {
-                continue;
+            .map(libloading::Library::from)
+            .map_err(|error| {
+                format!(
+                    "Não foi possível abrir o provedor {}: {error}",
+                    path.display()
+                )
+            })?;
+            let query: libloading::Symbol<FfxQuery> = library
+                .get(b"ffxQuery\0")
+                .map_err(|error| format!("O provedor não exporta ffxQuery: {error}"))?;
+            let mut count = 0u64;
+            let mut desc = FfxQueryDescGetVersions {
+                header: FfxHeader {
+                    type_: 4,
+                    next: std::ptr::null_mut(),
+                },
+                create_desc_type,
+                device: std::ptr::null_mut(),
+                output_count: &mut count,
+                version_ids: std::ptr::null_mut(),
+                version_names: std::ptr::null_mut(),
+            };
+            let rc = query(std::ptr::null_mut(), &mut desc.header);
+            if rc != 0 {
+                return Err(format!(
+                    "ffxQuery não enumerou versões do provedor (código 0x{rc:x})."
+                ));
             }
-            let value = CStr::from_ptr(*name).to_string_lossy().into_owned();
-            if !value.is_empty() {
-                versions.push(value);
+            if count == 0 {
+                return Err("O provedor compilado não anuncia nenhuma versão.".into());
             }
-        }
-        if versions.is_empty() {
-            Err("O provedor compilado não informou o nome da versão.".into())
-        } else {
-            Ok(versions)
+            let capacity = count.min(16);
+            let mut ids = vec![0u64; capacity as usize];
+            let mut names: Vec<*const c_char> = vec![std::ptr::null(); capacity as usize];
+            let mut available = capacity;
+            desc.output_count = &mut available;
+            desc.version_ids = ids.as_mut_ptr();
+            desc.version_names = names.as_mut_ptr();
+            let rc = query(std::ptr::null_mut(), &mut desc.header);
+            if rc != 0 {
+                return Err(format!(
+                    "ffxQuery falhou ao ler o nome da versão do provedor (código 0x{rc:x})."
+                ));
+            }
+            let mut versions = Vec::new();
+            for name in names.iter().take(available as usize) {
+                if name.is_null() {
+                    continue;
+                }
+                let value = CStr::from_ptr(*name).to_string_lossy().into_owned();
+                if !value.is_empty() {
+                    versions.push(value);
+                }
+            }
+            if versions.is_empty() {
+                Err("O provedor compilado não informou o nome da versão.".into())
+            } else {
+                Ok(versions)
+            }
         }
     }
+}
+#[cfg(windows)]
+use ffx::provider_versions_for;
+#[cfg(not(windows))]
+fn provider_versions_for(_path: &Path, _create_desc_type: u64) -> Result<Vec<String>> {
+    Ok(Vec::new())
 }
 
 #[cfg(test)]
