@@ -121,6 +121,62 @@ class TextureRetireTests(unittest.TestCase):
             result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_memory_pressure_is_a_device_local_heap_past_sixty_percent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', out/'host')
+            textures = (runtime/'nvn/vulkan/textures.c').read_text(encoding='utf-8')
+            start = textures.index('static bool mk8_vram_pressure(void) {')
+            pressure = textures[start:textures.index('\n}\n', start) + 3]
+            # the tick takes the one-frame grace and skips its throttle under pressure
+            tick = textures[textures.index('void mk8_textures_retire_tick(void) {'):]
+            self.assertIn('uint64_t target_grace = pressure ? 1 : (uint64_t)grace;', tick)
+            self.assertIn('if (now < next && !pressure) return;', tick)
+            harness = out/'pressure.c'
+            harness.write_text(PRESSURE.replace('/*PRESSURE*/', pressure), encoding='utf-8')
+            exe = out/'pressure.exe'
+            subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O1', str(harness), '-o', str(exe)],
+                           env=compiler_env(), check=True, capture_output=True)
+            result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+
+PRESSURE = r'''
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#define VK_MAX_MEMORY_HEAPS 16
+#define VK_MEMORY_HEAP_DEVICE_LOCAL_BIT 1
+typedef struct { uint64_t blockBytes, allocationBytes, usage, budget; } VmaBudget;
+typedef struct { uint64_t size; uint32_t flags; } VkMemoryHeap;
+typedef struct { uint32_t memoryTypeCount; uint32_t memoryHeapCount; VkMemoryHeap memoryHeaps[VK_MAX_MEMORY_HEAPS]; }
+    VkPhysicalDeviceMemoryProperties;
+static struct { int vma; } g_vk;
+static VkPhysicalDeviceMemoryProperties props;
+static VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+static void vmaGetHeapBudgets(int vma, VmaBudget *out) { (void)vma; memcpy(out, budgets, sizeof budgets); }
+static void vmaGetMemoryProperties(int vma, const VkPhysicalDeviceMemoryProperties **out) { (void)vma; *out = &props; }
+/*PRESSURE*/
+int main(void) {
+    // A dedicated GPU (RX 580: 8 GB device-local, host heap, small device-local BAR heap).
+    props.memoryHeapCount = 3;
+    props.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+    props.memoryHeaps[2].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+    budgets[0].budget = 6000; budgets[1].budget = 6000; budgets[2].budget = 200;
+    budgets[0].usage = 3000; budgets[2].usage = 100;
+    if (mk8_vram_pressure()) return 1;   // half of every heap
+    budgets[0].usage = 3601;
+    if (!mk8_vram_pressure()) return 2;  // past 60% of the device-local budget
+    budgets[0].usage = 1000; budgets[1].usage = 5900;
+    if (mk8_vram_pressure()) return 3;   // only the host heap is full: not device memory
+    budgets[2].usage = 130;
+    if (!mk8_vram_pressure()) return 4;  // any device-local heap counts
+    budgets[2].usage = 0; budgets[0].budget = 0; budgets[0].usage = 9000;
+    if (mk8_vram_pressure()) return 5;   // no budget known: no pressure
+    return 0;
+}
+'''
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -189,6 +189,20 @@ FS_LOGGED = '''    default: LOG("[fs] IFileSystem cmd %u (ok)\\n", req->cmd);
 static Service *open_host_fs('''
 
 
+CREATED = '    b->format = vf;\n    b->width = tw; b->height = th; b->depth = depth; b->layers = layers; b->levels = levels; b->samples = samples;\n'
+# Large images as they are made (16 MB and up): what fills the heap when a track loads at a high internal resolution.
+CREATED_TRACED = CREATED + '''    if (getenv("MK8_TRACE_VRAM")) {  // MK8 (toolchain/vram_trace.py)
+        VmaAllocationInfo info;
+        vmaGetAllocationInfo(g_vk.vma, b->mem, &info);
+        if (info.size >= (16u << 20))
+            LOG("[mk8:vram] image %.0f MB at %llx frame %llu: nvn %ux%ux%u fmt %#x target %u levels %u samples %u flags %#x "
+                "-> %ux%ux%u x%u%s\\n", info.size / 1048576.0, (unsigned long long)t->addr,
+                (unsigned long long)renderer_present_count(), t->width, t->height, t->depth, t->format, t->target, t->levels, t->samples, t->flags,
+                tw, th, depth, layers, b->scalable ? " scaled" : "");
+    }
+'''
+
+
 def prepare(runtime):
     from texture_lifetime import replace
     exec_c = runtime/'nvn/vulkan/exec.c'
@@ -198,9 +212,10 @@ def prepare(runtime):
     exec_c.write_text(text.replace(STATS, STATS_TRACED) + REPORT, encoding='utf-8')
     textures = runtime/'nvn/vulkan/textures.c'
     text = textures.read_text(encoding='utf-8')
-    if text.count(LIVE) != 1 or text.count(USE) != 1:
+    if text.count(LIVE) != 1 or text.count(USE) != 1 or text.count(CREATED) != 1:
         raise ValueError('Live texture list boundary changed upstream')
-    textures.write_text(text.replace(LIVE, LIVE_COUNT).replace(USE, USED) + UNLISTED, encoding='utf-8')
+    text = text.replace(LIVE, LIVE_COUNT).replace(USE, USED).replace(CREATED, CREATED_TRACED)
+    textures.write_text(text + UNLISTED, encoding='utf-8')
     header = runtime/'nvn/vulkan/vk.h'
     text = header.read_text(encoding='utf-8')
     if text.count(FIELD) != 1:

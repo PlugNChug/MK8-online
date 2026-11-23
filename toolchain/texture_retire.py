@@ -66,22 +66,43 @@ static int mk8_retire_image(TexBackend *b, uint64_t now, uint64_t idle, uint64_t
     return 1;
 }
 
+// A device-local heap past 60% of its budget. At 2x the game's dynamic resolution made ~100 target sizes during a
+// course intro (Twisted Mansion, 22/11/2026): the heap went from 0.75 to 7.4 GB between two ten-second reports, past
+// the 6.3 GB budget, before the 30-frame grace retired 1908 superseded targets (24.8 GB in all); some runs ran out of
+// device memory first. Under that pressure superseded targets go every frame, one frame after their last use.
+static bool mk8_vram_pressure(void) {
+    VmaBudget budget[VK_MAX_MEMORY_HEAPS];
+    memset(budget, 0, sizeof budget);
+    vmaGetHeapBudgets(g_vk.vma, budget);
+    const VkPhysicalDeviceMemoryProperties *mp;
+    vmaGetMemoryProperties(g_vk.vma, &mp);
+    for (uint32_t i = 0; i < mp->memoryHeapCount; i++)
+        if ((mp->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && budget[i].budget &&
+            budget[i].usage > budget[i].budget / 5 * 3)
+            return true;
+    return false;
+}
+
 void mk8_textures_retire_tick(void) {
     static int idle_s = -1, grace = -1;
     static uint64_t next, next_log, total_n, total_bytes, logged_n, logged_bytes, logged_targets;
     if (idle_s < 0) { const char *e = getenv("MK8_TEXTURE_IDLE_S"); idle_s = e ? atoi(e) : 60; if (idle_s < 0) idle_s = 0; }
     if (grace < 0) { const char *e = getenv("MK8_TARGET_GRACE_FRAMES"); grace = e ? atoi(e) : 30; if (grace < 1) grace = 1; }
     uint64_t now = renderer_present_count(), idle = (uint64_t)idle_s * 60;
-    if (!idle_s || now < next) return;
+    if (!idle_s) return;
+    bool pressure = mk8_vram_pressure();
+    if (now < next && !pressure) return;
+    uint64_t target_grace = pressure ? 1 : (uint64_t)grace;
     next = now + (grace < 60 ? (uint64_t)grace : 60);  // (often: superseded targets pile up by the hundred per second)
-    if (now < (uint64_t)grace) return;
+    if (now < target_grace) return;
     bool ended = false;
     uint64_t bytes = 0;
     int n = 0, targets = 0;
-    for (int i = 0; i < g_nlive; i++) n += mk8_retire_image(g_live[i]->backend, now, idle, grace, &ended, &bytes, &targets);
+    for (int i = 0; i < g_nlive; i++)
+        n += mk8_retire_image(g_live[i]->backend, now, idle, target_grace, &ended, &bytes, &targets);
     for (unsigned k = 0; k < ALIAS_BUCKETS; k++)  // (shared images whose first owner is gone: not in the live list)
         for (Alias *a = g_alias[k]; a; a = a->next)
-            if (!a->b->reg) n += mk8_retire_image(a->b, now, idle, grace, &ended, &bytes, &targets);
+            if (!a->b->reg) n += mk8_retire_image(a->b, now, idle, target_grace, &ended, &bytes, &targets);
     total_n += (uint64_t)n, total_bytes += bytes;
     logged_n += (uint64_t)n, logged_bytes += bytes, logged_targets += (uint64_t)targets;
     if (!logged_n || now < next_log) return;  // (one line per 10 s at most)
