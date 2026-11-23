@@ -2,6 +2,13 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
+## Issues após a 0.6.0 e versão 0.6.1 — 23/11/2026
+
+- **#125, Nextendo fecha com código 2.** O relatório mostra `refresh ok` e `OAuth accepted; NEX token unavailable.`, sem nenhuma linha `[nextendo] game token`. `nextendo_prepare_game_login` divide um único prazo entre a renovação do login e o pedido do token; a renovação consumiu os 15 s de `nextendo_probe.c` e o token não foi pedido. O prazo passou a 45 s, `toolchain/nextendo.py` registra `game token: not requested (...)` e o launcher traduz essa saída. Uma segunda tentativa automática foi descartada: ela consumia outro refresh token, e o teste de rotação de sessão a recusou. Os 17 testes do Nextendo passaram com o runtime recompilado.
+- **#121, crash no fim da copa (RTX 3050 6 GB, 8 GB de RAM).** Com Resizable BAR, a VRAM era o maior heap visível pela CPU, e a regra de GPU integrada desligava a importação do heap do jogo. Num GP completo forçando esse modo (`LARECOMP_VK_NO_GMEM=1`), o replay do MKTV no fim da copa congelou por 11 s, como no log do jogador. GPUs dedicadas mantêm a importação desde a 0.6.0.
+- **#126, Vulkan 1.2 (Radeon HD 7750).** O renderer usa `dynamicRendering` e `maintenance4` do Vulkan 1.3 e nenhum render pass; o driver AMD 23.11.1 não oferece `VK_KHR_dynamic_rendering`. Fora do plano; no Linux, o RADV oferece Vulkan 1.3 nas GCN 1.
+- **#123 e #124** chegaram sem relatório (launcher 0.4.0 e 0.5.0).
+
 ## PRs #116, #117 e #118 — 22/11/2026
 
 - **#116, recursos Mii depois de renomear a pasta portátil (#115).** Substitui a correção anterior desta branch. A anterior resolvia também o caminho gravado no manifesto, e com isso uma junção que redirecionasse a pasta para outra cópia idêntica passaria na verificação. A #116 compara o destino resolvido com o caminho gravado, com ou sem o prefixo `\\?\`, e recusa a junção. Ela também corrige a realocação de caminhos UNC verbatim (`\\?\UNC\...`). Passaram o teste do manifesto realocado, o teste da PR que renomeia a pasta e cria a junção e o teste de UNC.

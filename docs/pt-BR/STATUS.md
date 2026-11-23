@@ -1,6 +1,6 @@
 # Estado do projeto
 
-[English](../en/STATUS.md) · **Português** · Atualizado em 22/11/2026 · Versão 0.6.0
+[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.1
 
 Esta página é o resumo atual. Investigações datadas, medições e evidências por issue ficam no [registro técnico](log/README.md). As pendências estão no [roteiro](ROADMAP.md).
 
@@ -17,6 +17,10 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | Gráficos | Runtime Vulkan; FSR 1, FSR 3.1.6 (executado na RX 580), FSR 4 / DLSS (só testes de capacidade); ultrawide (também com geração de quadros) e geração de quadros experimentais | DLSS em RTX, FSR 4 em RDNA 4; mais pistas e GPUs |
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
 | Linux | Construído da árvore principal; AppImage/tar.gz no CI em Ubuntu 24.04; renderização em Intel Iris Xe | Corrida em Steam Deck físico |
+
+## Versão 0.6.1
+
+- **0.6.1:** o Nextendo passou a ter 45 s para renovar o login e buscar o token do jogo; antes, com conexão lenta, o token nem era pedido e o jogo fechava com código 2 (#125). O log registra o motivo e o launcher explica a falha.
 
 ## Versão 0.6.0
 
