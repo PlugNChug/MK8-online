@@ -125,9 +125,10 @@ int main(void) {
     if (a[0][0] != 127 || a[1][0] != 6 || mk8_samples_total != 6 || query_reads!=3) return 5;
     query_ok=false; s2->seq=101; s2->n=2; s2->nrep=2;
     s2->rep_out[0]=a[2]; s2->rep_after[0]=1; s2->rep_out[1]=b[0]; s2->rep_after[1]=2;
-    uint64_t old_a=a[2][0],old_b=b[0][0];
-    if (!setjmp(failure)) { mk8_oq_resolve_done(101); return 9; }
-    assert(a[2][0]==old_a && b[0][0]==old_b && s2->nrep==2);
+    /* #127: results unavailable for a completed submission no longer end the game; each query counts as visible */
+    if (setjmp(failure)) return 9;
+    mk8_oq_resolve_done(101);
+    assert(a[2][0]==7 && b[0][0]==8 && mk8_samples_total==8 && s2->n==0 && s2->nrep==0);
     memset(mk8_oq,0,sizeof mk8_oq); query_ok=true; mk8_samples_total=0;
     uint64_t pair[4]={0},other[4]={0};
     CmdRec cmd={{1,(uintptr_t)pair,1}};

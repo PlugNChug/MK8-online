@@ -8,6 +8,10 @@ passed so far, and the game takes differences. Here each report ends the open oc
 submission is done the results are added in submission order to a running total and each report gets the total at
 its point. Conditional rendering resolves pending reports for either operand before reading them; otherwise a
 first use could compare initial zeros and suppress visible objects. MK8_OCCLUSION_VISIBLE=1 (diagnostic) answers "visible".
+
+A driver that has no results for a completed submission (VK_NOT_READY) used to end the game while a course loaded
+(#127, 0xc0000409). Each unavailable query now counts one sample, so the objects it tests stay visible, and the
+first few cases are logged.
 """
 
 STATE = '''
@@ -34,15 +38,20 @@ static void mk8_oq_resolve(Mk8Oq *o) {  // (cq_lock held) its submission is done
     uint64_t r[MK8_OQ_MAX] = {0};
     bool ok = o->n && o->pool &&
               vkGetQueryPoolResults(g_vk.dev, o->pool, 0, o->n, sizeof r, r, 8, VK_QUERY_RESULT_64_BIT) == VK_SUCCESS;
-    if (o->n && !ok) FATAL("[mk8] completed occlusion queries unavailable (submission %llu)\\n", (unsigned long long)o->seq);
+    if (o->n && !ok) {
+        static int warned;
+        if (warned++ < 5)
+            LOG("[mk8] occlusion results unavailable for completed submission %llu: counted as visible\\n",
+                (unsigned long long)o->seq);
+    }
     uint64_t base = mk8_samples_total, sum = 0;
     uint32_t q = 0;
     for (uint32_t k = 0; k < o->nrep; k++) {
-        for (; q < o->rep_after[k] && q < o->n; q++) sum += ok ? r[q] : 0;
+        for (; q < o->rep_after[k] && q < o->n; q++) sum += ok ? r[q] : 1;  // (unavailable: visible)
         if (o->rep_out[k]) { o->rep_out[k][0] = base + sum; o->rep_out[k][1] = ns_to_gpu_ticks(plat_now_ns()); }
         else { base = 0; sum = 0; }  // ResetCounter at this point in GPU order.
     }
-    for (; q < o->n; q++) sum += ok ? r[q] : 0;  // (after the last report: still counted, as the hardware counter)
+    for (; q < o->n; q++) sum += ok ? r[q] : 1;  // (after the last report: still counted, as the hardware counter)
     mk8_samples_total = base + sum;
     o->n = o->nrep = 0;
     o->active = false;
