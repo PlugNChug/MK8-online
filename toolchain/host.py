@@ -498,6 +498,9 @@ def prepare_host_sources(source, output):
     kernel.write_text(text, encoding='utf-8')
     from core_preempt import prepare as prepare_core_preempt
     prepare_core_preempt(runtime)
+    # Last of the renderer patches: their option reads included (toolchain/env_cache.py, #133).
+    from env_cache import prepare as prepare_env_cache
+    prepare_env_cache(runtime)
     if not WINDOWS:
         platform = runtime/'platform/linux.c'
         text = platform.read_text(encoding='utf-8')
