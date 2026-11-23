@@ -1,7 +1,7 @@
 // MK8-online MLFI provider: an FFX-compatible shell for AMD's FSR 4 ML frame interpolation.
 //
 // This library exports the five FFX entry points and runs the pass graph recovered from the signed
-// provider (docs/MLFI-CAPTURE.md, docs/MLFI-REPLAY.md) inside the application's Vulkan command
+// provider (docs/en/reports/MLFI-CAPTURE.md, docs/en/reports/MLFI-REPLAY.md) inside the application's Vulkan command
 // buffer.  It does not contain any AMD byte: the SPIR-V modules and the model bank are read at
 // context creation from the user's own extraction (`tools/extract_mlfi.py`) after
 // `tools/mlfi-replay/prepare.py` has legalised the four modules RADV cannot compile unchanged.
@@ -18,7 +18,7 @@
 //   * the derivation of the per-frame camera constants from ffxDispatchDescFrameGenerationPrepareV2.
 //
 // This provider is validated headlessly at 1280x720 (see tools/mlfi-provider/mlfi_provider_test.c
-// and docs/MLFI-PROVIDER.md).  It does not implement the swapchain provider, HDR/sRGB outputs, any
+// and docs/en/reports/MLFI-PROVIDER.md).  It does not implement the swapchain provider, HDR/sRGB outputs, any
 // resolution other than 1280x720, or more than one frame in flight.
 
 #include <errno.h>
@@ -1091,7 +1091,7 @@ static MlfiPipe* mlfi_create_pipe(MlfiContext* ctx, MlfiModule* m)
     }
     // Every MLFI pipeline requests wave32.  The capture did not record the pipeline create-info
     // pNext; the 78 cooperative-matrix modules use LocalSize 32x1x1, which is only valid at wave32
-    // (docs/MLFI-REPLAY.md 4).
+    // (docs/en/reports/MLFI-REPLAY.md 4).
     VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroup = {
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO};
     subgroup.requiredSubgroupSize = 32;

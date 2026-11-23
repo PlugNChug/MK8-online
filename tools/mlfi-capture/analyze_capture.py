@@ -5,7 +5,7 @@ The capture directory (written under $HOME by run.sh) contains the raw log, even
 tensor-table dumps and buffer dumps. This tool reads it, checks the capture against the
 extracted model bank, and writes a compact JSON/TSV description. It never writes shader or
 model bytes: only pass names, dispatch geometry, dimensions and offsets, which are the
-metadata docs/MLFI-CAPTURE.md is allowed to carry.
+metadata docs/en/reports/MLFI-CAPTURE.md is allowed to carry.
 
 Usage:
   python3 tools/mlfi-capture/analyze_capture.py --capture DIR

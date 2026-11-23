@@ -34,7 +34,7 @@ python3 tools/build_upscaler_provider.py \
 
 The install directory defaults to `$XDG_DATA_HOME/mk8online/fsr` and receives the provider plus
 `LICENSE-AMD-FSR-SDK.md` copied from the SDK. The launcher enables the provider after the user accepts
-AMD's terms and the download/patch step succeeds; see `docs/FSR3-UPSCALER.md`.
+AMD's terms and the download/patch step succeeds; see `docs/en/reports/FSR3-UPSCALER.md`.
 
 ## Tests
 

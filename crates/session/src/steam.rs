@@ -1614,8 +1614,12 @@ mod tests {
         let old = root.join(STEAM_LIBRARY);
         let good = root.join("steamapps/common/Game").join(STEAM_LIBRARY);
         fs::create_dir_all(good.parent().unwrap()).unwrap();
-        fs::write(&old, b"selection fixture").unwrap();
-        fs::write(&good, b"selection fixture").unwrap();
+        // (an x86-64 ELF header: Linux only accepts 64-bit shared objects from Steam libraries)
+        let mut library = b"ELF".to_vec();
+        library.resize(16, 0);
+        library.extend([3, 0, 62, 0]);
+        fs::write(&old, &library).unwrap();
+        fs::write(&good, &library).unwrap();
         let paths = dll_candidates(&root, || library_dll_paths(std::slice::from_ref(&root)));
         let mut visited = Vec::new();
         let chosen = compatible_api(paths, |path| {

@@ -480,7 +480,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverity
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         /* 90 of AMD's 416 modules use OpFConvert on cooperative-matrix types, which spirv-val
          * rejects with "Expected Use of Matrix type and Result Type to be identical" (recorded in
-         * docs/FSR4-MLFI.md §2).  RADV accepts and runs them.  They are counted separately so a
+         * docs/en/reports/FSR4-MLFI.md §2).  RADV accepts and runs them.  They are counted separately so a
          * real validation error is never hidden. */
         if (strstr(data->pMessage, "SPV_NV_cooperative_matrix2 was declared") ||
             strstr(data->pMessage, "CooperativeMatrixConversionsNV was declared") ||
@@ -925,7 +925,7 @@ static Pipe *create_pipe(Module *m) {
 
     /* The 78 cooperative-matrix modules use LocalSize 32x1x1, which is only valid with a wave32
      * subgroup, so every MLFI pipeline requests a subgroup size of 32.  The Wine capture did not
-     * record the pipeline create-info pNext, so this is inferred (see docs/MLFI-REPLAY.md). */
+     * record the pipeline create-info pNext, so this is inferred (see docs/en/reports/MLFI-REPLAY.md). */
     VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroup = {
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO};
     subgroup.requiredSubgroupSize = 32;
@@ -1002,7 +1002,7 @@ static void write_pass_descriptors(Pipe *p) {
         }
         if (b->type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || b->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
             /* The preprocess splat pass writes one packed image per dispatch: row 1 and 4 write
-             * splatted0to05, row 3 writes splatted1to05 (see docs/MLFI-REPLAY.md). */
+             * splatted0to05, row 3 writes splatted1to05 (see docs/en/reports/MLFI-REPLAY.md). */
             if (!strcmp(b->name, "rw_splatted")) {
                 int which = (g_prepare_index == 3) ? 1 : 0;
                 iinfo[i].imageView = g_splat_storage_view[which];
@@ -1464,7 +1464,7 @@ int main(int argc, char **argv) {
                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                   &g_readback, &g_readback_mem, NULL);
 
-    /* Images.  Sizes are inferred from the modules and documented in docs/MLFI-REPLAY.md. */
+    /* Images.  Sizes are inferred from the modules and documented in docs/en/reports/MLFI-REPLAY.md. */
     const uint32_t sw = (uint32_t)(width / 3);           /* 426 at 1280, the captured constant */
     const uint32_t sh = (uint32_t)(height / 3);          /* 240 at 720 */
     const uint32_t fw = (uint32_t)(width / 8);           /* 160 */

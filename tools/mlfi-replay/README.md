@@ -53,7 +53,7 @@ synthetic inputs, for comparison.
 
 ## What is pinned and what is inferred
 
-See `docs/MLFI-REPLAY.md`. In short: the pass order, group counts, buffer offsets, tensor table,
+See `docs/en/reports/MLFI-REPLAY.md`. In short: the pass order, group counts, buffer offsets, tensor table,
 model upload range and descriptor binding *numbers* are the capture's; the image sizes, image
 wiring, sampler states, subgroup size and the final `rw_prediction` output are inferred from the
 modules and documented there.

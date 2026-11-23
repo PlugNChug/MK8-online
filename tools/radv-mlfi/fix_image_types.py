@@ -9,7 +9,7 @@ AMD's FSR 4 MLFI modules declare images with a 16-bit sampled type:
 
 Vulkan forbids that (VUID-StandaloneSpirv-OpTypeImage-04656: a sampled type must
 be a 32-bit int, 64-bit int, or 32-bit float scalar), and RADV does not reject
-it: `vkCreateComputePipelines` segfaults.  See docs/RADV-MLFI-CRASH.md.
+it: `vkCreateComputePipelines` segfaults.  See docs/en/reports/RADV-MLFI-CRASH.md.
 
 This tool rewrites such a module into the equivalent legal form:
 

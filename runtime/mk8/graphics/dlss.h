@@ -181,7 +181,7 @@ enum {
 };
 
 // Creates NGX + the FrameGeneration feature for this swapchain. Requires VK_NV_low_latency2
-// to be enabled on the device (it is not today; docs/DLSS-IMPL.md has the device.c hand-off).
+// to be enabled on the device (it is not today; docs/en/reports/DLSS-IMPL.md has the device.c hand-off).
 // Returns false with one log line on any failure; the existing path must then run unchanged.
 bool mk8_dlss_fg_init(const Mk8DlssFgInit *init);
 void mk8_dlss_fg_shutdown(void);

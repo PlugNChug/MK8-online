@@ -1,6 +1,6 @@
 # radv-mlfi: reproduce and work around the RADV MLFI pipeline crash
 
-Small, self-contained tools for the defect described in `docs/RADV-MLFI-CRASH.md`: RADV GFX1201
+Small, self-contained tools for the defect described in `docs/en/reports/RADV-MLFI-CRASH.md`: RADV GFX1201
 segfaults in `vkCreateComputePipelines` when Mesa's SPIR-V front end rejects a module, and four of
 AMD's FSR 4 MLFI modules trigger that path. Nothing here contains AMD bytes: the modules are read
 from the user's own extraction (`tools/extract_mlfi.py`).

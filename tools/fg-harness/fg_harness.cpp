@@ -6,7 +6,7 @@
 // pOutQueuePresentKHR, and verifies that interpolation output is actually produced. Every step is
 // mandatory: any Vulkan/FFX failure, validation error or missing generated frame exits non-zero.
 //
-// The API sequence, the per-frame order and the provider quirks are documented in docs/FG-HARNESS.md.
+// The API sequence, the per-frame order and the provider quirks are documented in docs/en/reports/FG-HARNESS.md.
 //
 // Build:
 //   g++ -std=c++17 -O2 -I runtime/mk8/graphics/ffx tools/fg-harness/fg_harness.cpp

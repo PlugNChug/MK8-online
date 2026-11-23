@@ -6,7 +6,7 @@
  *
  * The DLL is not redistributed here. Point --dll at the user's own copy from the FSR SDK 2.4.0
  * archive. Raw shader/model bytes are written below --out (outside the repository); only derived
- * metadata belongs in docs/MLFI-CAPTURE.md.
+ * metadata belongs in docs/en/reports/MLFI-CAPTURE.md.
  *
  * How the interception works
  * --------------------------

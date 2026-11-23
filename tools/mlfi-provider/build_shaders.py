@@ -75,7 +75,7 @@ def generate() -> str:
         '// Shader source: tools/mlfi-provider/shaders/*.glsl. These shaders are part of the',
         '// MK8-online MLFI provider, not AMD\'s effect: they move the application inputs into the',
         '// provider images and compose `rw_prediction` into the application output. The vendor',
-        '// composition pass was not captured (docs/MLFI-PROVIDER.md).',
+        '// composition pass was not captured (docs/en/reports/MLFI-PROVIDER.md).',
         '//',
         '// Regenerate with: python3 tools/mlfi-provider/build_shaders.py',
         '#pragma once',

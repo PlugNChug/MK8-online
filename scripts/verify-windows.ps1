@@ -22,7 +22,7 @@ function Require([string]$Name) {
 }
 function Fail([string]$Message) { Write-Host "FAIL: $Message" -ForegroundColor Red; exit 1 }
 
-if ($env:OS -ne 'Windows_NT') { Fail 'Run this script on Windows (the Linux cross-check is documented in docs/WINDOWS-2026-11-20.md).' }
+if ($env:OS -ne 'Windows_NT') { Fail 'Run this script on Windows (the Linux cross-check is documented in docs/en/reports/WINDOWS-2026-11-20.md).' }
 Require python
 Require cargo
 Require rustup

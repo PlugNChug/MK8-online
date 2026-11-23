@@ -108,7 +108,7 @@ class PinnedInputTests(unittest.TestCase):
                          "4a7e895af6e0b615d40a84d59eb8c2b1054ad91cdd0c739567940270d51bdab7")
         phase0 = (PORT / "PHASE0.md").read_text(encoding="utf-8")
         self.assertIn(build.DLL_SHA256, phase0)
-        docs = (ROOT / "docs" / "FSR4-UPSCALER.md").read_text(encoding="utf-8")
+        docs = (ROOT / "docs" / "en" / "reports" / "FSR4-UPSCALER.md").read_text(encoding="utf-8")
         self.assertIn(build.SDK_ARCHIVE_SHA256, docs)
         self.assertIn(build.DLL_SHA256, docs)
 

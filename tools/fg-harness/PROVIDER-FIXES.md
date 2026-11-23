@@ -1,7 +1,7 @@
 # Provider fixes needed before the harness can be green
 
 The harness found four provider-side defects that prevent the real frame-generation path from working.
-They are documented with evidence in [`docs/FG-HARNESS.md`](../../docs/FG-HARNESS.md). This file keeps
+They are documented with evidence in [`docs/en/reports/FG-HARNESS.md`](../../docs/en/reports/FG-HARNESS.md). This file keeps
 the minimal changes in one place so the provider/toolchain owner can apply them; **none of them are
 applied to this tree** (the harness only owns `tools/fg-harness/`).
 

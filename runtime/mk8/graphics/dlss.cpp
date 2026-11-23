@@ -1625,7 +1625,7 @@ extern "C" VkFormat mk8_dlss_test_output_format(void) { return VK_FORMAT_R8G8B8A
 // size images (real + interpolated) and the application presents both. This module owns the
 // feature and those images; the WSI images, semaphores and queue submission stay with the
 // caller. The API is deliberately self-contained so fsr_fg.cpp can call it with a small
-// hand-off (docs/DLSS-IMPL.md) and no other runtime file changes.
+// hand-off (docs/en/reports/DLSS-IMPL.md) and no other runtime file changes.
 // ---------------------------------------------------------------------------------------
 
 #if defined(VK_NV_low_latency2)

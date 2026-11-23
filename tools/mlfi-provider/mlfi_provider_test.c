@@ -8,7 +8,7 @@
 //
 // The program prints one `MLFI-PROVIDER frame` line per frame and a final
 // `MLFI-PROVIDER RESULT: OK|FAIL` line.  The Khronos validation layer is enabled; the same three
-// documented validator disagreements as docs/MLFI-REPLAY.md 7 are counted separately, and any
+// documented validator disagreements as docs/en/reports/MLFI-REPLAY.md 7 are counted separately, and any
 // other error or warning fails the run.
 //
 // Build: tools/mlfi-provider/build.sh.  Run: `mlfi_provider_test` with

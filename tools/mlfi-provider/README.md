@@ -6,7 +6,7 @@ A native Linux shared library that exports `ffxCreateContext`, `ffxDestroyContex
 application's `VkCommandBuffer`. It is the provider counterpart of `tools/mlfi-replay` and the
 first half of `MK8_FSR_FG=fsr4`; the swapchain provider is not part of this library.
 
-`docs/MLFI-PROVIDER.md` has the exact ABI/descriptor mapping, what is pinned vs inferred, the run
+`docs/en/reports/MLFI-PROVIDER.md` has the exact ABI/descriptor mapping, what is pinned vs inferred, the run
 evidence and the precise `runtime/mk8/graphics/fsr_fg.cpp` integration steps.
 
 ## Requirements
@@ -63,4 +63,4 @@ frame plus a `MLFI-PROVIDER RESULT: OK|FAIL` summary.
 1280×720 only; 8-bit UNORM inputs/outputs; one frame in flight; no swapchain replacement; no HDR;
 the final `rw_prediction` → `outputs[0]` composition is ours because the vendor's final `main` was
 never dispatched in the capture. `gameplay_verified` remains false. See
-`docs/MLFI-PROVIDER.md` §8 and §11.
+`docs/en/reports/MLFI-PROVIDER.md` §8 and §11.

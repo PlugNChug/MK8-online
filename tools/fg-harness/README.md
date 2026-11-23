@@ -23,4 +23,4 @@ the runtime: `MK8_FG_HARNESS_LIB`, `MK8_FSR_FG_LIB`, then the XDG/HOME install p
 after editing a shader.
 
 The API sequence, the per-frame order, the provider quirks and the current validation evidence are in
-[`docs/FG-HARNESS.md`](../../docs/FG-HARNESS.md). The test is `tests/test_fg_harness.py`.
+[`docs/en/reports/FG-HARNESS.md`](../../docs/en/reports/FG-HARNESS.md). The test is `tests/test_fg_harness.py`.
