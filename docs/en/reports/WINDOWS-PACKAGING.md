@@ -210,27 +210,27 @@ gated XeSS device-extension hook (`toolchain/xess.py`); it is inert unless
 ## RTX 5080 validation
 
 Machine and key are the ones in `docs/WINDOWS-INGAME-RTX.md`:
-`Ronny@192.168.8.197`, key `~/.ssh/mkdx_windows_ed25519`, Windows 11, NVIDIA
+`<user>@<rtx-host>`, key `~/.ssh/mkdx_windows_ed25519`, Windows 11, NVIDIA
 GeForce RTX 5080, driver `32.0.16.2101`, Vulkan `1.4.357`.
 
 Copy and extract:
 
 ```sh
 scp -i ~/.ssh/mkdx_windows_ed25519 MK8-online-0.4.0-windows-x86_64-portable.zip \
-  Ronny@192.168.8.197:C:/Users/Ronny/mk8-rtx/package/
+  <user>@<rtx-host>:C:/Users/<user>/mk8-rtx/package/
 ```
 
 ```powershell
-Set-Location 'C:/Users/Ronny/mk8-rtx/package'
+Set-Location 'C:/Users/<user>/mk8-rtx/package'
 & 'C:/Windows/System32/tar.exe' -xf 'MK8-online-0.4.0-windows-x86_64-portable.zip'
 ```
 
 Headless launcher and FSR gate:
 
 ```powershell
-$root = 'C:\Users\Ronny\mk8-rtx\package\MK8-online-0.4.0-windows-x86_64-portable'
-$data = 'C:\Users\Ronny\mk8-rtx\package\data'
-$env:MK8_FSR_DIR = 'C:\Users\Ronny\mk8-rtx\amd'
+$root = 'C:\Users\<user>\mk8-rtx\package\MK8-online-0.4.0-windows-x86_64-portable'
+$data = 'C:\Users\<user>\mk8-rtx\package\data'
+$env:MK8_FSR_DIR = 'C:\Users\<user>\mk8-rtx\amd'
 $p = Start-Process -FilePath "$root\Launcher.exe" `
   -ArgumentList @('--headless', '--port', '38090', '--data-dir', $data) `
   -PassThru -WindowStyle Hidden
@@ -261,13 +261,13 @@ desktop session.
 Packaged runtime boot:
 
 ```powershell
-$run = 'C:\Users\Ronny\mk8-rtx\package\MK8-online-0.4.0-windows-x86_64-portable\runtime'
-$data = 'C:\Users\Ronny\mk8-rtx\game\extracted'
+$run = 'C:\Users\<user>\mk8-rtx\package\MK8-online-0.4.0-windows-x86_64-portable\runtime'
+$data = 'C:\Users\<user>\mk8-rtx\game\extracted'
 $env:LARECOMP_WINDOW = '1920x1080'
 $env:LARECOMP_INPUT = '200:RIGHT:6,220:A:6,300:A:6,400:A:6,700:A:6,900:A:6,1100:A:6,1300:A:6,1500:A:6,1700:A:6,1900:A:6,2100:A:6'
 $env:LARECOMP_NO_USER_INPUT = '1'
 $env:LARECOMP_WINDOW_SHOT = '4600:5000:400'
-$env:LARECOMP_SHOT_PATH = 'C:/Users/Ronny/mk8-rtx/package/package2-%05d.png'
+$env:LARECOMP_SHOT_PATH = 'C:/Users/<user>/mk8-rtx/package/package2-%05d.png'
 $env:LARECOMP_EXIT_AFTER_SHOT = '1'
 $env:MK8_EXPERIMENTAL_NO_MII = '1'
 $env:MK8_MII_ID = '00000000000000008000000000000000'
@@ -281,7 +281,7 @@ Set-Location $run
 Observed: exit `0`; the log reported `60.0 fps` around the capture and no
 `GPUVM`, `DEVICE_LOST` or `FATAL`; `package2-05000.png` is 4,251,995 bytes at
 1920x1080 and shows the Mario Kart Stadium race with the kart, world and HUD.
-The 12 GB data root is the existing `C:/Users/Ronny/mk8-rtx/game/extracted`; it
+The 12 GB data root is the existing `C:/Users/<user>/mk8-rtx/game/extracted`; it
 was not copied into the package.
 
 A 1280x720 capture from the fresh package tree (which has no `mk8d.ini`) showed

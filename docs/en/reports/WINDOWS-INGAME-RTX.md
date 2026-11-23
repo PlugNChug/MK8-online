@@ -18,14 +18,14 @@ controls, a complete race, restart/save and clock speed were not measured.
 
 ## Environment
 
-- Windows 11 `10.0.26300.10066`, SSH session 0 (`Ronny@192.168.8.197`).
+- Windows 11 `10.0.26300.10066`, SSH session 0 (`<user>@<rtx-host>`).
 - NVIDIA GeForce RTX 5080, driver `32.0.16.2101`, Vulkan `1.4.357`.
 - Code under test: `8eeb6ef` plus the documentation commits; this round starts at
   `1fa7ca3` with `1a78c6d` (XeSS device hook) and `5014ed7` (hash/package
   refresh), plus the DLSS-G depth-resample change described below.
-- Data root: `C:/Users/Ronny/mk8-rtx/game/extracted`, 12,149,826,670 bytes,
+- Data root: `C:/Users/<user>/mk8-rtx/game/extracted`, 12,149,826,670 bytes,
   6,597 files (`exefs`, `romfs`, `control.nacp`).
-- Runtime directory: `C:/Users/Ronny/mk8-rtx/game/run-rtx`.
+- Runtime directory: `C:/Users/<user>/mk8-rtx/game/run-rtx`.
 
 ## Build
 
@@ -109,9 +109,9 @@ $env:LARECOMP_WINDOW = '1280x720'
 $env:LARECOMP_INPUT = '200:RIGHT:6,...'
 $env:LARECOMP_NO_USER_INPUT = '1'
 $env:LARECOMP_WINDOW_SHOT = '4200:5000:400'   # first settled race frames
-$env:LARECOMP_SHOT_PATH = 'C:/Users/Ronny/mk8-rtx/game/race-%05d.png'
+$env:LARECOMP_SHOT_PATH = 'C:/Users/<user>/mk8-rtx/game/race-%05d.png'
 $env:LARECOMP_EXIT_AFTER_SHOT = '1'
-C:\Users\Ronny\mk8-rtx\game\run-rtx\mk8drecomp.exe --play C:\Users\Ronny\mk8-rtx\game\extracted
+C:\Users\<user>\mk8-rtx\game\run-rtx\mk8drecomp.exe --play C:\Users\<user>\mk8-rtx\game\extracted
 ```
 
 Exit code **0**. The race started at 1280x720:
@@ -124,7 +124,7 @@ Exit code **0**. The race started at 1280x720:
 [vk] t=80.1 frame 4678 57.3 fps max 129ms level (...)
 [vk] t=82.1 frame 4798 60.0 fps max 20ms level (...)
 [vk] t=84.1 frame 4917 59.3 fps max 35ms level (...)
-[vk] saved C:/Users/Ronny/mk8-rtx/game/race-05000.png (1280x720)
+[vk] saved C:/Users/<user>/mk8-rtx/game/race-05000.png (1280x720)
 ```
 
 `race-05000.png` shows Mario Kart Stadium, Mario on the kart, HUD coins 05,
@@ -142,7 +142,7 @@ a real 1920x1080 -> 2560x1440 job):
 $env:LARECOMP_WINDOW = '2560x1440'
 $env:MK8_FSR4 = '1'
 $env:MK8_FSR_VERSION = '3.1.6'
-$env:MK8_FSR_LIB = 'C:\Users\Ronny\mk8-rtx\amd\amd_fidelityfx_upscaler_vk.dll'
+$env:MK8_FSR_LIB = 'C:\Users\<user>\mk8-rtx\amd\amd_fidelityfx_upscaler_vk.dll'
 # same input, shots 4600/4800/5000
 ```
 
@@ -171,7 +171,7 @@ records the scene-depth copy. `MK8_DLSS=1` then selects the NGX bridge.
 ```powershell
 $env:LARECOMP_WINDOW = '2560x1440'
 $env:MK8_DLSS = '1'
-$env:MK8_DLSS_LIB = 'C:\Users\Ronny\mk8-rtx\game\run-rtx\nvngx_dlss.dll'
+$env:MK8_DLSS_LIB = 'C:\Users\<user>\mk8-rtx\game\run-rtx\nvngx_dlss.dll'
 $env:MK8_FSR4 = '1'
 $env:MK8_FSR4_CAPTURE = '1'
 # same race input and captures
@@ -324,7 +324,7 @@ what XeSS asks for:
 [xess] VK_EXT_mutable_descriptor_type enabled
 [xess] mutableDescriptorType feature enabled
 [xess] shaderStorageImageWriteWithoutFormat: 1
-[xess] provider 2.0.2 from C:\Users\Ronny\mk8-rtx\game\run-rtx\libxess.dll
+[xess] provider 2.0.2 from C:\Users\<user>\mk8-rtx\game\run-rtx\libxess.dll
 [xess] required instance API 0x403000, 0 extension(s)
 [xess] 1 required device extension(s)
 [xess]   device extension: VK_EXT_mutable_descriptor_type
@@ -357,7 +357,7 @@ selected explicitly. At 1920x1080 with `LARECOMP_SCALE=1.0`:
 
 ```powershell
 $env:MK8_FSR_FG = 'fsr3'
-$env:MK8_FSR_FG_LIB = 'C:\Users\Ronny\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll'
+$env:MK8_FSR_FG_LIB = 'C:\Users\<user>\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll'
 $env:MK8_FSR4 = '1'
 $env:MK8_FSR4_CAPTURE = '1'
 ```
@@ -365,7 +365,7 @@ $env:MK8_FSR4_CAPTURE = '1'
 Exit **0**. The swapchain and effect versions are distinct:
 
 ```text
-[fsr_fg] provider loaded: C:\Users\Ronny\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll
+[fsr_fg] provider loaded: C:\Users\<user>\mk8-rtx\amd\amd_fidelityfx_framegeneration_vk.dll
 [fsr_fg] swapchain provider offers 3.1.7
 [fsr_fg] swapchain provider 3.1.7 (version 0xc01007)
 [fsr_fg] frame-generation effect provider 3.1.6
@@ -439,6 +439,6 @@ Local (ignored, not committed): `local/rtx-ingame/race-05000.png`,
 and the matching `.exit` files. The new logs are remote
 `run-rtx/{xess2560,fsrfg316,dlssfg1152}.err`/`.exit`. The harness source is
 `local/rtx-harness/swapchain_probe.c` with `probe-*.out` logs. Remote originals
-remain under `C:/Users/Ronny/mk8-rtx/game/` and
-`C:/Users/Ronny/mk8-rtx/game/run-rtx/`. No binaries, screenshots or game
+remain under `C:/Users/<user>/mk8-rtx/game/` and
+`C:/Users/<user>/mk8-rtx/game/run-rtx/`. No binaries, screenshots or game
 data are committed.

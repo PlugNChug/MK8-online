@@ -250,7 +250,7 @@ Machine and versions:
 
 Both DLLs are the official DLSS SDK v310.9.16 Windows x86-64 files
 (`raw.githubusercontent.com/NVIDIA/DLSS/v310.9.16/lib/Windows_x86_64/rel/`), not
-committed. They were copied to `C:/Users/Ronny/mk8-rtx/dlss/` beside the harness; the
+committed. They were copied to `C:/Users/<user>/mk8-rtx/dlss/` beside the harness; the
 core is the driver's own. `HKLM\SOFTWARE\NVIDIA Corporation\Global\NGXCore\FullPath`
 points at the DriverStore directory; **System32 has no `nvngx*.dll` on this driver**,
 which matters for the loader probe (see point 4 below).
@@ -263,10 +263,10 @@ x86_64-w64-mingw32-g++ -std=c++17 -O2 -static \
     -o dlss_rtx_harness.exe tools/dlss_rtx_harness.cpp
 
 scp dlss_rtx_harness.exe nvngx_dlss.dll nvngx_dlssg.dll \
-    Ronny@192.168.8.197:C:/Users/Ronny/mk8-rtx/dlss/
+    <user>@<rtx-host>:C:/Users/<user>/mk8-rtx/dlss/
 
-ssh Ronny@192.168.8.197 \
-  "cd /d C:\Users\Ronny\mk8-rtx\dlss && dlss_rtx_harness.exe . out"
+ssh <user>@<rtx-host> \
+  "cd /d C:\Users\<user>\mk8-rtx\dlss && dlss_rtx_harness.exe . out"
 ```
 
 `-I` points at a private copy of the Khronos Vulkan headers; the Nvidia `vk_video`
@@ -295,7 +295,7 @@ the checksum changes on every frame. Frame 3 deliberately passed the inputs in
 `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`, the layout `dlss.cpp` assumes: it was
 accepted. The other frames used `GENERAL`.
 
-Output: `C:/Users/Ronny/mk8-rtx/dlss/out/sr_2560x1440.png` (copied back as
+Output: `C:/Users/<user>/mk8-rtx/dlss/out/sr_2560x1440.png` (copied back as
 `~/.cache/mk8-dlss-rtx/out/sr_2560x1440.png`, sha256
 `859a38b6921d6f434bd4243510b0e6a218c1bea7fa5fae33f8ff8a86b6ba7a8f`). The 2x input is
 `sr_input_1280x720.png`.
@@ -414,9 +414,9 @@ x86_64-w64-mingw32-g++ -std=c++17 -O2 -static -DMK8_DLSS_TEST_API \
     -o dlss_bridge_harness.exe tools/dlss_bridge_harness.cpp runtime/mk8/graphics/dlss.cpp \
     -L"$HOME/.cache/mk8-dlss-rtx" -lvulkan-1 -luser32 -ladvapi32
 
-scp dlss_bridge_harness.exe nvngx_dlss.dll nvngx_dlssg.dll Ronny@192.168.8.197:C:/Users/Ronny/mk8-rtx/dlss/
-ssh Ronny@192.168.8.197 "cd /d C:\Users\Ronny\mk8-rtx\dlss && dlss_bridge_harness.exe sr . out"
-ssh Ronny@192.168.8.197 "cd /d C:\Users\Ronny\mk8-rtx\dlss && dlss_bridge_harness.exe fg . out"
+scp dlss_bridge_harness.exe nvngx_dlss.dll nvngx_dlssg.dll <user>@<rtx-host>:C:/Users/<user>/mk8-rtx/dlss/
+ssh <user>@<rtx-host> "cd /d C:\Users\<user>\mk8-rtx\dlss && dlss_bridge_harness.exe sr . out"
+ssh <user>@<rtx-host> "cd /d C:\Users\<user>\mk8-rtx\dlss && dlss_bridge_harness.exe fg . out"
 ```
 
 `MK8_DLSS_TEST_API` adds only `mk8_dlss_test_output_image`/`_format` so the harness can
