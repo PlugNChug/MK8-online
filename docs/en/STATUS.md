@@ -1,6 +1,6 @@
 # Project status
 
-**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.1
+**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.2
 
 This page is the current summary. Dated investigations, measurements and per-issue evidence are kept in the [technical log](log/README.md). Open work is tracked in the [roadmap](ROADMAP.md).
 
@@ -18,7 +18,9 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
 | Linux | AppImage/tar.gz built and smoke-tested in CI on Ubuntu 24.04; rendering on Intel Iris Xe | Physical Steam Deck race |
 
-## 0.6.1 release
+## 0.6.2 release
+
+- **0.6.2:** on Linux the launcher recognizes the build again (the split-screen and LAN capabilities were read from a Windows DLL, #128); with Steam on Wayland the game uses XWayland so the Steam Controller leaves desktop mode (#131); occlusion results the driver does not return no longer end the game (#127).
 
 - **0.6.1:** Nextendo now has 45 s to refresh the sign-in and fetch the game token; before, on a slow connection the token was never requested and the game closed with code 2 (#125). The log records why and the launcher explains the failure.
 

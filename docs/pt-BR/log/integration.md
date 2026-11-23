@@ -2,6 +2,13 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
+## Issues após a 0.6.1 e versão 0.6.2 — 23/11/2026
+
+- **#128, Linux não reconhece a build.** `guest_has_split_screen_hook` e `guest_has_direct_lan` liam os imports PE de `mk8d-code-main.dll`. No Linux os três módulos ficam em `mk8dgame.so`, então as duas capacidades saíam falsas e o launcher marcava a build como desatualizada, bloqueando o conteúdo adicional e as salas. `toolchain/build.py` passou a ler os símbolos dinâmicos não definidos do `.so` (leitor ELF64 próprio, sem dependência nova). O teste compila uma biblioteca sintética e passou no Windows (zig para Linux) e no WSL (gcc).
+- **#131, Steam Controller no modo desktop (Wayland).** A Steam não acompanhava o foco do launcher para a janela do jogo. Quando a Steam inicia o launcher (registrado antes de as salas definirem `SteamAppId`), numa sessão Wayland com XWayland e sem `SDL_VIDEODRIVER`, o jogo recebe `SDL_VIDEODRIVER=x11`, o contorno confirmado pelo jogador.
+- **#127, `completed occlusion queries unavailable` (`0xc0000409`).** Um driver sem resultados de oclusão para uma submissão concluída encerrava o jogo com `FATAL`. Cada consulta indisponível conta agora como uma amostra (visível), com aviso no log; o teste de oclusão cobre o caso.
+- **#130** chegou sem relatório (launcher 0.6.0, RTX 2070).
+
 ## Issues após a 0.6.0 e versão 0.6.1 — 23/11/2026
 
 - **#125, Nextendo fecha com código 2.** O relatório mostra `refresh ok` e `OAuth accepted; NEX token unavailable.`, sem nenhuma linha `[nextendo] game token`. `nextendo_prepare_game_login` divide um único prazo entre a renovação do login e o pedido do token; a renovação consumiu os 15 s de `nextendo_probe.c` e o token não foi pedido. O prazo passou a 45 s, `toolchain/nextendo.py` registra `game token: not requested (...)` e o launcher traduz essa saída. Uma segunda tentativa automática foi descartada: ela consumia outro refresh token, e o teste de rotação de sessão a recusou. Os 17 testes do Nextendo passaram com o runtime recompilado.

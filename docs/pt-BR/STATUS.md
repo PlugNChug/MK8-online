@@ -1,6 +1,6 @@
 # Estado do projeto
 
-[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.1
+[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.2
 
 Esta página é o resumo atual. Investigações datadas, medições e evidências por issue ficam no [registro técnico](log/README.md). As pendências estão no [roteiro](ROADMAP.md).
 
@@ -18,7 +18,9 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
 | Linux | Construído da árvore principal; AppImage/tar.gz no CI em Ubuntu 24.04; renderização em Intel Iris Xe | Corrida em Steam Deck físico |
 
-## Versão 0.6.1
+## Versão 0.6.2
+
+- **0.6.2:** no Linux, o launcher volta a reconhecer a build (as capacidades de tela dividida e LAN eram lidas de uma DLL do Windows, #128); com a Steam no Wayland, o jogo usa XWayland para o Steam Controller sair do modo desktop (#131); resultados de oclusão indisponíveis no driver não encerram mais o jogo (#127).
 
 - **0.6.1:** o Nextendo passou a ter 45 s para renovar o login e buscar o token do jogo; antes, com conexão lenta, o token nem era pedido e o jogo fechava com código 2 (#125). O log registra o motivo e o launcher explica a falha.
 

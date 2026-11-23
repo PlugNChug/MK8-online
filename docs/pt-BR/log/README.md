@@ -17,4 +17,4 @@ Novas entradas: acrescente no topo do arquivo do tema, uma seção por assunto, 
 | [Gráficos](graphics.md) | 32 |
 | [Desempenho e memória](performance.md) | 12 |
 | [Launcher, instalação e ferramentas](launcher-install.md) | 26 |
-| [Integração de PRs, issues e verificação](integration.md) | 28 |
+| [Integração de PRs, issues e verificação](integration.md) | 29 |
