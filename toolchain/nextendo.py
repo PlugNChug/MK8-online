@@ -54,6 +54,13 @@ def prepare(runtime):
         pthread_mutex_unlock(&lock);
         return false;
     }''')
+    # Say why no game token was asked for: a sign-in refresh that used the whole budget used to fail silently (#125).
+    edit('net/nextendo.c', '        left = (int)(end - now_ms());\n        if (access_ok && left > 0) {',
+         '        left = (int)(end - now_ms());\n'
+         '        if (!access_ok || left <= 0)\n'
+         '            LOG("[nextendo] game token: not requested (%s)\\n",\n'
+         '                access_ok ? "no time left after the sign-in refresh" : "the sign-in refresh failed");\n'
+         '        if (access_ok && left > 0) {')
     # Tokens and signing keys must not land in a save folder or support archive.
     edit('net/token.c', '    jwt_ok = jwt_key_read() || jwt_key_make();', '    jwt_ok = jwt_key_make();')
     edit('net/token.c', '    uint8_t d[8];\n    random_bytes(d, sizeof d);',

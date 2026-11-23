@@ -238,6 +238,14 @@ pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<Strin
     }) {
         return Some(fatal.chars().take(400).collect());
     }
+    // (runtime/mk8/net/nextendo_probe.c: signed in, but Nextendo gave no game token in time, #125)
+    if log.contains("OAuth accepted; NEX token unavailable.") {
+        return Some(pick(
+            "O Nextendo aceitou o login, mas não entregou o token do jogo a tempo. Confira a conexão e tente de novo; se continuar, o servidor do Nextendo pode estar indisponível.",
+            "Nextendo accepted the sign-in but did not hand over the game token in time. Check the connection and try again; if it keeps happening, the Nextendo server may be unavailable.",
+            "Nextendo aceptó el inicio de sesión, pero no entregó el token del juego a tiempo. Revisa la conexión e inténtalo de nuevo; si sigue pasando, el servidor de Nextendo puede no estar disponible.",
+        ).to_owned());
+    }
     let reason = match code.map(|n| n as u32) {
         Some(0xc0000135) => pick(
             "O Windows não encontrou uma DLL necessária para iniciar o jogo.",
@@ -275,6 +283,13 @@ mod tests {
             .unwrap()
             .contains("formato"));
         assert_eq!(exit_reason(refusal, Some(1), "en"), None);
+        let token = "[nextendo] refresh ok (access 188 chars, refresh 43 chars, 3600s)\nOAuth accepted; NEX token unavailable.\n";
+        assert!(exit_reason(token, Some(2), "en")
+            .unwrap()
+            .contains("game token"));
+        assert!(exit_reason(token, Some(2), "pt-BR")
+            .unwrap()
+            .contains("token do jogo"));
         assert_eq!(
             exit_reason(
                 &format!("{refusal}[nextendo] online status: allowed"),

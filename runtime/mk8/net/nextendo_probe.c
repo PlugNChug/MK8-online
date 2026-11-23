@@ -31,7 +31,9 @@ int mk8_nextendo_probe(bool keep_session) {
     for (int i = 0; i < 3100; ++i) {
         NxStatus status; nextendo_status(&status);
         if (status.state == NX_SIGNED_IN) {
-            bool ok = nextendo_prepare_game_login(15000);
+            // 15 s covered the sign-in refresh and the game token together; on a slow connection the refresh took all
+            // of it and the token was never asked for (#125). (A second attempt would spend another refresh token.)
+            bool ok = nextendo_prepare_game_login(45000);
             if (!ok && reuse && !nextendo_signed_in()) {
                 // The server rejected the saved grant. Start PKCE once in this launch.
                 reuse = false;
