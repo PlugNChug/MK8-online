@@ -209,6 +209,12 @@ function updateSettingsLock() {
   $("settings-save").disabled = locked || !settingsLoaded || !settingsDirty || pendingProvider;
   $("settings-reload").disabled = locked;
 }
+function updateRangeValue(input) {
+  const percentage = input.value + "%";
+  input.nextElementSibling.textContent = percentage;
+  input.setAttribute("aria-valuetext", percentage);
+}
+
 function markSettingsDirty() {
   settingsDirty = true;
   updateSettingsLock();
@@ -241,11 +247,11 @@ async function loadGameSettings(force = false) {
         i18n.text(note, "Atualize o runtime do jogo para ajustar o bloom.");
         card.append(note);
       }
-      if (group.fields.some((field) => field.key === "controller_vibration")) {
+      if (group.fields.some((field) => field.key === "rumble_intensity")) {
         const note = document.createElement("p");
         note.id = "vibration-runtime-upgrade";
         note.className = "hint";
-        i18n.text(note, "Atualize a build do jogo para ajustar a vibração do controle.");
+        i18n.text(note, "Atualize a build do jogo para ajustar a intensidade da vibração.");
         card.append(note);
       }
       if (group.binding) {
@@ -284,6 +290,9 @@ async function loadGameSettings(force = false) {
         } else if (field.kind === "bool") {
           input.type = "checkbox";
           label.className = "settings-check";
+        } else if (field.kind === "percentage") {
+          input.type = "range";
+          input.min = "0"; input.max = "100"; input.step = "1";
         } else if (field.kind === "camera_distance") {
           input.type = "number";
           input.min = "75"; input.max = "150"; input.step = "1";
@@ -295,7 +304,10 @@ async function loadGameSettings(force = false) {
           i18n.text(hint, "Volume em porcentagem, de 0% a 200%.");
           label.append(hint);
         }
-        input.oninput = markSettingsDirty;
+        input.oninput = () => {
+          if (input.type === "range") updateRangeValue(input);
+          markSettingsDirty();
+        };
         input.onchange = () => {
           if (field.choices && input.value !== "none") {
             const other = Array.from(grid.querySelectorAll("[data-key]")).find(
@@ -334,6 +346,14 @@ async function loadGameSettings(force = false) {
           controls.insertBefore(input, increase);
           row.append(label, controls);
           grid.append(row);
+        } else if (input.type === "range") {
+          const range = document.createElement("span");
+          range.className = "settings-range";
+          const value = document.createElement("output");
+          value.setAttribute("aria-hidden", "true");
+          range.append(input, value);
+          label.append(range);
+          grid.append(label);
         } else {
           label.append(input);
           grid.append(label);
@@ -376,13 +396,13 @@ async function loadGameSettings(force = false) {
   $("video-runtime-upgrade").hidden = !splitUnsupported;
   const bloomUnsupported = data.bloom_supported === false;
   $("bloom-runtime-upgrade").hidden = !bloomUnsupported;
-  const vibrationUnsupported = data.controller_vibration_supported === false;
+  const vibrationUnsupported = data.rumble_intensity_supported === false;
   const vibrationUpgrade = $("vibration-runtime-upgrade");
   if (vibrationUpgrade) vibrationUpgrade.hidden = !vibrationUnsupported;
   for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
     if (input.dataset.key === "split_screen_60fps") input.disabled = splitUnsupported;
     else if (input.dataset.key === "bloom") input.disabled = bloomUnsupported;
-    else if (input.dataset.key === "controller_vibration") input.disabled = vibrationUnsupported;
+    else if (input.dataset.key === "rumble_intensity") input.disabled = vibrationUnsupported;
     const value = data.values[input.dataset.key];
     if (input.type === "checkbox") input.checked = value !== "0";
     else {
@@ -393,6 +413,7 @@ async function loadGameSettings(force = false) {
       }
       input.value = input.dataset.kind === "volume" ? Number(value) * 100 : value;
       input.dataset.previous = input.value;
+      if (input.type === "range") updateRangeValue(input);
     }
   }
   settingsDirty = false;

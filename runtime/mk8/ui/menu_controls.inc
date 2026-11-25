@@ -7,10 +7,10 @@
         choice(prompts.label, prompts.choice, names, prompts.count);
     }
     {
-        const Mk8MenuOption &vibration = *mk8_menu_option(MK8_MENU_CONTROLLER_VIBRATION);
-        bool enabled = *vibration.toggle;
-        if (opt_toggle(vibration.label, &enabled, vibration.default_index, vibration.help))
-            mk8_rumble_set_enabled(enabled);
+        const Mk8MenuOption &rumble = *mk8_menu_option(MK8_MENU_RUMBLE_INTENSITY);
+        int percent = g_settings.rumble_intensity;
+        if (opt_int(rumble.label, &percent, 0, MK8_RUMBLE_MAX, MK8_RUMBLE_STEP, MK8_RUMBLE_MAX, "%d%%", rumble.help, NULL))
+            mk8_rumble_set_intensity(percent);
     }
     ImGui::Spacing();
     header("System language");

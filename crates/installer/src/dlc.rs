@@ -182,6 +182,7 @@ mod tests {
             split_screen_60fps_supported: false,
             bloom_supported: false,
             controller_vibration_supported: false,
+            rumble_intensity_supported: false,
             direct_lan_guest_supported: false,
             files: BTreeMap::from([
                 (

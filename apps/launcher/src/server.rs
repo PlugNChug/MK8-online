@@ -767,10 +767,10 @@ impl App {
             .is_none_or(|game| game.bloom_supported)
     }
 
-    fn controller_vibration_supported(&self) -> bool {
+    fn rumble_intensity_supported(&self) -> bool {
         self.installation()
             .or_else(|| self.candidate())
-            .is_none_or(|game| game.controller_vibration_supported)
+            .is_none_or(|game| game.rumble_intensity_supported)
     }
 
     fn identity(&self) -> String {
@@ -914,7 +914,7 @@ impl App {
             // A matching host alone does not establish that the guest calls the cadence hook.
             !game.split_screen_60fps_supported
                 || !game.bloom_supported
-                || !game.controller_vibration_supported
+                || !game.rumble_intensity_supported
                 || (!game.temporal_upscaling_supported
                     || !game.romfs_long_paths_supported
                     || !game.nextendo_session_supported
@@ -1013,8 +1013,7 @@ impl App {
                 settings["split_screen_60fps_supported"] =
                     json!(self.split_screen_60fps_supported());
                 settings["bloom_supported"] = json!(self.bloom_supported());
-                settings["controller_vibration_supported"] =
-                    json!(self.controller_vibration_supported());
+                settings["rumble_intensity_supported"] = json!(self.rumble_intensity_supported());
                 Ok(settings)
             }
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
@@ -1086,7 +1085,7 @@ impl App {
                     let build_options = [
                         ("bloom", Self::bloom_supported as fn(&Self) -> bool, "Atualize o runtime do jogo para ajustar o bloom."),
                         ("split_screen_60fps", Self::split_screen_60fps_supported, "Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida."),
-                        ("controller_vibration", Self::controller_vibration_supported, "Atualize a build do jogo para ajustar a vibração do controle."),
+                        ("rumble_intensity", Self::rumble_intensity_supported, "Atualize a build do jogo para ajustar a intensidade da vibração."),
                     ];
                     for (key, supported, update_message) in build_options {
                         if value.get(key).is_some() && !supported(self) {
@@ -2871,7 +2870,7 @@ mod tests {
             "executable":{"path":"fixture.exe","sha256":hash,"bytes":1}, "files":{},
             "data_root":".","shader_root":".","gameplay_verified":false,"nextendo_supported":true,
             "menu_themes_supported":true,"menu_light_themes_supported":true,"bloom_supported":true,
-            "controller_vibration_supported":true,
+            "controller_vibration_supported":true,"rumble_intensity_supported":true,
             "direct_lan_guest_supported":true});
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
         save(&root.join("candidate.json"), &candidate).unwrap();
@@ -2883,10 +2882,10 @@ mod tests {
         candidate
             .as_object_mut()
             .unwrap()
-            .remove("controller_vibration_supported");
+            .remove("rumble_intensity_supported");
         save(&root.join("candidate.json"), &candidate).unwrap();
         assert!(app.status()["candidate_stale"].as_bool().unwrap());
-        assert!(!app.controller_vibration_supported());
+        assert!(!app.rumble_intensity_supported());
         drop(app);
         fs::remove_dir_all(root).unwrap();
     }
@@ -2924,6 +2923,7 @@ mod tests {
             split_screen_60fps_supported: false,
             bloom_supported: false,
             controller_vibration_supported: false,
+            rumble_intensity_supported: false,
             direct_lan_guest_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();

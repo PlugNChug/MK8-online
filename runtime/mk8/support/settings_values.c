@@ -13,7 +13,8 @@
 
 #include "settings_catalog.h"
 
-enum { VOLUME=MK8_MENU_VOLUME, CAMERA_DISTANCE=MK8_MENU_CAMERA_DISTANCE, SHADERS=MK8_MENU_SHADERS, DEVICE=MK8_MENU_DEVICE, RESET=MK8_MENU_RESET,
+enum { VOLUME=MK8_MENU_VOLUME, CAMERA_DISTANCE=MK8_MENU_CAMERA_DISTANCE, RUMBLE=MK8_MENU_RUMBLE_INTENSITY,
+       SHADERS=MK8_MENU_SHADERS, DEVICE=MK8_MENU_DEVICE, RESET=MK8_MENU_RESET,
        BINDING=MK8_MENU_FIELD_COUNT, MAX_ROWS=BINDING+BIND_KEY_COUNT };
 static int mapping_device;
 typedef struct { int operation,id,value; } Request;
@@ -90,6 +91,7 @@ bool mk8_settings_values_request(int operation,int id,int value) {
     if(operation<SETTINGS_STEP || operation>SETTINGS_RESTART ||
        ((operation==SETTINGS_STEP || operation==SETTINGS_SET || operation==SETTINGS_ACTIVATE) && (id<0 || id>=BINDING+2*BIND_KEY_COUNT))) return false;
     if(operation==SETTINGS_SET && !(id==VOLUME && mk8_settings_volume_valid(value)) &&
+       !(id==RUMBLE && value>=0 && value<=MK8_RUMBLE_MAX) &&
        !(id==CAMERA_DISTANCE && value>=MK8_CAMERA_DISTANCE_MIN && value<=MK8_CAMERA_DISTANCE_MAX)) return false;
     if(operation==SETTINGS_STEP && (id>=BINDING || id==RESET || id==SHADERS || (value!=-1 && value!=1))) return false;
     if(operation==SETTINGS_ACTIVATE && id!=RESET && id<BINDING) return false;
@@ -154,11 +156,17 @@ static void apply(Request r) {
         dirty|=next!=current;
         return;
     }
+    if(r.id==RUMBLE) {
+        int current=g_settings.rumble_intensity;
+        int next=r.operation==SETTINGS_SET ? r.value : current+MK8_RUMBLE_STEP*r.value;
+        if(next<0) next=0;
+        if(next>MK8_RUMBLE_MAX) next=MK8_RUMBLE_MAX;
+        mk8_rumble_set_intensity(next);
+        dirty|=next!=current;
+        return;
+    }
     const Mk8MenuOption *o=mk8_menu_option(r.id);
-    if(r.id==MK8_MENU_CONTROLLER_VIBRATION) {
-        mk8_rumble_set_enabled(!g_settings.controller_vibration);
-        dirty=true;
-    } else if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
+    if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
     else if(o->choice) {
         int index=mk8_menu_choice_index(r.id);
         if(index<0) index=o->default_index;
@@ -229,6 +237,9 @@ void mk8_settings_values_sync(void) {
             if (list.count>2) snprintf(v->help,sizeof v->help,"Reopen game to load a new provider.");
         } else if(v->id==VOLUME) {
             v->kind=SETTING_NUMBER; v->current=mk8_settings_volume_percent(); v->minimum=MK8_VOLUME_MIN; v->maximum=MK8_VOLUME_MAX;
+            snprintf(v->value,sizeof v->value,"%d%%",v->current);
+        } else if(v->id==RUMBLE) {
+            v->kind=SETTING_NUMBER; v->current=g_settings.rumble_intensity; v->minimum=0; v->maximum=MK8_RUMBLE_MAX;
             snprintf(v->value,sizeof v->value,"%d%%",v->current);
         } else if(v->id==CAMERA_DISTANCE) {
             v->kind=SETTING_NUMBER; v->current=mk8_settings_camera_distance();

@@ -28,7 +28,7 @@ PREFIX = r'''
 #include "ipc.h"
 #include "settings.h"
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"line %d: %s (%s)\n",__LINE__,#x,SDL_GetError()); exit(1); } } while(0)
-Settings g_settings={.controller_vibration=true};
+Settings g_settings={.rumble_intensity=100};
 static bool menu_open;
 bool menu_is_open(void) { return menu_open; }
 static bool native_settings_open;
@@ -660,12 +660,12 @@ static void motion_paces_hd_output(void) {
         CHECK(packet_writes==before+4);
         SDL_UnlockJoysticks();
         if (switch_product==0x2009) {
-            mk8_rumble_set_enabled(false);
+            mk8_rumble_set_intensity(0);
             mk8_rumble_pump();
             expect_effect(silent,silent);
             send_one(h[0],.4f,0);
             readback(h[0],0,0);
-            mk8_rumble_set_enabled(true);
+            mk8_rumble_set_intensity(100);
         }
         mk8_rumble_close(0,pad); pad=NULL;
         CHECK(SDL_DetachVirtualJoystick(id));
@@ -714,6 +714,11 @@ static void joycon_output(void) {
         const float bands[2][4]={{.501433f,160,0,320},{0,160,.133774f,160}};
         send_batch(h,bands);
         expect_effect(switch_product==0x2006?mixed:neutral,switch_product==0x2007?mixed:neutral);
+        const Uint8 softer[4]={0,1,0xc0,0x47};
+        mk8_rumble_set_intensity(50);
+        send_pair(h,.449964f,0);
+        expect_effect(switch_product==0x2006?softer:neutral,switch_product==0x2007?softer:neutral);
+        mk8_rumble_set_intensity(100);
         mk8_rumble_focus(false);
         expect_effect(neutral,neutral);
         mk8_rumble_focus(true);
@@ -736,6 +741,10 @@ static void joycon_output(void) {
     CHECK(pad && !mk8_rumble_pads[0].hd && live_halves==0);
     send_pair(h,.2f,.3f);
     CHECK(pulse[2].low==6554 && pulse[2].high==9830);
+    mk8_rumble_set_intensity(50);
+    send_pair(h,.2f,.3f);
+    CHECK(pulse[2].low==3277 && pulse[2].high==4915);
+    mk8_rumble_set_intensity(100);
     readback(h[0],.2f,.3f);
     readback(h[1],.2f,.3f);
     quick_exit_handler();
@@ -904,7 +913,7 @@ int main(void) {
     defer_output=true;
     send_one(p1[0],.8f,.9f);
     defer_output=false;
-    mk8_rumble_set_enabled(false);
+    mk8_rumble_set_intensity(0);
     mk8_rumble_pump();
     CHECK(!pulse[0].low && !pulse[0].high && !pulse[1].low && !pulse[1].high);
     unsigned muted=rumble_requests;
@@ -913,7 +922,7 @@ int main(void) {
     CHECK(rumble_requests==muted);
     readback(p1[0],0,0);
     readback(p2[0],0,0);
-    mk8_rumble_set_enabled(true);
+    mk8_rumble_set_intensity(100);
     mk8_rumble_pump();
     CHECK(rumble_requests==muted);
     send_one(p1[0],.4f,.7f);

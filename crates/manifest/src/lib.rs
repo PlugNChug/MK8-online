@@ -79,6 +79,8 @@ pub struct Installation {
     #[serde(default)]
     pub controller_vibration_supported: bool,
     #[serde(default)]
+    pub rumble_intensity_supported: bool,
+    #[serde(default)]
     pub direct_lan_guest_supported: bool,
 }
 

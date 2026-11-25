@@ -37,7 +37,7 @@ const char *const g_tunic_colours[N_TUNIC_COLOURS]={"Default"};
 const char *const g_heart_colours[N_HEART_COLOURS]={"Default"};
 static int windows,reboots,notices;
 void mk8_publish_settings(bool overlay,uint64_t ticks);
-void mk8_rumble_set_enabled(bool enabled) { g_settings.controller_vibration=enabled; }
+void mk8_rumble_set_intensity(int percent) { g_settings.rumble_intensity=percent; }
 void menu_notice(const char *message,double seconds) {
     assert(!strcmp(message,"Settings could not be saved. Check the settings folder, then reopen the Menu and close it to retry."));
     assert(seconds>0); ++notices;
@@ -186,10 +186,15 @@ int main(int argc,char **argv) {
     assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
     request(SETTINGS_STEP,bloom.id,1);
     assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
-    Mk8Setting vibration=find(2,"Controller vibration");
-    assert(vibration.id==MK8_MENU_CONTROLLER_VIBRATION && g_settings.controller_vibration && !strcmp(vibration.value,"On"));
-    request(SETTINGS_STEP,vibration.id,1);
-    assert(!g_settings.controller_vibration && !strcmp(find(2,"Controller vibration").value,"Off"));
+    Mk8Setting rumble=find(2,"Rumble intensity");
+    assert(rumble.id==MK8_MENU_RUMBLE_INTENSITY && rumble.kind==SETTING_NUMBER && !strcmp(rumble.value,"100%"));
+    request(SETTINGS_STEP,rumble.id,-1);
+    assert(g_settings.rumble_intensity==95);
+    assert(!mk8_settings_values_request(SETTINGS_SET,rumble.id,101));
+    request(SETTINGS_SET,rumble.id,37);
+    assert(g_settings.rumble_intensity==37 && !strcmp(find(2,"Rumble intensity").value,"37%"));
+    request(SETTINGS_SET,rumble.id,0);
+    assert(!g_settings.rumble_intensity && !strcmp(find(2,"Rumble intensity").value,"0%"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -350,6 +355,7 @@ int main(int argc,char **argv) {
             self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('bloom = 0',text)
             self.assertIn('controller_vibration = 0',text)
+            self.assertIn('rumble_intensity = 0',text)
             self.assertIn('camera_distance = 117',text)
             self.assertNotIn('joycon_mode',text)
             self.assertNotIn('pads_from_p2',text)
