@@ -1,0 +1,15 @@
+name: PR 172 FFmpeg cache validation
+
+on:
+  push:
+    branches: [codex/ci-172-validation]
+  pull_request:
+    branches: [codex/ci-172-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-ffmpeg:
+    if: github.repository == 'PlugNChug/MK8-online'
+    uses: ./.github/workflows/windows-ffmpeg.yml
