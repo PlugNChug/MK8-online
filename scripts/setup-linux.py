@@ -81,7 +81,10 @@ def main():
         raise ValueError("Ferramentas Linux requerem espaço além da reserva de 4 GiB.")
     check_dependencies()
     if not sdk_ready():
-        subprocess.run([sys.executable, ROOT / "scripts/setup-linux-sdk.py"], check=True)
+        result = subprocess.run([sys.executable, ROOT / "scripts/setup-linux-sdk.py"])
+        if result.returncode:
+            # The launcher uses the last Python exception in the log as the setup error.
+            raise SystemExit(result.returncode)
     setup_vma()
     if not sdk_ready(vma=True):
         raise ValueError("SDL, cabeçalhos Vulkan ou VMA ausentes ou incompatíveis.")

@@ -42,6 +42,9 @@ def setup():
 
 
 def install_sdk():
+    cmake = shutil.which("cmake")
+    if not cmake:
+        raise ValueError("CMake ausente. Instale o pacote cmake no ambiente Linux usado para compilar o SDL.")
     sdl = fetch(f"https://github.com/libsdl-org/SDL/releases/download/release-{SDL_VERSION}/SDL3-{SDL_VERSION}.tar.gz",
                 TOOLS / f"SDL3-{SDL_VERSION}.tar.gz", sha256=SDL_SHA256)
     headers = fetch(f"https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/{VULKAN_COMMIT}",
@@ -53,12 +56,12 @@ def install_sdk():
         source = work / f"SDL3-{SDL_VERSION}"
         build = work / "build"
         stage = work / "stage"
-        subprocess.run(["cmake", "-S", source, "-B", build, "-DCMAKE_BUILD_TYPE=Release",
+        subprocess.run([cmake, "-S", source, "-B", build, "-DCMAKE_BUILD_TYPE=Release",
                         f"-DCMAKE_INSTALL_PREFIX={SDK}", "-DCMAKE_INSTALL_LIBDIR=lib",
                         "-DSDL_SHARED=ON", "-DSDL_STATIC=OFF", "-DSDL_INSTALL_TESTS=OFF", "-DSDL_TEST_LIBRARY=OFF"],
                        check=True)
-        subprocess.run(["cmake", "--build", build, "--parallel", str(min(8, os.cpu_count() or 1))], check=True)
-        subprocess.run(["cmake", "--install", build], env=dict(os.environ, DESTDIR=str(stage)), check=True)
+        subprocess.run([cmake, "--build", build, "--parallel", str(min(8, os.cpu_count() or 1))], check=True)
+        subprocess.run([cmake, "--install", build], env=dict(os.environ, DESTDIR=str(stage)), check=True)
         prepared = stage / SDK.relative_to(SDK.anchor)
         vulkan = work / f"Vulkan-Headers-{VULKAN_COMMIT}"
         for name in ("vulkan", "vk_video"):
