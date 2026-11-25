@@ -39,6 +39,8 @@ sudo apt install build-essential clang lld llvm cmake pkg-config python3.12-venv
 
 The tools step needs a 64-bit **Python 3.12**. Distributions that ship a newer `python3` usually have no `python3.12`: install it from the AUR (`python312`), with `pyenv install 3.12` or with `uv python install 3.12`. The launcher looks for `MK8_PYTHON312`, `python3.12`, a `python3` that is 3.12, and the pyenv, uv and asdf installs; to point at a specific one, start the launcher with `MK8_PYTHON312=/path/to/python3.12`.
 
+Keep that Python installation available because the tools environment links to it. If setup leaves an incomplete environment, run **Tools** again. Setup preserves the old environment under `local/python-incomplete-*/` inside the active version directory and creates a fresh one.
+
 ### Steam Deck: Ubuntu via Distrobox
 
 ```sh
