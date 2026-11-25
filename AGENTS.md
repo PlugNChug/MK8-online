@@ -58,3 +58,5 @@ Session filenames must be unique and sortable:
 
 Identify yourself by agent name in all writes. For simple Q&A with no file changes,
 a one-liner in LOG.md is sufficient.
+
+<!-- Teste temporário de duração do CI da PR upstream nº 172. -->
