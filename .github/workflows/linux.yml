@@ -2,12 +2,17 @@ name: Linux x86-64 packages
 
 on:
   workflow_call:
+    inputs:
+      docs_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: ${{ !inputs.docs_only }}
     runs-on: ubuntu-24.04
     env:
       MK8_UPDATE_REPO: ${{ github.repository }}
