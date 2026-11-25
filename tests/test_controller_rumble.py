@@ -648,7 +648,7 @@ static void motion_paces_hd_output(void) {
         deliver_gyro(pad,2);
         SDL_UnlockJoysticks();
         /* The existing timer sends the most recent staged value without another guest command. */
-        const Uint8 low[]={0,1,0x40,0x62}, silent[]={0,1,0x40,0x40};
+        const Uint8 low[]={0,1,0x40,switch_product==0x2009?0x62:0x52}, silent[]={0,1,0x40,0x40};
         expect_effect(switch_product==0x2007?silent:low,switch_product==0x2007?low:silent);
         SDL_LockJoysticks();
         CHECK(packet_writes==before+3);
@@ -701,8 +701,9 @@ static void wait_pair_closed(void) {
     CHECK(SDL_GetAtomicInt(&mk8_pair_lease)==MK8_PAIR_FREE && !live_halves);
 }
 static void joycon_output(void) {
-    const Uint8 neutral[4]={0,1,0x40,0x40}, lo[4]={0,1,0x40,0x62}, hi[4]={0x80,0x22,0x40,0x40};
-    const Uint8 mixed[4]={0x80,0x22,0x40,0x62};
+    /* At half amplitude, .501433 maps to table entry 36 and .133774 maps to entry 12. */
+    const Uint8 neutral[4]={0,1,0x40,0x40}, lo[4]={0,1,0x40,0x52}, hi[4]={0x80,0x18,0x40,0x40};
+    const Uint8 mixed[4]={0x80,0x18,0x40,0x52};
     uint32_t h[2];
     handles(0,h);
     for(switch_product=0x2006;switch_product<=0x2007;switch_product++) {
@@ -710,13 +711,13 @@ static void joycon_output(void) {
         virtual_hidapi_id=id; pad=mk8_rumble_open(0,id);
         CHECK(pad && mk8_rumble_pads[0].hd);
         /* Both logical grips drive the one physical actuator, even for a right Joy-Con on P1. */
-        const float bands[2][4]={{.501433f,160,0,320},{0,160,.122671f,160}};
+        const float bands[2][4]={{.501433f,160,0,320},{0,160,.133774f,160}};
         send_batch(h,bands);
         expect_effect(switch_product==0x2006?mixed:neutral,switch_product==0x2007?mixed:neutral);
         mk8_rumble_focus(false);
         expect_effect(neutral,neutral);
         mk8_rumble_focus(true);
-        const float bad_frequency[2][4]={{.9f,NAN,.122671f,160},{.501433f,160,.9f,0}};
+        const float bad_frequency[2][4]={{.9f,NAN,.133774f,160},{.501433f,160,.9f,0}};
         send_batch(h,bad_frequency);
         expect_effect(switch_product==0x2006?mixed:neutral,switch_product==0x2007?mixed:neutral);
         mk8_rumble_close(0,pad);
@@ -734,7 +735,9 @@ static void joycon_output(void) {
     pad=mk8_rumble_open(0,id);
     CHECK(pad && !mk8_rumble_pads[0].hd && live_halves==0);
     send_pair(h,.2f,.3f);
-    CHECK(pulse[2].low && pulse[2].high);
+    CHECK(pulse[2].low==6554 && pulse[2].high==9830);
+    readback(h[0],.2f,.3f);
+    readback(h[1],.2f,.3f);
     quick_exit_handler();
     CHECK(fake_exit_called && !pulse[2].low && !pulse[2].high);
     /* Guest threads can still flush valid haptics while the host drains its GPU/cache. */
@@ -762,7 +765,7 @@ static void joycon_output(void) {
     endpoints[1].next=NULL;
     pad=mk8_rumble_open(0,id);
     CHECK(pad && mk8_rumble_pads[0].hd && live_halves==2);
-    const float bands[2][4]={{.501433f,160,0,320},{0,160,.122671f,160}};
+    const float bands[2][4]={{.501433f,160,0,320},{0,160,.133774f,160}};
     send_batch(h,bands);
     for(int i=0;i<2;i++) expect_raw(i,lo,hi);
     defer_output=true;

@@ -38,6 +38,7 @@ static struct Mk8RumblePad {
     SDL_JoystickID id;
     Mk8Vibration side[2];
     Uint16 low, high;
+    float rumble_gain;
     Uint64 sent_at;
     _Atomic Uint64 last_gyro_ns;
     Uint64 last_write_ns;
@@ -290,12 +291,16 @@ static void mk8_rumble_attach(int player, SDL_Gamepad *device) {
     if (device && SDL_GetBooleanProperty(SDL_GetGamepadProperties(device), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) {
         SDL_JoystickID id = SDL_GetGamepadID(device);
         Uint16 product = SDL_GetGamepadProduct(device);
+        bool nintendo = SDL_GetGamepadVendor(device) == 0x057e;
+        bool joycon = nintendo && product >= 0x2006 && product <= 0x2008;
         struct Mk8RumblePad *p = &mk8_rumble_pads[player];
+        // Calibrate Joy-Con motor output without changing the guest's requested values.
         *p = (struct Mk8RumblePad){.id = id, .product = product, .side = {mk8_silent, mk8_silent},
+                                  .rumble_gain = joycon ? 0.5f : 1.0f,
                                   .wanted = mk8_switch_neutral, .epoch = atomic_load(&mk8_output_cancellation)};
         // SDL 3.4 marks HIDAPI GUIDs with 'h'. Its combined driver only forwards basic rumble.
-        if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && SDL_GetGamepadVendor(device) == 0x057e) {
-            p->waiting_for_pair = product >= 0x2006 && product <= 0x2008 &&
+        if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && nintendo) {
+            p->waiting_for_pair = joycon &&
                                   SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING;
             if (product == 0x2008 && !p->waiting_for_pair) p->pair = mk8_pair_open(device);
             p->hd = product == 0x2009 || product == 0x2006 || product == 0x2007 || p->pair;
@@ -327,8 +332,8 @@ static void mk8_pair_track_basic(struct Mk8RumblePad *p) {
 }
 
 static void mk8_rumble_basic(struct Mk8RumblePad *p, Uint64 now) {
-    Uint16 low = (Uint16)(65535.f * fmaxf(p->side[0].low, p->side[1].low) + .5f);
-    Uint16 high = (Uint16)(65535.f * fmaxf(p->side[0].high, p->side[1].high) + .5f);
+    Uint16 low = (Uint16)(65535.f * p->rumble_gain * fmaxf(p->side[0].low, p->side[1].low) + .5f);
+    Uint16 high = (Uint16)(65535.f * p->rumble_gain * fmaxf(p->side[0].high, p->side[1].high) + .5f);
     if (low == p->low && high == p->high && ((!low && !high) || now - p->sent_at < 125)) return;
     SDL_Gamepad *device = SDL_GetGamepadFromID(p->id);
     if (!device || !SDL_RumbleGamepad(device, low, high, (low || high) ? 250 : 0)) {
@@ -520,9 +525,9 @@ static int mk8_switch_frequency(float hz, int base) {
     return (int)fminf(127, fmaxf(1, code));
 }
 
-static void mk8_switch_actuator(Uint8 out[4], Mk8Vibration value) {
-    int low = isfinite(value.low_hz) && value.low_hz > 0 ? mk8_switch_level(value.low) : 0;
-    int high = isfinite(value.high_hz) && value.high_hz > 0 ? mk8_switch_level(value.high) : 0;
+static void mk8_switch_actuator(Uint8 out[4], Mk8Vibration value, float gain) {
+    int low = isfinite(value.low_hz) && value.low_hz > 0 ? mk8_switch_level(value.low * gain) : 0;
+    int high = isfinite(value.high_hz) && value.high_hz > 0 ? mk8_switch_level(value.high * gain) : 0;
     int lf = low ? mk8_switch_frequency(value.low_hz, 64) : 64;
     int hf = high ? 4 * mk8_switch_frequency(value.high_hz, 96) : 256;
     out[0] = (Uint8)hf;
@@ -564,9 +569,9 @@ static void mk8_rumble_apply(struct Mk8RumblePad *p, Uint64 now) {
             single.high = right.high;
             single.high_hz = right.high_hz;
         }
-        mk8_switch_actuator(p->wanted.side[p->product - 0x2006], single);
+        mk8_switch_actuator(p->wanted.side[p->product - 0x2006], single, p->rumble_gain);
     } else {
-        for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side]);
+        for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side], p->rumble_gain);
     }
     bool active = memcmp(&p->wanted, &mk8_switch_neutral, sizeof(p->wanted)) != 0;
     if (!active && mk8_switch_playing(p)) p->stop_first = true;
