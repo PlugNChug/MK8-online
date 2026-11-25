@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'toolchain'))
 from host import prepare_host_sources
-from native import DEFAULT_COMPILER
+from native import DEFAULT_COMPILER, TOOLS
 
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
@@ -52,7 +52,7 @@ int main(int argc,char **argv) {
             subprocess.run([str(DEFAULT_COMPILER),'cc','-target','x86_64-windows-gnu','-O2','-UNDEBUG',str(program),'-o',str(exe)],env=env,check=True)
             subprocess.run([str(exe),str(output)],check=True,timeout=30)
 
-    def test_shared_font_preference_preserves_overrides_and_has_windows_fallbacks(self):
+    def test_shared_font_preference_and_linux_missing_font_message(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', output)
@@ -64,15 +64,33 @@ int main(int argc,char **argv) {
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include <assert.h>
 typedef struct { uint64_t addr, size; } Font;
 static Font fonts[6];
 static unsigned char font_tried[6];
-static int g_fonts_loaded, calls;
+static int g_fonts_loaded, calls, expect_missing;
 static const char *override, *available[4], *selected;
 static const char *fake_getenv(const char *name) { assert(!strcmp(name,"LARECOMP_FONT")); return override; }
+static void expect_missing_font(const char *format, ...) {
+    assert(expect_missing);
+    char message[512];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof message, format, args);
+    va_end(args);
+    assert(strstr(message, "fonts-dejavu-core") && strstr(message, "ttf-dejavu"));
+    assert(strstr(message, "dejavu-sans-fonts"));
+    assert(strstr(message, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"));
+    assert(strstr(message, "/usr/share/fonts/TTF/DejaVuSans.ttf"));
+    assert(strstr(message, "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"));
+    assert(strlen(message) < 400);
+    exit(0);
+}
 #define getenv fake_getenv
-#define FATAL(...) abort()
+#define FATAL expect_missing_font
+#define __linux__ 1
 static int load_one(const char *path, Font *font) {
     calls++;
     for (int i=0;i<4;i++) if (available[i] && !strcmp(path,available[i])) {
@@ -96,10 +114,16 @@ int main(void) {
     available[2]=override="custom.ttf"; check(override);
     override="missing.ttf"; check(available[0]);
     available[0]="fonts/nintendo_udsg-r_std_003.ttf"; check(available[0]);
+    memset(available, 0, sizeof available);
+    available[0]="/usr/share/fonts/TTF/DejaVuSans.ttf"; check(available[0]);
+    available[0]=NULL; override=NULL;
+    memset(fonts, 0, sizeof fonts); g_fonts_loaded=0; expect_missing=1;
+    load_fonts();
+    return 1;
 }
 ''', encoding='utf-8')
             exe = output/'font-preference.exe'
-            env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(ROOT/'local/native-tools/cache'))
+            env = dict(os.environ, ZIG_GLOBAL_CACHE_DIR=str(TOOLS/'cache'))
             subprocess.run([str(DEFAULT_COMPILER), 'cc', '-target', 'x86_64-windows-gnu', '-O2', '-UNDEBUG',
                             str(program), '-o', str(exe)], env=env, check=True)
             subprocess.run([str(exe)], check=True, timeout=30)

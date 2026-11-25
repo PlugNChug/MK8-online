@@ -150,6 +150,16 @@ def prepare_host_sources(source, output):
     if text.count(old) != 1:
         raise ValueError('Font fallback list changed upstream')
     text = text.replace(old, '"C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf", '+old)
+    old = r'    if (!fonts[0].addr) FATAL("no usable system font substitute\n");'
+    dejavu_paths = re.findall(r'"/usr/share/fonts/[^"\n]+/DejaVuSans\.ttf"', text)
+    if text.count(old) != 1 or len(dejavu_paths) != 3:
+        raise ValueError('Linux font fallback changed upstream')
+    text = text.replace(old, r'''#ifdef __linux__
+    if (!fonts[0].addr) FATAL(
+        "no usable system font substitute. Install DejaVu Sans in the environment that runs the game "
+        "(fonts-dejavu-core on Ubuntu/Debian, ttf-dejavu on Arch, dejavu-sans-fonts on Fedora). "
+        "Checked DejaVu paths %s, %s and %s.\n",
+        ''' + ',\n        '.join(dejavu_paths) + ');\n#else\n' + old + '\n#endif')
     boundary = '    FILE *f = fopen(path, "rb");'
     if text.count(boundary) != 1:
         raise ValueError('Shared font file boundary changed upstream')

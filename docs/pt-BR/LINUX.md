@@ -32,8 +32,10 @@ sudo apt install build-essential clang lld llvm cmake pkg-config python3.12-venv
   librsvg2-dev libdbus-1-dev libvulkan-dev libshaderc-dev libavcodec-dev libavformat-dev \
   libavutil-dev libswscale-dev libx11-dev libxext-dev libxfixes-dev libxrandr-dev libxcursor-dev \
   libxi-dev libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev libasound2-dev libpulse-dev \
-  libpipewire-0.3-dev libdecor-0-dev libudev-dev
+  libpipewire-0.3-dev libdecor-0-dev libudev-dev fonts-dejavu-core
 ```
+
+Para usar a fonte alternativa do sistema, instale a DejaVu Sans no ambiente em que você executa o jogo. O pacote é `fonts-dejavu-core` no Ubuntu e Debian, `ttf-dejavu` no Arch e CachyOS e `dejavu-sans-fonts` no Fedora.
 
 ### Outras distribuições (Arch, CachyOS, Fedora)
 
