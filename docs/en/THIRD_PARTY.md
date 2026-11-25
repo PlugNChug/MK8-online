@@ -4,6 +4,10 @@
 
 > Translation of the Portuguese file, which remains the reference record. If the two disagree, the Portuguese text and the license files in [docs/licenses](../licenses/) prevail.
 
+## Game language codes
+
+The system language code and NACP index for Spanish (Latin America) were checked against libnx. [System language declarations](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [NACP language table](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
+
 ## Core sources and licenses
 
 Project code is licensed under GPL-3.0-or-later ([LICENSE](../../LICENSE)). Snapshots and libraries keep their original licenses. Names in paths, symbols and serialized identifiers are integration contracts, not claims of equivalence between projects.

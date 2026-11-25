@@ -2,6 +2,10 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
+## Espanhol (América Latina) (#177)
+
+O NACP local da versão 4.0.1 declara esse idioma do jogo. As listas do launcher e do menu F1 oferecem o código correspondente, `es-419`. Na build Windows de 25 de novembro de 2026, com as duas correções de idioma (prefixo SHA-256 `df0d13b2`), o ensaio automatizado até o menu leu os arquivos de menu, mensagens e fonte em `UI/USes`.
+
 ## Quedas de FPS nas corridas (#133) e versão 0.6.3 — 23/11/2026
 
 - **Sintoma.** Dois jogadores relataram 24-30 FPS em câmera lenta em qualquer corrida desde a build da 0.6.0, com menus e cutscenes a 60 (RX 580 2048SP + Xeon E5-2650 v3; o outro rodava a 60 na 0.5.0). A máquina de teste tem a mesma GPU e um Xeon E5-2666 v3: o Time Trial (1 piloto) fica a 60 depois da largada, mas um Grand Prix com 12 pilotos ficou entre 27 e 45 FPS (média 39,5).

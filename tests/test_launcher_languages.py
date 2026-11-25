@@ -32,6 +32,7 @@ class LanguageTests(unittest.TestCase):
         process = subprocess.Popen(
             [os.environ.get("MK8_LAUNCHER_EXE", str(ROOT / "target/release/Launcher.exe")),
              "--headless", "--data-dir", str(folder)],
+            env={**os.environ, "MK8_NATIVE_TOOLS": str(folder / "native-tools")},
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -55,6 +56,14 @@ class LanguageTests(unittest.TestCase):
                     page.goto(url)
                 self.assertEqual(initial_status.value.headers["x-mk8-language"], "en")
                 expect(page.get_by_role("heading", name="Installation", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Play", exact=True).click()
+                game_language = page.locator("#play-game-language")
+                expect(game_language.locator('option[value="es"]')).to_have_text("Spanish (Spain)")
+                expect(game_language.locator('option[value="es-419"]')).to_have_text("Spanish (Latin America)")
+                game_language.select_option("es-419")
+                expect(page.locator("#play-game-language-status")).to_contain_text("Saved")
+                self.assertIn("language = es-419", (folder / "user-no-mii/mk8d.ini").read_text().splitlines())
+                expect(page.locator("html")).to_have_attribute("lang", "en")
                 token = page.locator('meta[name="mk8-token"]').get_attribute("content")
                 saved = page.request.post(url + "/api/username", headers={"X-MK8-Token": token}, data=json.dumps({"name": "Instalar"}))
                 self.assertTrue(saved.json()["ok"])
@@ -90,6 +99,8 @@ class LanguageTests(unittest.TestCase):
                 page.goto(url)
                 expect(page.locator("html")).to_have_attribute("lang", "en")
                 expect(page.get_by_role("heading", name="Installation", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Play", exact=True).click()
+                expect(game_language).to_have_value("es-419")
                 page.get_by_role("button", name="Multiplayer", exact=True).click()
                 expect(page.get_by_role("heading", name="Your room", exact=True)).to_be_visible()
                 page.get_by_label("Language", exact=True).select_option("pt-BR")

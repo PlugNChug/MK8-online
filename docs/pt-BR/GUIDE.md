@@ -124,7 +124,7 @@ Pressione **F1** ou **Menos + Mais** para abrir o menu do jogo. **Jogar** volta 
 
 O botão **Info** do menu principal abre a janela local **How to Play**, com controles, drift, itens, assistências e modos. Feche com **Back to game** ou Esc.
 
-No launcher, **Configurações** reúne vídeo, áudio, idioma do jogo, ícones dos botões, ordem dos controles e mapeamento de teclado/controle. O arquivo `user-no-mii/mk8d.ini` é o mesmo do menu F1. **Salvar configurações** aplica no próximo início; **Recarregar do jogo** lê os valores gravados pelo menu F1. Não é possível salvar enquanto o jogo ou uma preparação usa os dados.
+No launcher, **Configurações** reúne vídeo, áudio, idioma do jogo, ícones dos botões, ordem dos controles e mapeamento de teclado e controle. O arquivo `user-no-mii/mk8d.ini` é o mesmo do menu F1. **Idioma do jogo** oferece as opções Espanhol (Espanha) e Espanhol (América Latina). **Salvar configurações** aplica as alterações no próximo início. **Recarregar do jogo** lê os valores gravados pelo menu F1. Não é possível salvar enquanto o jogo ou uma preparação usa os dados.
 
 ## Online com o Nextendo
 
