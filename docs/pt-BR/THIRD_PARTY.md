@@ -2,6 +2,10 @@
 
 [English](../en/THIRD_PARTY.md) · **Português**
 
+## Códigos de idioma do jogo
+
+O código de idioma de sistema e o índice do NACP para Português (Portugal) foram conferidos na libnx. [Declarações de idiomas do sistema](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [Tabela de idiomas do NACP](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
+
 ## Cadência das câmeras em tela dividida
 
 As [notas do Racing 8 DX Recomp](https://github.com/galarianpikachu2021-hue/Racing-8-DX-Recomp/blob/main/COOPERATE.md) e a [investigação do Mush8](https://github.com/c22dev/mush8/pull/16) ajudaram a localizar o escalonador de câmeras do MK8 4.0.1. A adaptação deste projeto atua na configuração da corrida que alimenta esse escalonador. Os testes e as medições locais estão em [registro técnico](log/README.md).

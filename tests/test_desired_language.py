@@ -22,7 +22,7 @@ REPLY
 }
 int main(void) {
     const char *cases[][2] = {{"zh-CN", "zh-Hans"}, {"zh-TW", "zh-Hant"}, {"ja", "ja"}, {"en-US", "en-US"},
-                              {"ko", "ko"}, {"es", "es"}, {"zh", "zh"}};
+                              {"ko", "ko"}, {"es", "es"}, {"pt", "pt"}, {"zh", "zh"}};
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         char lang[8] = {0};
         saved = cases[i][0];
@@ -38,7 +38,7 @@ int main(void) {
 
 @unittest.skipUnless(DEFAULT_COMPILER.is_file(), 'Native compiler required')
 class DesiredLanguageTests(unittest.TestCase):
-    def test_prepared_reply_uses_application_chinese_codes(self):
+    def test_prepared_reply_uses_application_language_codes(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             runtime = prepare_host_sources(ROOT/'upstream/smm2recomp/recomp', root/'host')

@@ -2,6 +2,10 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/integration.md)
 
+## Portuguese (Portugal) (#139)
+
+The local 4.0.1 NACP declares this game language. The launcher and F1 game language lists expose its Switch code, `pt`. In the November 25, 2026 Windows test build containing both locale fixes (runtime SHA-256 prefix `df0d13b2`), the automated menu run read the menu, message and font archives from `UI/EUpt`.
+
 ## 0.6.0 cycle — summary of 2026-11-20 to 2026-11-22
 
 The detailed record of this cycle is in Portuguese, in the [Portuguese log](../../pt-BR/log/integration.md) and its topic files (graphics, performance, controllers, launcher, releases). Summary:
