@@ -155,7 +155,10 @@ static void apply(Request r) {
         return;
     }
     const Mk8MenuOption *o=mk8_menu_option(r.id);
-    if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
+    if(r.id==MK8_MENU_CONTROLLER_VIBRATION) {
+        mk8_rumble_set_enabled(!g_settings.controller_vibration);
+        dirty=true;
+    } else if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
     else if(o->choice) {
         int index=mk8_menu_choice_index(r.id);
         if(index<0) index=o->default_index;

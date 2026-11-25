@@ -28,7 +28,7 @@ PREFIX = r'''
 #include "ipc.h"
 #include "settings.h"
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"line %d: %s (%s)\n",__LINE__,#x,SDL_GetError()); exit(1); } } while(0)
-Settings g_settings;
+Settings g_settings={.controller_vibration=true};
 static bool menu_open;
 bool menu_is_open(void) { return menu_open; }
 static bool native_settings_open;
@@ -659,6 +659,14 @@ static void motion_paces_hd_output(void) {
         send_one(h[0],.8f,0);
         CHECK(packet_writes==before+4);
         SDL_UnlockJoysticks();
+        if (switch_product==0x2009) {
+            mk8_rumble_set_enabled(false);
+            mk8_rumble_pump();
+            expect_effect(silent,silent);
+            send_one(h[0],.4f,0);
+            readback(h[0],0,0);
+            mk8_rumble_set_enabled(true);
+        }
         mk8_rumble_close(0,pad); pad=NULL;
         CHECK(SDL_DetachVirtualJoystick(id));
     }
@@ -890,6 +898,24 @@ int main(void) {
     CHECK(info[0]==1 && info[1]==2);
     send_pair(p2,.2f,.6f);
     CHECK(pulse[1].calls>0 && pulse[1].low>0 && pulse[1].high>0);
+    defer_output=true;
+    send_one(p1[0],.8f,.9f);
+    defer_output=false;
+    mk8_rumble_set_enabled(false);
+    mk8_rumble_pump();
+    CHECK(!pulse[0].low && !pulse[0].high && !pulse[1].low && !pulse[1].high);
+    unsigned muted=rumble_requests;
+    send_one(p1[0],.4f,.7f);
+    send_pair(p2,.2f,.6f);
+    CHECK(rumble_requests==muted);
+    readback(p1[0],0,0);
+    readback(p2[0],0,0);
+    mk8_rumble_set_enabled(true);
+    mk8_rumble_pump();
+    CHECK(rumble_requests==muted);
+    send_one(p1[0],.4f,.7f);
+    send_pair(p2,.2f,.6f);
+    CHECK(pulse[0].low && pulse[0].high && pulse[1].low && pulse[1].high);
     unsigned second=pulse[1].calls;
     send_one(p1[0],0,0);
     CHECK(!pulse[0].low && !pulse[0].high && pulse[1].calls==second);

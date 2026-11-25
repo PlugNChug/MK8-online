@@ -77,6 +77,8 @@ pub struct Installation {
     #[serde(default)]
     pub bloom_supported: bool,
     #[serde(default)]
+    pub controller_vibration_supported: bool,
+    #[serde(default)]
     pub direct_lan_guest_supported: bool,
 }
 

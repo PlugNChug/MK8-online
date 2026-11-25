@@ -2,6 +2,10 @@
 
 [Índice](README.md) · [English](../../en/log/controllers.md)
 
+## Opção de vibração do controle (#166)
+
+Em 25 de novembro de 2026, o jogador confirmou o funcionamento da opção com um Pro Controller do Switch via Bluetooth na build isolada para Windows do jogo 4.0.1 (prefixo do SHA-256 do runtime `2448f1ce`). O menu nativo F1 gravou a preferência como desativada. Os testes compilados verificaram que desativar a vibração interrompe os efeitos ativos, descarta os pendentes, envia um pacote neutro de vibração HD e permite novos efeitos ao reativar a opção. A duração excessiva da vibração relatada ainda precisa ser reproduzida.
+
 ## Entrada pela Steam com um ou dois jogadores locais
 
 O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.

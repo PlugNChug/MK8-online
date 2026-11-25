@@ -726,6 +726,28 @@ static void mk8_wake_output(void) {
     SDL_PushEvent(&e);  // The UI also checks the queue after its next 16 ms event wait.
 }
 
+// Caller holds the guest mutex. Device I/O stays on the existing output path.
+static bool mk8_cancel_rumble_output(void) {
+    unsigned stop = 0;
+    mk8_output_count = 0;
+    mk8_expired_stops.mask = 0;
+    atomic_fetch_add(&mk8_output_cancellation, 1);
+    for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mk8_guest_pads[i].id) {
+        mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
+        stop |= 1u << i;
+    }
+    pthread_cond_broadcast(&mk8_output_space);
+    return !mk8_output_exiting && mk8_queue_output(stop, SDL_GetTicks());
+}
+
+void mk8_rumble_set_enabled(bool enabled) {
+    pthread_mutex_lock(&mk8_guest_mutex);
+    bool previous = __atomic_exchange_n(&g_settings.controller_vibration, enabled, __ATOMIC_RELAXED);
+    bool wake = previous && !enabled && mk8_cancel_rumble_output();
+    pthread_mutex_unlock(&mk8_guest_mutex);
+    if (wake) mk8_wake_output();
+}
+
 void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     const uint8_t *handles = req->data, *values = NULL;
     size_t count = 1;
@@ -735,18 +757,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         pthread_mutex_lock(&mk8_guest_mutex);
         if (req->cmd == 204) {
             mk8_rumble_permitted = (req->data[0] & 1) != 0;
-            if (!mk8_rumble_permitted) {
-                unsigned stop = 0;
-                mk8_output_count = 0;
-                mk8_expired_stops.mask = 0;
-                atomic_fetch_add(&mk8_output_cancellation, 1);
-                for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mk8_guest_pads[i].id) {
-                    mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
-                    stop |= 1u << i;
-                }
-                if (!mk8_output_exiting) wake = mk8_queue_output(stop, SDL_GetTicks());
-                pthread_cond_broadcast(&mk8_output_space);
-            }
+            if (!mk8_rumble_permitted) wake = mk8_cancel_rumble_output();
         } else {
             resp->data[0] = mk8_rumble_permitted;
             resp_size(resp, 1);
@@ -773,6 +784,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     uint64_t cancellation = atomic_load(&mk8_output_cancellation);
     struct Mk8OutputBatch pending = {0};
     unsigned sides = 0;
+    bool host_enabled = __atomic_load_n(&g_settings.controller_vibration, __ATOMIC_RELAXED);
     bool enabled = mk8_rumble_focused && mk8_rumble_permitted && !mk8_rumble_menu_open();
     for (size_t i = 0; i < count; i++) {
         uint32_t handle;
@@ -782,7 +794,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         if (req->cmd == 202) {
             memcpy(resp->data, p ? &p->side[side] : &mk8_silent, sizeof(Mk8Vibration));
             resp_size(resp, sizeof(Mk8Vibration));
-        } else if (p) {
+        } else if (p && host_enabled) {
             Mk8Vibration value;
             memcpy(&value, values + i * sizeof(value), sizeof(value));
             value.low = mk8_amplitude(value.low);

@@ -13,6 +13,7 @@ extern "C" {
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={};
 void input_pads_reassign(void) {}
 void mk8_settings_pads_changed(void) {}
+void mk8_rumble_set_enabled(bool enabled) { g_settings.controller_vibration=enabled; }
 const char *const g_heart_colours[N_HEART_COLOURS]={};
 void rt_log(const char *,...) {}
 int input_pad_family(void) { return 0; }
@@ -48,6 +49,11 @@ static int record(const char *label) {
 static bool opt_choice(const char *label,int *,const char *const *,int,int,const char *,bool=true) { record(label); return false; }
 static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     int id=record(label);
+    if(id==MK8_MENU_CONTROLLER_VIBRATION) {
+        assert(*field==g_settings.controller_vibration);
+        if(click && !strcmp(click,label)) { *field=!*field; return true; }
+        return false;
+    }
     assert(id==MK8_MENU_FULLSCREEN || field==mk8_menu_option(id)->toggle);
     return false;
 }
@@ -107,6 +113,9 @@ int main() {
     ImGuiIO &io=ImGui::GetIO(); io.IniFilename=nullptr; io.DisplaySize=ImVec2(1280,2160);
     unsigned char *pixels; int w,h; io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     if(frame(nullptr)) return 1;
+    assert(g_settings.controller_vibration);
+    if(frame("Controller vibration")) return 1;
+    assert(!g_settings.controller_vibration);
     main_menu=true; g_settings.res_mode=RES_Q75;
     for(int dev : {BIND_DEV_PAD,BIND_DEV_KEY}) {
         char button[20]; snprintf(button,sizeof button,"##%d_%d",dev,BIND_B);

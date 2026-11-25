@@ -399,6 +399,7 @@ class RuntimeDependencyManifestTests(unittest.TestCase):
             self.assertEqual(candidate['files']['settings-common-layout'], pipeline.file_record(common_layout))
             self.assertFalse(candidate['split_screen_60fps_supported'])
             self.assertTrue(candidate['bloom_supported'])
+            self.assertTrue(candidate['controller_vibration_supported'])
             self.assertEqual(candidate['files']['controller-layout'], pipeline.file_record(controller_layout))
             self.assertEqual(game.read_bytes(), b'preserved game')
             self.assertEqual(save.read_bytes(), b'preserved save')

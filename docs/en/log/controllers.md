@@ -2,6 +2,10 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/controllers.md)
 
+## Controller vibration toggle (#166)
+
+On November 25, 2026, the player confirmed the toggle with a Bluetooth Switch Pro Controller in the isolated Windows 4.0.1 build (runtime SHA-256 prefix `2448f1ce`). The native F1 menu saved the preference as off. Compiled tests verified that disabling vibration clears active and queued effects, sends a neutral HD Rumble packet, and accepts new effects when re-enabled. The reported excessive vibration duration remains to be reproduced.
+
 ## Portability of the game units and SDL input
 
 On revision `93b817d` of PR #83, preparation rejected three valid units generated on Windows (`main_077.c`, `main_164.c` and `main_114.c`) and accepted the same units with LF. In the partial integration into `fix-chore`, the ultrawide camera, HUD, settings, cups, Miis, SDK and Yaz0 use the hashes already recorded on this branch. The 29 affected units, prepared with both CRLF and LF on Windows and WSL, reproduced the adapted sources of the previous build byte for byte. All were recompiled on Windows with the build options. 30 preparation and behavior tests passed.

@@ -37,6 +37,7 @@ const char *const g_tunic_colours[N_TUNIC_COLOURS]={"Default"};
 const char *const g_heart_colours[N_HEART_COLOURS]={"Default"};
 static int windows,reboots,notices;
 void mk8_publish_settings(bool overlay,uint64_t ticks);
+void mk8_rumble_set_enabled(bool enabled) { g_settings.controller_vibration=enabled; }
 void menu_notice(const char *message,double seconds) {
     assert(!strcmp(message,"Settings could not be saved. Check the settings folder, then reopen the Menu and close it to retry."));
     assert(seconds>0); ++notices;
@@ -109,7 +110,7 @@ int main(int argc,char **argv) {
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==20);
+    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==21);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -185,6 +186,10 @@ int main(int argc,char **argv) {
     assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
     request(SETTINGS_STEP,bloom.id,1);
     assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
+    Mk8Setting vibration=find(2,"Controller vibration");
+    assert(vibration.id==MK8_MENU_CONTROLLER_VIBRATION && g_settings.controller_vibration && !strcmp(vibration.value,"On"));
+    request(SETTINGS_STEP,vibration.id,1);
+    assert(!g_settings.controller_vibration && !strcmp(find(2,"Controller vibration").value,"Off"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -254,7 +259,7 @@ int main(int argc,char **argv) {
     request(SETTINGS_STEP,find(1,"Movie audio").id,1); assert(!g_settings.movie_audio);
     request(SETTINGS_STEP,find(2,"Game language").id,1); assert(g_settings.language==1);
     request(SETTINGS_STEP,find(2,"Button icons").id,1); assert(g_settings.prompts==1);
-    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==28);
+    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==29);
     check_tips();
     assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_LALT && g_bind_key[BIND_ZR]==SDL_SCANCODE_SPACE);
     request(SETTINGS_ACTIVATE,find(2,"ZL").id,0); assert(mk8_settings_values_capturing());
@@ -344,6 +349,7 @@ int main(int argc,char **argv) {
             self.assertIn('volume = 1.50',text)
             self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('bloom = 0',text)
+            self.assertIn('controller_vibration = 0',text)
             self.assertIn('camera_distance = 117',text)
             self.assertNotIn('joycon_mode',text)
             self.assertNotIn('pads_from_p2',text)

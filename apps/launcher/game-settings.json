@@ -160,6 +160,12 @@
       "title": "Controles e idioma",
       "fields": [
         {
+          "key": "controller_vibration",
+          "label": "Vibração do controle",
+          "default": "1",
+          "kind": "bool"
+        },
+        {
           "key": "language",
           "label": "Idioma do jogo",
           "default": "auto",

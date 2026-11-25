@@ -133,7 +133,7 @@ pub fn read(local: &Path, build: MenuBuild) -> Result<Value> {
             if let Some(slot) = values.get_mut(key) {
                 let value = if key == "split_screen_60fps" && value != "1" {
                     "0"
-                } else if key == "bloom" && value != "0" {
+                } else if matches!(key, "bloom" | "controller_vibration") && value != "0" {
                     "1"
                 } else {
                     value

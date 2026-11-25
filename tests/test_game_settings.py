@@ -33,6 +33,7 @@ int main(void) {
            g_settings.skip_intro, g_settings.show_memory, g_settings.ahead_fast,
            g_settings.prompts);
     printf("camera_distance=%d\n", mk8_settings_camera_distance());
+    printf("controller_vibration=%d\n", g_settings.controller_vibration);
     bind_settings_save(stdout);
     settings_save();
     return 0;
@@ -70,6 +71,12 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(baseline, run({}))
             self.assertEqual(baseline.splitlines()[0], "1.00 0 0 0 0 2 0 0")
             self.assertNotIn("bind_", baseline)
+            self.assertIn("controller_vibration=1\n", baseline)
+            for value, expected in (("0", 0), ("0 \t", 0), ("1", 1), ("", 1), ("off", 1), ("0junk", 1)):
+                with self.subTest(controller_vibration=value):
+                    self.assertIn(f"controller_vibration={expected}\n", run({"controller_vibration": value}))
+                    saved = (folder / "mk8d.ini").read_text().splitlines()
+                    self.assertIn(f"controller_vibration = {expected}", saved)
             for value, expected in (("75", 75), ("117", 117), ("150", 150), ("", 100), ("74", 100),
                                     ("151", 100), ("117x", 100), ("+117", 100), ("99.5", 100), ("999999999999", 100)):
                 with self.subTest(camera_distance=value):

@@ -258,9 +258,11 @@ void settings_load(void) {''')
         else if (!strcmp(key, "volume"))''')
         original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "split_screen_60fps = %d\\n", mk8_split_screen_60fps_enabled());\n    fprintf(f, "volume =')
         fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    bool bloom;
+    bool controller_vibration;
 } Settings;
 bool mk8_bloom_enabled(void);
-void mk8_set_bloom(bool enabled);''')
+void mk8_set_bloom(bool enabled);
+void mk8_rumble_set_enabled(bool enabled);''')
         header.write_text(fields, encoding='utf-8')
         original = replace(original, 'void settings_load(void) {', '''bool mk8_bloom_enabled(void) {
     return __atomic_load_n(&g_settings.bloom, __ATOMIC_RELAXED);
@@ -269,11 +271,17 @@ void mk8_set_bloom(bool enabled) {
     __atomic_store_n(&g_settings.bloom, enabled, __ATOMIC_RELAXED);
 }
 void settings_load(void) {''')
-        original = replace(original, '    .volume = MK8_VOLUME_DEFAULT / 100.0f,', '    .bloom = true,\n    .volume = MK8_VOLUME_DEFAULT / 100.0f,')
+        original = replace(original, '    .volume = MK8_VOLUME_DEFAULT / 100.0f,',
+                           '    .bloom = true,\n    .controller_vibration = true,\n    .volume = MK8_VOLUME_DEFAULT / 100.0f,')
         original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "bloom"))
             mk8_set_bloom(*val != '0' || val[1 + strspn(val + 1, " \t")]);
         else if (!strcmp(key, "volume"))''')
         original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "bloom = %d\\n", mk8_bloom_enabled());\n    fprintf(f, "volume =')
+        original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "controller_vibration"))
+            __atomic_store_n(&g_settings.controller_vibration, *val != '0' || val[1 + strspn(val + 1, " \\t\\r")], __ATOMIC_RELAXED);
+        else if (!strcmp(key, "volume"))''')
+        original = replace(original, '    fprintf(f, "volume =',
+                           '    fprintf(f, "controller_vibration = %d\\n", g_settings.controller_vibration);\n    fprintf(f, "volume =')
         original = replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")')
         original = '#include <SDL3/SDL_filesystem.h>\n#include <pthread.h>\n' + original
         original = replace(original, 'void settings_save(void) {', '''static pthread_mutex_t settings_write_lock = PTHREAD_MUTEX_INITIALIZER;

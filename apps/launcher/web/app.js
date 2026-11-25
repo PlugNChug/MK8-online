@@ -241,6 +241,13 @@ async function loadGameSettings(force = false) {
         i18n.text(note, "Atualize o runtime do jogo para ajustar o bloom.");
         card.append(note);
       }
+      if (group.fields.some((field) => field.key === "controller_vibration")) {
+        const note = document.createElement("p");
+        note.id = "vibration-runtime-upgrade";
+        note.className = "hint";
+        i18n.text(note, "Atualize a build do jogo para ajustar a vibração do controle.");
+        card.append(note);
+      }
       if (group.binding) {
         const reset = document.createElement("button");
         reset.type = "button";
@@ -369,9 +376,13 @@ async function loadGameSettings(force = false) {
   $("video-runtime-upgrade").hidden = !splitUnsupported;
   const bloomUnsupported = data.bloom_supported === false;
   $("bloom-runtime-upgrade").hidden = !bloomUnsupported;
+  const vibrationUnsupported = data.controller_vibration_supported === false;
+  const vibrationUpgrade = $("vibration-runtime-upgrade");
+  if (vibrationUpgrade) vibrationUpgrade.hidden = !vibrationUnsupported;
   for (const input of $("settings-groups").querySelectorAll("[data-key]")) {
     if (input.dataset.key === "split_screen_60fps") input.disabled = splitUnsupported;
     else if (input.dataset.key === "bloom") input.disabled = bloomUnsupported;
+    else if (input.dataset.key === "controller_vibration") input.disabled = vibrationUnsupported;
     const value = data.values[input.dataset.key];
     if (input.type === "checkbox") input.checked = value !== "0";
     else {

@@ -114,6 +114,8 @@ SDL-compatible controllers, the keyboard and Switch controllers are supported. S
 
 **HD Rumble:** supported on the original Switch Pro Controller, individual Joy-Cons and one identifiable pair of official Bluetooth Joy-Cons. Other controllers use SDL rumble.
 
+**Controller vibration** is on by default. Turn it off under **Controls** in the F1 menu to stop vibration for all players. You can also set it in the launcher's **Settings → Video and controls → Controls** before starting the game.
+
 **Motion steering:** connect a controller that exposes a gyroscope and accelerometer to SDL. In the race pause menu, press **Y** to enable **Tilt Controls**, then hold the controller like a steering wheel.
 
 ## In-game menu and settings
