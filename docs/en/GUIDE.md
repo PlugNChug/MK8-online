@@ -102,6 +102,8 @@ On Linux, the temporal upscalers and FSR 3 frame generation are built on your PC
 
 SDL-compatible controllers, the keyboard and Switch controllers are supported. Steam Input can stay enabled for Spacewar when playing solo or in a Steam room; an idle virtual Steam controller leaves the player slot free for a physical controller detected through Windows GameInput.
 
+Under **Controls → Stick dead zone**, choose 0–50% to ignore small movements near the center of both sticks. The setting applies to all controllers and defaults to 0%, which preserves the existing response. You can change it in the launcher or in the F1 menu during play.
+
 **Choosing player 1:** at the title screen, press a button on the controller you want. A key, mouse click or tap selects the keyboard (**K** on the keyboard also works). Press **SL** or **SR** for a sideways Joy-Con. With one left and one right Joy-Con, a face button selects the pair; with several halves connected, hold **L** on the left half and **R** on the right half you want to pair, then release both. Return to the title to choose again.
 
 **Adding players:** on the way to character selection, **Controller assignment** highlights the first empty slot. Press **L + R** on a controller, **SL + SR** on a sideways Joy-Con, or **Enter** on an available keyboard to join. **Cancel**, **Esc** or P1's Back button cancels; when everyone has joined, P1 confirms with **OK**.

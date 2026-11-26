@@ -148,6 +148,7 @@
     movie_audio: 'Controla o áudio das sequências em vídeo.',
     mute_in_background: 'Silencia o jogo enquanto outra janela estiver em foco.',
     prompts: 'Escolhe os símbolos exibidos nos comandos. Isso não altera o mapeamento dos botões físicos.',
+    stick_deadzone: 'Aumente a zona morta para ignorar movimentos perto do centro dos dois analógicos. O ajuste vale para todos os controles.',
     language: 'Escolhe o idioma dentro do jogo. O idioma do launcher é configurado separadamente no topo da janela.',
   };
   const hints = {

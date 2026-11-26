@@ -161,15 +161,25 @@ static void mk8_signal_styles(void) {''')
     # Route the existing key bindings and both sticks to the selected guest player.
     text = replace(text, 'key_buttons | pad_buttons | touch_buttons_dpad()',
                    'mk8_player_keys(0).buttons | pad_buttons | touch_buttons_dpad()', 2)
+    marker = 'static int32_t clamp_axis('
+    text = replace(text, marker, (SOURCE / 'stick_deadzone.inc').read_text(encoding='utf-8') + '\n' + marker)
     marker = '    if (id >= 1 && id <= EXTRA_PADS) {  // players 2-4:'
     text = replace(text, marker, '    Mk8KeyState keys = mk8_player_keys((int)id);\n' + marker)
     text = replace(text, 'menu ? 0 : extra_buttons[i] |', 'menu ? 0 : keys.buttons | extra_buttons[i] | mk8_read_pause(id) |')
-    for axis in ('lx', 'ly'):
-        text = replace(text, f'clamp_axis(extra_{axis}[i] +', f'clamp_axis(keys.{axis} + extra_{axis}[i] +')
-    for axis in ('rx', 'ry'):
-        text = replace(text, f'menu ? 0 : extra_{axis}[i]', f'menu ? 0 : clamp_axis(keys.{axis} + extra_{axis}[i])')
-    for axis in ('lx', 'ly', 'rx', 'ry'):
-        text = replace(text, f'menu ? 0 : key_{axis} + pad_{axis}', f'menu ? 0 : keys.{axis} + pad_{axis}')
+    marker = '        int32_t lx = menu ? 0 : clamp_axis(extra_lx[i] +'
+    text = replace(text, marker, '''        int32_t sticks[4] = {extra_lx[i], extra_ly[i], extra_rx[i], extra_ry[i]};
+        if (!menu) mk8_apply_stick_deadzone(sticks, mk8_stick_deadzone_percent());
+''' + marker)
+    marker = '    int32_t lx = clamp_axis((menu ? 0 : key_lx + pad_lx + touch_lx)'
+    text = replace(text, marker, '''    int32_t sticks[4] = {pad_lx, pad_ly, pad_rx, pad_ry};
+    if (!menu && !host_test) mk8_apply_stick_deadzone(sticks, mk8_stick_deadzone_percent());
+''' + marker)
+    for index, axis in enumerate(('lx', 'ly', 'rx', 'ry')):
+        if index < 2:
+            text = replace(text, f'clamp_axis(extra_{axis}[i] +', f'clamp_axis(keys.{axis} + sticks[{index}] +')
+        else:
+            text = replace(text, f'menu ? 0 : extra_{axis}[i]', f'menu ? 0 : clamp_axis(keys.{axis} + sticks[{index}])')
+        text = replace(text, f'menu ? 0 : key_{axis} + pad_{axis}', f'menu ? 0 : keys.{axis} + sticks[{index}]')
     text = replace(text, 'key_buttons | pad_buttons | touch_b)', 'keys.buttons | pad_buttons | touch_b | mk8_read_pause(0))')
     text = replace(text, 'key_buttons | pad_buttons | script_buttons;', 'keys.buttons | pad_buttons | script_buttons;')
     for indent in ('        ', '    '):

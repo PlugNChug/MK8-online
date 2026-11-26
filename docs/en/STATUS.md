@@ -1,6 +1,6 @@
 # Project status
 
-**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.3
+**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-26 · Release 0.6.3
 
 This page is the current summary. Dated investigations, measurements and per-issue evidence are kept in the [technical log](log/README.md). Open work is tracked in the [roadmap](ROADMAP.md).
 
@@ -35,6 +35,7 @@ This page is the current summary. Dated investigations, measurements and per-iss
 
 ## Latest local validation
 
+- The launcher and F1 Controls menu share an adjustable 0–50% dead zone for both analog sticks. The default preserves the previous stick response. [Controller log](log/controllers.md#adjustable-stick-dead-zone)
 - Clean build with game, update, DLC and keys at once: 26.7 min, DLC imported in about 20 s, race opened from the launcher at 60 FPS.
 - RX 580 2048SP: Mario Kart Stadium at 60 FPS with an empty cache; Twisted Mansion at 2x (4K internal) without running out of VRAM in 3 of 3 races (before, 3 of 4 ran out); 32:9 ultrawide with 120 of 120 generated frames.
 - Main menu in Simplified Chinese; a RomFS mod serving the menu video.

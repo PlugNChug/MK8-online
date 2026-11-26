@@ -52,6 +52,12 @@ static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     return false;
 }
 static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
+static bool opt_int(const char *label,int *value,int min,int max,int step,int def,const char *,const char *,const char *) {
+    assert(record(label)==MK8_MENU_STICK_DEADZONE && min==0 && max==50 && step==1 && def==0);
+    if (!click || strcmp(click,label)) return false;
+    ++*value;
+    return true;
+}
 static bool opt_text_editing(const char *) { return false; }
 static bool opt_text(const char *label,char *,size_t,const char *,const char *,int *step=nullptr) {
     record(label); if(step) *step=0; return false;
@@ -107,6 +113,9 @@ int main() {
     ImGuiIO &io=ImGui::GetIO(); io.IniFilename=nullptr; io.DisplaySize=ImVec2(1280,2160);
     unsigned char *pixels; int w,h; io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     if(frame(nullptr)) return 1;
+    assert(mk8_stick_deadzone_percent()==0);
+    if(frame("Stick dead zone")) return 1;
+    assert(mk8_stick_deadzone_percent()==1);
     main_menu=true; g_settings.res_mode=RES_Q75;
     for(int dev : {BIND_DEV_PAD,BIND_DEV_KEY}) {
         char button[20]; snprintf(button,sizeof button,"##%d_%d",dev,BIND_B);

@@ -6,6 +6,12 @@
         const char *names[] = {auto_name, prompts.names[1], prompts.names[2], prompts.names[3]};
         choice(prompts.label, prompts.choice, names, prompts.count);
     }
+    {
+        const Mk8MenuOption &deadzone = *mk8_menu_option(MK8_MENU_STICK_DEADZONE);
+        int percent = mk8_stick_deadzone_percent();
+        if (opt_int(deadzone.label, &percent, 0, MK8_STICK_DEADZONE_MAX, 1, 0, "%d%%", deadzone.help, NULL))
+            mk8_set_stick_deadzone(percent);
+    }
     ImGui::Spacing();
     header("System language");
     {

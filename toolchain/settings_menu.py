@@ -185,6 +185,14 @@ def prepare(runtime):
         fields = header.read_text(encoding='utf-8')
         fields = replace(fields, 'extern Settings g_settings;', '''extern Settings g_settings;
 
+enum { MK8_STICK_DEADZONE_MAX = 50 };
+static inline int mk8_stick_deadzone_percent(void) {
+    return __atomic_load_n(&g_settings.stick_deadzone, __ATOMIC_RELAXED);
+}
+static inline void mk8_set_stick_deadzone(int percent) {
+    __atomic_store_n(&g_settings.stick_deadzone, percent, __ATOMIC_RELAXED);
+}
+
 enum { MK8_VOLUME_MIN = 0, MK8_VOLUME_MAX = 200, MK8_VOLUME_STEP = 5, MK8_VOLUME_DEFAULT = 100 };
 static inline bool mk8_menu_light(void) {
     return g_settings.theme==THEME_SIMPLE_LIGHT || g_settings.theme==THEME_NES_LIGHT;
@@ -199,6 +207,7 @@ static inline void mk8_settings_set_volume_percent(int percent) {
     if (mk8_settings_volume_valid(percent)) g_settings.volume = percent / 100.0f;
 }''')
         fields = replace(fields, '} Settings;', '''    int camera_distance;
+    int stick_deadzone;
 } Settings;
 enum { MK8_CAMERA_DISTANCE_MIN = 75, MK8_CAMERA_DISTANCE_MAX = 150, MK8_CAMERA_DISTANCE_STOCK = 100 };
 int mk8_settings_camera_distance(void);
@@ -238,6 +247,14 @@ void settings_load(void) {''')
         }
         else if (!strcmp(key, "volume"))''')
         original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "camera_distance = %d\\n", mk8_settings_camera_distance());\n    fprintf(f, "volume =')
+        original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "stick_deadzone")) {
+            char *end;
+            long percent = strtol(val, &end, 10);
+            bool valid = *val >= '0' && *val <= '9' && !end[strspn(end, " \\t")] && percent <= MK8_STICK_DEADZONE_MAX;
+            mk8_set_stick_deadzone(valid ? (int)percent : 0);
+        }
+        else if (!strcmp(key, "volume"))''')
+        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "stick_deadzone = %d\\n", mk8_stick_deadzone_percent());\n    fprintf(f, "volume =')
         fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    bool split_screen_60fps;
 } Settings;
 bool mk8_split_screen_60fps_enabled(void);

@@ -2,6 +2,14 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/controllers.md)
 
+## Adjustable stick dead zone
+
+The launcher and F1 Controls menu share `stick_deadzone` in `mk8d.ini`. The setting takes a whole percentage from 0 to 50 and defaults to 0 for existing profiles. The HID state writer filters each controller stick as a pair of axes. Outside the dead zone it rescales the remaining range along the same direction, preserving full travel. It applies after Joy-Con axis rotation and before keyboard, touch or scripted motion is added.
+
+On Windows, the compiled SDL test fed virtual gamepads through the prepared HID path. At 20%, the primary stick's `(3900, −4200)` became neutral. A paired Joy-Con still reported the diagonal `(1708, −1708)` from `(6000, −6000)`. Both seats kept full travel, and a button and scripted axis still registered. The native and overlay settings tests exercised the new row, and Edge verified launcher persistence. [Issue #167](https://github.com/Vnnc1/MK8-online/issues/167)
+
+In MK8 4.0.1 on Windows, the 0.6.3 baseline runtime (`61dca153…`) and the host-only rebuild (`f9afeb67…`, set to 20%) both reached the frame-3300 checkpoint in Mario Kart Stadium Time Trials and exited normally. The two runs used the same guest library and scripted inputs with isolated saves. Physical stick feel and Linux runtime behavior remain unverified.
+
 ## Portability of the game units and SDL input
 
 On revision `93b817d` of PR #83, preparation rejected three valid units generated on Windows (`main_077.c`, `main_164.c` and `main_114.c`) and accepted the same units with LF. In the partial integration into `fix-chore`, the ultrawide camera, HUD, settings, cups, Miis, SDK and Yaz0 use the hashes already recorded on this branch. The 29 affected units, prepared with both CRLF and LF on Windows and WSL, reproduced the adapted sources of the previous build byte for byte. All were recompiled on Windows with the build options. 30 preparation and behavior tests passed.

@@ -59,6 +59,8 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 3. Run **Build the game**. The first build takes around 30 minutes.
 4. Create a Mii in **Mii profile**, then choose **Play solo**, **Play on Nextendo** or **Multiplayer**.
 
+Adjust the analog stick dead zone under **Settings → Controls**.
+
 **Upgrading?** Use **Support → Update now**, keep your data folder, then run **Update the build** if the launcher asks. The [user guide](docs/en/GUIDE.md) covers graphics, controllers, online play, DLC, CTGP, portable mode and troubleshooting.
 
 ## Project status

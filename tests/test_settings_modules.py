@@ -610,6 +610,24 @@ class SettingsModulesTests(unittest.TestCase):
         self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.shot('ultrawide-mobile')
 
+    def test_stick_deadzone_saves_and_reloads(self):
+        page = self.page
+        page.locator('#config-sub-controls').click()
+        deadzone = page.locator('#config-field-stick_deadzone')
+        expect(deadzone).to_be_visible()
+        expect(deadzone).to_have_value('0')
+        expect(deadzone).to_have_attribute('max', '50')
+        page.locator('#language').select_option('es')
+        expect(page.get_by_role('spinbutton', name='Zona muerta de los sticks (%)')).to_have_value('0')
+        deadzone.fill('17')
+        with page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method=='POST') as response:
+            page.locator('#settings-save').click()
+        self.assertTrue(response.value.json()['ok'])
+        page.reload()
+        page.locator('#config-sub-controls').click()
+        expect(deadzone).to_have_value('17')
+        self.assertIn('stick_deadzone = 17', (self.local/'user-no-mii/mk8d.ini').read_text())
+
     def test_audio_controller_mappings_and_keyboard_modules(self):
         page = self.page
         page.locator('#config-sub-audio').click()

@@ -299,6 +299,42 @@ static uint64_t guest_buttons(unsigned player) {
     return state[1];
 }
 
+static void expect_sticks(unsigned player, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
+    Cpu cpu = {0};
+    uint64_t state[5];
+    int32_t expected[] = {lx, ly, rx, ry};
+    fill_state(&cpu, (uint8_t *)state, player, false);
+    assert(!memcmp(expected, &state[2], sizeof expected));
+}
+
+static void check_stick_deadzone(void) {
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO], SDL_GAMEPAD_AXIS_LEFTX, 3900));
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO], SDL_GAMEPAD_AXIS_LEFTY, 4200));
+    assert(SDL_SetJoystickVirtualAxis(sticks[PRO], SDL_GAMEPAD_AXIS_RIGHTX, -32768));
+    assert(SDL_SetJoystickVirtualAxis(sticks[PAIR_L], SDL_GAMEPAD_AXIS_LEFTX, 6000));
+    assert(SDL_SetJoystickVirtualAxis(sticks[PAIR_L], SDL_GAMEPAD_AXIS_LEFTY, -6000));
+    assert(SDL_SetJoystickVirtualAxis(sticks[PAIR_R], SDL_GAMEPAD_AXIS_LEFTX, -32768));
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_SOUTH, true);
+    uint64_t buttons = guest_buttons(0);
+    assert(buttons & (1u << BIND_B));
+    expect_sticks(0, 3900, -4200, -32767, 0);
+    expect_sticks(1, 6000, -6000, 0, -32767);
+
+    // The setting affects the next HID read even while the physical axes stay still.
+    mk8_set_stick_deadzone(20);
+    expect_sticks(0, 0, 0, -32767, 0);
+    expect_sticks(1, 1708, -1708, 0, -32767);
+    assert(guest_buttons(0) == buttons);
+    script_lx = 4000;
+    expect_sticks(0, 4000, 0, -32767, 0);
+    script_lx = 0;
+
+    mk8_set_stick_deadzone(50);
+    expect_sticks(1, 0, 0, 0, -32767);
+    mk8_set_stick_deadzone(0);
+    expect_sticks(1, 6000, -6000, 0, -32767);
+}
+
 static void check_blocked_settings_chord(void) {
     const uint64_t plus = 1ull << BTN_PLUS, minus = 1ull << BTN_MINUS;
     Cpu cpu = {0};
@@ -994,6 +1030,16 @@ int main(int argc, char **argv) {
         assert(mk8_assign_gamepads(layout));
     }
     assert(extra_connected(0) && extra_connected(1) && extra_connected(2));
+    if (!strcmp(argv[2], "deadzone")) {
+        check_stick_deadzone();
+        for (int i=0;i<DEVICE_COUNT;i++) {
+            SDL_CloseJoystick(sticks[i]);
+            assert(SDL_DetachVirtualJoystick(ids[i]));
+        }
+        pump();
+        SDL_Quit();
+        return 0;
+    }
     check_popup_names();
     check_popup_owner();
     check_blocked_settings_chord();

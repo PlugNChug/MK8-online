@@ -90,6 +90,7 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 ('forward', '1,2++3,4,5', 'title'),
                 ('forward', None, 'editor'),
                 ('forward', '1,2+3,4,5', 'mixed'),
+                ('forward', '1,2+3,4,5', 'deadzone'),
                 ('reverse', '5,4+3,2,1', 'mixed'),
                 ('forward', '1,2+3,3,5', 'automatic'),
                 ('forward', '1,2+3,4,99', 'automatic'),

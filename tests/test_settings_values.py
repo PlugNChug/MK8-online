@@ -73,6 +73,10 @@ int main(int argc,char **argv) {
         assert(mk8_bloom_enabled()==(argv[3][6]=='1'));
         return 0;
     }
+    if(argc==4 && !strncmp(argv[3],"deadzone:",9)) {
+        assert(mk8_stick_deadzone_percent()==atoi(argv[3]+9));
+        return 0;
+    }
     assert(mk8_settings_input_native()==(g_settings.theme==THEME_NATIVE));
     mk8_settings_values_context(true); mk8_settings_values_sync();
     if(argc==4 && !strncmp(argv[3],"theme:",6)) {
@@ -103,13 +107,14 @@ int main(int argc,char **argv) {
         Mk8Setting volume=find(1,"Master Volume");
         assert(volume.current==150 && !strcmp(volume.value,"150%"));
         assert(mk8_settings_camera_distance()==117);
+        assert(mk8_stick_deadzone_percent()==17);
         assert(mk8_split_screen_60fps_enabled());
         assert(!mk8_bloom_enabled());
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==20);
+    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==21);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -185,6 +190,14 @@ int main(int argc,char **argv) {
     assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
     request(SETTINGS_STEP,bloom.id,1);
     assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
+    Mk8Setting deadzone=find(2,"Stick dead zone");
+    assert(deadzone.id==MK8_MENU_STICK_DEADZONE && deadzone.kind==SETTING_NUMBER);
+    assert(deadzone.current==0 && deadzone.minimum==0 && deadzone.maximum==50);
+    assert(!mk8_settings_values_request(SETTINGS_SET,deadzone.id,51));
+    request(SETTINGS_STEP,deadzone.id,1);
+    assert(mk8_stick_deadzone_percent()==1);
+    request(SETTINGS_SET,deadzone.id,17);
+    assert(!strcmp(find(2,"Stick dead zone").value,"17%"));
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -254,7 +267,7 @@ int main(int argc,char **argv) {
     request(SETTINGS_STEP,find(1,"Movie audio").id,1); assert(!g_settings.movie_audio);
     request(SETTINGS_STEP,find(2,"Game language").id,1); assert(g_settings.language==1);
     request(SETTINGS_STEP,find(2,"Button icons").id,1); assert(g_settings.prompts==1);
-    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==28);
+    request(SETTINGS_STEP,find(2,"Mapping device").id,1); assert(mk8_settings_values_count(2)==29);
     check_tips();
     assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_LALT && g_bind_key[BIND_ZR]==SDL_SCANCODE_SPACE);
     request(SETTINGS_ACTIVATE,find(2,"ZL").id,0); assert(mk8_settings_values_capturing());
@@ -338,6 +351,10 @@ int main(int argc,char **argv) {
                 probe.write_bytes(f'bloom = {value}\r\n'.encode())
                 subprocess.run([exe,probe,root/'missing/settings.ini',f'bloom:{expected}'],
                                env={**env,'LARECOMP_SETTINGS':str(probe)},check=True,timeout=25)
+            for value,expected in [('50  \t',50), ('51',0), ('-1',0), ('17.5',0), ('',0)]:
+                probe.write_bytes(f'stick_deadzone = {value}\r\n'.encode())
+                subprocess.run([exe,probe,root/'missing/settings.ini',f'deadzone:{expected}'],
+                               env={**env,'LARECOMP_SETTINGS':str(probe)},check=True,timeout=25)
             text=ini.read_text()
             self.assertIn('theme = Native',text)
             self.assertIn('aspect = ultrawide',text)
@@ -345,6 +362,7 @@ int main(int argc,char **argv) {
             self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('bloom = 0',text)
             self.assertIn('camera_distance = 117',text)
+            self.assertIn('stick_deadzone = 17',text)
             self.assertNotIn('joycon_mode',text)
             self.assertNotIn('pads_from_p2',text)
             self.assertIn('bind_key_zl = Space',text)

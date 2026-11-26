@@ -102,6 +102,8 @@ No Linux, os ampliadores temporais e a geração de quadros FSR 3 são compilado
 
 Controles compatíveis com a SDL, teclado e controles do Switch são suportados. A Entrada Steam pode ficar ativada para o Spacewar no solo ou numa sala Steam; um controle virtual inativo da Steam deixa a vaga livre para o controle físico detectado pelo GameInput do Windows.
 
+Em **Controles → Zona morta dos analógicos**, escolha de 0 a 50% para ignorar movimentos pequenos perto do centro dos dois analógicos. O ajuste vale para todos os controles e o padrão de 0% preserva a resposta anterior. A opção fica no launcher e no menu F1 durante o jogo.
+
 **Escolher o jogador 1:** na tela de título, pressione um botão no controle desejado. Uma tecla, um clique ou um toque seleciona o teclado (**K** também funciona). Pressione **SL** ou **SR** para um Joy-Con na horizontal. Com um Joy-Con esquerdo e um direito, um botão frontal seleciona o par; com várias metades conectadas, segure **L** no esquerdo e **R** no direito que deseja combinar e solte os dois. Volte ao título para escolher de novo.
 
 **Adicionar jogadores:** ao entrar na seleção de personagens, **Controller assignment** destaca a primeira vaga. Pressione **L + R** no controle, **SL + SR** num Joy-Con na horizontal ou **Enter** num teclado disponível para entrar. **Cancel**, **Esc** ou o botão Voltar do jogador 1 cancelam; quando todos entrarem, o jogador 1 confirma com **OK**.

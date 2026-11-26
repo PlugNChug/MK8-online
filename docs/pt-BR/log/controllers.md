@@ -2,6 +2,14 @@
 
 [Índice](README.md) · [English](../../en/log/controllers.md)
 
+## Zona morta ajustável nos analógicos
+
+O launcher e o menu Controles do F1 compartilham `stick_deadzone` em `mk8d.ini`. O ajuste aceita uma porcentagem inteira de 0 a 50 e o padrão é 0 para perfis existentes. O escritor do estado HID aplica o filtro a cada par de eixos do analógico. Fora da zona morta, ele ajusta a faixa restante na mesma direção, preservando o curso máximo. O filtro atua após a rotação dos eixos dos Joy-Con e antes de somar teclado, toque ou entrada de roteiro.
+
+No Windows, o teste SDL compilado enviou dados de controles virtuais pelo caminho HID preparado. A 20%, o valor `(3900, −4200)` do jogador 1 ficou neutro. O par de Joy-Con ainda informou a diagonal `(1708, −1708)` a partir de `(6000, −6000)`. Os dois jogadores mantiveram o curso máximo, e um botão e um eixo de roteiro continuaram a registrar entrada. Os testes do menu nativo e do painel verificaram a opção, e o Edge confirmou a persistência pelo launcher. [Issue #167](https://github.com/Vnnc1/MK8-online/issues/167)
+
+No MK8 4.0.1 para Windows, o runtime da base 0.6.3 (`61dca153…`) e a recompilação só do host (`f9afeb67…`, com a opção a 20%) alcançaram o quadro 3300 no Contra o Relógio de Mario Kart Stadium e encerraram normalmente. Os dois ensaios usaram a mesma biblioteca do guest e o mesmo roteiro de entrada, com saves isolados. Falta testar a sensação com controle físico e o comportamento no runtime Linux.
+
 ## Entrada pela Steam com um ou dois jogadores locais
 
 O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.

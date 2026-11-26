@@ -1,6 +1,6 @@
 # Estado do projeto
 
-[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.3
+[English](../en/STATUS.md) · **Português** · Atualizado em 26/11/2026 · Versão 0.6.3
 
 Esta página é o resumo atual. Investigações datadas, medições e evidências por issue ficam no [registro técnico](log/README.md). As pendências estão no [roteiro](ROADMAP.md).
 
@@ -35,6 +35,7 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 
 ## Última validação local
 
+- O launcher e o menu Controles do F1 compartilham uma zona morta de 0 a 50% para os dois analógicos. O padrão preserva a resposta anterior. [Registro de controles](log/controllers.md#zona-morta-ajustável-nos-analógicos)
 - Build limpa com jogo, atualização, DLC e chaves de uma vez: 26,7 min, DLC importada em cerca de 20 s, corrida aberta pelo launcher a 60 FPS.
 - RX 580 2048SP: Mario Kart Stadium a 60 FPS com o cache vazio; Twisted Mansion em 2× (4K interno) sem esgotar a VRAM em 3 de 3 corridas (antes, 3 de 4 esgotavam); ultrawide 32:9 com 120 de 120 quadros gerados.
 - Menu principal em chinês simplificado; mod de RomFS servindo o vídeo do menu.

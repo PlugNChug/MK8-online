@@ -281,6 +281,10 @@ async function loadGameSettings(force = false) {
           input.type = "number";
           input.min = "75"; input.max = "150"; input.step = "1";
           input.required = true;
+        } else if (field.kind === "stick_deadzone") {
+          input.type = "number";
+          input.min = "0"; input.max = "50"; input.step = "1";
+          input.required = true;
         } else {
           input.type = "number";
           input.min = "0"; input.max = "200"; input.step = "5";

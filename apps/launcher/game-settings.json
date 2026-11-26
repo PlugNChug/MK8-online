@@ -190,6 +190,12 @@
             ["xbox", "Xbox"],
             ["playstation", "PlayStation"]
           ]
+        },
+        {
+          "key": "stick_deadzone",
+          "label": "Zona morta dos analógicos (%)",
+          "default": "0",
+          "kind": "stick_deadzone"
         }
       ]
     },
