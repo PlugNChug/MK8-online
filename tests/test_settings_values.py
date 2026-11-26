@@ -105,11 +105,12 @@ int main(int argc,char **argv) {
         assert(mk8_settings_camera_distance()==117);
         assert(mk8_split_screen_60fps_enabled());
         assert(!mk8_bloom_enabled());
+        assert(!g_settings.auto_hide_cursor);
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==20);
+    assert(mk8_settings_values_count(0)==16 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==20);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -185,6 +186,10 @@ int main(int argc,char **argv) {
     assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
     request(SETTINGS_STEP,bloom.id,1);
     assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
+    Mk8Setting cursor=find(0,"Auto-hide cursor");
+    assert(cursor.id==MK8_MENU_AUTO_HIDE_CURSOR && cursor.current==1);
+    request(SETTINGS_STEP,cursor.id,1);
+    assert(!g_settings.auto_hide_cursor && find(0,"Auto-hide cursor").current==0);
     int aspect=find(0,"Aspect ratio").id;
     int scaler=find(0,"Upscaler").id;
     assert(find(0,"Upscaler").maximum==1);
@@ -344,6 +349,7 @@ int main(int argc,char **argv) {
             self.assertIn('volume = 1.50',text)
             self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('bloom = 0',text)
+            self.assertIn('auto_hide_cursor = 0',text)
             self.assertIn('camera_distance = 117',text)
             self.assertNotIn('joycon_mode',text)
             self.assertNotIn('pads_from_p2',text)

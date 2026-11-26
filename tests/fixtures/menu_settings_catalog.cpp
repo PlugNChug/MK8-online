@@ -48,8 +48,10 @@ static int record(const char *label) {
 static bool opt_choice(const char *label,int *,const char *const *,int,int,const char *,bool=true) { record(label); return false; }
 static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     int id=record(label);
-    assert(id==MK8_MENU_FULLSCREEN || field==mk8_menu_option(id)->toggle);
-    return false;
+    assert(*field==*mk8_menu_option(id)->toggle);
+    if (!click || strcmp(click,label)) return false;
+    *field=!*field;
+    return true;
 }
 static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
 static bool opt_text_editing(const char *) { return false; }
@@ -108,6 +110,9 @@ int main() {
     unsigned char *pixels; int w,h; io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     if(frame(nullptr)) return 1;
     main_menu=true; g_settings.res_mode=RES_Q75;
+    assert(g_settings.auto_hide_cursor);
+    if(frame("Auto-hide cursor")) return 1;
+    assert(!g_settings.auto_hide_cursor);
     for(int dev : {BIND_DEV_PAD,BIND_DEV_KEY}) {
         char button[20]; snprintf(button,sizeof button,"##%d_%d",dev,BIND_B);
         if(frame(button)) return 1;

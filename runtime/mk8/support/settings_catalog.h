@@ -26,6 +26,7 @@ enum { MK8_MENU_TOGGLE, MK8_MENU_CHOICE, MK8_MENU_NUMBER, MK8_MENU_INFO, MK8_MEN
     T(SPLIT_SCREEN_60FPS, VIDEO, "Split-screen 60 FPS", split_screen_60fps, false, ALWAYS, "Target 60 FPS per view with 3-4 players.") \
     T(BLOOM, VIDEO, "Bloom", bloom, true, ALWAYS, "Add a glow around bright objects.") \
     T(FULLSCREEN, VIDEO, "Fullscreen", fullscreen, false, ALWAYS, "F11 also toggles fullscreen.") \
+    T(AUTO_HIDE_CURSOR, VIDEO, "Auto-hide cursor", auto_hide_cursor, true, ALWAYS, "Hide pointer when idle in fullscreen.") \
     T(SHOW_FPS, VIDEO, "Show FPS", show_fps, false, ALWAYS, "Show FPS in the screen corner.") \
     T(SHOW_MEMORY, VIDEO, "Show memory use", show_memory, false, ALWAYS, "Show runtime memory usage.") \
     C(RESOLUTION, VIDEO, "Internal resolution", res_mode, resolutions, resolution_values, 3, ALWAYS, "Higher values use more GPU memory.") \

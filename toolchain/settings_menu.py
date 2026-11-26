@@ -91,6 +91,8 @@ def shared_video_controls(text, runtime):
                    'mk8_video_choice(MK8_MENU_ASPECT,')
     text = replace(text, 'opt_toggle("Fullscreen", &fs, false,',
                    'opt_toggle(mk8_menu_option(MK8_MENU_FULLSCREEN)->label, &fs, mk8_menu_option(MK8_MENU_FULLSCREEN)->default_index != 0,')
+    marker = '    opt_section("Rendering");'
+    text = replace(text, marker, '    mk8_video_toggle(MK8_MENU_AUTO_HIDE_CURSOR, mk8_menu_option(MK8_MENU_AUTO_HIDE_CURSOR)->help);\n' + marker)
     for label, field, option in (('Show FPS','show_fps','SHOW_FPS'), ('Show memory use','show_memory','SHOW_MEMORY'),
                                  ('Skip intro','skip_intro','SKIP_INTRO'), ('Prepare at full speed','ahead_fast','AHEAD_FAST')):
         text = replace(text, f'opt_toggle("{label}", &g_settings.{field}, false,', f'mk8_video_toggle(MK8_MENU_{option},')
@@ -138,6 +140,23 @@ def prepare(runtime):
                        '        // Continuous controller events must not starve window/input requests.\n'
                        '        unsigned events = 0;\n'
                        '        while (events++ < 64 && SDL_WaitEventTimeout(&e, events == 1 ? 16 : 0)) {')
+        cursor = (ROOT / 'runtime/mk8/ui/fullscreen_cursor.inc').read_text(encoding='utf-8')
+        text = replace(text, 'int ui_run(void) {', cursor + '\nint ui_run(void) {')
+        text = replace(text, '    ui_window_init();',
+                       '    ui_window_init();\n    Mk8FullscreenCursor cursor = { .last_activity = SDL_GetTicks() };\n'
+                       '    SDL_WindowID cursor_window = SDL_GetWindowID(window);')
+        text = replace(text, '        while (events++ < 64 && SDL_WaitEventTimeout(&e, events == 1 ? 16 : 0)) {',
+                       '        while (events++ < 64 && SDL_WaitEventTimeout(&e, events == 1 ? 16 : 0)) {\n'
+                       '            mk8_cursor_event(&cursor, cursor_window, &e);')
+        text = replace(text, '        menu_apply_window_requests(window);',
+                       '        menu_apply_window_requests(window);\n'
+                       '        extern bool menu_input_captured(void), mk8_settings_page_active(void), mk8_controller_layout_active(void);\n'
+                       '        mk8_cursor_update(&cursor, window, __atomic_load_n(&g_settings.auto_hide_cursor, __ATOMIC_RELAXED) &&\n'
+                       '                          !menu_input_captured() && !mk8_settings_page_active() && !mk8_controller_layout_active());')
+        marker = '        if (rt_reboot_requested()) return rt_reboot_requested();'
+        text = replace(text, marker, '        if (rt_reboot_requested()) {\n'
+                       '            mk8_cursor_update(&cursor, window, false);\n'
+                       '            return rt_reboot_requested();\n        }')
         path.write_text(text, encoding='utf-8')
     path = runtime / 'hle/input.c'
     if path.is_file():
@@ -258,6 +277,7 @@ void settings_load(void) {''')
         else if (!strcmp(key, "volume"))''')
         original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "split_screen_60fps = %d\\n", mk8_split_screen_60fps_enabled());\n    fprintf(f, "volume =')
         fields = replace(header.read_text(encoding='utf-8'), '} Settings;', '''    bool bloom;
+    bool auto_hide_cursor;
 } Settings;
 bool mk8_bloom_enabled(void);
 void mk8_set_bloom(bool enabled);''')
@@ -269,11 +289,13 @@ void mk8_set_bloom(bool enabled) {
     __atomic_store_n(&g_settings.bloom, enabled, __ATOMIC_RELAXED);
 }
 void settings_load(void) {''')
-        original = replace(original, '    .volume = MK8_VOLUME_DEFAULT / 100.0f,', '    .bloom = true,\n    .volume = MK8_VOLUME_DEFAULT / 100.0f,')
+        original = replace(original, '    .volume = MK8_VOLUME_DEFAULT / 100.0f,', '    .bloom = true,\n    .auto_hide_cursor = true,\n    .volume = MK8_VOLUME_DEFAULT / 100.0f,')
         original = replace(original, '        else if (!strcmp(key, "volume"))', '''        else if (!strcmp(key, "bloom"))
             mk8_set_bloom(*val != '0' || val[1 + strspn(val + 1, " \t")]);
+        else if (!strcmp(key, "auto_hide_cursor"))
+            __atomic_store_n(&g_settings.auto_hide_cursor, *val != '0' || val[1 + strspn(val + 1, " \t")], __ATOMIC_RELAXED);
         else if (!strcmp(key, "volume"))''')
-        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "bloom = %d\\n", mk8_bloom_enabled());\n    fprintf(f, "volume =')
+        original = replace(original, '    fprintf(f, "volume =', '    fprintf(f, "bloom = %d\\n", mk8_bloom_enabled());\n    fprintf(f, "auto_hide_cursor = %d\\n", __atomic_load_n(&g_settings.auto_hide_cursor, __ATOMIC_RELAXED));\n    fprintf(f, "volume =')
         original = replace(original, 'fopen(SETTINGS_FILE, "r")', 'fopen(SETTINGS_FILE, "rt")')
         original = '#include <SDL3/SDL_filesystem.h>\n#include <pthread.h>\n' + original
         original = replace(original, 'void settings_save(void) {', '''static pthread_mutex_t settings_write_lock = PTHREAD_MUTEX_INITIALIZER;

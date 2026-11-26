@@ -185,6 +185,12 @@ Na 0.3.0, após as mesmas quatro pistas, **View Results** reproduziu o sintoma d
 
 Na versão publicada, o jogo usou a mesma pasta para os saves da conta e os replays temporários, com cinco replays anteriores no início do teste. Na `fix-chore`, a separação dos tipos de save da [PR #42](https://github.com/Vnnc1/MK8-online/pull/42) deixou os quatro replays da nova copa em espaços próprios. Essa diferença e a escolha de cenário explicam o sintoma observado; o comparativo abrange várias mudanças entre as builds e não isolou um único commit como causa. Evidências locais em `local/cup-68`. A RTX 3050 citada no relato ainda não foi retestada.
 
+## Ocultação do cursor em tela cheia
+
+O loop da janela SDL oculta o ponteiro após dois segundos de inatividade quando a janela do jogo está em tela cheia e recebe o foco do teclado e do mouse. Usar o mouse restaura o ponteiro. O menu do jogo e a configuração de controles mantêm o ponteiro visível. O launcher e os ajustes de vídeo do jogo compartilham a preferência `auto_hide_cursor`, ativada por padrão.
+
+No Windows com MK8 4.0.1, a tela de título em tela cheia a 2560×1600 na base `5603bfb` (`61dca153…`) ainda mostrava o ponteiro após 2,6 s parado. A recompilação só do host (`2df72e4c…`) ocultou o ponteiro após 2,02–2,03 s. Mover o mouse, abrir o menu nativo com F1, abrir o painel com Shift+F1 e voltar ao modo janela com F11 restauraram o ponteiro. Com a preferência desativada, o ponteiro continuou visível após 2,6 s de inatividade. Os testes nativos cobriram o temporizador, a perda de foco e os ajustes do jogo. O teste do launcher verificou a persistência no Edge. Falta verificar o comportamento no desktop Linux. [#143](https://github.com/Vnnc1/MK8-online/issues/143) · [#151](https://github.com/Vnnc1/MK8-online/issues/151)
+
 ## Auditoria nativa em tela cheia — `fix-chore` `ab9ebf8`
 
 O candidato `7e9870d0f027` (MK8 4.0.1) rodou a 1920×1080 na RX 580 2048SP, com resolução Match, qualidade padrão e geração de quadros desativada. Foram usados saves isolados, entradas roteirizadas e uma instância por vez. Os resumos abaixo usam janelas de aproximadamente 2 s do runtime e excluem janelas que incluem capturas. As repetições copiaram o cache local. O cache do driver permaneceu no estado normal da máquina.
