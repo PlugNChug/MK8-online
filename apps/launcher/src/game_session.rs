@@ -283,6 +283,18 @@ pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<Strin
             "Windows rejected the format of a game executable or DLL.",
             "Windows rechazó el formato de un ejecutable o una DLL del juego.",
         ),
+        Some(0xc0000005)
+            if log.lines().any(|line| {
+                line == "[vk] instance layer available: VK_LAYER_RTSS"
+                    || line.starts_with("[vk] instance layer available: VK_LAYER_RTSS (")
+            }) =>
+        {
+            pick(
+                "O jogo encerrou com uma violação de acesso e o Vulkan encontrou a camada do RTSS. No RTSS, defina Application detection level como None no perfil de mk8drecomp.exe e tente de novo.",
+                "The game exited with an access violation and Vulkan found the RTSS layer. In RTSS, set Application detection level to None for mk8drecomp.exe, then try again.",
+                "El juego se cerró con una infracción de acceso y Vulkan encontró la capa de RTSS. En RTSS, establece Application detection level en None para mk8drecomp.exe y vuelve a intentarlo.",
+            )
+        }
         _ => return None,
     };
     Some(reason.to_owned())
@@ -325,6 +337,35 @@ mod tests {
             None
         );
         assert_eq!(exit_reason("[vk] loader initialized", Some(1), "en"), None);
+    }
+
+    #[test]
+    fn suggests_per_game_rtss_setting_for_an_access_violation_with_the_layer() {
+        let access_violation = Some(0xc0000005u32 as i32);
+        let layer = "[vk] instance layer available: VK_LAYER_RTSS (spec 1.3.224, version 1)\r\n";
+        for language in ["en", "pt-BR", "es"] {
+            let detail = exit_reason(layer, access_violation, language).unwrap();
+            assert!(detail.contains("Application detection level"));
+            assert!(detail.contains("mk8drecomp.exe"));
+        }
+        assert_eq!(exit_reason(layer, Some(1), "en"), None);
+        assert_eq!(
+            exit_reason(
+                "[vk] instance layer available: VK_LAYER_RTSS_OTHER (spec 1.3.224, version 1)",
+                access_violation,
+                "en"
+            ),
+            None
+        );
+        assert_eq!(
+            exit_reason(
+                &format!("{layer}FATAL: Vulkan device lost"),
+                access_violation,
+                "en"
+            )
+            .as_deref(),
+            Some("Vulkan device lost")
+        );
     }
 
     #[test]
