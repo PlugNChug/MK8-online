@@ -46,6 +46,8 @@ distrobox create --name mk8-ubuntu --image docker.io/library/ubuntu:24.04
 distrobox enter mk8-ubuntu
 ```
 
+If RecompLauncher exits immediately with code 127 and reports a missing `libwebkit2gtk-4.1.so.0`, the launcher could not load WebKitGTK. The 0.6.3 AppImage expects this library in the launch environment. Install the dependencies above inside the Ubuntu container, then run the downloaded AppImage from that container. [Steam Deck report #182](https://github.com/Vnnc1/MK8-online/issues/182)
+
 ### Launch
 
 ```sh
