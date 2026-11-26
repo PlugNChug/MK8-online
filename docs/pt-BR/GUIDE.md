@@ -116,6 +116,8 @@ Controles compatíveis com a SDL, teclado e controles do Switch são suportados.
 
 **Direção por movimento:** conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** e segure o controle como um volante.
 
+Com um Switch Pro Controller via Bluetooth no Windows, a Entrada Steam pode repassar os botões e analógicos sem disponibilizar os sensores de movimento. Se isso acontecer, abra **Propriedades → Controle** do jogo na Steam, selecione **Desativar Entrada Steam** para esse atalho e reinicie o jogo. A direção por movimento passa a usar o controle nativo. [Relato sobre a Entrada Steam #164](https://github.com/Vnnc1/MK8-online/issues/164)
+
 ## Menu do jogo e configurações
 
 O Menu usa o tema escolhido no launcher (**Vídeo → Tema do menu**): Nativo, Simples escuro, Simples claro, NES escuro ou NES claro. **F1**, **Home/Guide**, **Menos + Mais** e a chave inglesa do menu principal o abrem; **Shift+F1** abre o painel convencional. O idioma acompanha o launcher.
