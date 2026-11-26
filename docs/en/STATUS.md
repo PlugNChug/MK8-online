@@ -14,7 +14,7 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | Solo racing | Full Mushroom Cup with replays and cup progress persisting across a restart; battles, MKTV and Time Trial reached; all 160 courses (48 base, 48 DLC, 64 CTGP) loaded in Time Trial | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Native Nextendo matchmaking through Online Play; Steam rooms with invites; local LAN tests | A Nextendo race to results; a full Steam race between two PCs |
-| Graphics | Vulkan runtime; FSR 1, FSR 3.1.6 (run on RX 580), FSR 4 / DLSS (capability-tested only); experimental ultrawide (also with frame generation) and frame generation | DLSS on RTX, FSR 4 on RDNA 4; more courses and GPUs |
+| Graphics | Vulkan runtime with scaled bloom correction for Vancouver Velocity; FSR 1, FSR 3.1.6 (run on RX 580), FSR 4 / DLSS (capability-tested only); experimental ultrawide (also with frame generation) and frame generation | DLSS on RTX, FSR 4 on RDNA 4; more courses and GPUs |
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
 | Linux | AppImage/tar.gz built and smoke-tested in CI on Ubuntu 24.04; rendering on Intel Iris Xe | Physical Steam Deck race |
 

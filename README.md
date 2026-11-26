@@ -32,7 +32,7 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 - **Guided launcher:** installation, game build, updates, uninstall and diagnostic reports, in English, Brazilian Portuguese and Spanish.
 - **Mii creator:** your Mii appears in game portraits, suits, the driver and the minimap.
 - **Online play:** native matchmaking through [Nextendo](https://nextendo.network/), plus Steam rooms with friend invites.
-- **Graphics:** internal resolution scaling with FSR 1/3/4 and DLSS, plus experimental ultrawide and frame generation.
+- **Graphics:** internal resolution scaling with FSR 1/3/4 and DLSS, plus experimental ultrawide and frame generation. The scaled bloom correction also covers the tree lights in Vancouver Velocity.
 - **Controllers:** SDL gamepads, keyboard, Switch Pro Controller and Joy-Cons, with HD Rumble, motion steering and local split-screen.
 - **Extra content:** optional Booster Course Pass DLC and an experimental CTGP Deluxe course pack, both from your own files, plus RomFS mods you install yourself (textures, models, music).
 
