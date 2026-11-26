@@ -2,6 +2,12 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
+## Perda do dispositivo ao iniciar corrida em uma Quadro M5000M (#165) — 26/11/2026
+
+Os dois logs da versão 0.6.3 na Quadro M5000M (`10de:13f8`, driver 582.53) registram `VK_ERROR_DEVICE_LOST` em `vkWaitSemaphores` durante o carregamento de uma corrida. O contorno de oclusão registrado imediatamente antes da falha já contava os resultados indisponíveis como visíveis. O driver não informou detalhes que identificassem o desenho responsável. A assinatura se parece com a de [#114](https://github.com/Vnnc1/MK8-online/issues/114). A correção de shader de [#7](https://github.com/Vnnc1/MK8-online/issues/7) movia as consultas invariáveis de tamanho de textura para antes do laço do shader e valia apenas para Pascal.
+
+A candidata estende essa transformação ao ID PCI NVIDIA do relato. O teste de seleção cobre o ID acrescentado, IDs Maxwell próximos e outros fabricantes. Passaram quatro testes nativos de shader, driver e oclusão. A recompilação apenas do runtime preservou a biblioteca guest. Na RTX 5070 Ti Laptop, um Grand Prix no Mario Kart Stadium com cache frio chegou ao quadro 3420 na base `5603bfb`, com e sem validação Vulkan, e na candidata. Uma build de teste separada forçou a transformação na RTX, gravou 49 arquivos de shaders de fragmento com consultas antecipadas de tamanho de textura e chegou ao mesmo ponto de captura. Falta confirmar o efeito da mudança na Quadro M5000M. O diagnóstico existente `LARECOMP_VK_DEVLOST_TRACE=1` registra as operações recentes da GPU se o reteste ainda perder o dispositivo.
+
 ## Quedas de FPS nas corridas (#133) e versão 0.6.3 — 23/11/2026
 
 - **Sintoma.** Dois jogadores relataram 24-30 FPS em câmera lenta em qualquer corrida desde a build da 0.6.0, com menus e cutscenes a 60 (RX 580 2048SP + Xeon E5-2650 v3; o outro rodava a 60 na 0.5.0). A máquina de teste tem a mesma GPU e um Xeon E5-2666 v3: o Time Trial (1 piloto) fica a 60 depois da largada, mas um Grand Prix com 12 pilotos ficou entre 27 e 45 FPS (média 39,5).

@@ -2,6 +2,12 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/integration.md)
 
+## Device loss at race startup on a Quadro M5000M (#165) — 2026-11-26
+
+Both logs from 0.6.3 on the Quadro M5000M (`10de:13f8`, driver 582.53) report `VK_ERROR_DEVICE_LOST` from `vkWaitSemaphores` when loading a race. The occlusion fallback logged immediately before it already handled unavailable counts as visible. The driver supplied no fault detail that identifies the draw. The signature resembles [#114](https://github.com/Vnnc1/MK8-online/issues/114). The shader workaround from [#7](https://github.com/Vnnc1/MK8-online/issues/7) moved invariant texture-size queries outside the shader dispatch loop and was previously restricted to Pascal.
+
+The candidate extends that rewrite to the reported NVIDIA PCI ID. The device-selection test checks the added ID, nearby Maxwell IDs and other vendors. Four native shader, driver and occlusion tests passed. The runtime-only rebuild preserved the guest library. On the RTX 5070 Ti Laptop GPU, a cold-cache Grand Prix on Mario Kart Stadium reached frame 3420 on the baseline `5603bfb`, with and without Vulkan validation, and on the candidate. A separate test build forced the rewrite on the RTX, emitted 49 fragment shader files with hoisted texture-size queries, and reached the same capture point. The workaround still needs confirmation on the Quadro M5000M. The existing `LARECOMP_VK_DEVLOST_TRACE=1` captures recent GPU operations if that retest still loses the device.
+
 ## 0.6.0 cycle — summary of 2026-11-20 to 2026-11-22
 
 The detailed record of this cycle is in Portuguese, in the [Portuguese log](../../pt-BR/log/integration.md) and its topic files (graphics, performance, controllers, launcher, releases). Summary:
