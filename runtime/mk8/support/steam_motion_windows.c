@@ -11,6 +11,7 @@
 typedef struct {
     ULONGLONG heartbeat, received;
     DWORD reader, generation, sequence;
+    bool ambiguous;
     float accel[3], gyro[3];
 } MotionMailbox;
 
@@ -22,6 +23,7 @@ typedef struct {
 static MotionChannel channel;
 static WCHAR channel_id[39];
 static SDL_JoystickID target, active;
+static bool mapped_ambiguous, desktop_ambiguous;
 static Uint64 next_scan, next_start, last_source;
 static DWORD last_sequence;
 
@@ -125,8 +127,9 @@ static void start_reader(void) {
     else SDL_free(args);
 }
 
-static SDL_JoystickID find_controller(bool steam) {
+static SDL_JoystickID find_controller(bool steam, bool *ambiguous) {
     SDL_JoystickID found = 0;
+    if (ambiguous) *ambiguous = false;
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     for (int i = 0; ids && i < count; ++i) {
@@ -142,21 +145,26 @@ static SDL_JoystickID find_controller(bool steam) {
             SDL_CloseGamepad(mapped);
             if (!pro || native_motion) continue;
         }
-        if (found) { found = 0; break; } // The two processes can associate a single Pro Controller.
+        if (found) {
+            if (ambiguous) *ambiguous = true;
+            found = 0;
+            break;
+        }
         found = ids[i];
     }
     SDL_free(ids);
     return found;
 }
 
-SDL_JoystickID mk8_poll_steam_motion(void) {
+SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous) {
     Uint64 now = GetTickCount64();
     if (now >= next_scan || (target && !SDL_IsGamepad(target))) {
-        target = find_controller(true);
+        target = find_controller(true, &mapped_ambiguous);
         next_scan = now + 250;
     }
-    if (!target) goto lost;
+    *ambiguous = mapped_ambiguous || desktop_ambiguous;
     if (!channel.data) {
+        if (!target) goto lost;
         if (now < next_start) return target;
         GUID id;
         if (FAILED(CoCreateGuid(&id)) || !StringFromGUID2(&id, channel_id, SDL_arraysize(channel_id)) ||
@@ -168,6 +176,9 @@ SDL_JoystickID mk8_poll_steam_motion(void) {
     if (!lock_channel(&channel, 0)) return target;
     MotionMailbox sample = *channel.data;
     ReleaseMutex(channel.lock);
+    desktop_ambiguous = sample.ambiguous;
+    *ambiguous = mapped_ambiguous || desktop_ambiguous;
+    if (!target) goto lost;
     now = GetTickCount64();
     if (now >= next_start && (!sample.heartbeat || now - sample.heartbeat > 4000)) {
         next_start = now + 10000;
@@ -223,7 +234,13 @@ static void read_controller(const MotionChannel *pipe, HANDLE owner) {
         bool changed = false;
         if (now >= next_scan || (pad && !SDL_GamepadConnected(pad))) {
             next_scan = now + 250;
-            SDL_JoystickID found = pad && !SDL_GamepadConnected(pad) ? 0 : find_controller(false);
+            bool ambiguous = false;
+            SDL_JoystickID found = find_controller(false, &ambiguous);
+            if (pad && !SDL_GamepadConnected(pad) && found == id) found = 0;
+            if (sample.ambiguous != ambiguous) {
+                sample.ambiguous = ambiguous;
+                changed = true;
+            }
             if (found != id) {
                 if (pad) SDL_CloseGamepad(pad);
                 pad = found ? SDL_OpenGamepad(found) : NULL;

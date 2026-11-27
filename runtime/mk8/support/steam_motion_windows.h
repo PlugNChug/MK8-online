@@ -2,7 +2,7 @@
 
 #include <SDL3/SDL.h>
 
-SDL_JoystickID mk8_poll_steam_motion(void);
+SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous);
 void mk8_stop_steam_motion(void);
 int mk8_run_steam_motion_reader(const char *owner, const char *session);
 
