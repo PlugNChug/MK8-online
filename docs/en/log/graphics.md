@@ -2,6 +2,12 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/graphics.md)
 
+## Vancouver Velocity bloom at scaled resolutions (issue #150) — 2026-11-26
+
+In the Windows 0.6.3 baseline (`5603bfb`), the tree lights before Vancouver Park show repeated amber patches at 2×. A Vulkan trace from MK8 4.0.1 captured the Vancouver bloom mask (`0e1fa9b3719cf15b`) followed by the same reduction and horizontal/vertical blur shaders as Bowser's Castle. The correction originally recognized only the Castle mask. The sequence now recognizes the Vancouver mask when the internal resolution is above native, including when Dynamic selects such a scale.
+
+The runtime-only rebuild preserved the guest library. At frame 3710 in Time Trial, the original 2× build drew a grid of bright spots around the trees. In the matching capture from the corrected build, the individual bulbs and lantern halos remained visible and the grid disappeared. In Dynamic fullscreen, a trace recorded an internal scene size of 2304×1296, and a second comparison at frame 3710 showed the fainter repeated spots reduced. The Windows tests used a 2560×1600 display with a 2560×1440 game viewport, SMAA and frame generation off. The native shader and replay tests passed, including the guard for native scale. A direct Switch comparison and a Linux run are still pending.
+
 ## Local validation for the next version — menu, image and Miis
 
 The F1 menu and the native options use the same list of upscaling methods. The launcher checks the optional components and the GPU before offering them to the game. Bilinear and FSR 1 are available in the normal installation. The choice of a new temporal provider is saved for the next time the game opens. The launcher follows the preferences saved by the game and keeps local edits in progress. A slow status query also now lets the player cancel, reopen and confirm the Nextendo dialog. The browser test holds the response of that query until after the confirmation.

@@ -67,6 +67,13 @@ fn valid_camera_distance(value: &str) -> bool {
         && value.parse::<u8>().is_ok_and(|n| (75..=150).contains(&n))
 }
 
+fn rumble_percent(value: &str) -> Option<u8> {
+    if !value.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    value.parse::<u8>().ok().filter(|percent| *percent <= 100)
+}
+
 fn valid_stick_deadzone(value: &str) -> bool {
     value.bytes().all(|c| c.is_ascii_digit()) && value.parse::<u8>().is_ok_and(|n| n <= 50)
 }
@@ -75,6 +82,7 @@ fn valid(schema: &Value, field: &Value, value: &str) -> bool {
     match field["kind"].as_str() {
         Some("bool") => matches!(value, "0" | "1"),
         Some("camera_distance") => valid_camera_distance(value),
+        Some("percentage") => rumble_percent(value).is_some(),
         Some("stick_deadzone") => valid_stick_deadzone(value),
         Some("volume") => value
             .parse::<f64>()
@@ -133,9 +141,15 @@ pub fn read(local: &Path, build: MenuBuild) -> Result<Value> {
     if std::env::var("MK8_SPLITSCREEN_60FPS").as_deref() == Ok("1") {
         values.insert("split_screen_60fps".into(), json!("1"));
     }
+    let mut legacy_vibration = true;
+    let mut rumble = None;
     for line in contents(&path(local)?)?.lines() {
         if let Some((key, value)) = entry(line) {
-            if let Some(slot) = values.get_mut(key) {
+            if key == "controller_vibration" {
+                legacy_vibration = value != "0";
+            } else if key == "rumble_intensity" {
+                rumble = rumble_percent(value);
+            } else if let Some(slot) = values.get_mut(key) {
                 let value = if key == "split_screen_60fps" && value != "1" {
                     "0"
                 } else if key == "bloom" && value != "0" {
@@ -147,6 +161,12 @@ pub fn read(local: &Path, build: MenuBuild) -> Result<Value> {
             }
         }
     }
+    values.insert(
+        "rumble_intensity".into(),
+        json!(rumble
+            .unwrap_or(if legacy_vibration { 100 } else { 0 })
+            .to_string()),
+    );
     if legacy_native == Some(true) {
         values.insert("theme".into(), json!("Native"));
     } else if let Some(theme) = values["theme"].as_str() {
@@ -286,6 +306,17 @@ pub fn configure_menu(local: &Path, build: MenuBuild) -> Result<bool> {
 }
 
 fn write_ini(local: &Path, patch: &Map<String, Value>) -> Result<()> {
+    // A runtime with the old toggle can still honor a muted slider.
+    let compatible = patch.get("rumble_intensity").map(|intensity| {
+        let mut patch = patch.clone();
+        let muted = intensity.as_str().and_then(rumble_percent) == Some(0);
+        patch.insert(
+            "controller_vibration".into(),
+            json!(if muted { "0" } else { "1" }),
+        );
+        patch
+    });
+    let patch = compatible.as_ref().unwrap_or(patch);
     let path = path(local)?;
     let original = contents(&path)?;
     let newline = if original.contains("\r\n") {
@@ -589,6 +620,33 @@ mod tests {
             assert!(fs::read_to_string(&ini)
                 .unwrap()
                 .contains("other_setting = keep"));
+        }
+        fs::remove_dir_all(local).unwrap();
+    }
+
+    #[test]
+    fn rumble_migrates_the_toggle_and_persists_a_valid_percentage() {
+        let local = std::env::temp_dir().join(format!("mk8-rumble-{}", std::process::id()));
+        let ini = local.join("user-no-mii/mk8d.ini");
+        assert_eq!(read(&local).unwrap()["values"]["rumble_intensity"], "100");
+        fs::create_dir_all(ini.parent().unwrap()).unwrap();
+        fs::write(&ini, "controller_vibration = 1\n").unwrap();
+        assert_eq!(read(&local).unwrap()["values"]["rumble_intensity"], "100");
+        fs::write(
+            &ini,
+            "rumble_intensity = 101\ncontroller_vibration = 0\nother = keep\n",
+        )
+        .unwrap();
+        assert_eq!(read(&local).unwrap()["values"]["rumble_intensity"], "0");
+        for value in ["101", "-1", "+35", "35.5"] {
+            assert!(write(&local, &json!({"rumble_intensity":value})).is_err());
+        }
+        for (value, legacy) in [("35", "1"), ("0", "0")] {
+            write(&local, &json!({"rumble_intensity":value})).unwrap();
+            assert_eq!(read(&local).unwrap()["values"]["rumble_intensity"], value);
+            let text = fs::read_to_string(&ini).unwrap();
+            assert!(text.contains(&format!("controller_vibration = {legacy}")));
+            assert!(text.contains("other = keep"));
         }
         fs::remove_dir_all(local).unwrap();
     }

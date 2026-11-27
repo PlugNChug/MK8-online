@@ -52,7 +52,14 @@ def prepare(runtime):
     draw = replace(draw, begin, begin+'\n    Mk8BlurSequence pending_blur = mk8_blur_begin(&mk8_blur_sequence);')
     fs = '        g_cur_fs_hash = last_hash;'
     draw = replace(draw, fs, fs+'\n        mk8_blur_lod = -1;\n'
-                   '        mk8_blur_target = mk8_blur_draw(&pending_blur, renderer_present_count(), last_hash);')
+                   '        bool enlarged = false;\n'
+                   '        if (last_hash == MK8_VANCOUVER_BLOOM_MASK) {\n'
+                   '            extern void renderer_get_scale(float *, float *);\n'
+                   '            float sx, sy;\n'
+                   '            renderer_get_scale(&sx, &sy);\n'
+                   '            enlarged = sx > 1.0f || sy > 1.0f;\n'
+                   '        }\n'
+                   '        mk8_blur_target = mk8_blur_draw(&pending_blur, renderer_present_count(), last_hash, enlarged);')
     issued = '        else vkCmdDrawIndexed(cb, icount, run_n[ri], 0, base_vertex, base_inst + run_at[ri]);'
     draw = replace(draw, issued, issued+'\n        if (run_n[ri] && (use_index ? icount : count)) mk8_blur_sequence = pending_blur;')
     desc = 'vk_sampler(&((NvnSamplerDesc *)st.spool->entries)[tsc])'

@@ -18,8 +18,10 @@ DIALECT = '    vkey->glsl = fkey->glsl = 1;'
 AHEAD_KEY = '    f.flip_y = fkey->flip_y, f.depth_minus_one = fkey->depth_minus_one;'
 # NVIDIA Pascal: GP100 (0x15f0-0x15ff) and GP102-GP108 (0x1b00-0x1d7f; Volta starts at 0x1d81). The GTX 1070 (#7)
 # was measured; the GTX 1060 (#114) loses the device at the first race with the same driver family.
+# Quadro M5000M (#165) also loses the device at the first race. Apply the same shader rewrite to its PCI ID.
 DEVICE_CHECK = '''static inline bool mk8_use_texture_size_hoist(uint32_t vendor, uint32_t device) {
-    return vendor == 0x10de && ((device >= 0x15f0 && device <= 0x15ff) || (device >= 0x1b00 && device <= 0x1d7f));
+    return vendor == 0x10de && (device == 0x13f8 || (device >= 0x15f0 && device <= 0x15ff) ||
+                                (device >= 0x1b00 && device <= 0x1d7f));
 }
 '''
 

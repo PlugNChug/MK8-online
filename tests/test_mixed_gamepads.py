@@ -78,6 +78,7 @@ extern "C" void mk8_release_pause_button(SDL_JoystickID,unsigned);
                 ('forward', None, 'prerace-pair-split'),
                 ('forward', None, 'prerace-p1-only'),
                 ('forward', None, 'keyboard-prerace-applet'),
+                ('forward', None, 'keyboard-splitter'),
                 ('forward', None, 'prerace-p1-replacement'),
                 ('forward', None, 'prerace-sparse-seats'),
                 ('forward', None, 'title-reconnect'),

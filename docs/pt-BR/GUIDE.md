@@ -110,11 +110,15 @@ Em **Controles → Zona morta dos analógicos**, escolha de 0 a 50% para ignorar
 
 **Reatribuir:** na seleção de personagens, com dois a quatro jogadores locais, pressione **+** no controle do jogador 1 (ou a tecla de Start, ou clique em **−/+**) para abrir o menu de controles. Selecione uma linha para atribuir um controle livre ou trocar dois jogadores e use **Apply**.
 
+**Keyboard Splitter no Windows:** o MK8-online tem uma vaga para o teclado nativo. Se uma tecla mover dois jogadores, abra o menu de controles na seleção de personagens e escolha **Clear all**. Pressione os botões mapeados como **L + R** em cada um dos dois controles virtuais, na ordem dos jogadores, e escolha **Apply**. Isso remove a atribuição do teclado nativo e deixa apenas os controles virtuais enviarem comandos para esses jogadores.
+
 **Separar um par de Joy-Con:** no menu de controles, selecione o jogador que vai receber uma metade e segure **SL + SR** nesse Joy-Con. **Apply** separa o par e **Cancel** mantém. Cada metade passa a controlar o próprio jogador. Pro Controller e teclado podem ser combinados com Joy-Con em qualquer ordem.
 
 **Desconexões:** numa corrida local em tela dividida, quem desconecta fica sem comandos e os demais continuam. Um controle identificável volta à mesma vaga ao reconectar.
 
 **Vibração HD:** no Pro Controller original do Switch, nos Joy-Con individuais e num par identificável de Joy-Con oficiais via Bluetooth. Os demais controles usam a vibração da SDL.
+
+**Intensidade da vibração** começa em 100% da saída calibrada de cada controle. Selecione 0% em **Controles** no menu F1 para parar a vibração de todos os jogadores. Também é possível usar o controle deslizante em **Configurações → Vídeo e controles → Controles** no launcher antes de iniciar o jogo. As opções anteriores ligado e desligado passam a 100% e 0%.
 
 **Direção por movimento:** conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** e segure o controle como um volante.
 

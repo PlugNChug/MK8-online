@@ -13,6 +13,7 @@ extern "C" {
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={};
 void input_pads_reassign(void) {}
 void mk8_settings_pads_changed(void) {}
+void mk8_rumble_set_intensity(int percent) { g_settings.rumble_intensity=percent; }
 const char *const g_heart_colours[N_HEART_COLOURS]={};
 void rt_log(const char *,...) {}
 int input_pad_family(void) { return 0; }
@@ -51,13 +52,17 @@ static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     assert(id==MK8_MENU_FULLSCREEN || field==mk8_menu_option(id)->toggle);
     return false;
 }
-static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
-static bool opt_int(const char *label,int *value,int min,int max,int step,int def,const char *,const char *,const char *) {
-    assert(record(label)==MK8_MENU_STICK_DEADZONE && min==0 && max==50 && step==1 && def==0);
+static bool opt_int(const char *label,int *value,int lo,int hi,int step,int def,const char *,const char *,const char *) {
+    int id=record(label);
+    if (id==MK8_MENU_RUMBLE_INTENSITY)
+        assert(*value==g_settings.rumble_intensity && lo==0 && hi==100 && step==5 && def==100);
+    else
+        assert(id==MK8_MENU_STICK_DEADZONE && lo==0 && hi==50 && step==1 && def==0);
     if (!click || strcmp(click,label)) return false;
-    ++*value;
+    *value=id==MK8_MENU_RUMBLE_INTENSITY ? 35 : *value+1;
     return true;
 }
+static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
 static bool opt_text_editing(const char *) { return false; }
 static bool opt_text(const char *label,char *,size_t,const char *,const char *,int *step=nullptr) {
     record(label); if(step) *step=0; return false;
@@ -113,6 +118,9 @@ int main() {
     ImGuiIO &io=ImGui::GetIO(); io.IniFilename=nullptr; io.DisplaySize=ImVec2(1280,2160);
     unsigned char *pixels; int w,h; io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     if(frame(nullptr)) return 1;
+    assert(g_settings.rumble_intensity==100);
+    if(frame("Rumble intensity")) return 1;
+    assert(g_settings.rumble_intensity==35);
     assert(mk8_stick_deadzone_percent()==0);
     if(frame("Stick dead zone")) return 1;
     assert(mk8_stick_deadzone_percent()==1);

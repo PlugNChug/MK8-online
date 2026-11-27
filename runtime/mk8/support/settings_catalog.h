@@ -42,6 +42,7 @@ enum { MK8_MENU_TOGGLE, MK8_MENU_CHOICE, MK8_MENU_NUMBER, MK8_MENU_INFO, MK8_MEN
     T(MUTE_IN_BACKGROUND, AUDIO, "Mute in background", mute_in_background, false, ALWAYS, "Mute while another app has focus.") \
     C(LANGUAGE, CONTROLS, "Game language", language, g_language_names, NULL, LANG_AUTO, ON_RESTART, "Applies after restarting the game.") \
     C(PROMPTS, CONTROLS, "Button icons", prompts, prompts, NULL, PROMPTS_AUTO, ALWAYS, "Choose controller button icons.") \
+    S(RUMBLE_INTENSITY, CONTROLS, "Rumble intensity", NUMBER, "0% turns rumble off for all players.") \
     S(STICK_DEADZONE, CONTROLS, "Stick dead zone", NUMBER, "Ignore small analog stick movements.") \
     S(DEVICE, CONTROLS, "Mapping device", CHOICE, "Choose bindings to edit.") \
     S(RESET, CONTROLS, "Reset these bindings", ACTION, "Restore this device's defaults.")

@@ -2,6 +2,16 @@
 
 [Índice](README.md) · [English](../../en/log/controllers.md)
 
+## Opção de vibração do controle (#166)
+
+Em 25 de novembro de 2026, o jogador confirmou o funcionamento da opção com um Pro Controller do Switch via Bluetooth na build isolada para Windows do jogo 4.0.1 (prefixo do SHA-256 do runtime `2448f1ce`). O menu nativo F1 gravou a preferência como desativada. Os testes compilados verificaram que desativar a vibração interrompe os efeitos ativos, descarta os pendentes, envia um pacote neutro de vibração HD e permite novos efeitos ao reativar a opção. A duração excessiva da vibração relatada ainda precisa ser reproduzida.
+
+## Intensidade da vibração dos Joy-Con (#161)
+
+Em 25 de novembro de 2026, um jogador comparou os mesmos Joy-Con no Switch e no PC e relatou vibração aproximadamente duas vezes mais forte no PC. A build de teste envia 50% da amplitude solicitada aos Joy-Con identificados como Nintendo, individuais ou em par, pela vibração HD e pela saída alternativa da SDL. O jogo continua lendo os valores solicitados e controlando a duração.
+
+A regressão nativa confere a amplitude reduzida com a [tabela de medições do atuador](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/rumble_data_table.md), verifica a saída alternativa da SDL e exercita os pacotes neutros, a expiração dos efeitos e o Pro Controller. Uma segunda comparação física e a reprodução da vibração prolongada relatada estão pendentes.
+
 ## Zona morta ajustável nos analógicos
 
 O launcher e o menu Controles do F1 compartilham `stick_deadzone` em `mk8d.ini`. O ajuste aceita uma porcentagem inteira de 0 a 50 e o padrão é 0 para perfis existentes. O escritor do estado HID aplica o filtro a cada par de eixos do analógico. Fora da zona morta, ele ajusta a faixa restante na mesma direção, preservando o curso máximo. O filtro atua após a rotação dos eixos dos Joy-Con e antes de somar teclado, toque ou entrada de roteiro.

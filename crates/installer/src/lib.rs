@@ -452,6 +452,8 @@ mod tests {
             menu_light_themes_supported: false,
             split_screen_60fps_supported: false,
             bloom_supported: false,
+            controller_vibration_supported: false,
+            rumble_intensity_supported: false,
             direct_lan_guest_supported: false,
         };
         assert!(validate_candidate(&install).is_ok());

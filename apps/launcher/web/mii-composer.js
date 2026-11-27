@@ -110,6 +110,7 @@ const scheduleStage=()=>{cancelAnimationFrame(redraw);redraw=requestAnimationFra
 
 // ---- FFL (head) ---------------------------------------------------------------------------------------------
 async function loadFFL(){
+  if(!stage)return false;
   if(ffl)return true;
   if(fflLoading)return fflLoading;
   fflLoading=(async()=>{
@@ -361,8 +362,13 @@ for(const [key,label] of TABS){
 (async()=>{
   try{
     for(const f of await api('mii/fields'))schema.set(f.offset,f);
-    setupStage();
     await load();
+    try{setupStage();}catch(e){
+      console.warn('Mii preview could not start:',e);
+      stage?.renderer.dispose();
+      stage=null;
+      return;
+    }
     const ready=await loadFFL();
     loadBodies();
     if(ready){openTab(tab);scheduleStage();}

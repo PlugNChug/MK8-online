@@ -32,7 +32,7 @@ O MK8-online é uma recompilação estática experimental do **Mario Kart 8 Delu
 - **Launcher guiado:** instalação, build do jogo, atualizações, desinstalação e relatórios de diagnóstico, em inglês, português do Brasil e espanhol.
 - **Criador de Mii:** seu Mii aparece nos retratos, nas roupas, no piloto e no minimapa do jogo.
 - **Jogo online:** matchmaking nativo pelo [Nextendo](https://nextendo.network/), além de salas Steam com convites de amigos.
-- **Gráficos:** escala da resolução interna com FSR 1/3/4 e DLSS, além de ultrawide e geração de quadros experimentais.
+- **Gráficos:** escala da resolução interna com FSR 1/3/4 e DLSS, além de ultrawide e geração de quadros experimentais. A correção de bloom em resoluções ampliadas também cobre as luzes das árvores em Vancouver Velocity.
 - **Controles:** controles SDL, teclado, Pro Controller e Joy-Con do Switch, com vibração HD, direção por movimento e tela dividida local.
 - **Conteúdo extra:** DLC Booster Course Pass opcional e pacote de pistas CTGP Deluxe experimental, ambos a partir dos seus arquivos, além de mods de RomFS que você mesmo instala (texturas, modelos, músicas).
 
@@ -55,9 +55,9 @@ O MK8-online é uma recompilação estática experimental do **Mario Kart 8 Delu
 ## Início rápido
 
 1. Execute o instalador e escolha as pastas do aplicativo e dos dados. Não é preciso ser administrador.
-2. Em **Instalar**, conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo**.
+2. Em **Instalar**, conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo**. No Windows, a etapa tenta outra fonte se o download da versão fixada do Zig falhar.
 3. Rode **Build do jogo**. A primeira build leva cerca de 30 minutos.
-4. Crie um Mii em **Perfil Mii** e escolha **Jogar solo**, **Jogar no Nextendo** ou **Multijogador**.
+4. Crie um Mii em **Perfil Mii** e escolha **Jogar solo**, **Jogar no Nextendo** ou **Multijogador**. Se a prévia 3D estiver indisponível, você ainda pode editar e salvar usando as opções numeradas.
 
 Ajuste a zona morta dos analógicos em **Configurações → Controles**.
 
