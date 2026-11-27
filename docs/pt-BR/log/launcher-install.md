@@ -2,6 +2,10 @@
 
 [Índice](README.md) · [English](../../en/log/launcher-install.md)
 
+## Download das ferramentas no Windows em 46% (#194)
+
+Um timeout simulado no servidor principal do Zig interrompeu a preparação na 0.6.3. Com o mesmo timeout, a etapa baixou o arquivo de um espelho comunitário listado pelo Zig, verificou o SHA-256 fixado e instalou o compilador, que informou a versão 0.17.0. Uma instalação local verificada continua disponível offline.
+
 ## Menu do jogo no Windows
 
 F1, Home e a chave inglesa do menu principal abrem o tema escolhido no launcher. Perfis novos usam Nativo. Os temas Simples escuro, Simples claro, NES escuro e NES claro compartilham os ajustes com o Nativo. O idioma acompanha o launcher. No tema Nativo, a lista de salas abre os detalhes e mantém a seleção ao voltar.
