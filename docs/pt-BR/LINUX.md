@@ -61,3 +61,15 @@ Sem FUSE:
 ```
 
 [Documentação do AppImage](https://docs.appimage.org/user-guide/run-appimages.html) · [Fonte Linux 0.5.0](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f)
+
+### Contêineres com /tmp montado com noexec
+
+Na versão 0.6.3, salve os arquivos baixados em um sistema de arquivos com permissão de escrita e execução. Instale as dependências dentro do contêiner, incluindo WebKitGTK 4.1 e bsdtar (libarchive-tools no Ubuntu). Confira o checksum antes de extrair o pacote.
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.tar.gz.sha256 &&
+tar -xzf MK8-online-0.6.3-linux-x86_64.tar.gz &&
+./MK8-online/AppRun
+```
+
+O tar.gz e o AppImage com TMPDIR em um sistema de arquivos executável iniciaram o servidor do launcher e executaram o importador em um contêiner Ubuntu 24.04 com /tmp montado com noexec. O AppImage também abriu a janela com APPIMAGE_EXTRACT_AND_RUN=1. Se a inicialização falhar, execute o launcher pelo terminal e guarde a primeira mensagem de erro. [Verificação no contêiner](https://github.com/PlugNChug/MK8-online/actions/runs/46033999648)
