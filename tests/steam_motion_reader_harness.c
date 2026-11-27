@@ -103,6 +103,17 @@ static int SDLCALL exercise(void *owner) {
     return 0;
 }
 
+static int SDLCALL exercise_stale_connection(void *owner) {
+    SDL_Joystick *joy = attach_pro();
+    wait_pair(joy, 9);
+    // Neither a new attachment nor another sensor sample follows the first retry.
+    SDL_Delay(5500);
+    assert(SDL_JoystickConnected(joy));
+    detach_pro(joy);
+    assert(SetEvent(owner));
+    return 0;
+}
+
 int main(void) {
     assert(SDL_Init(SDL_INIT_GAMEPAD));
     GUID id;
@@ -113,7 +124,14 @@ int main(void) {
     assert(owner);
     SDL_Thread *thread = SDL_CreateThread(exercise, "Virtual Pro sensor test", owner);
     assert(thread);
-    read_controller(&channel, owner);
+    MotionMailbox sample = {.reader = GetCurrentProcessId()};
+    assert(!read_controller(&channel, owner, &sample, true));
+    SDL_WaitThread(thread, NULL);
+    assert(ResetEvent(owner));
+    thread = SDL_CreateThread(exercise_stale_connection, "Virtual Pro stale connection test", owner);
+    assert(thread);
+    assert(read_controller(&channel, owner, &sample, true));
+    assert(sample.device_reopens == 1 && !sample.received);
     SDL_WaitThread(thread, NULL);
     close_channel(&channel);
     CloseHandle(owner);
