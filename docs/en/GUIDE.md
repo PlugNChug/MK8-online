@@ -108,6 +108,8 @@ SDL-compatible controllers, the keyboard and Switch controllers are supported. S
 
 **Reassigning:** at character selection with two to four local players, press **+** on P1's controller (or the mapped Start key, or click **−/+**) to open the controller menu. Select a row to assign a spare controller or swap two players, then **Apply**.
 
+**Keyboard Splitter on Windows:** MK8-online has one native keyboard slot. If a key moves two players, open the controller menu at character selection and choose **Clear all**. Press the mapped **L + R** on each of the two virtual controllers, in player order, then choose **Apply**. This removes the native keyboard assignment, so only the virtual controllers send input to those players.
+
 **Splitting a pair of Joy-Cons:** in the controller menu, select the player who will receive a half and hold **SL + SR** on that Joy-Con. **Apply** splits the pair and **Cancel** keeps it. Each half then controls its own player. A Pro Controller and the keyboard can be mixed with Joy-Cons in any order.
 
 **Disconnects:** in a local split-screen race, a disconnected player's controls go neutral and others keep racing. An identifiable controller returns to its slot on reconnect.
