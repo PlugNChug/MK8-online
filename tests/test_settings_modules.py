@@ -427,6 +427,21 @@ class SettingsModulesTests(unittest.TestCase):
         ini.write_text(saved.replace('bloom = 0','bloom = 1'))
         expect(bloom).to_be_checked()
 
+    def test_fullscreen_auto_hide_cursor_persists(self):
+        page = self.page
+        cursor = page.locator('#config-field-auto_hide_cursor')
+        expect(cursor).to_be_checked()
+        for language, label in [('es', 'Ocultar el cursor automáticamente'), ('en', 'Auto-hide cursor')]:
+            page.locator('#language').select_option(language)
+            expect(page.get_by_role('checkbox', name=label)).to_be_checked()
+        cursor.uncheck()
+        with page.expect_response(lambda r: r.url.endswith('/api/settings') and r.request.method=='POST') as response:
+            page.locator('#settings-save').click()
+        self.assertTrue(response.value.json()['ok'])
+        page.reload()
+        expect(cursor).not_to_be_checked()
+        self.assertIn('auto_hide_cursor = 0', (self.local/'user-no-mii/mk8d.ini').read_text())
+
     def test_visual_settings_previews_drafts_and_real_save(self):
         page = self.page
         expect(page.locator('#config-tab-fonts')).to_be_enabled()

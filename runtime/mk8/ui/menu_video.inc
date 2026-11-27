@@ -4,7 +4,10 @@ extern "C" bool mk8_settings_values_main_menu(void);
 static bool mk8_video_toggle(Mk8MenuField field, const char *help) {
     const Mk8MenuOption &option = *mk8_menu_option(field);
     if (!mk8_menu_option_enabled(field, mk8_settings_values_main_menu())) opt_disable_next();
-    return opt_toggle(option.label, option.toggle, option.default_index != 0, help);
+    bool value = __atomic_load_n(option.toggle, __ATOMIC_RELAXED);
+    if (!opt_toggle(option.label, &value, option.default_index != 0, help)) return false;
+    __atomic_store_n(option.toggle, value, __ATOMIC_RELAXED);
+    return true;
 }
 
 static void mk8_video_choice(Mk8MenuField field, const char *help, bool wrap = true) {

@@ -111,11 +111,12 @@ int main(int argc,char **argv) {
         assert(mk8_stick_deadzone_percent()==17);
         assert(mk8_split_screen_60fps_enabled());
         assert(!mk8_bloom_enabled());
+        assert(!g_settings.auto_hide_cursor);
         assert(g_settings.res_mode==RES_Q75 && g_settings.antialias==AA_SMAA);
         assert(g_bind_key[BIND_ZL]==SDL_SCANCODE_SPACE && g_bind_key[BIND_ZR]==SDL_SCANCODE_LALT);
         return 0;
     }
-    assert(mk8_settings_values_count(0)==15 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
+    assert(mk8_settings_values_count(0)==16 && mk8_settings_values_count(1)==4 && mk8_settings_values_count(2)==22);
     Mk8Setting video_row;
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,0,&video_row) && video_row.id==MK8_MENU_THEME);
     assert(mk8_settings_values_row(MK8_MENU_VIDEO,1,&video_row) && video_row.id==MK8_MENU_ASPECT);
@@ -191,6 +192,10 @@ int main(int argc,char **argv) {
     assert(bloom.id==MK8_MENU_BLOOM && mk8_bloom_enabled() && !strcmp(bloom.value,"On"));
     request(SETTINGS_STEP,bloom.id,1);
     assert(!mk8_bloom_enabled() && !strcmp(find(0,"Bloom").value,"Off"));
+    Mk8Setting cursor=find(0,"Auto-hide cursor");
+    assert(cursor.id==MK8_MENU_AUTO_HIDE_CURSOR && cursor.current==1);
+    request(SETTINGS_STEP,cursor.id,1);
+    assert(!g_settings.auto_hide_cursor && find(0,"Auto-hide cursor").current==0);
     Mk8Setting rumble=find(2,"Rumble intensity");
     assert(rumble.id==MK8_MENU_RUMBLE_INTENSITY && rumble.kind==SETTING_NUMBER && !strcmp(rumble.value,"100%"));
     request(SETTINGS_STEP,rumble.id,-1);
@@ -371,6 +376,7 @@ int main(int argc,char **argv) {
             self.assertIn('volume = 1.50',text)
             self.assertIn('split_screen_60fps = 1',text)
             self.assertIn('bloom = 0',text)
+            self.assertIn('auto_hide_cursor = 0',text)
             self.assertIn('controller_vibration = 0',text)
             self.assertIn('rumble_intensity = 0',text)
             self.assertIn('camera_distance = 117',text)

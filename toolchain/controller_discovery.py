@@ -19,7 +19,7 @@ static void mk8_open_gamepad(SDL_JoystickID id) {
 }
 
 // Called on the SDL window thread when a controller changes input backend.
-void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id) {
+void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id, bool prefer_earlier_slot) {
     for (int player = 0; player <= EXTRA_PADS; ++player) {
         SDL_Gamepad **slot = player ? &extra_pad[player - 1] : &pad;
         if (!*slot || SDL_GetGamepadID(*slot) != old_id) continue;
@@ -27,8 +27,12 @@ void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id) {
         *slot = NULL;
         if (new_id) {
             bool taken = pad && SDL_GetGamepadID(pad) == new_id;
-            for (int i = 0; i < EXTRA_PADS; ++i)
-                if (extra_pad[i] && SDL_GetGamepadID(extra_pad[i]) == new_id) taken = true;
+            for (int i = 0; i < EXTRA_PADS; ++i) {
+                if (!extra_pad[i] || SDL_GetGamepadID(extra_pad[i]) != new_id) continue;
+                if (prefer_earlier_slot && player < i + 1) mk8_move_gamepad(new_id, 0, false);
+                else taken = true;
+                break;
+            }
             if (!taken) *slot = mk8_rumble_open(player, new_id);
         }
         if (player) recompute_extra(player - 1);

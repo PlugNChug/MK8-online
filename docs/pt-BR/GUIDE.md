@@ -122,6 +122,8 @@ Em **Controles → Zona morta dos analógicos**, escolha de 0 a 50% para ignorar
 
 **Direção por movimento:** conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** e segure o controle como um volante.
 
+No Windows, o jogo pode ler os sensores de movimento de um Switch Pro Controller via Bluetooth enquanto a Entrada Steam cuida dos botões e analógicos. O leitor de movimento inicia automaticamente. Se o controle desconectar, reconecte-o por Bluetooth para retomar a direção. Se os controles por movimento estiverem indisponíveis na sua configuração, selecione **Desativar Entrada Steam** em **Propriedades → Controle** do jogo na Steam e reinicie para usar o controle nativo. [Relato sobre a Entrada Steam #164](https://github.com/Vnnc1/MK8-online/issues/164)
+
 ## Menu do jogo e configurações
 
 O Menu usa o tema escolhido no launcher (**Vídeo → Tema do menu**): Nativo, Simples escuro, Simples claro, NES escuro ou NES claro. **F1**, **Home/Guide**, **Menos + Mais** e a chave inglesa do menu principal o abrem; **Shift+F1** abre o painel convencional. O idioma acompanha o launcher.
@@ -131,6 +133,8 @@ Pressione **F1** ou **Menos + Mais** para abrir o menu do jogo. **Jogar** volta 
 O botão **Info** do menu principal abre a janela local **How to Play**, com controles, drift, itens, assistências e modos. Feche com **Back to game** ou Esc.
 
 No launcher, **Configurações** reúne vídeo, áudio, idioma do jogo, ícones dos botões, ordem dos controles e mapeamento de teclado/controle. O arquivo `user-no-mii/mk8d.ini` é o mesmo do menu F1. **Salvar configurações** aplica no próximo início; **Recarregar do jogo** lê os valores gravados pelo menu F1. Não é possível salvar enquanto o jogo ou uma preparação usa os dados.
+
+**Vídeo → Ocultar cursor automaticamente** vem ativado. Em tela cheia, o ponteiro some após dois segundos de inatividade. Usar o mouse, abrir o menu F1 ou sair da tela cheia faz o ponteiro voltar.
 
 ## Online com o Nextendo
 

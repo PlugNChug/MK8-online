@@ -68,6 +68,12 @@ In 0.3.0, after the same four tracks, **View Results** reproduced the symptom of
 
 In the published version, the game used the same folder for the account saves and the temporary replays, with five earlier replays at the start of the test. In `fix-chore`, the separation of save types from [PR #42](https://github.com/Vnnc1/MK8-online/pull/42) left the four replays of the new cup in their own spaces. This difference and the scene choice explain the observed symptom; the comparison spans several changes between the builds and did not isolate a single commit as the cause. Local evidence in `local/cup-68`. The RTX 3050 cited in the report has not yet been retested.
 
+## Fullscreen cursor auto-hide
+
+The SDL window loop hides the pointer after two idle seconds while the fullscreen game window has keyboard and mouse focus. Mouse activity restores it. The in-game menu and controller setup keep it visible. The launcher and in-game Video settings share the `auto_hide_cursor` preference, which defaults to on.
+
+On Windows with MK8 4.0.1, the fullscreen title screen at 2560×1600 on baseline `5603bfb` (`61dca153…`) still showed the pointer after 2.6 s idle. The host-only rebuild (`2df72e4c…`) hid it after 2.02–2.03 s. Mouse movement, the native F1 menu, the Shift+F1 overlay and F11 each restored it. With the preference disabled, the pointer was still visible after 2.6 s idle. Native tests exercised the timer, focus loss and menu settings. The launcher test verified persistence in Edge. Linux desktop behavior remains unverified. [#143](https://github.com/Vnnc1/MK8-online/issues/143) · [#151](https://github.com/Vnnc1/MK8-online/issues/151)
+
 ## Native fullscreen audit — `fix-chore` `ab9ebf8`
 
 Candidate `7e9870d0f027` (MK8 4.0.1) ran at 1920×1080 on the RX 580 2048SP, with Match resolution, default quality and frame generation off. Isolated saves, scripted inputs and one instance at a time were used. The summaries below use windows of approximately 2 s from the runtime and exclude windows that include captures. The repetitions copied the local cache. The driver cache remained in the machine’s normal state.

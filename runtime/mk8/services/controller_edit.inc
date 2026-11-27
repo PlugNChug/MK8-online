@@ -330,6 +330,10 @@ void mk8_edit_event(const SDL_Event *e) {
     if (mk8_pending_grips) {
         if (e->type == SDL_EVENT_GAMEPAD_REMOVED) mk8_retry_pending_grips(e->gdevice.which, true);
         else if (!mk8_editor.rows) {
+#ifdef _WIN32
+            if (e->type == SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED)
+                mk8_retry_pending_grips(e->gdevice.which, false);
+#endif
             if (e->type == SDL_EVENT_GAMEPAD_REMAPPED) mk8_retry_pending_grips(e->gdevice.which, false);
             else if (e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) mk8_retry_pending_grips(e->gbutton.which, false);
             else if (e->type == SDL_EVENT_GAMEPAD_AXIS_MOTION && abs(e->gaxis.value) > 8000)

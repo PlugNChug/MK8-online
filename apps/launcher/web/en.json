@@ -1197,6 +1197,8 @@
   "Símbolos Nintendo, Xbox ou PlayStation.": "Nintendo, Xbox or PlayStation symbols.",
   "Símbolos automáticos · exemplo Xbox": "Automatic symbols · Xbox example",
   "Símbolos {0}": "{0} symbols",
+  "Ocultar cursor automaticamente": "Auto-hide cursor",
+  "Oculta o ponteiro do mouse após dois segundos sem uso em tela cheia.": "Hide the mouse pointer after two seconds of inactivity in fullscreen.",
   "Também pode alternar com F11 ou Alt+Enter.": "You can also toggle with F11 or Alt+Enter.",
   "Tecla selecionada": "Selected key",
   "Tela cheia ocupa o monitor; em janela, a moldura permanece visível. Durante o jogo, F11 ou Alt+Enter alterna esse modo.": "Fullscreen fills the monitor; windowed mode keeps the frame visible. In the game, F11 or Alt+Enter toggles this mode.",

@@ -2,6 +2,20 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/controllers.md)
 
+## Switch Pro Controller motion with Steam Input (#164)
+
+On Windows, the Steam-mapped SDL gamepad identified the Bluetooth Switch Pro Controller and delivered buttons and sticks, but exposed neither motion sensor. A desktop SDL process could read the physical accelerometer and gyroscope at the same time. The integration starts that reader through the [Windows desktop shell](https://learn.microsoft.com/en-us/windows/win32/shell/samples-execinexplorer) when Steam presents one eligible gamepad. It sends complete sensor pairs to the assigned player and clears them when input stops. The reader rediscovers the controller after disconnect and exits with the game.
+
+Windows regressions cover native sensor precedence, player assignment and clearing old pairs after reconnect. In a separate lifecycle test, Explorer launched the reader, the reader published its heartbeat and it exited after its owner. The reader also cleared stale samples and accepted new pairs when a virtual Pro Controller disconnected and reconnected. The earlier manual reader was verified in a race with one Bluetooth Pro Controller and Steam Input enabled. `gameplay_verified=false`.
+
+The first hardware reconnect restored sensor samples, but GameInput exposed the physical Pro Controller and two Valve records. GameInput proxies occupied the first slots, and the Steam mapping received motion as player 2 or 3. A short wait restored player 1 once, then repeated hardware reconnects accumulated more copies and pushed the Steam mapping to player 4. The runtime now uses Steam's mapped device and the desktop reader's physical device count to distinguish one Pro Controller from multiple controllers. It keeps the duplicate GameInput entries out of player slots while Steam recreates the device and recognizes the same controller model when SDL reports a new attachment. The native regression exercises late SDL discovery and repeat reconnects with duplicate records.
+
+In the next hardware test, the log showed that samples returned to player 1, but the player reported that tilt still recovered inconsistently. The reader now retries sensor activation when an attached controller stops supplying complete accelerometer and gyro pairs. It clears the old pair, starts a new sensor generation and limits retries during a continuous stall. The game logs separately when the Steam mapping or the fresh sensor pairs go away. The native SDL regression fails with the earlier reader and passes with the retry. [SDL Switch driver](https://github.com/libsdl-org/SDL/blob/release-3.4.18/src/joystick/hidapi/SDL_hidapi_switch.c)
+
+The retry build recovered buttons and tilt consistently when the player waited for Steam's disconnect notification. Reconnecting before the notification could still leave motion unavailable. Restarting the SDL joystick subsystem only when an attached device stayed silent recovered two of three rapid hardware reconnects. The reader now restarts discovery after a prolonged gap in fresh samples, including when SDL fails to supply a replacement attachment. The native regression exercises both an attached device that stays silent and a replacement that never appears.
+
+On November 27, 2026, the player confirmed two rapid Bluetooth reconnects in Time Trial with Steam Input enabled. Buttons and tilt returned after a delay on the first attempt and immediately on the second. The Windows MK8 4.0.1 runtime (`d23b68bb`) logged the first sensor connection reopening and motion returning to player 1 both times.
+
 ## Controller vibration toggle (#166)
 
 On November 25, 2026, the player confirmed the toggle with a Bluetooth Switch Pro Controller in the isolated Windows 4.0.1 build (runtime SHA-256 prefix `2448f1ce`). The native F1 menu saved the preference as off. Compiled tests verified that disabling vibration clears active and queued effects, sends a neutral HD Rumble packet, and accepts new effects when re-enabled. The reported excessive vibration duration remains to be reproduced.

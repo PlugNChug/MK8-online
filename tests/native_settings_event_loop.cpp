@@ -21,11 +21,12 @@ static SDL_Gamepad *pad;
 static unsigned drawable_updates, resize_events, before_poll;
 static int drawable_width, drawable_height;
 static bool minimized, query_ok=true;
+static SDL_WindowFlags cursor_flags;
 void mk8_ultrawide_drawable(int width,int height) {
     if(!drawable_updates) assert(!ui_ready.load());
     drawable_width=width;drawable_height=height;drawable_updates++;
 }
-static SDL_WindowFlags test_window_flags(SDL_Window *) { return minimized ? SDL_WINDOW_MINIMIZED : 0; }
+static SDL_WindowFlags test_window_flags(SDL_Window *) { return cursor_flags | (minimized ? SDL_WINDOW_MINIMIZED : 0); }
 static bool test_window_size(SDL_Window *,int *width,int *height) {
     *width=2560;*height=720;return query_ok;
 }
@@ -100,9 +101,43 @@ static void menu_apply_window_requests(void *) {
 }
 
 // The actual prepared Vulkan UI loop, supplied by the Python test.
+static struct { bool auto_hide_cursor=true; } g_settings;
+static Uint64 clock_ms;
+static bool cursor_visible=true;
+static bool test_hide_cursor() { cursor_visible=false; return true; }
+static bool test_show_cursor() { cursor_visible=true; return true; }
+#define SDL_GetTicks() clock_ms
+#define SDL_GetWindowID(window) SDL_WindowID{1}
+#define SDL_HideCursor test_hide_cursor
+#define SDL_ShowCursor test_show_cursor
 #include "settings_ui_loop.inc"
 
+static void check_cursor() {
+    Mk8FullscreenCursor cursor{};
+    const SDL_WindowFlags fullscreen = SDL_WINDOW_FULLSCREEN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS;
+    cursor_flags=fullscreen;
+    clock_ms=1999; mk8_cursor_update(&cursor,window,true); assert(cursor_visible);
+    clock_ms=2000; mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    SDL_Event motion{}; motion.type=SDL_EVENT_MOUSE_MOTION; motion.motion.windowID=2;
+    mk8_cursor_event(&cursor,1,&motion); mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    motion.motion.windowID=1; motion.motion.which=SDL_TOUCH_MOUSEID;
+    mk8_cursor_event(&cursor,1,&motion); mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    motion.motion.which=0;
+    mk8_cursor_event(&cursor,1,&motion); mk8_cursor_update(&cursor,window,true); assert(cursor_visible);
+    clock_ms=4000; mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    mk8_cursor_update(&cursor,window,false); assert(cursor_visible);
+    clock_ms=6000; mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    cursor_flags &= ~SDL_WINDOW_INPUT_FOCUS;
+    mk8_cursor_update(&cursor,window,true); assert(cursor_visible);
+    cursor_flags=fullscreen;
+    clock_ms=8000; mk8_cursor_update(&cursor,window,true); assert(!cursor_visible);
+    cursor_flags=0;
+    mk8_cursor_update(&cursor,window,true); assert(cursor_visible);
+    clock_ms=10000; mk8_cursor_update(&cursor,window,true); assert(cursor_visible);
+}
+
 int main() {
+    check_cursor();
     // Use the real prepared publisher without requiring a display/GPU in this fixture.
     mk8_ultrawide_update_drawable();assert(drawable_width==2560 && drawable_height==720);
     minimized=true;mk8_ultrawide_update_drawable();assert(!drawable_width && !drawable_height);

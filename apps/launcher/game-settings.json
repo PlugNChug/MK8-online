@@ -52,6 +52,12 @@
           "kind": "bool"
         },
         {
+          "key": "auto_hide_cursor",
+          "label": "Ocultar cursor automaticamente",
+          "default": "1",
+          "kind": "bool"
+        },
+        {
           "key": "show_fps",
           "label": "Mostrar FPS",
           "default": "0",

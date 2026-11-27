@@ -14,6 +14,10 @@ static SDL_JoystickID *virtual_ids(int *count) {
 #include "steam_gamepads.c"
 #undef SDL_GetGamepads
 
+static SDL_JoystickID fake_motion_target;
+SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous) { *ambiguous = false; return fake_motion_target; }
+void mk8_stop_steam_motion(void) {}
+
 // Use the actual prepared player-slot discovery and backend handoff with SDL
 // devices. Only game notifications and guest rumble bookkeeping are stubbed.
 #ifndef MK8_TEST_TITLE_INPUT
@@ -260,6 +264,71 @@ int main(void) {
     assert(SDL_DetachVirtualJoystick(generic));
     InterlockedExchange(&dirty,1); mk8_poll_steam_gamepads();
     SDL_CloseGamepad(pad);
+    pad = NULL;
+
+    // A GameInput record for Steam's own virtual endpoint must not make a second player.
+    desc.vendor_id = 0x28de;
+    desc.product_id = 0x11ff;
+    first.info.vendor = desc.vendor_id;
+    first.info.product = desc.product_id;
+    second.info.vendor = 0x057e;
+    second.info.product = 0x2009;
+    Device duplicate = {.device={&methods},.info=first.info};
+    steam_motion_enabled = true;
+    device_changed(0,NULL,&first.device,0,connected,0);
+    device_changed(0,NULL,&second.device,0,connected,0);
+    device_changed(0,NULL,&duplicate.device,0,connected,0);
+    mk8_poll_steam_gamepads();
+    assert(pads[0].id && pads[1].id && pads[2].id);
+    mk8_open_gamepad(pads[0].id);
+    mk8_open_gamepad(pads[1].id);
+    SDL_JoystickID steam = SDL_AttachVirtualJoystick(&desc);
+    assert(steam);
+    // The SDL mapping can be added after GameInput has occupied the earlier slots.
+    mk8_open_gamepad(steam);
+    assert(SDL_GetGamepadID(extra_pad[1]) == steam);
+    fake_motion_target = steam;
+    mk8_poll_steam_gamepads();
+    assert(!pads[0].id && !pads[1].id && !pads[2].id);
+    assert(SDL_GetGamepadID(pad) == steam && !extra_pad[0] && !extra_pad[1]);
+    SDL_CloseGamepad(pad);
+    pad = NULL;
+    device_changed(0,NULL,&first.device,0,0,connected);
+    device_changed(0,NULL,&second.device,0,0,connected);
+    device_changed(0,NULL,&duplicate.device,0,0,connected);
+    fake_motion_target = 0;
+    assert(SDL_DetachVirtualJoystick(steam));
+    mk8_poll_steam_gamepads();
+    assert(!first.refs && !second.refs && !duplicate.refs);
+    // Old mirrors and duplicate physical records can outlive multiple Steam attachments.
+    Device duplicate_pro = {.device={&methods},.info=second.info};
+    device_changed(0,NULL,&duplicate.device,0,connected,0);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        SDL_JoystickID unassigned_steam = SDL_AttachVirtualJoystick(&desc);
+        assert(unassigned_steam);
+        mk8_poll_steam_gamepads();
+        assert(!pads[0].id && !pads[1].id && !pads[2].id && mk8_steam_pad_deferred(unassigned_steam));
+        steam = SDL_AttachVirtualJoystick(&desc);
+        assert(steam);
+        fake_motion_target = steam;
+        device_changed(0,NULL,&second.device,0,connected,0);
+        device_changed(0,NULL,&duplicate_pro.device,0,connected,0);
+        mk8_poll_steam_gamepads();
+        mk8_open_gamepad(steam);
+        assert(!pads[0].id && !pads[1].id && !pads[2].id && SDL_GetGamepadID(pad) == steam && !extra_pad[0]);
+        SDL_CloseGamepad(pad);
+        pad = NULL;
+        device_changed(0,NULL,&second.device,0,0,connected);
+        fake_motion_target = 0;
+        assert(SDL_DetachVirtualJoystick(steam));
+        assert(SDL_DetachVirtualJoystick(unassigned_steam));
+        mk8_poll_steam_gamepads();
+        assert(!second.refs);
+    }
+    device_changed(0,NULL,&duplicate.device,0,0,connected);
+    device_changed(0,NULL,&duplicate_pro.device,0,0,connected);
+    mk8_poll_steam_gamepads();
+    assert(!duplicate.refs && !duplicate_pro.refs);
 #endif
     SDL_CloseGamepad(p1); SDL_CloseGamepad(p2);
     SDL_Quit();

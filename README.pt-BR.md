@@ -33,7 +33,8 @@ O MK8-online é uma recompilação estática experimental do **Mario Kart 8 Delu
 - **Criador de Mii:** seu Mii aparece nos retratos, nas roupas, no piloto e no minimapa do jogo.
 - **Jogo online:** matchmaking nativo pelo [Nextendo](https://nextendo.network/), além de salas Steam com convites de amigos.
 - **Gráficos:** escala da resolução interna com FSR 1/3/4 e DLSS, além de ultrawide e geração de quadros experimentais. A correção de bloom em resoluções ampliadas também cobre as luzes das árvores em Vancouver Velocity.
-- **Controles:** controles SDL, teclado, Pro Controller e Joy-Con do Switch, com vibração HD, direção por movimento e tela dividida local.
+- **Controles:** controles SDL, teclado, Pro Controller e Joy-Con do Switch, com vibração HD, direção por movimento e tela dividida local. Veja o [guia de controles](docs/pt-BR/GUIDE.md#controles) para usar a direção por movimento com a Entrada Steam no Windows.
+- **Tela cheia:** o ponteiro do mouse é ocultado por padrão quando fica parado. A opção fica nos ajustes de vídeo.
 - **Conteúdo extra:** DLC Booster Course Pass opcional e pacote de pistas CTGP Deluxe experimental, ambos a partir dos seus arquivos, além de mods de RomFS que você mesmo instala (texturas, modelos, músicas).
 
 ## Download

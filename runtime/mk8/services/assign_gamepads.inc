@@ -125,7 +125,7 @@ static struct Mk8Grip {
     SDL_GUID guid;
     SDL_JoystickID attached;
     char *value;
-    enum { MK8_SERIAL, MK8_PATH, MK8_NAME } kind;
+    enum { MK8_SERIAL, MK8_PATH, MK8_NAME, MK8_STEAM_PRO } kind;
     bool unique;
 } mk8_seat_grips[1 + EXTRA_PADS][2];
 static bool mk8_title_keyboard_fallback;
@@ -145,6 +145,17 @@ static void mk8_forget_seat(unsigned player) {
 static const char *mk8_grip_value(SDL_Gamepad *g, int kind) {
     if (kind == MK8_SERIAL) return SDL_GetGamepadSerial(g);
     if (kind == MK8_PATH) return SDL_GetGamepadPath(g);
+    if (kind == MK8_STEAM_PRO) {
+#ifdef _WIN32
+        Uint16 vendor = 0, product = 0;
+        SDL_GetJoystickGUIDInfo(SDL_GetGamepadGUIDForID(SDL_GetGamepadID(g)), &vendor, &product, NULL, NULL);
+        if (vendor != 0x28de || product != 0x11ff) return "";
+        if (!SDL_GetGamepadSteamHandle(g)) return NULL;
+        return SDL_GetGamepadVendor(g) == 0x057e && SDL_GetGamepadProduct(g) == 0x2009 ? "Switch Pro" : "";
+#else
+        return "";
+#endif
+    }
     return SDL_GetJoystickName(SDL_GetGamepadJoystick(g));
 }
 
@@ -153,8 +164,9 @@ enum Mk8GripMatch { MK8_OTHER_GRIP, MK8_SAME_GRIP, MK8_ID_NOT_READY };
 static enum Mk8GripMatch mk8_grip_match(const struct Mk8Grip *grip, SDL_Gamepad *g) {
     if (!grip->value || !g) return MK8_OTHER_GRIP;
     SDL_GUID guid = SDL_GetJoystickGUIDForID(SDL_GetGamepadID(g));
-    if (memcmp(&guid, &grip->guid, sizeof guid)) return MK8_OTHER_GRIP;
+    if (grip->kind != MK8_STEAM_PRO && memcmp(&guid, &grip->guid, sizeof guid)) return MK8_OTHER_GRIP;
     const char *value = mk8_grip_value(g, grip->kind);
+    if (grip->kind == MK8_STEAM_PRO && value && !*value) return MK8_OTHER_GRIP;
     if (!value || !*value) return MK8_ID_NOT_READY;
     return !strcmp(value, grip->value) ? MK8_SAME_GRIP : MK8_OTHER_GRIP;
 }
@@ -166,7 +178,7 @@ static SDL_JoystickID mk8_unique_grip(const struct Mk8Grip *grip) {
     for (int i=0; i<count; ++i) {
         if (!real_gamepad(ids[i])) continue;
         SDL_GUID guid = SDL_GetJoystickGUIDForID(ids[i]);
-        if (memcmp(&guid, &grip->guid, sizeof guid)) continue;
+        if (grip->kind != MK8_STEAM_PRO && memcmp(&guid, &grip->guid, sizeof guid)) continue;
         SDL_Gamepad *g = SDL_OpenGamepad(ids[i]);
         bool same = g && SDL_GamepadConnected(g) && mk8_grip_match(grip, g) == MK8_SAME_GRIP;
         if (g) SDL_CloseGamepad(g);
@@ -186,6 +198,14 @@ static void mk8_remember_connected(void) {
             if (!g || !SDL_GamepadConnected(g) || grip->attached == SDL_GetGamepadID(g)) continue;
             grip->attached = SDL_GetGamepadID(g);
             grip->guid = SDL_GetJoystickGUIDForID(grip->attached);
+            const char *steam_pro = mk8_grip_value(g, MK8_STEAM_PRO);
+            if (steam_pro && *steam_pro) {
+                SDL_free(grip->value);
+                grip->kind = MK8_STEAM_PRO;
+                grip->value = SDL_strdup(steam_pro);
+                grip->unique = mk8_unique_grip(grip) == grip->attached;
+                if (grip->unique) continue;
+            }
             for (int kind=MK8_SERIAL; kind<=MK8_NAME; ++kind) {
                 const char *value = mk8_grip_value(g, kind);
                 if (!value || !*value) continue;
@@ -262,7 +282,7 @@ static unsigned mk8_reconnect_candidates(SDL_Gamepad *g,int *strength_out) {
                 grip->unique=false;
             if (!(mk8_reserved_seats & (1u << p))) continue;
             // An unchanged attachment or unique serial is stronger than a lookalike's model name.
-            int strength = grip->attached==added ? 4 : grip->unique ? 3-(int)grip->kind : 0;
+            int strength = grip->attached==added ? 4 : grip->unique ? 3-SDL_min((int)grip->kind, MK8_NAME) : 0;
             if (strength>strongest) { strongest=strength; candidates=0; }
             if (strength==strongest) candidates |= 1u << p;
         }
