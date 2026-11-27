@@ -205,6 +205,32 @@ class MiiDesignFlowTests(unittest.TestCase):
         page.locator('#mii-continue').click()
         expect(page.locator('#mii-workshop-title')).to_have_text('Personalize Teste')
 
+    def test_first_mii_can_be_created_and_saved_without_webgl(self):
+        page = self.page
+        page.locator('#language').select_option('es')
+        expect(page.locator('html')).to_have_attribute('lang', 'es')
+        page.add_init_script("""
+            const getContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function(kind, ...options) {
+                if (kind.includes('webgl')) return null;
+                return getContext.call(this, kind, ...options);
+            };
+        """)
+        page.reload()
+        expect(page.locator('#mii-identity-form h2')).to_have_text('¿Cómo se llamará tu Mii?')
+        expect(page.locator('#mii-continue')).to_be_enabled()
+        page.locator('#mii-name').fill('Piloto')
+        page.locator('#mii-continue').click()
+        expect(page.locator('#mii-preview-unavailable')).to_be_visible()
+        choice = page.locator('[data-offset="45"][data-value="3"]')
+        expect(choice).to_have_text('4')
+        choice.click()
+        page.locator('#mii-save').click()
+        expect(page.locator('#mii-status')).to_contain_text('Mii guardado')
+        self.assertEqual(self.export()[45], 3)
+        profile = json.loads((self.local/'mii-profile.json').read_text(encoding='utf-8'))
+        self.assertEqual(profile['appearance']['name'], 'Piloto')
+
 
 if __name__ == '__main__':
     unittest.main()

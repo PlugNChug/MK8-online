@@ -7,11 +7,53 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.paths.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Check documentation-only changes
+        id: paths
+        shell: python3 {0}
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          import os
+          import subprocess
+
+          base, head = os.environ["PR_BASE"], os.environ["PR_HEAD"]
+          parents = subprocess.check_output(["git", "show", "-s", "--format=%P", "HEAD"], text=True)
+          if parents.split() != [base, head]:
+              raise SystemExit(0)
+          changed = set(subprocess.check_output([
+              "git", "diff", "--name-only", "--no-renames", "-z", base, "HEAD"
+          ]).split(b"\0")) - {b""}
+          # Release notes and license files are packaging inputs.
+          docs = {b"AGENTS.md", b"README.md", b"README.pt-BR.md", b"CONTRIBUTING.md",
+                  b"docs/pt-BR/CONTRIBUTING.md"}
+          if changed and changed <= docs:
+              subprocess.run(["git", "diff", "--check", base, "HEAD"], check=True)
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  print("docs_only=true", file=output)
+
   windows-ffmpeg:
+    needs: changes
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/windows-ffmpeg.yml
+    with:
+      docs_only: ${{ needs.changes.outputs.docs_only == 'true' }}
 
   windows:
-    needs: windows-ffmpeg
+    needs: [changes, windows-ffmpeg]
+    if: ${{ !cancelled() && needs.windows-ffmpeg.result == 'success' && needs.changes.outputs.docs_only != 'true' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,4 +95,8 @@ jobs:
           python scripts/smoke-windows-portable.py
 
   linux:
+    needs: changes
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/linux.yml
+    with:
+      docs_only: ${{ needs.changes.outputs.docs_only == 'true' }}

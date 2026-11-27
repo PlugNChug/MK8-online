@@ -34,6 +34,7 @@ int main(void) {
            g_settings.prompts);
     printf("camera_distance=%d\n", mk8_settings_camera_distance());
     printf("language=%s\n", settings_language());
+    printf("rumble_intensity=%d\n", g_settings.rumble_intensity);
     bind_settings_save(stdout);
     settings_save();
     return 0;
@@ -75,6 +76,23 @@ class RuntimeSettingsTests(unittest.TestCase):
                 with self.subTest(language=code):
                     self.assertIn(f"language={code}\n", run({"language": code}))
                     self.assertIn(f"language = {code}", (folder / "mk8d.ini").read_text().splitlines())
+            self.assertIn("rumble_intensity=100\n", baseline)
+            for values, expected in (
+                ({"controller_vibration": "0 \t"}, 0),
+                ({"controller_vibration": "1"}, 100),
+                ({"controller_vibration": "0junk"}, 100),
+                ({"controller_vibration": "0", "rumble_intensity": "37"}, 37),
+                ({"rumble_intensity": "00037", "controller_vibration": "0"}, 37),
+                ({"rumble_intensity": "0", "controller_vibration": "1"}, 0),
+                ({"controller_vibration": "0", "rumble_intensity": "101"}, 0),
+                ({"rumble_intensity": "-1"}, 100),
+                ({"rumble_intensity": "+35"}, 100),
+            ):
+                with self.subTest(values=values):
+                    self.assertIn(f"rumble_intensity={expected}\n", run(values))
+                    saved = (folder / "mk8d.ini").read_text().splitlines()
+                    self.assertIn(f"rumble_intensity = {expected}", saved)
+                    self.assertIn(f"controller_vibration = {int(expected != 0)}", saved)
             for value, expected in (("75", 75), ("117", 117), ("150", 150), ("", 100), ("74", 100),
                                     ("151", 100), ("117x", 100), ("+117", 100), ("99.5", 100), ("999999999999", 100)):
                 with self.subTest(camera_distance=value):

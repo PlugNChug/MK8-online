@@ -2,6 +2,16 @@
 
 [Índice](README.md) · [English](../../en/log/controllers.md)
 
+## Opção de vibração do controle (#166)
+
+Em 25 de novembro de 2026, o jogador confirmou o funcionamento da opção com um Pro Controller do Switch via Bluetooth na build isolada para Windows do jogo 4.0.1 (prefixo do SHA-256 do runtime `2448f1ce`). O menu nativo F1 gravou a preferência como desativada. Os testes compilados verificaram que desativar a vibração interrompe os efeitos ativos, descarta os pendentes, envia um pacote neutro de vibração HD e permite novos efeitos ao reativar a opção. A duração excessiva da vibração relatada ainda precisa ser reproduzida.
+
+## Intensidade da vibração dos Joy-Con (#161)
+
+Em 25 de novembro de 2026, um jogador comparou os mesmos Joy-Con no Switch e no PC e relatou vibração aproximadamente duas vezes mais forte no PC. A build de teste envia 50% da amplitude solicitada aos Joy-Con identificados como Nintendo, individuais ou em par, pela vibração HD e pela saída alternativa da SDL. O jogo continua lendo os valores solicitados e controlando a duração.
+
+A regressão nativa confere a amplitude reduzida com a [tabela de medições do atuador](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/rumble_data_table.md), verifica a saída alternativa da SDL e exercita os pacotes neutros, a expiração dos efeitos e o Pro Controller. Uma segunda comparação física e a reprodução da vibração prolongada relatada estão pendentes.
+
 ## Entrada pela Steam com um ou dois jogadores locais
 
 O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.

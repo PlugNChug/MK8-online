@@ -149,9 +149,12 @@ def install(package, keys, local, *, reinstall=False):
             index = entries(stream, package.stat().st_size)
             for name, (size, expected) in CONTENTS.items():
                 matches = [n.encode() for n in (name, name.removesuffix(".nca") + ".ncz") if n.encode() in index]
-                if len(matches) != 1:
-                    raise ValueError(f"DLC: selecione o NSP ou NSZ do Booster Course Pass {TITLE:016X} v65536. "
-                                     "O pacote deve conter uma cópia de cada arquivo dessa edição.")
+                if not matches:
+                    raise ValueError(f"DLC: falta o arquivo {name} (ou a variante .ncz) no NSP/NSZ do "
+                                     f"Booster Course Pass {TITLE:016X} v65536.")
+                if len(matches) > 1:
+                    raise ValueError(f"DLC: o NSP/NSZ contém as duas variantes (.nca e .ncz) de {name} no "
+                                     f"Booster Course Pass {TITLE:016X} v65536.")
                 write_verified_member(stream, index, matches[0], size, expected, stage / name)
             # Combined NSPs may contain other titles; extract only this pinned DLC and its ticket.
             tickets = [name for name in index if name.endswith(b".tik") and name.startswith(b"0100152000023001")]
