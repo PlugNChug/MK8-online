@@ -32,6 +32,7 @@ class LanguageTests(unittest.TestCase):
         process = subprocess.Popen(
             [os.environ.get("MK8_LAUNCHER_EXE", str(ROOT / "target/release/Launcher.exe")),
              "--headless", "--data-dir", str(folder)],
+            env={**os.environ, "MK8_NATIVE_TOOLS": str(folder / "native-tools")},
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -55,6 +56,17 @@ class LanguageTests(unittest.TestCase):
                     page.goto(url)
                 self.assertEqual(initial_status.value.headers["x-mk8-language"], "en")
                 expect(page.get_by_role("heading", name="Installation", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Settings", exact=True).click()
+                page.get_by_role("tab", name="Controls", exact=True).click()
+                vibration = page.get_by_role("slider", name="Rumble intensity")
+                expect(vibration).to_have_value("100")
+                expect(vibration).to_have_attribute("aria-valuetext", "100%")
+                vibration.fill("35")
+                expect(vibration).to_have_attribute("aria-valuetext", "35%")
+                page.get_by_role("button", name="Save settings", exact=True).click()
+                expect(page.locator("#settings-save")).to_be_disabled()
+                expect(vibration).to_be_enabled()
+                self.assertIn("rumble_intensity = 35", (folder / "user-no-mii/mk8d.ini").read_text())
                 token = page.locator('meta[name="mk8-token"]').get_attribute("content")
                 saved = page.request.post(url + "/api/username", headers={"X-MK8-Token": token}, data=json.dumps({"name": "Instalar"}))
                 self.assertTrue(saved.json()["ok"])
@@ -90,6 +102,16 @@ class LanguageTests(unittest.TestCase):
                 page.goto(url)
                 expect(page.locator("html")).to_have_attribute("lang", "en")
                 expect(page.get_by_role("heading", name="Installation", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Settings", exact=True).click()
+                page.get_by_role("tab", name="Controls", exact=True).click()
+                expect(vibration).to_be_enabled()
+                expect(vibration).to_have_value("35")
+                vibration.press("Home")
+                expect(vibration).to_have_attribute("aria-valuetext", "0%")
+                page.get_by_role("button", name="Save settings", exact=True).click()
+                expect(vibration).to_be_enabled()
+                expect(page.locator("#settings-save")).to_be_disabled()
+                self.assertIn("controller_vibration = 0", (folder / "user-no-mii/mk8d.ini").read_text())
                 page.get_by_role("button", name="Multiplayer", exact=True).click()
                 expect(page.get_by_role("heading", name="Your room", exact=True)).to_be_visible()
                 page.get_by_label("Language", exact=True).select_option("pt-BR")
