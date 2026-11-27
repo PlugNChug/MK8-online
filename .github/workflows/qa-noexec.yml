@@ -1,0 +1,48 @@
+name: Verify released Linux launcher with noexec tmp
+on:
+  push:
+    branches: [codex/qa-linux-noexec-147]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified 0.6.3 release
+        run: |
+          mkdir qa
+          cd qa
+          base=https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-linux-x86_64
+          curl -fsSL "$base.AppImage" -o Launcher.AppImage
+          echo 'b05865c21927700df0bc153dc1652d032203240de30ddb1c4cbbc6ff743d3059  Launcher.AppImage' | sha256sum -c -
+          chmod +x Launcher.AppImage
+          curl -fsSL "$base.tar.gz" -o Launcher.tar.gz
+          echo '57bbeb72f8657c4dfd31bfbbfb93c7ab1a6d4565ae99654c23f86368ce9ca124  Launcher.tar.gz' | sha256sum -c -
+          tar -xzf Launcher.tar.gz
+      - name: Prepare Ubuntu runtime
+        run: |
+          docker build -t mk8-qa - <<'EOF'
+          FROM ubuntu:24.04
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 ca-certificates
+          EOF
+      - name: Exercise both packages under noexec as a regular user
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=1777 -e HOME=/work/qa -v "$PWD:/work" -w /work mk8-qa bash -eu -o pipefail -c '
+            findmnt -no OPTIONS /tmp | tr , "\n" | grep -x noexec
+            ldd qa/MK8-online/usr/bin/Launcher | tee qa/ldd.txt
+            if grep -q "not found" qa/ldd.txt; then exit 1; fi
+            export PYTHONPATH=/work/scripts
+            mkdir -m 700 qa/scratch qa/image-smoke qa/tar-smoke
+            export TMPDIR=/work/qa/scratch
+            python3 - <<"PY"
+          import runpy
+          from pathlib import Path
+          run = runpy.run_path("scripts/smoke-linux-packages.py")["run"]
+          qa = Path("qa").resolve()
+          for path, args, state in [("MK8-online/AppRun", [], "tar-smoke"), ("Launcher.AppImage", ["--appimage-extract-and-run"], "image-smoke")]:
+              run(qa / path, args, qa / state)
+              print(path, "served the launcher and ran the importer", flush=True)
+          PY
+          '
