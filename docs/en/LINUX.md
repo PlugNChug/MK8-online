@@ -65,3 +65,32 @@ Without FUSE:
 ```
 
 [AppImage documentation](https://docs.appimage.org/user-guide/run-appimages.html) · [Linux 0.5.0 source](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f)
+
+### Containers with a noexec /tmp
+
+The Fedora 44 image used by the Unraid Steam Headless 2 template can extract the 0.6.3 AppImage and then exit with code 127 because `libwebkit2gtk-4.1.so.0` is missing. The launcher also uses `bsdtar` to unpack its files on first use. From a root shell **inside the Fedora container**, install both packages. Include this command in your derived image if you recreate the container regularly. [Steam Headless template](https://steamheadless.com/docs/installation/deployment/unraid-template/)
+
+```sh
+dnf --repo=fedora --repo=updates install -y webkit2gtk4.1 bsdtar
+```
+
+From the container desktop, as your usual user, run the following in the download directory. Use a home directory on a filesystem that allows execution.
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.AppImage.sha256 &&
+chmod +x MK8-online-0.6.3-linux-x86_64.AppImage &&
+mkdir -p -m 700 "$HOME/tmp" &&
+TMPDIR="$HOME/tmp" APPIMAGE_EXTRACT_AND_RUN=1 ./MK8-online-0.6.3-linux-x86_64.AppImage
+```
+
+With those packages installed, the released AppImage opened its setup window and served the launcher interface in Steam Headless 2.44.20261019.1 while `/tmp` remained `noexec`. The test used a virtual display. [Steam Headless verification](https://github.com/PlugNChug/MK8-online/actions/runs/46038695417)
+
+You can also use the tarball on a writable filesystem that allows execution. It needs the same libraries and `bsdtar` (`libarchive-tools` on Ubuntu).
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.tar.gz.sha256 &&
+tar -xzf MK8-online-0.6.3-linux-x86_64.tar.gz &&
+./MK8-online/AppRun
+```
+
+The tarball and the AppImage with TMPDIR on an executable filesystem both served the launcher and ran its importer in an Ubuntu 24.04 container with a noexec /tmp. The AppImage also opened a desktop window with APPIMAGE_EXTRACT_AND_RUN=1. If startup fails, run the entry point from a terminal and keep its first error line. [Container verification](https://github.com/PlugNChug/MK8-online/actions/runs/46033999648)
