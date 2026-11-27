@@ -40,7 +40,7 @@ jobs:
               docker build -t steam-qa - <<EOF
           FROM $IMAGE
           USER root
-          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y libarchive-tools libwebkit2gtk-4.1-0
+          RUN dnf --repo=fedora --repo=updates install -y webkit2gtk4.1 bsdtar
           EOF
               image=steam-qa
             fi
