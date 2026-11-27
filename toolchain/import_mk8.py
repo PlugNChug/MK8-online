@@ -144,18 +144,27 @@ def base_content(index):
     return matches[0]
 
 
+class ContentMismatch(ValueError):
+    """O conteúdo reconstruído não tem o tamanho ou hash esperado."""
+
+
 def write_nca(stream, index, digest, target):
     stem = digest[:32].encode()
     member = next((name for name in (stem + b".nca", stem + b".ncz") if name in index), None)
     if member is None:
         raise ValueError("Conteúdo do MK8 base ou da atualização 4.0.1 ausente no pacote.")
-    write_verified_member(stream, index, member, SIZES[digest], digest, target)
+    try:
+        write_verified_member(stream, index, member, SIZES[digest], digest, target)
+    except ContentMismatch as error:
+        package = "do jogo base" if digest in BASE_VARIANTS else "da atualização 4.0.1"
+        raise ValueError(f"Falha de integridade no pacote {package}. "
+                         f"Extraia uma nova cópia do seu console e selecione o pacote em Arquivos do jogo.\n{error}") from error
 
 
 def write_verified_member(stream, index, member, size, digest, target):
     entry = Entry(stream, *index[member])
     if member.endswith(b".nca") and entry.size != size:
-        raise ValueError("Tamanho NCA divergente.")
+        raise ContentMismatch("Tamanho NCA divergente.")
     pieces = ncz_chunks(entry, size) if member.endswith(b".ncz") else iter(lambda: entry.read(CHUNK), b"")
     hashed = hashlib.sha256()
     with target.open("xb") as out:
@@ -163,7 +172,7 @@ def write_verified_member(stream, index, member, size, digest, target):
             out.write(data)
             hashed.update(data)
         if out.tell() != size or hashed.hexdigest() != digest:
-            raise ValueError("Hash do conteúdo diverge do perfil 4.0.1.")
+            raise ContentMismatch("Hash do conteúdo diverge do perfil 4.0.1.")
 
 
 def tickets(stream, index):

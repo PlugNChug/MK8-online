@@ -6,6 +6,12 @@
         const char *names[] = {auto_name, prompts.names[1], prompts.names[2], prompts.names[3]};
         choice(prompts.label, prompts.choice, names, prompts.count);
     }
+    {
+        const Mk8MenuOption &rumble = *mk8_menu_option(MK8_MENU_RUMBLE_INTENSITY);
+        int percent = g_settings.rumble_intensity;
+        if (opt_int(rumble.label, &percent, 0, MK8_RUMBLE_MAX, MK8_RUMBLE_STEP, MK8_RUMBLE_MAX, "%d%%", rumble.help, NULL))
+            mk8_rumble_set_intensity(percent);
+    }
     ImGui::Spacing();
     header("System language");
     {

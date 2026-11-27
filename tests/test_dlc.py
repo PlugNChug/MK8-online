@@ -153,7 +153,7 @@ class DlcImportTests(unittest.TestCase):
                 missing = dict(archive)
                 del missing[b"meta.cnmt.nca"]
                 package_path.write_bytes(package(missing))
-                with self.assertRaisesRegex(ValueError, "0100152000023001 v65536"):
+                with self.assertRaisesRegex(ValueError, r"falta.*meta\.cnmt\.nca.*0100152000023001 v65536"):
                     import_dlc.install(package_path, root / "fixture.keys", local)
                 empty_keys = root / "empty.keys"
                 empty_keys.touch()
@@ -226,7 +226,7 @@ class DlcImportTests(unittest.TestCase):
                 archive[b"data.ncz"] = header + section + ZstdCompressor().compress(body)
                 package_path = root / "dlc.nsz"
                 package_path.write_bytes(package(archive))
-                with self.assertRaisesRegex(ValueError, "uma cópia"):
+                with self.assertRaisesRegex(ValueError, r"duas variantes.*data\.nca.*0100152000023001 v65536"):
                     import_dlc.install(package_path, root / "fixture.keys", local)
                 del archive[b"data.nca"]
                 package_path.write_bytes(package(archive))

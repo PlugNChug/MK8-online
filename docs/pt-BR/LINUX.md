@@ -35,9 +35,13 @@ sudo apt install build-essential clang lld llvm cmake pkg-config python3.12-venv
   libpipewire-0.3-dev libdecor-0-dev libudev-dev
 ```
 
+Se a etapa de ferramentas precisar compilar o SDL, instale o CMake e os pacotes de desenvolvimento de vídeo e áudio no ambiente de build. A lista do Ubuntu acima inclui esses pacotes. Para outras distribuições, consulte as [dependências de compilação do SDL no Linux](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies).
+
 ### Outras distribuições (Arch, CachyOS, Fedora)
 
 A etapa de ferramentas precisa de um **Python 3.12** de 64 bits. Distribuições com `python3` mais novo costumam não ter `python3.12`: instale pelo AUR (`python312`), com `pyenv install 3.12` ou com `uv python install 3.12`. O launcher procura `MK8_PYTHON312`, `python3.12`, um `python3` que seja 3.12 e as instalações do pyenv, uv e asdf; para indicar um específico, abra o launcher com `MK8_PYTHON312=/caminho/para/python3.12`.
+
+Mantenha essa instalação do Python disponível, pois o ambiente de ferramentas usa links simbólicos para ela. Se a instalação deixar um ambiente incompleto, execute **Ferramentas** novamente. A preparação preserva o ambiente antigo em `local/python-incomplete-*/`, no diretório da versão ativa, e cria um novo.
 
 ### Steam Deck: Ubuntu via Distrobox
 
@@ -61,3 +65,32 @@ Sem FUSE:
 ```
 
 [Documentação do AppImage](https://docs.appimage.org/user-guide/run-appimages.html) · [Fonte Linux 0.5.0](https://github.com/Vnnc1/MK8-online/tree/edfc423697977594b49db64b67c433c73086664f)
+
+### Contêineres com /tmp montado com noexec
+
+A imagem Fedora 44 usada pelo modelo Steam Headless 2 do Unraid pode extrair o AppImage 0.6.3 e depois sair com código 127 por falta de `libwebkit2gtk-4.1.so.0`. O launcher também usa `bsdtar` para extrair seus arquivos no primeiro uso. Em um terminal como root **dentro do contêiner Fedora**, instale os dois pacotes. Inclua esse comando na sua imagem derivada se costuma recriar o contêiner. [Modelo do Steam Headless](https://steamheadless.com/docs/installation/deployment/unraid-template/)
+
+```sh
+dnf --repo=fedora --repo=updates install -y webkit2gtk4.1 bsdtar
+```
+
+Na área de trabalho do contêiner, execute os comandos abaixo na pasta do download como usuário habitual. A pasta pessoal precisa estar em um sistema de arquivos que permita execução.
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.AppImage.sha256 &&
+chmod +x MK8-online-0.6.3-linux-x86_64.AppImage &&
+mkdir -p -m 700 "$HOME/tmp" &&
+TMPDIR="$HOME/tmp" APPIMAGE_EXTRACT_AND_RUN=1 ./MK8-online-0.6.3-linux-x86_64.AppImage
+```
+
+Com esses pacotes instalados, o AppImage da release abriu a janela de instalação e serviu a interface do launcher no Steam Headless 2.44.20261019.1 com `/tmp` montado com `noexec`. O teste usou uma tela virtual. [Verificação no Steam Headless](https://github.com/PlugNChug/MK8-online/actions/runs/46038695417)
+
+Também é possível usar o pacote tar.gz em um sistema de arquivos que permita escrita e execução. Ele usa as mesmas bibliotecas e o `bsdtar` (`libarchive-tools` no Ubuntu).
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.tar.gz.sha256 &&
+tar -xzf MK8-online-0.6.3-linux-x86_64.tar.gz &&
+./MK8-online/AppRun
+```
+
+O tar.gz e o AppImage com TMPDIR em um sistema de arquivos executável iniciaram o servidor do launcher e executaram o importador em um contêiner Ubuntu 24.04 com /tmp montado com noexec. O AppImage também abriu a janela com APPIMAGE_EXTRACT_AND_RUN=1. Se a inicialização falhar, execute o launcher pelo terminal e guarde a primeira mensagem de erro. [Verificação no contêiner](https://github.com/PlugNChug/MK8-online/actions/runs/46033999648)
