@@ -10,7 +10,7 @@
 
 typedef struct {
     ULONGLONG heartbeat, received;
-    DWORD reader, generation, sequence;
+    DWORD reader, generation, sequence, sensor_retries;
     bool ambiguous;
     float accel[3], gyro[3];
 } MotionMailbox;
@@ -26,6 +26,7 @@ static SDL_JoystickID target, active;
 static bool mapped_ambiguous, desktop_ambiguous;
 static Uint64 next_scan, next_start, last_source;
 static DWORD last_sequence;
+static DWORD last_sensor_retries;
 
 static void close_channel(MotionChannel *pipe) {
     if (pipe->data) UnmapViewOfFile(pipe->data);
@@ -178,6 +179,10 @@ SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous) {
     ReleaseMutex(channel.lock);
     desktop_ambiguous = sample.ambiguous;
     *ambiguous = mapped_ambiguous || desktop_ambiguous;
+    if (sample.sensor_retries != last_sensor_retries) {
+        last_sensor_retries = sample.sensor_retries;
+        if (last_sensor_retries) SDL_Log("[input] Steam motion reader retried silent sensors");
+    }
     if (!target) goto lost;
     now = GetTickCount64();
     if (now >= next_start && (!sample.heartbeat || now - sample.heartbeat > 4000)) {
@@ -195,7 +200,10 @@ SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous) {
     mk8_motion_steam_sample(active, source, sample.accel, sample.gyro);
     return target;
 lost:
-    if (active) mk8_motion_steam_lost(active);
+    if (active) {
+        SDL_Log("[input] Steam motion paused: %s", target ? "no fresh sensor pair" : "no Steam mapping");
+        mk8_motion_steam_lost(active);
+    }
     active = 0;
     return target;
 }
@@ -225,10 +233,11 @@ static bool claim_reader(const MotionChannel *pipe) {
 static void read_controller(const MotionChannel *pipe, HANDLE owner) {
     SDL_Gamepad *pad = NULL;
     SDL_JoystickID id = 0;
-    Uint64 next_scan = 0, stamps[2] = {0};
+    Uint64 next_scan = 0, retry_sensors_at = 0, stamps[2] = {0};
     float pending[2][3];
     MotionMailbox sample = {.reader = GetCurrentProcessId()};
     Uint64 published = 0;
+    unsigned stalled_retries = 0;
     while (WaitForSingleObject(owner, 0) == WAIT_TIMEOUT) {
         Uint64 now = GetTickCount64();
         bool changed = false;
@@ -244,12 +253,13 @@ static void read_controller(const MotionChannel *pipe, HANDLE owner) {
             if (found != id) {
                 if (pad) SDL_CloseGamepad(pad);
                 pad = found ? SDL_OpenGamepad(found) : NULL;
-                if (pad && (!SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_ACCEL, true) ||
-                            !SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, true))) {
-                    SDL_CloseGamepad(pad);
-                    pad = NULL;
+                if (pad) {
+                    SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_ACCEL, true);
+                    SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, true);
+                    retry_sensors_at = now + 1500;
                 }
                 id = pad ? found : 0;
+                stalled_retries = 0;
                 stamps[0] = stamps[1] = 0;
                 sample.received = 0;
                 ++sample.generation;
@@ -266,6 +276,23 @@ static void read_controller(const MotionChannel *pipe, HANDLE owner) {
         }
         Uint64 delta = stamps[0] > stamps[1] ? stamps[0] - stamps[1] : stamps[1] - stamps[0];
         bool paired = stamps[0] && stamps[1] && delta <= SDL_MS_TO_NS(20);
+        if (paired) {
+            retry_sensors_at = now + 1500;
+            stalled_retries = 0;
+        } else if (pad && stalled_retries < 3 && now >= retry_sensors_at) {
+            // Steam may finish setting up the Bluetooth controller after SDL first enables its sensors.
+            SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_ACCEL, false);
+            SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, false);
+            SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_ACCEL, true);
+            SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, true);
+            retry_sensors_at = now + 3000;
+            stamps[0] = stamps[1] = 0;
+            sample.received = 0;
+            ++sample.generation;
+            ++sample.sensor_retries;
+            ++stalled_retries;
+            changed = true;
+        }
         if ((paired || changed || now - published >= 1000) && lock_channel(pipe, 0)) {
             sample.heartbeat = now;
             if (paired) {
