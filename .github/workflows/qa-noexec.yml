@@ -37,12 +37,26 @@ jobs:
             mkdir -m 700 qa/scratch qa/image-smoke qa/tar-smoke
             export TMPDIR=/work/qa/scratch
             python3 - <<"PY"
-          import runpy
+          import os, subprocess, json, time, urllib.request
           from pathlib import Path
-          run = runpy.run_path("scripts/smoke-linux-packages.py")["run"]
           qa = Path("qa").resolve()
           for path, args, state in [("MK8-online/AppRun", [], "tar-smoke"), ("Launcher.AppImage", ["--appimage-extract-and-run"], "image-smoke")]:
-              run(qa / path, args, qa / state)
+              state = qa / state
+              env = dict(os.environ, XDG_DATA_HOME=str(state / "xdg"))
+              child = subprocess.Popen([qa / path, *args, "--headless", "--data-dir", state], env=env)
+              try:
+                  end = time.monotonic() + 60
+                  while not (state / "launcher.json").exists():
+                      if child.poll() is not None or time.monotonic() > end:
+                          raise RuntimeError(f"{path} failed to start: {child.poll()}")
+                      time.sleep(0.1)
+                  url = json.loads((state / "launcher.json").read_text())["url"]
+                  assert b"MK8-online" in urllib.request.urlopen(url, timeout=15).read()
+                  importer, = (state / "xdg").rglob("mk8-import.dll")
+                  assert subprocess.run([importer.parent / "dotnet/dotnet", importer], env=env, timeout=30).returncode == 2
+              finally:
+                  child.terminate()
+                  child.wait(timeout=10)
               print(path, "served the launcher and ran the importer", flush=True)
           PY
           '
