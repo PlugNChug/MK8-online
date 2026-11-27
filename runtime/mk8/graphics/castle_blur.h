@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 enum { MK8_BLUR_HORIZONTAL = 1, MK8_BLUR_VERTICAL, MK8_BLUR_REDUCTION };
+#define MK8_VANCOUVER_BLOOM_MASK 0x0e1fa9b3719cf15bull
 
 /* Hash the SPH and all instructions of the three known 4.0.1 programs. */
 static inline unsigned mk8_blur_program(const uint8_t *blob, size_t size, size_t words) {
@@ -33,12 +34,13 @@ static inline Mk8BlurSequence mk8_blur_begin(Mk8BlurSequence *submitted) {
 }
 
 /* Only the first reduction and its H/V pair after this extraction were validated. */
-static inline unsigned mk8_blur_draw(Mk8BlurSequence *s, uint64_t frame, uint64_t shader) {
+static inline unsigned mk8_blur_draw(Mk8BlurSequence *s, uint64_t frame, uint64_t shader, bool enlarged) {
     if (frame != s->frame) s->phase = 0;
     s->frame = frame;
     bool horizontal = shader == 0xb91aecdd33397b59ull && s->phase == 2;
     bool vertical = shader == 0xa0b620fe821bd4bfull && s->phase == 3;
-    if (shader == 0x051303030c68828full) s->phase = 1;
+    // The Vancouver variant needs coverage correction only above native scale.
+    if (shader == 0x051303030c68828full || (enlarged && shader == MK8_VANCOUVER_BLOOM_MASK)) s->phase = 1;
     else if (shader == 0x75ee7f36aed0f6f0ull && s->phase == 1) {
         s->phase = 2;
         return MK8_BLUR_REDUCTION;

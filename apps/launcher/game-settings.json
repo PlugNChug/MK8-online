@@ -166,6 +166,12 @@
       "title": "Controles e idioma",
       "fields": [
         {
+          "key": "rumble_intensity",
+          "label": "Intensidade da vibração",
+          "default": "100",
+          "kind": "percentage"
+        },
+        {
           "key": "language",
           "label": "Idioma do jogo",
           "default": "auto",

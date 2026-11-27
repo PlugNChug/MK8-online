@@ -2,24 +2,50 @@ name: Windows FFmpeg inputs
 
 on:
   workflow_call:
+    inputs:
+      docs_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: ${{ !inputs.docs_only }}
     runs-on: ubuntu-24.04
+    env:
+      FFMPEG_INPUTS: |
+        prebuilt/ffmpeg/
+        target/prebuilt-ffmpeg/ffmpeg-9.0.2.tar.xz
+        target/prebuilt-ffmpeg/build-ffmpeg.sh
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python scripts/build-ffmpeg.py
+      - run: python -m unittest tests.test_build_ffmpeg
+      - name: Restore FFmpeg inputs
+        id: ffmpeg-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ env.FFMPEG_INPUTS }}
+          key: windows-ffmpeg-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.py', 'scripts/build-ffmpeg.sh') }}
+      - run: python scripts/build-ffmpeg.py --require-source
       - uses: actions/upload-artifact@v4
         with:
           name: windows-ffmpeg
-          path: |
-            prebuilt/ffmpeg/
-            target/prebuilt-ffmpeg/ffmpeg-9.0.2.tar.xz
-            target/prebuilt-ffmpeg/build-ffmpeg.sh
+          path: ${{ env.FFMPEG_INPUTS }}
           if-no-files-found: error
+      - name: Save FFmpeg inputs on the default branch
+        if: >-
+          steps.ffmpeg-cache.outputs.cache-hit != 'true' &&
+          steps.ffmpeg-cache.outputs.cache-primary-key != '' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ env.FFMPEG_INPUTS }}
+          key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}

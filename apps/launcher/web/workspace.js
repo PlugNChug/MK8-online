@@ -158,6 +158,7 @@
     resolution: 'Equilíbrio entre detalhe e custo de renderização.', upscaler: 'FSR 3, FSR 4 e DLSS são experimentais.', antialias: 'Tratamento das bordas dos objetos.',
     frame_gen: 'Quadros intermediários para a apresentação.', skip_intro: 'Vá mais rapidamente para o menu inicial.', ahead_fast: 'Priorize a preparação antecipada dos shaders.',
     reverb: 'Efeito de reverberação no áudio.', movie_audio: 'Som das sequências em vídeo.', mute_in_background: 'Silencie ao trocar de janela.',
+    rumble_intensity: '0% desliga a vibração. 100% é o padrão de cada controle.',
     language: 'Idioma do jogo, independente do launcher.', prompts: 'Símbolos Nintendo, Xbox ou PlayStation.',
   };
   function enhanceFields() {

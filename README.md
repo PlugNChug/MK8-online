@@ -32,7 +32,7 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 - **Guided launcher:** installation, game build, updates, uninstall and diagnostic reports, in English, Brazilian Portuguese and Spanish.
 - **Mii creator:** your Mii appears in game portraits, suits, the driver and the minimap.
 - **Online play:** native matchmaking through [Nextendo](https://nextendo.network/), plus Steam rooms with friend invites.
-- **Graphics:** internal resolution scaling with FSR 1/3/4 and DLSS, plus experimental ultrawide and frame generation.
+- **Graphics:** internal resolution scaling with FSR 1/3/4 and DLSS, plus experimental ultrawide and frame generation. The scaled bloom correction also covers the tree lights in Vancouver Velocity.
 - **Fullscreen:** the idle mouse pointer hides by default. Change this in Video settings.
 - **Controllers:** SDL gamepads, keyboard, Switch Pro Controller and Joy-Cons, with HD Rumble, motion steering and local split-screen.
 - **Extra content:** optional Booster Course Pass DLC and an experimental CTGP Deluxe course pack, both from your own files, plus RomFS mods you install yourself (textures, models, music).
@@ -56,9 +56,9 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 ## Quick start
 
 1. Run the installer and choose the application and data folders. No administrator rights are needed.
-2. In **Install**, complete **Tools**, then select your base game and update in **Game files**.
+2. In **Install**, complete **Tools**, then select your base game and update in **Game files**. On Windows, Tools tries a second download source if the pinned Zig compiler download fails.
 3. Run **Build the game**. The first build takes around 30 minutes.
-4. Create a Mii in **Mii profile**, then choose **Play solo**, **Play on Nextendo** or **Multiplayer**.
+4. Create a Mii in **Mii profile**, then choose **Play solo**, **Play on Nextendo** or **Multiplayer**. If the 3D preview is unavailable, you can still edit and save using the numbered options.
 
 **Upgrading?** Use **Support → Update now**, keep your data folder, then run **Update the build** if the launcher asks. The [user guide](docs/en/GUIDE.md) covers graphics, controllers, online play, DLC, CTGP, portable mode and troubleshooting.
 

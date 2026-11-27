@@ -13,6 +13,7 @@ extern "C" {
 const char *const g_tunic_colours[N_TUNIC_COLOURS]={};
 void input_pads_reassign(void) {}
 void mk8_settings_pads_changed(void) {}
+void mk8_rumble_set_intensity(int percent) { g_settings.rumble_intensity=percent; }
 const char *const g_heart_colours[N_HEART_COLOURS]={};
 void rt_log(const char *,...) {}
 int input_pad_family(void) { return 0; }
@@ -52,6 +53,12 @@ static bool opt_toggle(const char *label,bool *field,bool,const char *) {
     if (!click || strcmp(click,label)) return false;
     *field=!*field;
     return true;
+}
+static bool opt_int(const char *label,int *field,int lo,int hi,int,int def,const char *,const char *,const char *) {
+    assert(record(label)==MK8_MENU_RUMBLE_INTENSITY);
+    assert(*field==g_settings.rumble_intensity && lo==0 && hi==100 && def==100);
+    if(click && !strcmp(click,label)) { *field=35; return true; }
+    return false;
 }
 static bool opt_action(const char *label,const char *,const char *) { record(label); return false; }
 static bool opt_text_editing(const char *) { return false; }
@@ -109,6 +116,9 @@ int main() {
     ImGuiIO &io=ImGui::GetIO(); io.IniFilename=nullptr; io.DisplaySize=ImVec2(1280,2160);
     unsigned char *pixels; int w,h; io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     if(frame(nullptr)) return 1;
+    assert(g_settings.rumble_intensity==100);
+    if(frame("Rumble intensity")) return 1;
+    assert(g_settings.rumble_intensity==35);
     main_menu=true; g_settings.res_mode=RES_Q75;
     assert(g_settings.auto_hide_cursor);
     if(frame("Auto-hide cursor")) return 1;

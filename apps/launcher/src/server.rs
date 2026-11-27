@@ -767,6 +767,12 @@ impl App {
             .is_none_or(|game| game.bloom_supported)
     }
 
+    fn rumble_intensity_supported(&self) -> bool {
+        self.installation()
+            .or_else(|| self.candidate())
+            .is_none_or(|game| game.rumble_intensity_supported)
+    }
+
     fn identity(&self) -> String {
         self.installation()
             .or_else(|| self.candidate())
@@ -908,6 +914,7 @@ impl App {
             // A matching host alone does not establish that the guest calls the cadence hook.
             !game.split_screen_60fps_supported
                 || !game.bloom_supported
+                || !game.rumble_intensity_supported
                 || (!game.temporal_upscaling_supported
                     || !game.romfs_long_paths_supported
                     || !game.nextendo_session_supported
@@ -1006,6 +1013,7 @@ impl App {
                 settings["split_screen_60fps_supported"] =
                     json!(self.split_screen_60fps_supported());
                 settings["bloom_supported"] = json!(self.bloom_supported());
+                settings["rumble_intensity_supported"] = json!(self.rumble_intensity_supported());
                 Ok(settings)
             }
             ("GET", "/api/debug-options") => Ok(json!(crate::debug_options::read(&self.local)?)),
@@ -1074,28 +1082,22 @@ impl App {
                     if let Some(mode) = value["upscaler"].as_str() {
                         crate::graphics::validate(&self.local, mode)?;
                     }
-                    if value.get("bloom").is_some() && !self.bloom_supported() {
-                        // A full-form client can echo an unavailable option while saving another preference.
-                        if value["bloom"]
-                            != crate::game_settings::read(&self.local, self.menu_build())?["values"]
-                                ["bloom"]
-                        {
-                            return Err("Atualize o runtime do jogo para ajustar o bloom.".into());
-                        }
-                        if let Some(patch) = value.as_object_mut() {
-                            patch.remove("bloom");
-                        }
-                    }
-                    if value.get("split_screen_60fps").is_some()
-                        && !self.split_screen_60fps_supported()
-                    {
-                        // Full-form clients can echo a disabled field while updating unrelated settings.
-                        let current = crate::game_settings::read(&self.local, self.menu_build())?;
-                        if value["split_screen_60fps"] != current["values"]["split_screen_60fps"] {
-                            return Err("Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida.".into());
-                        }
-                        if let Some(patch) = value.as_object_mut() {
-                            patch.remove("split_screen_60fps");
+                    let build_options = [
+                        ("bloom", Self::bloom_supported as fn(&Self) -> bool, "Atualize o runtime do jogo para ajustar o bloom."),
+                        ("split_screen_60fps", Self::split_screen_60fps_supported, "Atualize a build usada para jogar para ajustar os 60 FPS em tela dividida."),
+                        ("rumble_intensity", Self::rumble_intensity_supported, "Atualize a build do jogo para ajustar a intensidade da vibração."),
+                    ];
+                    for (key, supported, update_message) in build_options {
+                        if value.get(key).is_some() && !supported(self) {
+                            // Full-form clients can echo a disabled field while updating unrelated settings.
+                            let current =
+                                crate::game_settings::read(&self.local, self.menu_build())?;
+                            if value[key] != current["values"][key] {
+                                return Err(update_message.into());
+                            }
+                            if let Some(patch) = value.as_object_mut() {
+                                patch.remove(key);
+                            }
                         }
                     }
                     crate::game_settings::write(&self.local, &value, self.menu_build())?;
@@ -2868,6 +2870,7 @@ mod tests {
             "executable":{"path":"fixture.exe","sha256":hash,"bytes":1}, "files":{},
             "data_root":".","shader_root":".","gameplay_verified":false,"nextendo_supported":true,
             "menu_themes_supported":true,"menu_light_themes_supported":true,"bloom_supported":true,
+            "controller_vibration_supported":true,"rumble_intensity_supported":true,
             "direct_lan_guest_supported":true});
         let mut app = App::new(root.clone(), root.clone(), Config::default(), None);
         save(&root.join("candidate.json"), &candidate).unwrap();
@@ -2876,6 +2879,13 @@ mod tests {
         candidate["split_screen_60fps_supported"] = json!(true);
         save(&root.join("candidate.json"), &candidate).unwrap();
         assert_eq!(app.status()["candidate_stale"], false);
+        candidate
+            .as_object_mut()
+            .unwrap()
+            .remove("rumble_intensity_supported");
+        save(&root.join("candidate.json"), &candidate).unwrap();
+        assert!(app.status()["candidate_stale"].as_bool().unwrap());
+        assert!(!app.rumble_intensity_supported());
         drop(app);
         fs::remove_dir_all(root).unwrap();
     }
@@ -2912,6 +2922,8 @@ mod tests {
             menu_light_themes_supported: false,
             split_screen_60fps_supported: false,
             bloom_supported: false,
+            controller_vibration_supported: false,
+            rumble_intensity_supported: false,
             direct_lan_guest_supported: false,
         };
         save(&root.join("candidate.json"), &install).unwrap();

@@ -108,11 +108,15 @@ SDL-compatible controllers, the keyboard and Switch controllers are supported. S
 
 **Reassigning:** at character selection with two to four local players, press **+** on P1's controller (or the mapped Start key, or click **−/+**) to open the controller menu. Select a row to assign a spare controller or swap two players, then **Apply**.
 
+**Keyboard Splitter on Windows:** MK8-online has one native keyboard slot. If a key moves two players, open the controller menu at character selection and choose **Clear all**. Press the mapped **L + R** on each of the two virtual controllers, in player order, then choose **Apply**. This removes the native keyboard assignment, so only the virtual controllers send input to those players.
+
 **Splitting a pair of Joy-Cons:** in the controller menu, select the player who will receive a half and hold **SL + SR** on that Joy-Con. **Apply** splits the pair and **Cancel** keeps it. Each half then controls its own player. A Pro Controller and the keyboard can be mixed with Joy-Cons in any order.
 
 **Disconnects:** in a local split-screen race, a disconnected player's controls go neutral and others keep racing. An identifiable controller returns to its slot on reconnect.
 
 **HD Rumble:** supported on the original Switch Pro Controller, individual Joy-Cons and one identifiable pair of official Bluetooth Joy-Cons. Other controllers use SDL rumble.
+
+**Rumble intensity** defaults to 100% of each controller's calibrated output. Set it to 0% under **Controls** in the F1 menu to stop vibration for all players. You can also use the slider in the launcher's **Settings → Video and controls → Controls** before starting the game. Earlier On and Off selections carry over to 100% and 0%.
 
 **Motion steering:** connect a controller that exposes a gyroscope and accelerometer to SDL. In the race pause menu, press **Y** to enable **Tilt Controls**, then hold the controller like a steering wheel.
 

@@ -79,24 +79,29 @@ int main(int argc,char **argv) {
     uint64_t seed=0x051303030c68828full, down=0x75ee7f36aed0f6f0ull;
     uint64_t h=0xb91aecdd33397b59ull, v=0xa0b620fe821bd4bfull;
     Mk8BlurSequence submitted={0}, pending=mk8_blur_begin(&submitted);
-    assert(!mk8_blur_draw(&pending,1,seed));   /* seed pipeline skipped after lookup */
+    assert(!mk8_blur_draw(&pending,1,seed,false));   /* seed pipeline skipped after lookup */
     pending=mk8_blur_begin(&submitted);
-    assert(!mk8_blur_draw(&pending,1,down));
+    assert(!mk8_blur_draw(&pending,1,down,false));
     pending=mk8_blur_begin(&submitted);
-    assert(!mk8_blur_draw(&pending,1,seed));
+    assert(!mk8_blur_draw(&pending,1,seed,false));
     submitted=pending;                       /* seed recorded; intervening draw skipped before lookup */
     (void)mk8_blur_begin(&submitted);
     pending=mk8_blur_begin(&submitted);
-    assert(!mk8_blur_draw(&pending,1,down));
-    assert(!mk8_blur_draw(&s,1,h) && !mk8_blur_draw(&s,1,v));
-    assert(!mk8_blur_draw(&s,1,seed) && !mk8_blur_draw(&s,2,down));
-    assert(!mk8_blur_draw(&s,1,seed) && !mk8_blur_draw(&s,1,123) && !mk8_blur_draw(&s,1,down));
-    assert(!mk8_blur_draw(&s,1,seed) && mk8_blur_draw(&s,1,down)==MK8_BLUR_REDUCTION);
-    assert(mk8_blur_draw(&s,1,h)==MK8_BLUR_HORIZONTAL && mk8_blur_draw(&s,1,v)==MK8_BLUR_VERTICAL);
-    assert(!mk8_blur_draw(&s,1,down) && !mk8_blur_draw(&s,1,h) && !mk8_blur_draw(&s,1,v));
-    assert(!mk8_blur_draw(&s,1,seed) && mk8_blur_draw(&s,1,down)==MK8_BLUR_REDUCTION && !mk8_blur_draw(&s,2,h));
-    assert(!mk8_blur_draw(&s,2,seed) && mk8_blur_draw(&s,2,down)==MK8_BLUR_REDUCTION &&
-           !mk8_blur_draw(&s,2,123) && !mk8_blur_draw(&s,2,h));
+    assert(!mk8_blur_draw(&pending,1,down,false));
+    assert(!mk8_blur_draw(&s,1,h,false) && !mk8_blur_draw(&s,1,v,false));
+    assert(!mk8_blur_draw(&s,1,seed,false) && !mk8_blur_draw(&s,2,down,false));
+    assert(!mk8_blur_draw(&s,1,seed,false) && !mk8_blur_draw(&s,1,123,false) && !mk8_blur_draw(&s,1,down,false));
+    assert(!mk8_blur_draw(&s,1,seed,false) && mk8_blur_draw(&s,1,down,false)==MK8_BLUR_REDUCTION);
+    assert(mk8_blur_draw(&s,1,h,false)==MK8_BLUR_HORIZONTAL && mk8_blur_draw(&s,1,v,false)==MK8_BLUR_VERTICAL);
+    assert(!mk8_blur_draw(&s,1,down,false) && !mk8_blur_draw(&s,1,h,false) && !mk8_blur_draw(&s,1,v,false));
+    assert(!mk8_blur_draw(&s,1,seed,false) && mk8_blur_draw(&s,1,down,false)==MK8_BLUR_REDUCTION && !mk8_blur_draw(&s,2,h,false));
+    assert(!mk8_blur_draw(&s,2,seed,false) && mk8_blur_draw(&s,2,down,false)==MK8_BLUR_REDUCTION &&
+           !mk8_blur_draw(&s,2,123,false) && !mk8_blur_draw(&s,2,h,false));
+    uint64_t vancouver_seed=0x0e1fa9b3719cf15bull;
+    assert(!mk8_blur_draw(&s,3,vancouver_seed,false) && !mk8_blur_draw(&s,3,down,false));
+    assert(!mk8_blur_draw(&s,4,vancouver_seed,true) && mk8_blur_draw(&s,4,down,false)==MK8_BLUR_REDUCTION);
+    assert(mk8_blur_draw(&s,4,h,false)==MK8_BLUR_HORIZONTAL && mk8_blur_draw(&s,4,v,false)==MK8_BLUR_VERTICAL);
+    assert(!mk8_blur_draw(&s,4,down,false) && !mk8_blur_draw(&s,4,h,false) && !mk8_blur_draw(&s,4,v,false));
     for (int i=0;i<=15;i++) assert(mk8_blur_locked_lod(i,i,true)==i);
     assert(mk8_blur_locked_lod(0,1,true)<0 && mk8_blur_locked_lod(-1,-1,true)<0);
     assert(mk8_blur_locked_lod(.5f,.5f,true)<0 && mk8_blur_locked_lod(1,1,false)<0);
