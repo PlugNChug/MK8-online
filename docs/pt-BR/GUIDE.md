@@ -132,6 +132,8 @@ O botão **Info** do menu principal abre a janela local **How to Play**, com con
 
 No launcher, **Configurações** reúne vídeo, áudio, idioma do jogo, ícones dos botões, ordem dos controles e mapeamento de teclado/controle. O arquivo `user-no-mii/mk8d.ini` é o mesmo do menu F1. **Salvar configurações** aplica no próximo início; **Recarregar do jogo** lê os valores gravados pelo menu F1. Não é possível salvar enquanto o jogo ou uma preparação usa os dados.
 
+**Vídeo → Ocultar cursor automaticamente** vem ativado. Em tela cheia, o ponteiro some após dois segundos de inatividade. Usar o mouse, abrir o menu F1 ou sair da tela cheia faz o ponteiro voltar.
+
 ## Online com o Nextendo
 
 1. Confirme o e-mail da sua conta Nextendo e vincule o Discord a ela. [Gerenciar conta Nextendo](https://nextendo.network/account)

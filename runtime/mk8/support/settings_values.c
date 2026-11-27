@@ -166,7 +166,11 @@ static void apply(Request r) {
         return;
     }
     const Mk8MenuOption *o=mk8_menu_option(r.id);
-    if(o->toggle) { *o->toggle=!*o->toggle; dirty=true; }
+    if(o->toggle) {
+        bool current=__atomic_load_n(o->toggle,__ATOMIC_RELAXED);
+        __atomic_store_n(o->toggle,!current,__ATOMIC_RELAXED);
+        dirty=true;
+    }
     else if(o->choice) {
         int index=mk8_menu_choice_index(r.id);
         if(index<0) index=o->default_index;
@@ -252,7 +256,8 @@ void mk8_settings_values_sync(void) {
         } else if(v->id==RESET) {
             v->kind=SETTING_RESET; snprintf(v->value,sizeof v->value,"Restore defaults");
         } else if(o->toggle) {
-            v->maximum=1; v->current=*o->toggle; snprintf(v->value,sizeof v->value,*o->toggle ? "On" : "Off");
+            v->maximum=1; v->current=__atomic_load_n(o->toggle,__ATOMIC_RELAXED);
+            snprintf(v->value,sizeof v->value,v->current ? "On" : "Off");
         } else {
             int index=mk8_menu_choice_index(v->id);
             v->maximum=o->count-1;

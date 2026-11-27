@@ -1,6 +1,6 @@
 # Estado do projeto
 
-[English](../en/STATUS.md) · **Português** · Atualizado em 23/11/2026 · Versão 0.6.3
+[English](../en/STATUS.md) · **Português** · Atualizado em 26/11/2026 · Versão 0.6.3
 
 Esta página é o resumo atual. Investigações datadas, medições e evidências por issue ficam no [registro técnico](log/README.md). As pendências estão no [roteiro](ROADMAP.md).
 
@@ -18,6 +18,10 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
 | Controles | Direção por movimento via SDL e leitura automática experimental com um Switch Pro Controller via Bluetooth e a Entrada Steam no Windows | [Verificação de controles](log/controllers.md#movimento-do-switch-pro-controller-com-entrada-steam-164) |
 | Linux | Construído da árvore principal; AppImage/tar.gz no CI em Ubuntu 24.04; renderização em Intel Iris Xe | Corrida em Steam Deck físico |
+
+## Mudanças após a 0.6.3
+
+- A tela cheia oculta por padrão o ponteiro do mouse quando fica parado. A preferência é compartilhada entre o launcher e os ajustes de vídeo do jogo. [Ocultação do cursor em tela cheia](log/graphics.md#ocultação-do-cursor-em-tela-cheia)
 
 ## Versão 0.6.3
 

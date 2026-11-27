@@ -1,6 +1,6 @@
 # Project status
 
-**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-23 · Release 0.6.3
+**English** · [Português](../pt-BR/STATUS.md) · Updated 2026-11-26 · Release 0.6.3
 
 This page is the current summary. Dated investigations, measurements and per-issue evidence are kept in the [technical log](log/README.md). Open work is tracked in the [roadmap](ROADMAP.md).
 
@@ -18,6 +18,10 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
 | Controllers | SDL motion steering and experimental automatic motion reading for a single Bluetooth Switch Pro Controller with Steam Input on Windows | [Controller verification](log/controllers.md#switch-pro-controller-motion-with-steam-input-164) |
 | Linux | AppImage/tar.gz built and smoke-tested in CI on Ubuntu 24.04; rendering on Intel Iris Xe | Physical Steam Deck race |
+
+## Changes after 0.6.3
+
+- Fullscreen hides the idle mouse pointer by default. The preference is shared by the launcher and the in-game Video settings. [Fullscreen cursor auto-hide](log/graphics.md#fullscreen-cursor-auto-hide)
 
 ## 0.6.3 release
 

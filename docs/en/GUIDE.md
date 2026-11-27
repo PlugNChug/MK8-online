@@ -132,6 +132,8 @@ The main menu's **Info** button opens a local **How to Play** window covering co
 
 In the launcher, **Settings** covers video, audio, game language, button icons, controller order and keyboard/controller mapping. It shares `user-no-mii/mk8d.ini` with the F1 menu. **Save settings** applies them on the next start; **Reload from game** reads values saved by the F1 menu. Settings cannot be saved while the game or a preparation is using the data.
 
+**Video → Auto-hide cursor** is on by default. In fullscreen, the pointer hides after two seconds of inactivity. Mouse activity, opening the F1 menu, or leaving fullscreen restores it.
+
 ## Online play with Nextendo
 
 1. Verify your Nextendo account email and link Discord to it. [Manage your Nextendo account](https://nextendo.network/account)
