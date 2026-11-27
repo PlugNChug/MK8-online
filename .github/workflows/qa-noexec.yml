@@ -27,12 +27,13 @@ jobs:
         run: |
           set -eu
           docker pull "$IMAGE"
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb xdotool
+          mkdir -p "$RUNNER_TEMP/x-tools"
+          (cd "$RUNNER_TEMP/x-tools" && apt-get download xdotool libxdo3 && for f in *.deb; do dpkg-deb -x "$f" .; done)
+          export PATH="$RUNNER_TEMP/x-tools/usr/bin:$PATH" LD_LIBRARY_PATH="$RUNNER_TEMP/x-tools/usr/lib/x86_64-linux-gnu"
           Xvfb :88 -ac -screen 0 1280x720x24 -nolisten tcp >"$RUNNER_TEMP/xvfb.log" 2>&1 &
           export DISPLAY=:88
-          for i in {1..20}; do if xdpyinfo > /dev/null 2>&1; then break; fi; sleep 1; done
-          xdpyinfo > /dev/null
+          for i in {1..20}; do if xdotool getdisplaygeometry > /dev/null 2>&1; then break; fi; sleep 1; done
+          xdotool getdisplaygeometry
           for stage in stock repaired; do
             image="$IMAGE"
             if [ "$stage" = repaired ]; then
@@ -53,13 +54,14 @@ jobs:
             job=$!
             ok=0
             for i in {1..75}; do
-              if xdotool search --onlyvisible --name MK8 > /dev/null; then ok=1; break; fi
+              if xdotool search --onlyvisible --name MK8 > /dev/null && find "qa/$stage" -name launcher.json -print -quit | grep -q .; then ok=1; break; fi
+              if grep -Eq 'MK8-online: (No such file|Permission denied)|error while loading shared libraries' "qa/$stage.out"; then break; fi
               if ! kill -0 "$job" 2>/dev/null; then break; fi
               sleep 1
             done
-            cat "qa/$stage.out"
+            sed -E 's#http://127\.0\.0\.1:[^ ]+#<loopback>#g' "qa/$stage.out"
             if [ "$ok" = 1 ]; then echo "$stage image displayed the release launcher"; docker stop -t 1 "mk8-qa-147-$stage"; wait "$job" || true; break; fi
-            if kill -0 "$job" 2>/dev/null; then echo "No window within timeout"; exit 1; fi
+            if kill -0 "$job" 2>/dev/null; then echo "No working window"; docker stop -t 1 "mk8-qa-147-$stage"; fi
             wait "$job" || echo "$stage launcher exited with $?"
             if [ "$stage" = repaired ]; then exit 1; fi
           done
