@@ -11,7 +11,7 @@
 typedef struct {
     ULONGLONG heartbeat, received;
     DWORD reader, generation, sequence, sensor_retries, device_reopens;
-    bool ambiguous;
+    bool ambiguous, attached;
     float accel[3], gyro[3];
 } MotionMailbox;
 
@@ -23,7 +23,7 @@ typedef struct {
 static MotionChannel channel;
 static WCHAR channel_id[39];
 static SDL_JoystickID target, active;
-static bool mapped_ambiguous, desktop_ambiguous;
+static bool mapped_ambiguous, desktop_ambiguous, desktop_attached;
 static Uint64 next_scan, next_start, last_source;
 static DWORD last_sequence;
 static DWORD last_sensor_retries;
@@ -180,6 +180,10 @@ SDL_JoystickID mk8_poll_steam_motion(bool *ambiguous) {
     ReleaseMutex(channel.lock);
     desktop_ambiguous = sample.ambiguous;
     *ambiguous = mapped_ambiguous || desktop_ambiguous;
+    if (sample.attached != desktop_attached) {
+        desktop_attached = sample.attached;
+        SDL_Log("[input] Steam motion reader %s the physical controller", desktop_attached ? "opened" : "lost");
+    }
     if (sample.sensor_retries != last_sensor_retries) {
         last_sensor_retries = sample.sensor_retries;
         if (last_sensor_retries) SDL_Log("[input] Steam motion reader retried silent sensors");
@@ -241,6 +245,7 @@ static bool read_controller(const MotionChannel *pipe, HANDLE owner, MotionMailb
     Uint64 next_scan = 0, retry_sensors_at = 0, stamps[2] = {0};
     float pending[2][3];
     Uint64 published = 0;
+    Uint64 reopen_at = GetTickCount64() + 4500;
     unsigned stalled_retries = 0;
     DWORD starting_sequence = sample->sequence;
     bool reopen = false;
@@ -265,6 +270,7 @@ static bool read_controller(const MotionChannel *pipe, HANDLE owner, MotionMailb
                     retry_sensors_at = now + 1500;
                 }
                 id = pad ? found : 0;
+                sample->attached = pad != NULL;
                 stalled_retries = 0;
                 stamps[0] = stamps[1] = 0;
                 sample->received = 0;
@@ -285,13 +291,15 @@ static bool read_controller(const MotionChannel *pipe, HANDLE owner, MotionMailb
         if (paired) {
             retry_sensors_at = now + 1500;
             stalled_retries = 0;
+        } else if (now >= reopen_at && (allow_reopen || sample->sequence != starting_sequence)) {
+            // Refresh discovery even when SDL never delivered a new attachment.
+            ++sample->device_reopens;
+            ++sample->generation;
+            sample->attached = false;
+            sample->received = 0;
+            reopen = true;
+            break;
         } else if (pad && stalled_retries < 3 && now >= retry_sensors_at) {
-            // A quick Bluetooth reconnect can leave the SDL attachment alive with a stale HID connection.
-            if (stalled_retries && (allow_reopen || sample->sequence != starting_sequence)) {
-                ++sample->device_reopens;
-                reopen = true;
-                break;
-            }
             // Steam may finish setting up the Bluetooth controller after SDL first enables its sensors.
             SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_ACCEL, false);
             SDL_SetGamepadSensorEnabled(pad, SDL_SENSOR_GYRO, false);
@@ -309,6 +317,7 @@ static bool read_controller(const MotionChannel *pipe, HANDLE owner, MotionMailb
             sample->heartbeat = now;
             if (paired) {
                 sample->received = now;
+                reopen_at = now + 4500;
                 ++sample->sequence;
                 SDL_memcpy(sample->accel, pending[0], sizeof sample->accel);
                 SDL_memcpy(sample->gyro, pending[1], sizeof sample->gyro);
@@ -347,6 +356,11 @@ int mk8_run_steam_motion_reader(const char *owner, const char *session) {
             SDL_Quit();
             result = 0;
             if (!reopen) break;
+            if (lock_channel(&pipe, 250)) {
+                sample.heartbeat = GetTickCount64();
+                *pipe.data = sample;
+                ReleaseMutex(pipe.lock);
+            }
             allow_reopen = false;
         } while (WaitForSingleObject(process, 1250) == WAIT_TIMEOUT);
     }

@@ -103,14 +103,20 @@ static int SDLCALL exercise(void *owner) {
     return 0;
 }
 
-static int SDLCALL exercise_stale_connection(void *owner) {
+typedef struct { HANDLE owner; bool detach; } RediscoveryTest;
+
+static int SDLCALL exercise_stale_connection(void *userdata) {
+    RediscoveryTest *test = userdata;
     SDL_Joystick *joy = attach_pro();
     wait_pair(joy, 9);
-    // Neither a new attachment nor another sensor sample follows the first retry.
+    if (test->detach) detach_pro(joy);
+    // Test both a silent attachment and a missing replacement attachment.
     SDL_Delay(5500);
-    assert(SDL_JoystickConnected(joy));
-    detach_pro(joy);
-    assert(SetEvent(owner));
+    if (!test->detach) {
+        assert(SDL_JoystickConnected(joy));
+        detach_pro(joy);
+    }
+    assert(SetEvent(test->owner));
     return 0;
 }
 
@@ -127,12 +133,15 @@ int main(void) {
     MotionMailbox sample = {.reader = GetCurrentProcessId()};
     assert(!read_controller(&channel, owner, &sample, true));
     SDL_WaitThread(thread, NULL);
-    assert(ResetEvent(owner));
-    thread = SDL_CreateThread(exercise_stale_connection, "Virtual Pro stale connection test", owner);
-    assert(thread);
-    assert(read_controller(&channel, owner, &sample, true));
-    assert(sample.device_reopens == 1 && !sample.received);
-    SDL_WaitThread(thread, NULL);
+    for (unsigned attempt = 0; attempt < 2; ++attempt) {
+        RediscoveryTest test = {.owner = owner, .detach = attempt != 0};
+        assert(ResetEvent(owner));
+        thread = SDL_CreateThread(exercise_stale_connection, "Virtual Pro rediscovery test", &test);
+        assert(thread);
+        assert(read_controller(&channel, owner, &sample, true));
+        assert(sample.device_reopens == attempt + 1 && !sample.received && !sample.attached);
+        SDL_WaitThread(thread, NULL);
+    }
     close_channel(&channel);
     CloseHandle(owner);
     SDL_Quit();

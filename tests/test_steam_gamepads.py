@@ -24,7 +24,7 @@ class SteamGamepadTests(unittest.TestCase):
                            env=compiler_env(), check=True)
             env = dict(os.environ, PATH=str(DEPS / 'bin') + os.pathsep + os.environ['PATH'],
                        SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS='1')
-            run = subprocess.run([exe], env=env, capture_output=True, text=True, timeout=20)
+            run = subprocess.run([exe], env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stderr)
 
     def test_two_controllers_hotplug_and_native_precedence(self):
