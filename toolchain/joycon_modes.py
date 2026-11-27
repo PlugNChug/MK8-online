@@ -9,6 +9,14 @@ def insert(path, marker, new):
 
 
 def prepare(runtime):
+    insert(runtime/'main.c', 'int main(int argc, char **argv) {',
+           'int main(int argc, char **argv) {\n'
+           '#ifdef _WIN32\n'
+           '    if (argc > 1 && !strcmp(argv[1], "--steam-motion-reader")) {\n'
+           '        extern int mk8_run_steam_motion_reader(const char *, const char *);\n'
+           '        return argc == 4 ? mk8_run_steam_motion_reader(argv[2], argv[3]) : 1;\n'
+           '    }\n'
+           '#endif')
     insert(runtime/'settings.h', '} Settings;', '} Settings;\nbool mk8_init_joycon_input(void);')
     insert(runtime/'settings.c',
            '        else if (!strcmp(key, "pads_from_p2")) g_settings.pads_from_p2 = atoi(val) != 0;\n', '')

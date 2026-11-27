@@ -2,6 +2,12 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/controllers.md)
 
+## Switch Pro Controller motion with Steam Input (#164)
+
+On Windows, the Steam-mapped SDL gamepad identified the Bluetooth Switch Pro Controller and delivered buttons and sticks, but exposed neither motion sensor. A desktop SDL process could read the physical accelerometer and gyroscope at the same time. The integration starts that reader through the [Windows desktop shell](https://learn.microsoft.com/en-us/windows/win32/shell/samples-execinexplorer) when Steam presents one eligible gamepad. It sends complete sensor pairs to the assigned player and clears them when input stops. The reader rediscovers the controller after disconnect and exits with the game.
+
+Windows regressions cover native sensor precedence, player assignment and clearing old pairs after reconnect. In a separate lifecycle test, Explorer launched the reader, the reader published its heartbeat and it exited after its owner. The reader also cleared stale samples and accepted new pairs when a virtual Pro Controller disconnected and reconnected. The earlier manual reader was verified in a race with one Bluetooth Pro Controller and Steam Input enabled. The same hardware still needs to verify the automatic reader across a reconnect. `gameplay_verified=false`.
+
 ## Portability of the game units and SDL input
 
 On revision `93b817d` of PR #83, preparation rejected three valid units generated on Windows (`main_077.c`, `main_164.c` and `main_114.c`) and accepted the same units with LF. In the partial integration into `fix-chore`, the ultrawide camera, HUD, settings, cups, Miis, SDK and Yaz0 use the hashes already recorded on this branch. The 29 affected units, prepared with both CRLF and LF on Windows and WSL, reproduced the adapted sources of the previous build byte for byte. All were recompiled on Windows with the build options. 30 preparation and behavior tests passed.

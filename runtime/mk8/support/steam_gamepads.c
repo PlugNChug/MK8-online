@@ -1,4 +1,5 @@
 #include "gameinput_v0.h"
+#include "steam_motion_windows.h"
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,8 @@ static LONG device_count;
 
 typedef struct { GIDevice *device; SDL_JoystickID id; } Pad;
 static Pad pads[max_players];
+static bool steam_motion_enabled;
+static SDL_JoystickID motion_target;
 
 // Unidentified Steam/XInput endpoints need to be opened to receive SDL events.
 // Keep idle endpoints out of the player slots while Windows sees real pads.
@@ -151,6 +154,13 @@ static bool ours(SDL_JoystickID id) {
 }
 
 void mk8_poll_steam_gamepads(void) {
+    if (steam_motion_enabled) {
+        SDL_JoystickID found = mk8_poll_steam_motion();
+        if (found != motion_target) {
+            motion_target = found;
+            InterlockedExchange(&dirty, 1);
+        }
+    }
     if (!input) return;
     // A receiver can wake up after the blocking enumeration but before its
     // connection notification arrives. The current reading identifies its owner.
@@ -180,11 +190,46 @@ void mk8_poll_steam_gamepads(void) {
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     SDL_JoystickID native[max_players] = {0};
+    int pro_records = 0;
+    bool native_pro = false;
+    if (motion_target) {
+        for (int i = 0; i < max_players; ++i) {
+            const GIInfoPrefix *info = snapshot[i] ? snapshot[i]->v->info(snapshot[i]) : NULL;
+            if (info && info->vendor == 0x057e && info->product == 0x2009) ++pro_records;
+        }
+        for (int n = 0; ids && n < count; ++n) {
+            Uint16 vendor = 0, product = 0;
+            SDL_GetJoystickGUIDInfo(SDL_GetGamepadGUIDForID(ids[n]), &vendor, &product, NULL, NULL);
+            if (vendor == 0x057e && product == 0x2009) native_pro = true;
+        }
+    }
     for (int i = 0; i < max_players; ++i)
         if (endpoints[i].pad && !SDL_GamepadConnected(endpoints[i].pad)) clear_endpoint(&endpoints[i]);
     for (int n = 0; ids && n < count; ++n) {
         if (ours(ids[n])) continue;
         const Uint16 vid = SDL_GetGamepadVendorForID(ids[n]), pid = SDL_GetGamepadProductForID(ids[n]);
+        Uint16 raw_vid = 0, raw_pid = 0;
+        SDL_GetJoystickGUIDInfo(SDL_GetGamepadGUIDForID(ids[n]), &raw_vid, &raw_pid, NULL, NULL);
+        if (raw_vid == 0x28de && raw_pid == 0x11ff) {
+            // SDL presents the physical controller's metadata for Steam's emulated pad.
+            // GameInput presents the same endpoint as Valve's virtual device.
+            bool matched = false, matched_physical = false;
+            bool alias_pro = ids[n] == motion_target && pro_records == 1 && !native_pro;
+            for (int i = 0; i < max_players; ++i) {
+                if (!snapshot[i] || native[i]) continue;
+                const GIInfoPrefix *info = snapshot[i]->v->info(snapshot[i]);
+                if (!info) continue;
+                if (!matched && info->vendor == raw_vid && info->product == raw_pid) {
+                    native[i] = ids[n];
+                    matched = true;
+                } else if (alias_pro && info->vendor == 0x057e && info->product == 0x2009) {
+                    // GameInput may report both records for one Steam-routed Pro Controller.
+                    native[i] = ids[n];
+                    matched_physical = true;
+                }
+            }
+            if (matched || matched_physical) continue;
+        }
         // Emulated Xbox 360 has the same VID/PID as a physical Xbox 360.
         bool anonymous = !vid || vid == 0x28de || (vid == 0x045e && pid == 0x028e);
         if (anonymous) {
@@ -331,6 +376,10 @@ static void stop_input(void) {
 bool mk8_init_window_input(void) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) return false;
     if (input || (!SDL_getenv("SteamAppId") && !SDL_getenv("SteamGameId"))) return true;
+    if (!steam_motion_enabled) {
+        steam_motion_enabled = true;
+        atexit(mk8_stop_steam_motion);
+    }
     library = LoadLibraryExW(L"GameInput.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     HRESULT (WINAPI *create)(GI **) = library ? (void *)GetProcAddress(library, "GameInputCreate") : NULL;
     if (create && SUCCEEDED(create(&input)) && input &&

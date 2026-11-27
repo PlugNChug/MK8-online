@@ -16,6 +16,7 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | Multijogador | Matchmaking nativo Nextendo pelo Online Play; salas Steam com convites; testes LAN locais | Uma corrida Nextendo até o resultado; uma corrida Steam completa entre dois PCs |
 | Gráficos | Runtime Vulkan; FSR 1, FSR 3.1.6 (executado na RX 580), FSR 4 / DLSS (só testes de capacidade); ultrawide (também com geração de quadros) e geração de quadros experimentais | DLSS em RTX, FSR 4 em RDNA 4; mais pistas e GPUs |
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
+| Controles | Direção por movimento via SDL e leitura automática experimental com um Switch Pro Controller via Bluetooth e a Entrada Steam no Windows | [Verificação de controles](log/controllers.md#movimento-do-switch-pro-controller-com-entrada-steam-164) |
 | Linux | Construído da árvore principal; AppImage/tar.gz no CI em Ubuntu 24.04; renderização em Intel Iris Xe | Corrida em Steam Deck físico |
 
 ## Versão 0.6.3

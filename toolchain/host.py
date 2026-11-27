@@ -629,9 +629,8 @@ def build_host(source, output, workers=None, game_library=None):
                     'runtime/nvn/vulkan/*.cpp', 'runtime/ui/*.mm', 'third_party/mbedtls/library/*.c', 'games/mk8d/*.c']:
         sources.extend(sorted(source.glob(pattern)))
     sources = [p for p in sources if p.name not in ('iosbuild.c', 'nextendo_ios.mm', 'launcher.mm', 'secure_store.c')]
-    # support/steam_gamepads.c is Windows-only (GameInput); Linux builds the portable fallback in
-    # support/steam_gamepads_linux.c instead. Everything else compiles on both platforms.
-    windows_only = set() if WINDOWS else {'steam_gamepads.c'}
+    # Linux uses SDL directly and builds the portable Steam gamepad fallback.
+    windows_only = set() if WINDOWS else {'steam_gamepads.c', 'steam_motion_windows.c'}
     sources.extend(sorted(p for p in (ROOT/'runtime/mk8').rglob('*.c') if p.name not in windows_only))
     sources.extend(sorted(p for p in (ROOT/'runtime/mk8').rglob('*.cpp') if p.name not in windows_only))
     if WINDOWS:
@@ -706,7 +705,7 @@ def build_host(source, output, workers=None, game_library=None):
          '-o', exe,
          '-L'+str(DEPS/'lib'), '-Wl,--stack,268435456', '-Wl,--export-all-symbols',
          *(DEPS/'lib'/('lib'+lib+'.dll.a') for lib in ['SDL3', 'avformat', 'avcodec', 'avutil', 'swscale', 'shaderc_shared']),
-         *('-l'+lib for lib in ['winmm', 'ole32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt', 'advapi32'])], output/'host-link.log', env)
+         *('-l'+lib for lib in ['winmm', 'ole32', 'oleaut32', 'shell32', 'comdlg32', 'uuid', 'ws2_32', 'bcrypt', 'advapi32'])], output/'host-link.log', env)
     run([DEFAULT_COMPILER, 'dlltool', '-m', 'i386:x86-64', '-d', exports, '-l', output/'mk8drecomp.dll.a'], output/'exports.log', env)
     copy_runtime_dlls(output)
     (output/'host-key.json').write_text(json.dumps({'key': key, 'files': {name: digest(output/name) for name in HOST_FILES}}, indent=2), encoding='utf-8')

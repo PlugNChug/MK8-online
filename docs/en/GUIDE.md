@@ -116,7 +116,7 @@ SDL-compatible controllers, the keyboard and Switch controllers are supported. S
 
 **Motion steering:** connect a controller that exposes a gyroscope and accelerometer to SDL. In the race pause menu, press **Y** to enable **Tilt Controls**, then hold the controller like a steering wheel.
 
-With a Bluetooth Switch Pro Controller on Windows, Steam Input can pass through the buttons and sticks while leaving motion unavailable. If that happens, open the game's **Properties → Controller** in Steam, select **Disable Steam Input** for that shortcut and restart the game. Tilt Controls then uses the native controller. [Steam Input report #164](https://github.com/Vnnc1/MK8-online/issues/164)
+On Windows, the game can read motion from one Bluetooth Switch Pro Controller while Steam Input handles its buttons and sticks. The motion reader starts automatically. If the controller disconnects, reconnect it through Bluetooth to resume steering. If motion is unavailable with your setup, you can select **Disable Steam Input** in the game's **Properties → Controller** in Steam and restart to use the native controller. [Steam Input report #164](https://github.com/Vnnc1/MK8-online/issues/164)
 
 ## In-game menu and settings
 

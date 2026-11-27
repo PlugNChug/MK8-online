@@ -2,6 +2,12 @@
 
 [Índice](README.md) · [English](../../en/log/controllers.md)
 
+## Movimento do Switch Pro Controller com Entrada Steam (#164)
+
+No Windows, o controle SDL mapeado pela Steam identificou o Switch Pro Controller via Bluetooth e repassou botões e analógicos. Os dois sensores de movimento ficaram indisponíveis nesse processo. Um processo SDL da área de trabalho conseguiu ler o acelerômetro e o giroscópio físicos ao mesmo tempo. A integração inicia o leitor pelo [shell da área de trabalho do Windows](https://learn.microsoft.com/en-us/windows/win32/shell/samples-execinexplorer) quando a Steam apresenta um controle compatível. Ela envia pares completos de amostras ao jogador correspondente e limpa as leituras quando param de chegar. O leitor redetecta o controle após uma desconexão e encerra com o jogo.
+
+Os testes no Windows cobrem a prioridade dos sensores nativos, a atribuição do jogador e a limpeza de pares antigos após reconectar. Em um ensaio separado, o Explorer iniciou o leitor, o leitor publicou seu sinal de atividade e encerrou quando o processo pai terminou. O leitor também descartou amostras antigas e aceitou pares novos após desconectar e reconectar um controle Pro virtual. O leitor manual anterior foi verificado em corrida com um Pro Controller via Bluetooth e a Entrada Steam ligada. Falta verificar o leitor automático durante uma reconexão com o mesmo controle. `gameplay_verified=false`.
+
 ## Entrada pela Steam com um ou dois jogadores locais
 
 O convidado pode escolher a quantidade de jogadores ao aceitar um convite no launcher ou entrar na sala de um amigo. Convites aceitos pelo cliente Steam usam um jogador. A entrada automática abre o navegador LAN do jogo; com dois jogadores, o jogo passa antes pelo registro de controles e pela escolha do segundo Mii. Quem prefere navegar manualmente pode continuar entrando pelo título. A escolha de dois jogadores exige uma biblioteca do jogo recompilada com os hooks de entrada direta. Atualizar apenas o executável do runtime preserva o comportamento manual de compilações antigas.

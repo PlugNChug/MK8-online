@@ -116,7 +116,7 @@ Controles compatíveis com a SDL, teclado e controles do Switch são suportados.
 
 **Direção por movimento:** conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** e segure o controle como um volante.
 
-Com um Switch Pro Controller via Bluetooth no Windows, a Entrada Steam pode repassar os botões e analógicos sem disponibilizar os sensores de movimento. Se isso acontecer, abra **Propriedades → Controle** do jogo na Steam, selecione **Desativar Entrada Steam** para esse atalho e reinicie o jogo. A direção por movimento passa a usar o controle nativo. [Relato sobre a Entrada Steam #164](https://github.com/Vnnc1/MK8-online/issues/164)
+No Windows, o jogo pode ler os sensores de movimento de um Switch Pro Controller via Bluetooth enquanto a Entrada Steam cuida dos botões e analógicos. O leitor de movimento inicia automaticamente. Se o controle desconectar, reconecte-o por Bluetooth para retomar a direção. Se os controles por movimento estiverem indisponíveis na sua configuração, selecione **Desativar Entrada Steam** em **Propriedades → Controle** do jogo na Steam e reinicie para usar o controle nativo. [Relato sobre a Entrada Steam #164](https://github.com/Vnnc1/MK8-online/issues/164)
 
 ## Menu do jogo e configurações
 

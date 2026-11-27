@@ -103,6 +103,22 @@ int main(void) {
     SDL_CloseGamepad(extra_pad[1]); extra_pad[1]=NULL; assert(SDL_DetachVirtualJoystick(id)); mk8_sync_sensors();
     blocked=false; id=attach(true); pad=SDL_OpenGamepad(id); assert(pad); mk8_sync_sensors();
     assert(!read_slot(0)); sample(pad,SDL_SENSOR_GYRO,1,-1); sample(pad,SDL_SENSOR_ACCEL,1,2); expect(0,1,2,-1);
+    const float steam_accel[3]={5,-5,2.5f}, steam_gyro[3]={4,-4,2};
+    mk8_motion_steam_sample(id, 10, steam_accel, steam_gyro);
+    expect(0,1,2,-1); // The normal sensor pair takes precedence.
+    mk8_motion_steam_sample(plain, 10, steam_accel, steam_gyro);
+    assert(read_slot(1)); expect(1,stamp,5,4);
+    uint64_t before_reconnect=generation;
+    mk8_motion_steam_lost(plain); assert(!read_slot(1));
+    mk8_motion_steam_sample(plain, 11, steam_accel, steam_gyro);
+    assert(read_slot(1) && generation!=before_reconnect);
+    focus.type=SDL_EVENT_WINDOW_FOCUS_LOST; motion_event(&focus);
+    mk8_motion_steam_sample(plain, 11, steam_accel, steam_gyro);
+    assert(!read_slot(1));
+    focus.type=SDL_EVENT_WINDOW_FOCUS_GAINED; motion_event(&focus);
+    assert(!read_slot(1));
+    mk8_motion_steam_sample(plain, 11, steam_accel, steam_gyro);
+    assert(read_slot(1)); expect(1,stamp,5,4);
     SDL_CloseGamepad(pad); SDL_CloseGamepad(extra_pad[0]); pad=NULL; extra_pad[0]=NULL; mk8_sync_sensors();
     assert(!read_slot(0)); SDL_DetachVirtualJoystick(id); SDL_DetachVirtualJoystick(plain); SDL_Quit();
 }

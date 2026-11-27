@@ -16,6 +16,7 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | Multiplayer | Native Nextendo matchmaking through Online Play; Steam rooms with invites; local LAN tests | A Nextendo race to results; a full Steam race between two PCs |
 | Graphics | Vulkan runtime; FSR 1, FSR 3.1.6 (run on RX 580), FSR 4 / DLSS (capability-tested only); experimental ultrawide (also with frame generation) and frame generation | DLSS on RTX, FSR 4 on RDNA 4; more courses and GPUs |
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
+| Controllers | SDL motion steering and experimental automatic motion reading for a single Bluetooth Switch Pro Controller with Steam Input on Windows | [Controller verification](log/controllers.md#switch-pro-controller-motion-with-steam-input-164) |
 | Linux | AppImage/tar.gz built and smoke-tested in CI on Ubuntu 24.04; rendering on Intel Iris Xe | Physical Steam Deck race |
 
 ## 0.6.3 release
