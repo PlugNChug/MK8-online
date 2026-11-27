@@ -114,6 +114,8 @@ Controles compatíveis com a SDL, teclado e controles do Switch são suportados.
 
 **Vibração HD:** no Pro Controller original do Switch, nos Joy-Con individuais e num par identificável de Joy-Con oficiais via Bluetooth. Os demais controles usam a vibração da SDL.
 
+**Intensidade da vibração** começa em 100% da saída calibrada de cada controle. Selecione 0% em **Controles** no menu F1 para parar a vibração de todos os jogadores. Também é possível usar o controle deslizante em **Configurações → Vídeo e controles → Controles** no launcher antes de iniciar o jogo. As opções anteriores ligado e desligado passam a 100% e 0%.
+
 **Direção por movimento:** conecte um controle que forneça giroscópio e acelerômetro à SDL. No menu de pausa da corrida, pressione **Y** para ativar os **controles por movimento** e segure o controle como um volante.
 
 ## Menu do jogo e configurações

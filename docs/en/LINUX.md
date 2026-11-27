@@ -35,11 +35,15 @@ sudo apt install build-essential clang lld llvm cmake pkg-config python3.12-venv
   libpipewire-0.3-dev libdecor-0-dev libudev-dev fonts-dejavu-core
 ```
 
+If the tools step must build SDL, install CMake and the development packages for your display and audio backends in the build environment. The Ubuntu list above includes these packages. For other distributions, see [SDL's Linux build dependencies](https://wiki.libsdl.org/SDL3/README-linux#build-dependencies).
+
 For the system font fallback, install DejaVu Sans in the environment where you run the game. The package is `fonts-dejavu-core` on Ubuntu and Debian, `ttf-dejavu` on Arch and CachyOS, and `dejavu-sans-fonts` on Fedora.
 
 ### Other distributions (Arch, CachyOS, Fedora)
 
 The tools step needs a 64-bit **Python 3.12**. Distributions that ship a newer `python3` usually have no `python3.12`: install it from the AUR (`python312`), with `pyenv install 3.12` or with `uv python install 3.12`. The launcher looks for `MK8_PYTHON312`, `python3.12`, a `python3` that is 3.12, and the pyenv, uv and asdf installs; to point at a specific one, start the launcher with `MK8_PYTHON312=/path/to/python3.12`.
+
+Keep that Python installation available because the tools environment links to it. If setup leaves an incomplete environment, run **Tools** again. Setup preserves the old environment under `local/python-incomplete-*/` inside the active version directory and creates a fresh one.
 
 ### Steam Deck: Ubuntu via Distrobox
 
