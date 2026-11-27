@@ -43,6 +43,7 @@
   "Nome do Mii": "Mii name",
   "Salvar Mii": "Save Mii",
   "Exportar .charinfo": "Export .charinfo",
+  "Mii importado.": "Mii imported.",
   "Importar Mii do Switch (.charinfo)": "Import Switch Mii (.charinfo)",
   "Modelos dentro do jogo — experimental": "In-game models — experimental",
   "Use a pasta extraída do título MiiModel 0100000000000802 do seu console, contendo ShapeMid/High e NXTextureLow/MidLinear/SRGB. Não use um arquivo GLB nesta opção.": "Use your console's extracted MiiModel title folder (0100000000000802), containing ShapeMid/High and NXTextureLow/MidLinear/SRGB. Do not use a GLB file here.",

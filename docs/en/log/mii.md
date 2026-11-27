@@ -2,6 +2,10 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/mii.md)
 
+## Transfer a saved Mii between builds (#143)
+
+The launcher exposes its existing 88-byte Switch CharInfo import and export in the Mii editor. A browser test using the compiled launcher checked the downloaded bytes, duplicate protection and selection of an imported profile with its original identity and appearance.
+
 ## Launcher frozen in the Mii creator (issues #15 and #16) — 2026-11-14
 
 The launcher's HTTP server handles one request at a time. The creator requested the AFL library (4.5 MB) and handed the not-yet-read response to `FFL.initWithResource`, which first waits for the module to download `ffl-emscripten.wasm` from that same server. When the body exceeded the WebView/TCP buffers, the loop got stuck writing the library and never served the `.wasm`: the screen stayed on "Loading Mii parts…" and **all** other calls stopped (Browse, Play, status). This explains both reports, including "Play solo does nothing" after opening the creator. It depended on the buffer sizes of each machine; here the creator tests passed.

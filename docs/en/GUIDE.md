@@ -67,6 +67,8 @@ The **Tools** step prepares private Python directly, without PowerShell or .NET 
 2. Type a name (1–10 characters) and choose **Create Mii**. Go through the tabs and pick options; each button previews your Mii with that option. **Body** has type, height, build and favourite colour.
 3. Choose **Save Mii**. The launcher prepares the in-game Mii models the first time; **Play** shows progress and unlocks when it finishes.
 
+To move a Mii between builds or PCs, select it under **Mii profile**, save any edits and choose **Export .charinfo**. In the other launcher, choose **Import Switch Mii (.charinfo)** and open the saved file. The imported Mii becomes active. If it already exists, select it in your list.
+
 Solo, Steam rooms and Nextendo all use the active Mii. You can keep several Miis and switch between them at the top of the screen. **Mii profile** in the in-game **F1** menu brings this screen forward. Without the library, options stay numbered and faces are not drawn.
 
 ## Graphics

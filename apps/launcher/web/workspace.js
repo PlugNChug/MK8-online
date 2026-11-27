@@ -610,6 +610,8 @@
     get('mii-continue').disabled = !state.loaded || saving;
     i18n.text(get('mii-continue'), state.hasData ? 'Continuar personalizando' : 'Criar e personalizar');
     get('mii-new').disabled = saving || !state.loaded;
+    get('mii-import').disabled = saving || !state.loaded;
+    get('mii-export').disabled = saving || !state.hasData || state.dirty;
     i18n.text(get('mii-workshop-title'), name.value.trim() ? `Personalize ${name.value.trim()}` : 'Personalize seu Mii');
     const body = state.tab === 'body';
     get('mii-area-face').setAttribute('aria-pressed', String(!body)); get('mii-area-body').setAttribute('aria-pressed', String(body));

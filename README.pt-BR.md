@@ -57,7 +57,7 @@ O MK8-online é uma recompilação estática experimental do **Mario Kart 8 Delu
 1. Execute o instalador e escolha as pastas do aplicativo e dos dados. Não é preciso ser administrador.
 2. Em **Instalar**, conclua **Ferramentas** e selecione o jogo base e a atualização em **Arquivos do jogo**.
 3. Rode **Build do jogo**. A primeira build leva cerca de 30 minutos.
-4. Crie um Mii em **Perfil Mii** e escolha **Jogar solo**, **Jogar no Nextendo** ou **Multijogador**.
+4. Crie um Mii ou importe um arquivo `.charinfo` em **Perfil Mii** e escolha **Jogar solo**, **Jogar no Nextendo** ou **Multijogador**.
 
 **Atualizando?** Use **Suporte → Atualizar agora**, mantenha a pasta de dados e rode **Atualizar a build** se o launcher pedir. O [guia do usuário](docs/pt-BR/GUIDE.md) cobre gráficos, controles, jogo online, DLC, CTGP, modo portátil e solução de problemas.
 

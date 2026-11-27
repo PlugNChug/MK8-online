@@ -48,7 +48,9 @@ class MiiLauncherTests(unittest.TestCase):
                         expect(page.locator('#mii-library-download')).to_be_enabled()
                         expect(page.locator('#mii-save')).to_have_text('Criar Mii')
                         expect(page.locator('#mii-options')).to_contain_text('Dê um nome ao Mii')
-                        for old in ('#mii-canvas','#mii-form','#mii-import','#mii-export','#mii-composer','#mii-resource-dir'):
+                        expect(page.locator('#mii-import')).to_be_enabled()
+                        expect(page.locator('#mii-export')).to_be_disabled()
+                        for old in ('#mii-canvas','#mii-form','#mii-composer','#mii-resource-dir'):
                             expect(page.locator(old)).to_have_count(0)
                         page.locator('#mii-continue').click()  # no name
                         expect(page.locator('#mii-identity-form')).to_be_visible()
@@ -95,6 +97,22 @@ class MiiLauncherTests(unittest.TestCase):
                         page.locator('#mii-saved .mii-saved-item',has_text='Ana').click()
                         expect(page.locator('#mii-name')).to_have_value('Ana')
                         self.assertEqual(export()[69],20)
+                        with page.expect_download() as download:
+                            page.locator('#mii-export').click()
+                        charinfo=local/'saved.charinfo'
+                        download.value.save_as(charinfo)
+                        self.assertEqual(charinfo.read_bytes(), bytes(export()))
+                        page.locator('#mii-import-file').set_input_files(charinfo)
+                        expect(page.locator('#mii-status')).to_contain_text('Este Mii já existe')
+                        # An independent Mii imports with its original identity and appearance.
+                        other=bytearray(charinfo.read_bytes())
+                        other[0]^=1
+                        charinfo.write_bytes(other)
+                        with page.expect_file_chooser() as chooser:
+                            page.locator('#mii-import').click()
+                        chooser.value.set_files(charinfo)
+                        expect(page.locator('#mii-saved .mii-saved-item')).to_have_count(3)
+                        self.assertEqual(bytes(export()),other)
                         # Unsaved edits are not lost silently when switching.
                         page.locator('#mii-tabs [data-part="nose"]').click()
                         page.locator('#mii-options .mii-choice[data-offset="66"][data-value="5"]').click()

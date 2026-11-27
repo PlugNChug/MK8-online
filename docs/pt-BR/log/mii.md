@@ -2,6 +2,10 @@
 
 [Índice](README.md) · [English](../../en/log/mii.md)
 
+## Transferir um Mii salvo entre builds (#143)
+
+O editor do launcher oferece a importação e exportação existentes do CharInfo de 88 bytes do Switch. O teste em navegador com o launcher compilado conferiu os bytes baixados, a proteção contra duplicatas e a seleção do perfil importado com identidade e aparência originais.
+
 ## Launcher congelado no criador Mii (issues #15 e #16) — 14/11/2026
 
 O servidor HTTP do launcher atende uma requisição por vez. O criador pedia a biblioteca AFL (4,5 MB) e entregava a resposta ainda não lida a `FFL.initWithResource`, que primeiro espera o módulo baixar `ffl-emscripten.wasm` desse mesmo servidor. Quando o corpo passava dos buffers do WebView/TCP, o laço ficava preso escrevendo a biblioteca e nunca atendia o `.wasm`: a tela ficava em "Carregando peças do Mii…" e **todas** as outras chamadas paravam (Procurar, Jogar, status). Isso explica os dois relatos, inclusive "Jogar solo não faz nada" depois de abrir o criador. Dependia do tamanho dos buffers de cada máquina; aqui os testes do criador passavam.

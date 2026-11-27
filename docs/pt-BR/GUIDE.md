@@ -67,6 +67,8 @@ A etapa **Ferramentas** prepara o Python privado diretamente, sem PowerShell nem
 2. Digite um nome (1 a 10 caracteres) e escolha **Criar Mii**. Percorra as abas e escolha as opções; cada botão mostra seu Mii com aquela opção. **Corpo** tem tipo, altura, porte e cor favorita.
 3. Escolha **Salvar Mii**. Na primeira vez, o launcher prepara os modelos Mii do jogo; **Jogar** mostra o andamento e libera o botão ao terminar.
 
+Para transferir um Mii entre builds ou PCs, selecione-o em **Perfil Mii**, salve as alterações e escolha **Exportar .charinfo**. No outro launcher, escolha **Importar Mii do Switch (.charinfo)** e abra o arquivo salvo. O Mii importado se torna o perfil ativo. Se ele já existir, selecione-o na lista.
+
 O solo, as salas Steam e o Nextendo usam o Mii ativo. Você pode ter vários Miis e trocar entre eles no topo da tela. **Perfil Mii** no menu **F1** do jogo traz esta tela à frente. Sem a biblioteca, as opções ficam numeradas e os rostos não são desenhados.
 
 ## Gráficos

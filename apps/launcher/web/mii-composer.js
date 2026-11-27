@@ -266,6 +266,27 @@ async function switchTo(p){
   if(dirty&&!confirm(i18n.t('Descartar as alterações não salvas?')))return;
   try{await api('mii/select',{id:hex(p.id)});await load();status('');}catch(e){status(e.message);}
 }
+el('mii-export').onclick=()=>{
+  if(!data||dirty||creating)return;
+  const link=document.createElement('a');
+  link.download='mii-'+hex(active.id)+'.charinfo';
+  link.href='data:application/octet-stream;base64,'+btoa(String.fromCharCode(...data));
+  link.click();
+};
+el('mii-import').onclick=()=>el('mii-import-file').click();
+el('mii-import-file').onchange=async event=>{
+  const file=event.target.files[0];
+  event.target.value='';
+  if(!file)return;
+  if(file.size!==88){status('Importe um arquivo Switch .charinfo de exatamente 88 bytes.');return;}
+  if((dirty||(creating&&el('mii-name').value.trim()))&&!confirm(i18n.t('Descartar as alterações não salvas?')))return;
+  try{
+    await api('mii/import',Array.from(new Uint8Array(await file.arrayBuffer())));
+    await load();
+    status('Mii importado.');
+    prepareForGame();
+  }catch(e){status(e.message);}
+};
 el('mii-new').onclick=()=>{
   if(dirty&&!confirm(i18n.t('Descartar as alterações não salvas?')))return;
   creating=true;data=null;dirty=false;el('mii-name').value='';el('mii-name').focus();

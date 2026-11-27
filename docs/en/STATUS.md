@@ -12,7 +12,7 @@ This page is the current summary. Dated investigations, measurements and per-iss
 | --- | --- | --- |
 | Launcher | Native window, guided preparation, installer, updates, uninstall, reports; English, Brazilian Portuguese, Spanish | Upgrades from earlier versions on more PCs |
 | Solo racing | Full Mushroom Cup with replays and cup progress persisting across a restart; battles, MKTV and Time Trial reached; all 160 courses (48 base, 48 DLC, 64 CTGP) loaded in Time Trial | Full image, audio, controller and restart/save qualification |
-| Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
+| Mii | Creator, transferable `.charinfo` profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Native Nextendo matchmaking through Online Play; Steam rooms with invites; local LAN tests | A Nextendo race to results; a full Steam race between two PCs |
 | Graphics | Vulkan runtime; FSR 1, FSR 3.1.6 (run on RX 580), FSR 4 / DLSS (capability-tested only); experimental ultrawide (also with frame generation) and frame generation | DLSS on RTX, FSR 4 on RDNA 4; more courses and GPUs |
 | Performance | Around 60 FPS in measured race windows on the test PC | VRAM stability over repeated cups, cold-cache stutters, more hardware |
