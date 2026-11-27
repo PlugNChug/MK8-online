@@ -25,7 +25,7 @@ jobs:
         run: |
           docker build -t mk8-qa - <<'EOF'
           FROM ubuntu:24.04
-          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 libarchive-tools libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 ca-certificates
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 libarchive-tools libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 ca-certificates xvfb xauth xdotool dbus-x11
           EOF
       - name: Exercise both packages under noexec as a regular user
         run: |
@@ -59,4 +59,18 @@ jobs:
                   child.wait(timeout=10)
               print(path, "served the launcher and ran the importer", flush=True)
           PY
+            export APPIMAGE_EXTRACT_AND_RUN=1 XDG_DATA_HOME=/work/qa/gui-xdg
+            dbus-run-session -- xvfb-run -a bash -eu -c "
+              /work/qa/Launcher.AppImage > /work/qa/gui.log 2>&1 &
+              pid=\$!
+              trap \"kill \$pid 2>/dev/null || true; cat /work/qa/gui.log\" EXIT
+              for i in {1..40}; do
+                if xdotool search --onlyvisible --name MK8 | head -1 | grep -q .; then
+                  echo Released AppImage displayed a native window; exit 0
+                fi
+                kill -0 \$pid || exit 1
+                sleep 1
+              done
+              exit 1
+            "
           '
