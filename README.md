@@ -55,7 +55,7 @@ MK8-online is an experimental static recompilation of **Mario Kart 8 Deluxe 4.0.
 ## Quick start
 
 1. Run the installer and choose the application and data folders. No administrator rights are needed.
-2. In **Install**, complete **Tools**, then select your base game and update in **Game files**.
+2. In **Install**, complete **Tools**, then select your base game and update in **Game files**. On Windows, Tools tries a second download source if the pinned Zig compiler download fails.
 3. Run **Build the game**. The first build takes around 30 minutes.
 4. Create a Mii in **Mii profile**, then choose **Play solo**, **Play on Nextendo** or **Multiplayer**.
 

@@ -10,7 +10,7 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 
 | Área | Progresso atual | Próximo marco |
 | --- | --- | --- |
-| Launcher | Janela nativa, preparação guiada, instalador, atualizações, desinstalação, relatórios; inglês, português do Brasil e espanhol | Atualização a partir de versões anteriores em mais PCs |
+| Launcher | Janela nativa, preparação guiada com fonte alternativa para baixar o Zig no Windows, instalador, atualizações, desinstalação, relatórios; inglês, português do Brasil e espanhol | Atualização a partir de versões anteriores em mais PCs |
 | Corrida solo | Taça Cogumelo inteira, com replays e progresso preservados após reinício; batalhas, MKTV e Contra o Relógio alcançados; as 160 pistas (48 base, 48 DLC, 64 CTGP) carregadas no Contra o Relógio | Qualificação completa de imagem, áudio, controle e reinício/save |
 | Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, roupas, piloto, minimapa) | Mii nos lobbies LAN, comparação com recursos do console |
 | Multijogador | Matchmaking nativo Nextendo pelo Online Play; salas Steam com convites; testes LAN locais | Uma corrida Nextendo até o resultado; uma corrida Steam completa entre dois PCs |

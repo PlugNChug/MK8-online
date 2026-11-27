@@ -10,7 +10,7 @@ This page is the current summary. Dated investigations, measurements and per-iss
 
 | Area | Current progress | Next checkpoint |
 | --- | --- | --- |
-| Launcher | Native window, guided preparation, installer, updates, uninstall, reports; English, Brazilian Portuguese, Spanish | Upgrades from earlier versions on more PCs |
+| Launcher | Native window, guided preparation with a fallback Zig download on Windows, installer, updates, uninstall, reports; English, Brazilian Portuguese, Spanish | Upgrades from earlier versions on more PCs |
 | Solo racing | Full Mushroom Cup with replays and cup progress persisting across a restart; battles, MKTV and Time Trial reached; all 160 courses (48 base, 48 DLC, 64 CTGP) loaded in Time Trial | Full image, audio, controller and restart/save qualification |
 | Mii | Creator, profiles and the game's own Mii renderer (portraits, suits, driver, minimap) | Mii in LAN lobbies, comparison with console resources |
 | Multiplayer | Native Nextendo matchmaking through Online Play; Steam rooms with invites; local LAN tests | A Nextendo race to results; a full Steam race between two PCs |

@@ -2,6 +2,10 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/launcher-install.md)
 
+## Windows Tools download at 46% (#194)
+
+A simulated timeout on the primary Zig host stopped setup on 0.6.3. With the same timeout, setup downloaded the archive from a community mirror listed by Zig, verified its pinned SHA-256 and installed a compiler reporting version 0.17.0. A verified local installation can still be reused offline.
+
 ## Long RomFS paths on Windows — 0.4.1 local
 
 Preparation aborted the build when the path of a game file reached 260 characters. In the test folder with accents and an emoji, the previous reader indexed only 6,405 of the 6,597 MK8 4.0.1 files. In the same folder, the fixed reader indexed all of them. Reading through the storage service confirmed the 192 affected files byte by byte and compared the start and end of the rest with the sources, for a total of 564,153,926 bytes verified.
