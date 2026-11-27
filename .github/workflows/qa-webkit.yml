@@ -20,7 +20,11 @@ jobs:
           docker build -t mk8-webkit-test - <<'EOF'
           FROM ubuntu:24.04
           ENV DEBIAN_FRONTEND=noninteractive
-          RUN apt-get update && apt-get install -y --no-install-recommends curl xvfb xauth dbus-x11 procps xdotool libarchive-tools libayatana-appindicator3-1 ca-certificates && +              deps="$(apt-cache show libwebkit2gtk-4.1-0 | sed -n '0,/^Depends: /{s/^Depends: //p}')" && test -n "$deps" && +              apt-get satisfy -y --no-install-recommends "$deps" && mkdir /opt/qa-webkit && cd /opt/qa-webkit && +              apt-get download libwebkit2gtk-4.1-0 && dpkg-deb -x ./*.deb . && +              test -e usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 && ! dpkg-query -W libwebkit2gtk-4.1-0
+          RUN apt-get update && apt-get install -y --no-install-recommends curl xvfb xauth dbus-x11 procps xdotool libarchive-tools libayatana-appindicator3-1 ca-certificates && \
+              deps="$(apt-cache show libwebkit2gtk-4.1-0 | sed -n '0,/^Depends: /{s/^Depends: //p}')" && test -n "$deps" && \
+              apt-get satisfy -y --no-install-recommends "$deps" && mkdir /opt/qa-webkit && cd /opt/qa-webkit && \
+              apt-get download libwebkit2gtk-4.1-0 && dpkg-deb -x ./*.deb . && \
+              test -e usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 && ! dpkg-query -W libwebkit2gtk-4.1-0
           EOF
       - name: Compare the loader and WebKit subprocesses
         run: |
