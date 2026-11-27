@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from downloads import fetch
 
@@ -71,6 +72,29 @@ def setup_vma():
     pending.replace(include / "vk_mem_alloc.h")
 
 
+def setup_python():
+    env = ROOT / "local/python"
+    python = env / "bin/python"
+    if python.is_file():
+        probe = ("import encodings, pip, struct, sys; "
+                 "sys.exit(not (sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8 "
+                 "and sys.prefix != sys.base_prefix))")
+        try:
+            result = subprocess.run([python, "-I", "-c", probe],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return python
+        except OSError:
+            pass
+    if env.exists() or env.is_symlink():
+        backup = Path(tempfile.mkdtemp(prefix="python-incomplete-", dir=env.parent)) / env.name
+        env.rename(backup)
+        print(f"Ambiente Python anterior preservado em {backup}", flush=True)
+    # Standalone Python builds must be able to find their original standard library.
+    subprocess.run([sys.executable, "-I", "-m", "venv", "--symlinks", env], check=True)
+    return python
+
+
 def main():
     if "--check" in sys.argv:
         check_dependencies()
@@ -90,10 +114,7 @@ def main():
         raise ValueError("SDL, cabeçalhos Vulkan ou VMA ausentes ou incompatíveis.")
     if sys.version_info[:2] != (3, 12):
         raise ValueError("Instale Python 3.12 x64 com suporte a venv.")
-    env = ROOT / "local/python"
-    python = env / "bin/python"
-    if not python.is_file():
-        subprocess.run([sys.executable, "-I", "-m", "venv", "--copies", env], check=True)
+    python = setup_python()
     for requirements in ("upstream/smm2recomp/recomp/tools/requirements-gen.txt", "toolchain/requirements-host.txt"):
         subprocess.run([python, "-I", "-m", "pip", "--isolated", "install", "--only-binary=:all:",
                         "--require-hashes", "-r", ROOT / requirements], check=True)
