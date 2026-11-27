@@ -64,7 +64,24 @@ Without FUSE:
 
 ### Containers with a noexec /tmp
 
-For 0.6.3, put the downloaded files on a writable filesystem that allows execution. Install the runtime dependencies inside the container, including WebKitGTK 4.1 and bsdtar (libarchive-tools on Ubuntu). Check the archive checksum before extracting it.
+The Fedora 44 image used by the Unraid Steam Headless 2 template can extract the 0.6.3 AppImage and then exit with code 127 because `libwebkit2gtk-4.1.so.0` is missing. The launcher also uses `bsdtar` to unpack its files on first use. From a root shell **inside the Fedora container**, install both packages. Include this command in your derived image if you recreate the container regularly. [Steam Headless template](https://steamheadless.com/docs/installation/deployment/unraid-template/)
+
+```sh
+dnf --repo=fedora --repo=updates install -y webkit2gtk4.1 bsdtar
+```
+
+From the container desktop, as your usual user, run the following in the download directory. Use a home directory on a filesystem that allows execution.
+
+```sh
+sha256sum -c MK8-online-0.6.3-linux-x86_64.AppImage.sha256 &&
+chmod +x MK8-online-0.6.3-linux-x86_64.AppImage &&
+mkdir -p -m 700 "$HOME/tmp" &&
+TMPDIR="$HOME/tmp" APPIMAGE_EXTRACT_AND_RUN=1 ./MK8-online-0.6.3-linux-x86_64.AppImage
+```
+
+With those packages installed, the released AppImage opened its setup window and served the launcher interface in Steam Headless 2.44.20261019.1 while `/tmp` remained `noexec`. The test used a virtual display. [Steam Headless verification](https://github.com/PlugNChug/MK8-online/actions/runs/46038695417)
+
+You can also use the tarball on a writable filesystem that allows execution. It needs the same libraries and `bsdtar` (`libarchive-tools` on Ubuntu).
 
 ```sh
 sha256sum -c MK8-online-0.6.3-linux-x86_64.tar.gz.sha256 &&
