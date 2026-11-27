@@ -1,0 +1,56 @@
+name: Check extracted launcher with private WebKit
+on:
+  push:
+    branches: [codex/qa-steam-deck-webkit-182]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Fetch published release
+        run: |
+          mkdir qa && cd qa
+          curl -fsSL https://github.com/Vnnc1/MK8-online/releases/download/v0.6.3/MK8-online-0.6.3-linux-x86_64.tar.gz -o release.tar.gz
+          echo '57bbeb72f8657c4dfd31bfbbfb93c7ab1a6d4565ae99654c23f86368ce9ca124  release.tar.gz' | sha256sum -c -
+          tar -xf release.tar.gz
+      - name: Build container without host WebKitGTK 4.1
+        run: |
+          docker build -t mk8-webkit-test - <<'EOF'
+          FROM ubuntu:24.04
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update && apt-get install -y --no-install-recommends curl xvfb xauth dbus-x11 procps xdotool libarchive-tools libayatana-appindicator3-1 ca-certificates && +              deps="$(apt-cache show libwebkit2gtk-4.1-0 | sed -n '0,/^Depends: /{s/^Depends: //p}')" && test -n "$deps" && +              apt-get satisfy -y --no-install-recommends "$deps" && mkdir /opt/qa-webkit && cd /opt/qa-webkit && +              apt-get download libwebkit2gtk-4.1-0 && dpkg-deb -x ./*.deb . && +              test -e usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 && ! dpkg-query -W libwebkit2gtk-4.1-0
+          EOF
+      - name: Compare the loader and WebKit subprocesses
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/qa -v "$PWD/qa:/qa" -w /qa mk8-webkit-test bash -eu -o pipefail -c '
+            exe=/qa/MK8-online/usr/bin/Launcher
+            status=0; "$exe" --headless >baseline.log 2>&1 || status=$?
+            cat baseline.log
+            test "$status" = 127
+            grep -F "libwebkit2gtk-4.1.so.0" baseline.log
+            export LD_LIBRARY_PATH=/opt/qa-webkit/usr/lib/x86_64-linux-gnu
+            export WEBKIT_EXEC_PATH=$LD_LIBRARY_PATH/webkit2gtk-4.1
+            ldd "$exe" | grep libwebkit
+            test -x "$WEBKIT_EXEC_PATH/WebKitWebProcess"
+            "$exe" --headless --data-dir /qa/headless >headless.log 2>&1 &
+            pid=$!
+            for i in {1..30}; do if test -s headless/launcher.json; then break; fi; kill -0 "$pid"; sleep 1; done
+            test -s headless/launcher.json
+            kill "$pid"; wait "$pid" || true
+            echo "Headless launcher started using private WebKitGTK"
+            dbus-run-session -- xvfb-run -a bash -eu -c "
+              /qa/MK8-online/usr/bin/Launcher > /qa/gui.log 2>&1 &
+              pid=\$!
+              trap \"kill \$pid 2>/dev/null || true; cat /qa/gui.log\" EXIT
+              for i in {1..30}; do
+                if pgrep -x WebKitWebProces >/dev/null && xdotool search --onlyvisible --name MK8 >/dev/null; then
+                  echo Web process and native window verified; exit 0
+                fi
+                kill -0 \$pid || exit 1
+                sleep 1
+              done
+              exit 1
+            "
+          '
