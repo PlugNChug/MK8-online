@@ -12,7 +12,7 @@ Esta página é o resumo atual. Investigações datadas, medições e evidência
 | --- | --- | --- |
 | Launcher | Janela nativa, preparação guiada, instalador, atualizações, desinstalação, relatórios; inglês, português do Brasil e espanhol | Atualização a partir de versões anteriores em mais PCs |
 | Corrida solo | Taça Cogumelo inteira, com replays e progresso preservados após reinício; batalhas, MKTV e Contra o Relógio alcançados; as 160 pistas (48 base, 48 DLC, 64 CTGP) carregadas no Contra o Relógio | Qualificação completa de imagem, áudio, controle e reinício/save |
-| Mii | Criador, perfis e o renderer Mii do próprio jogo (retratos, roupas, piloto, minimapa) | Mii nos lobbies LAN, comparação com recursos do console |
+| Mii | Criador com opções numeradas quando a prévia 3D está indisponível, perfis e o renderer Mii do próprio jogo (retratos, roupas, piloto, minimapa) | Mii nos lobbies LAN, comparação com recursos do console |
 | Multijogador | Matchmaking nativo Nextendo pelo Online Play; salas Steam com convites; testes LAN locais | Uma corrida Nextendo até o resultado; uma corrida Steam completa entre dois PCs |
 | Gráficos | Runtime Vulkan; FSR 1, FSR 3.1.6 (executado na RX 580), FSR 4 / DLSS (só testes de capacidade); ultrawide (também com geração de quadros) e geração de quadros experimentais | DLSS em RTX, FSR 4 em RDNA 4; mais pistas e GPUs |
 | Desempenho | Cerca de 60 FPS nas janelas de corrida medidas no PC de teste | Estabilidade de VRAM em copas repetidas, engasgos com cache frio, mais hardware |
