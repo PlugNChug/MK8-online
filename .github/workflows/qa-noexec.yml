@@ -21,6 +21,48 @@ jobs:
           curl -fsSL "$base.tar.gz" -o Launcher.tar.gz
           echo '57bbeb72f8657c4dfd31bfbbfb93c7ab1a6d4565ae99654c23f86368ce9ca124  Launcher.tar.gz' | sha256sum -c -
           tar -xzf Launcher.tar.gz
+      - name: Test the stock Steam Headless image from the Unraid template
+        env:
+          IMAGE: josh5/steam-headless@sha256:c60f4d7243a4d94515f722441fff90b752413bf6a45bb221c9a4ed55bc4d9108
+        run: |
+          set -eu
+          docker pull "$IMAGE"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xdotool
+          Xvfb :88 -ac -screen 0 1280x720x24 -nolisten tcp >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          export DISPLAY=:88
+          for i in {1..20}; do if xdpyinfo > /dev/null 2>&1; then break; fi; sleep 1; done
+          xdpyinfo > /dev/null
+          for stage in stock repaired; do
+            image="$IMAGE"
+            if [ "$stage" = repaired ]; then
+              docker build -t steam-qa - <<EOF
+          FROM $IMAGE
+          USER root
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y libarchive-tools libwebkit2gtk-4.1-0
+          EOF
+              image=steam-qa
+            fi
+            mkdir -m 700 "qa/$stage" "qa/$stage/tmp"
+            docker run --rm --network none --user "$(id -u):$(id -g)" --entrypoint bash "$image" -c 'cat /etc/os-release; command -v bsdtar; ldconfig -p | grep -E "libwebkit2gtk-4.1|libgtk-3" || true'
+            docker run --rm --name "mk8-qa-147-$stage" --network none --user "$(id -u):$(id -g)" --entrypoint bash \
+              --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=1777 -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+              -v "$PWD/qa/Launcher.AppImage:/release/Launcher.AppImage:ro" -v "$PWD/qa/$stage:/home/qa" \
+              -e DISPLAY -e HOME=/home/qa -e TMPDIR=/home/qa/tmp -e APPIMAGE_EXTRACT_AND_RUN=1 "$image" -c \
+              'findmnt -no OPTIONS /tmp; cd "$HOME"; exec /release/Launcher.AppImage' >"qa/$stage.out" 2>&1 &
+            job=$!
+            ok=0
+            for i in {1..75}; do
+              if xdotool search --onlyvisible --name MK8 > /dev/null; then ok=1; break; fi
+              if ! kill -0 "$job" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            cat "qa/$stage.out"
+            if [ "$ok" = 1 ]; then echo "$stage image displayed the release launcher"; docker stop -t 1 "mk8-qa-147-$stage"; wait "$job" || true; break; fi
+            if kill -0 "$job" 2>/dev/null; then echo "No window within timeout"; exit 1; fi
+            wait "$job" || echo "$stage launcher exited with $?"
+            if [ "$stage" = repaired ]; then exit 1; fi
+          done
       - name: Prepare Ubuntu runtime
         run: |
           docker build -t mk8-qa - <<'EOF'
