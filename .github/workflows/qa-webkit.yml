@@ -17,8 +17,10 @@ jobs:
           tar -xf release.tar.gz
       - name: Build container without host WebKitGTK 4.1
         run: |
-          docker build -t mk8-webkit-test - <<'EOF'
+          docker build --build-arg QA_UID="$(id -u)" -t mk8-webkit-test - <<'EOF'
           FROM ubuntu:24.04
+          ARG QA_UID
+          RUN getent passwd "$QA_UID" >/dev/null || useradd --uid "$QA_UID" -M qa
           ENV DEBIAN_FRONTEND=noninteractive
           RUN apt-get update && apt-get install -y --no-install-recommends curl xvfb xauth dbus-x11 procps xdotool libarchive-tools libayatana-appindicator3-1 ca-certificates && \
               deps="$(apt-cache show libwebkit2gtk-4.1-0 | sed -n '0,/^Depends: /{s/^Depends: //p}')" && test -n "$deps" && \
