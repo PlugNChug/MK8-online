@@ -2,6 +2,12 @@
 
 [Índice](README.md) · [English](../../en/log/graphics.md)
 
+## Bloom em Vancouver Velocity em resoluções ampliadas (issue #150) — 26/11/2026
+
+Na base 0.6.3 para Windows (`5603bfb`), as luzes das árvores antes de Vancouver Park mostram pontos alaranjados repetidos em 2×. Um trace Vulkan do MK8 4.0.1 registrou a máscara de bloom de Vancouver (`0e1fa9b3719cf15b`) seguida pelos mesmos shaders de redução e desfoque horizontal e vertical de Bowser's Castle. A correção original reconhecia apenas a máscara do castelo. A sequência agora reconhece a máscara de Vancouver quando a resolução interna fica acima da nativa, inclusive quando a resolução Dinâmica seleciona uma escala acima da nativa.
+
+A recompilação apenas do runtime preservou a biblioteca do jogo. No quadro 3710 do Contra o Relógio, a build base em 2× desenhou uma grade de pontos luminosos em torno das árvores. Na captura equivalente da build corrigida, as luzes individuais e os halos das lanternas continuaram visíveis, e a grade desapareceu. Em tela cheia com resolução Dinâmica, um trace registrou uma cena interna de 2304×1296, e uma segunda comparação no quadro 3710 mostrou redução dos pontos repetidos mais fracos. Os ensaios em Windows usaram uma tela de 2560×1600 com área de jogo de 2560×1440, SMAA e geração de quadros desligada. Os testes nativos dos shaders e do roteiro passaram, incluindo a condição de escala nativa. Faltam uma comparação direta com o Switch e um ensaio no Linux.
+
 ## Codificação da textura de reflexos BC3
 
 O runtime desenha os blocos de reflexão na vista inteira de 128 bits da imagem temporária e os copia para o nível e a camada da textura BC3. O shader usa o tipo da imagem efetivamente alocada, inclusive quando o driver exige decodificação em RGBA. Nesta branch, os testes nativos verificam a seleção da vista, as cópias, a mistura de cores e a preservação dos quatro valores de 32 bits no SPIR-V.

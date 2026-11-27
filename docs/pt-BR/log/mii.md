@@ -6,6 +6,12 @@
 
 O editor do launcher oferece a importação e exportação existentes do CharInfo de 88 bytes do Switch. O teste em navegador com o launcher compilado conferiu os bytes baixados, a proteção contra duplicatas e a seleção do perfil importado com identidade e aparência originais.
 
+## Criação do primeiro Mii bloqueada quando a prévia 3D falha (issue #149) — 26/11/2026
+
+O relato na versão 0.6.3 mostra o botão **Criar e personalizar** desabilitado no launcher em espanhol após digitar um nome. O relatório não inclui log do navegador. Bloquear o WebGL no Chromium reproduziu o botão desabilitado em um perfil novo na `fix-chore` em `5603bfb`. O editor inicializava o renderer WebGL antes de carregar o perfil, e uma falha do renderer deixava o formulário desabilitado.
+
+O editor agora carrega os perfis antes de iniciar a prévia. Se o renderer falhar, os controles numerados existentes ainda permitem criar, editar e salvar. A regressão no navegador falha na base e passa com o launcher recompilado. Um ensaio separado com WebGL e os recursos preparados renderizou a cabeça, o corpo e uma miniatura de rosto. A máquina do relator não estava disponível para reteste. O ensaio não executou o jogo.
+
 ## Launcher congelado no criador Mii (issues #15 e #16) — 14/11/2026
 
 O servidor HTTP do launcher atende uma requisição por vez. O criador pedia a biblioteca AFL (4,5 MB) e entregava a resposta ainda não lida a `FFL.initWithResource`, que primeiro espera o módulo baixar `ffl-emscripten.wasm` desse mesmo servidor. Quando o corpo passava dos buffers do WebView/TCP, o laço ficava preso escrevendo a biblioteca e nunca atendia o `.wasm`: a tela ficava em "Carregando peças do Mii…" e **todas** as outras chamadas paravam (Procurar, Jogar, status). Isso explica os dois relatos, inclusive "Jogar solo não faz nada" depois de abrir o criador. Dependia do tamanho dos buffers de cada máquina; aqui os testes do criador passavam.

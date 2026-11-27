@@ -38,6 +38,7 @@ static struct Mk8RumblePad {
     SDL_JoystickID id;
     Mk8Vibration side[2];
     Uint16 low, high;
+    float rumble_gain;
     Uint64 sent_at;
     _Atomic Uint64 last_gyro_ns;
     Uint64 last_write_ns;
@@ -290,12 +291,16 @@ static void mk8_rumble_attach(int player, SDL_Gamepad *device) {
     if (device && SDL_GetBooleanProperty(SDL_GetGamepadProperties(device), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) {
         SDL_JoystickID id = SDL_GetGamepadID(device);
         Uint16 product = SDL_GetGamepadProduct(device);
+        bool nintendo = SDL_GetGamepadVendor(device) == 0x057e;
+        bool joycon = nintendo && product >= 0x2006 && product <= 0x2008;
         struct Mk8RumblePad *p = &mk8_rumble_pads[player];
+        // Calibrate Joy-Con motor output without changing the guest's requested values.
         *p = (struct Mk8RumblePad){.id = id, .product = product, .side = {mk8_silent, mk8_silent},
+                                  .rumble_gain = joycon ? 0.5f : 1.0f,
                                   .wanted = mk8_switch_neutral, .epoch = atomic_load(&mk8_output_cancellation)};
         // SDL 3.4 marks HIDAPI GUIDs with 'h'. Its combined driver only forwards basic rumble.
-        if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && SDL_GetGamepadVendor(device) == 0x057e) {
-            p->waiting_for_pair = product >= 0x2006 && product <= 0x2008 &&
+        if (SDL_GetJoystickGUIDForID(id).data[14] == 'h' && nintendo) {
+            p->waiting_for_pair = joycon &&
                                   SDL_GetAtomicInt(&mk8_pair_lease) == MK8_PAIR_RETIRING;
             if (product == 0x2008 && !p->waiting_for_pair) p->pair = mk8_pair_open(device);
             p->hd = product == 0x2009 || product == 0x2006 || product == 0x2007 || p->pair;
@@ -326,9 +331,18 @@ static void mk8_pair_track_basic(struct Mk8RumblePad *p) {
     SDL_SetAtomicInt(&mk8_pair_basic_mask, (p->low || p->high) ? mask | bit : mask & ~bit);
 }
 
+static int mk8_rumble_percent(void) {
+    return __atomic_load_n(&g_settings.rumble_intensity, __ATOMIC_RELAXED);
+}
+
+static float mk8_rumble_output_gain(const struct Mk8RumblePad *p) {
+    return p->rumble_gain * ((float)mk8_rumble_percent() / MK8_RUMBLE_MAX);
+}
+
 static void mk8_rumble_basic(struct Mk8RumblePad *p, Uint64 now) {
-    Uint16 low = (Uint16)(65535.f * fmaxf(p->side[0].low, p->side[1].low) + .5f);
-    Uint16 high = (Uint16)(65535.f * fmaxf(p->side[0].high, p->side[1].high) + .5f);
+    float scale = 65535.f * mk8_rumble_output_gain(p);
+    Uint16 low = (Uint16)(scale * fmaxf(p->side[0].low, p->side[1].low) + .5f);
+    Uint16 high = (Uint16)(scale * fmaxf(p->side[0].high, p->side[1].high) + .5f);
     if (low == p->low && high == p->high && ((!low && !high) || now - p->sent_at < 125)) return;
     SDL_Gamepad *device = SDL_GetGamepadFromID(p->id);
     if (!device || !SDL_RumbleGamepad(device, low, high, (low || high) ? 250 : 0)) {
@@ -520,9 +534,9 @@ static int mk8_switch_frequency(float hz, int base) {
     return (int)fminf(127, fmaxf(1, code));
 }
 
-static void mk8_switch_actuator(Uint8 out[4], Mk8Vibration value) {
-    int low = isfinite(value.low_hz) && value.low_hz > 0 ? mk8_switch_level(value.low) : 0;
-    int high = isfinite(value.high_hz) && value.high_hz > 0 ? mk8_switch_level(value.high) : 0;
+static void mk8_switch_actuator(Uint8 out[4], Mk8Vibration value, float gain) {
+    int low = isfinite(value.low_hz) && value.low_hz > 0 ? mk8_switch_level(value.low * gain) : 0;
+    int high = isfinite(value.high_hz) && value.high_hz > 0 ? mk8_switch_level(value.high * gain) : 0;
     int lf = low ? mk8_switch_frequency(value.low_hz, 64) : 64;
     int hf = high ? 4 * mk8_switch_frequency(value.high_hz, 96) : 256;
     out[0] = (Uint8)hf;
@@ -553,6 +567,7 @@ static void mk8_rumble_apply(struct Mk8RumblePad *p, Uint64 now) {
         if (!p->stop_first) mk8_rumble_basic(p, now);
         return;
     }
+    float gain = mk8_rumble_output_gain(p);
     if (p->product == 0x2006 || p->product == 0x2007) {
         // The game sees a FullKey with two grips even when one horizontal Joy-Con is the whole pad.
         Mk8Vibration single = p->side[0], right = p->side[1];
@@ -564,9 +579,9 @@ static void mk8_rumble_apply(struct Mk8RumblePad *p, Uint64 now) {
             single.high = right.high;
             single.high_hz = right.high_hz;
         }
-        mk8_switch_actuator(p->wanted.side[p->product - 0x2006], single);
+        mk8_switch_actuator(p->wanted.side[p->product - 0x2006], single, gain);
     } else {
-        for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side]);
+        for (int side = 0; side < 2; side++) mk8_switch_actuator(p->wanted.side[side], p->side[side], gain);
     }
     bool active = memcmp(&p->wanted, &mk8_switch_neutral, sizeof(p->wanted)) != 0;
     if (!active && mk8_switch_playing(p)) p->stop_first = true;
@@ -726,6 +741,29 @@ static void mk8_wake_output(void) {
     SDL_PushEvent(&e);  // The UI also checks the queue after its next 16 ms event wait.
 }
 
+// Caller holds the guest mutex. Device I/O stays on the existing output path.
+static bool mk8_cancel_rumble_output(void) {
+    unsigned stop = 0;
+    mk8_output_count = 0;
+    mk8_expired_stops.mask = 0;
+    atomic_fetch_add(&mk8_output_cancellation, 1);
+    for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mk8_guest_pads[i].id) {
+        mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
+        stop |= 1u << i;
+    }
+    pthread_cond_broadcast(&mk8_output_space);
+    return !mk8_output_exiting && mk8_queue_output(stop, SDL_GetTicks());
+}
+
+void mk8_rumble_set_intensity(int percent) {
+    if (percent < 0 || percent > MK8_RUMBLE_MAX) return;
+    pthread_mutex_lock(&mk8_guest_mutex);
+    int previous = __atomic_exchange_n(&g_settings.rumble_intensity, percent, __ATOMIC_RELAXED);
+    bool wake = previous && !percent && mk8_cancel_rumble_output();
+    pthread_mutex_unlock(&mk8_guest_mutex);
+    if (wake) mk8_wake_output();
+}
+
 void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     const uint8_t *handles = req->data, *values = NULL;
     size_t count = 1;
@@ -735,18 +773,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         pthread_mutex_lock(&mk8_guest_mutex);
         if (req->cmd == 204) {
             mk8_rumble_permitted = (req->data[0] & 1) != 0;
-            if (!mk8_rumble_permitted) {
-                unsigned stop = 0;
-                mk8_output_count = 0;
-                mk8_expired_stops.mask = 0;
-                atomic_fetch_add(&mk8_output_cancellation, 1);
-                for (unsigned i = 0; i < MK8_OUTPUT_PADS; ++i) if (mk8_guest_pads[i].id) {
-                    mk8_guest_pads[i].side[0] = mk8_guest_pads[i].side[1] = mk8_silent;
-                    stop |= 1u << i;
-                }
-                if (!mk8_output_exiting) wake = mk8_queue_output(stop, SDL_GetTicks());
-                pthread_cond_broadcast(&mk8_output_space);
-            }
+            if (!mk8_rumble_permitted) wake = mk8_cancel_rumble_output();
         } else {
             resp->data[0] = mk8_rumble_permitted;
             resp_size(resp, 1);
@@ -773,6 +800,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
     uint64_t cancellation = atomic_load(&mk8_output_cancellation);
     struct Mk8OutputBatch pending = {0};
     unsigned sides = 0;
+    bool host_enabled = mk8_rumble_percent() > 0;
     bool enabled = mk8_rumble_focused && mk8_rumble_permitted && !mk8_rumble_menu_open();
     for (size_t i = 0; i < count; i++) {
         uint32_t handle;
@@ -782,7 +810,7 @@ void mk8_hid_rumble(IpcReq *req, IpcResp *resp) {
         if (req->cmd == 202) {
             memcpy(resp->data, p ? &p->side[side] : &mk8_silent, sizeof(Mk8Vibration));
             resp_size(resp, sizeof(Mk8Vibration));
-        } else if (p) {
+        } else if (p && host_enabled) {
             Mk8Vibration value;
             memcpy(&value, values + i * sizeof(value), sizeof(value));
             value.low = mk8_amplitude(value.low);
