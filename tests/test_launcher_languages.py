@@ -115,6 +115,23 @@ class LanguageTests(unittest.TestCase):
                 expect(page.locator("#build-summary")).to_have_text("Compilando para tu PC · 42%")
                 page.get_by_label("Idioma", exact=True).select_option("en")
                 expect(page.locator("#build-phase")).to_have_text("Compiling for your PC")
+                status["build"].update(
+                    state="failed",
+                    detail="Falha de integridade no pacote da atualização 4.0.1. "
+                           "Extraia uma nova cópia do seu console e selecione o pacote em Arquivos do jogo.",
+                )
+                expect(page.locator("#build-detail")).to_contain_text("The 4.0.1 update package failed integrity verification.")
+                page.get_by_label("Language", exact=True).select_option("pt-BR")
+                expect(page.locator("#build-detail")).to_contain_text("Falha de integridade no pacote da atualização 4.0.1.")
+                page.get_by_label("Idioma", exact=True).select_option("es")
+                expect(page.locator("#build-detail")).to_contain_text("El paquete de la actualización 4.0.1 no superó la verificación de integridad.")
+                status["build"]["detail"] = (
+                    "Falha de integridade no pacote do jogo base. "
+                    "Extraia uma nova cópia do seu console e selecione o pacote em Arquivos do jogo."
+                )
+                expect(page.locator("#build-detail")).to_contain_text("El paquete del juego base no superó la verificación de integridad.")
+                page.get_by_label("Idioma", exact=True).select_option("en")
+                expect(page.locator("#build-detail")).to_contain_text("The base game package failed integrity verification.")
                 page.unroute("**/api/status")
                 expect(page.locator("#build-live")).to_be_hidden()
                 page.set_viewport_size({"width": 390, "height": 844})
