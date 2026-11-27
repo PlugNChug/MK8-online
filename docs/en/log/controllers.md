@@ -16,6 +16,16 @@ The retry build recovered buttons and tilt consistently when the player waited f
 
 On November 27, 2026, the player confirmed two rapid Bluetooth reconnects in Time Trial with Steam Input enabled. Buttons and tilt returned after a delay on the first attempt and immediately on the second. The Windows MK8 4.0.1 runtime (`d23b68bb`) logged the first sensor connection reopening and motion returning to player 1 both times.
 
+## Controller vibration toggle (#166)
+
+On November 25, 2026, the player confirmed the toggle with a Bluetooth Switch Pro Controller in the isolated Windows 4.0.1 build (runtime SHA-256 prefix `2448f1ce`). The native F1 menu saved the preference as off. Compiled tests verified that disabling vibration clears active and queued effects, sends a neutral HD Rumble packet, and accepts new effects when re-enabled. The reported excessive vibration duration remains to be reproduced.
+
+## Joy-Con rumble intensity (#161)
+
+On November 25, 2026, a player who compared the same Joy-Con controllers on Switch and PC reported that vibration felt about twice as strong on PC. The test build sends 50% of the requested amplitude to identified Nintendo Joy-Con, individually or as a pair, through HD Rumble and SDL fallback. The game still reads back its requested values and controls the timing.
+
+The native regression checks the reduced output against the [measured actuator table](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/rumble_data_table.md), checks the SDL fallback, and exercises neutral packets, effect expiry and the Pro Controller. A second physical comparison and reproduction of the reported long vibration are pending.
+
 ## Portability of the game units and SDL input
 
 On revision `93b817d` of PR #83, preparation rejected three valid units generated on Windows (`main_077.c`, `main_164.c` and `main_114.c`) and accepted the same units with LF. In the partial integration into `fix-chore`, the ultrawide camera, HUD, settings, cups, Miis, SDK and Yaz0 use the hashes already recorded on this branch. The 29 affected units, prepared with both CRLF and LF on Windows and WSL, reproduced the adapted sources of the previous build byte for byte. All were recompiled on Windows with the build options. 30 preparation and behavior tests passed.

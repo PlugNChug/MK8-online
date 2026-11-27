@@ -239,6 +239,13 @@ fn terminate_tree_with(child: &mut Child, program: &str) -> Result<()> {
     Ok(())
 }
 
+fn failure_detail(log: &str) -> &str {
+    log.lines()
+        .rev()
+        .find(|line| line.starts_with("Falha de integridade no pacote "))
+        .unwrap_or("Preparação interrompida. Consulte o log; ao tentar de novo, as etapas concluídas são reaproveitadas.")
+}
+
 impl Manager {
     pub fn poll(&mut self) -> Status {
         if self.child.is_some() {
@@ -254,11 +261,16 @@ impl Manager {
                     let ok = exit.success();
                     self.status.state = if ok { "candidate" } else { "failed" }.into();
                     self.status.detail = if ok {
-                        "Build experimental ligada. Teste solo disponível; gameplay ainda não validado."
+                        "Build experimental ligada. Teste solo disponível; gameplay ainda não validado.".into()
                     } else {
-                        "Preparação interrompida. Consulte o log; ao tentar de novo, as etapas concluídas são reaproveitadas."
-                    }
-                    .into();
+                        // O processo já saiu e terminou de escrever o diagnóstico.
+                        let log = self
+                            .log
+                            .as_ref()
+                            .and_then(|path| fs::read(path).ok())
+                            .unwrap_or_default();
+                        failure_detail(&String::from_utf8_lossy(&log)).into()
+                    };
                     self.status.pid = None;
                     if ok {
                         self.status.percent = 100.0;
@@ -359,6 +371,20 @@ impl Manager {
 #[cfg(test)]
 mod tests {
     use super::progress;
+
+    #[test]
+    fn failed_import_surfaces_the_package_message_from_the_log() {
+        for message in [
+            "Falha de integridade no pacote do jogo base. Extraia uma nova cópia do seu console e selecione o pacote em Arquivos do jogo.",
+            "Falha de integridade no pacote da atualização 4.0.1. Extraia uma nova cópia do seu console e selecione o pacote em Arquivos do jogo.",
+        ] {
+            let log = format!("Importação: reconstruindo os arquivos NCA dos pacotes.\r\n{message}\r\nHash do conteúdo diverge do perfil 4.0.1.\r\n");
+            assert_eq!(super::failure_detail(&log), message);
+        }
+        assert!(
+            super::failure_detail("Falha no compilador").starts_with("Preparação interrompida.")
+        );
+    }
 
     #[test]
     fn operation_locks_conflict_and_release_without_touching_data() {

@@ -67,6 +67,8 @@ def fetch(urls, target, parts=1, sha256=None):
     pending = target.with_name(target.name + '.pending')
     errors = []
     for url in [urls] if isinstance(urls, str) else urls:
+        if errors:
+            print(f'Trying another download source: {url}', flush=True)
         try:
             size = _size(url) if parts > 1 else None
             if size and size > 8 << 20:

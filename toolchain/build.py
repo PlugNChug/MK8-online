@@ -418,7 +418,9 @@ def finish(config, local, executable=None):
                  'pack_supported': True,  # runtime/mk8/support/romfs_overlay.c: MK8_ROMFS_OVERLAY
                  'nextendo_supported': True, 'cups_supported': True, 'temporal_upscaling_supported': True,
                  'romfs_long_paths_supported': True, 'nextendo_session_supported': True, 'live_settings_supported': True,
-                 'direct_lan_guest_supported': guest_has_direct_lan(files), 'bloom_supported': True, 'menu_themes_supported': True, 'menu_light_themes_supported': True}
+                 'direct_lan_guest_supported': guest_has_direct_lan(files), 'bloom_supported': True,
+                 'controller_vibration_supported': True, 'rumble_intensity_supported': True,
+                 'menu_themes_supported': True, 'menu_light_themes_supported': True}
     from import_dlc import attach
     attach(candidate, local)
     candidate['identity'] = hashlib.sha256(json.dumps({'generation': generated['identity'], 'files': files, 'exe': executable}, sort_keys=True).encode()).hexdigest()
@@ -474,6 +476,8 @@ def refresh_runtime(local):
     candidate['menu_light_themes_supported'] = True
     candidate['split_screen_60fps_supported'] = guest_has_split_screen_hook(candidate['files'])
     candidate['bloom_supported'] = True
+    candidate['controller_vibration_supported'] = True
+    candidate['rumble_intensity_supported'] = True
     candidate['direct_lan_guest_supported'] = guest_has_direct_lan(candidate['files'])
     candidate['cups_supported'] = candidate.get('cups_supported', False)  # (the game library's, kept as it was)
     atomic_json(local/'candidate.json', candidate)
