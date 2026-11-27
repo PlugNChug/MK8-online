@@ -17,6 +17,8 @@ typedef struct { GIDevice *device; SDL_JoystickID id; } Pad;
 static Pad pads[max_players];
 static bool steam_motion_enabled;
 static SDL_JoystickID motion_target;
+static bool steam_pro_routed;
+static Uint64 steam_pro_fallback_at;
 
 // Unidentified Steam/XInput endpoints need to be opened to receive SDL events.
 // Keep idle endpoints out of the player slots while Windows sees real pads.
@@ -29,7 +31,7 @@ typedef struct {
 } SteamEndpoint;
 static SteamEndpoint endpoints[max_players];
 static SDL_JoystickID player_source[max_players];
-extern void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id);
+extern void mk8_move_gamepad(SDL_JoystickID old_id, SDL_JoystickID new_id, bool prefer_earlier_slot);
 
 static SteamEndpoint *endpoint(SDL_JoystickID id) {
     for (int i = 0; i < max_players; ++i)
@@ -162,11 +164,16 @@ void mk8_poll_steam_gamepads(void) {
         }
     }
     if (!input) return;
+    Uint64 now = SDL_GetTicks();
+    if (steam_pro_fallback_at && now >= steam_pro_fallback_at) {
+        steam_pro_fallback_at = 0;
+        InterlockedExchange(&dirty, 1);
+    }
     // A receiver can wake up after the blocking enumeration but before its
     // connection notification arrives. The current reading identifies its owner.
     static Uint64 retry_at;
-    if (!InterlockedCompareExchange(&device_count, 0, 0) && SDL_GetTicks() >= retry_at) {
-        retry_at = SDL_GetTicks() + 1000;
+    if (!InterlockedCompareExchange(&device_count, 0, 0) && now >= retry_at) {
+        retry_at = now + 1000;
         GIReading *reading = NULL;
         if (SUCCEEDED(input->v->read(input, gamepad_kind, NULL, &reading)) && reading) {
             GIDevice *d = NULL;
@@ -190,9 +197,9 @@ void mk8_poll_steam_gamepads(void) {
     int count = 0;
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     SDL_JoystickID native[max_players] = {0};
-    int pro_records = 0;
+    int pro_records = 0, steam_pads = 0;
     bool native_pro = false;
-    if (motion_target) {
+    if (motion_target || steam_pro_routed || steam_pro_fallback_at) {
         for (int i = 0; i < max_players; ++i) {
             const GIInfoPrefix *info = snapshot[i] ? snapshot[i]->v->info(snapshot[i]) : NULL;
             if (info && info->vendor == 0x057e && info->product == 0x2009) ++pro_records;
@@ -201,34 +208,60 @@ void mk8_poll_steam_gamepads(void) {
             Uint16 vendor = 0, product = 0;
             SDL_GetJoystickGUIDInfo(SDL_GetGamepadGUIDForID(ids[n]), &vendor, &product, NULL, NULL);
             if (vendor == 0x057e && product == 0x2009) native_pro = true;
+            if (vendor == 0x28de && product == 0x11ff) ++steam_pads;
         }
     }
-    for (int i = 0; i < max_players; ++i)
-        if (endpoints[i].pad && !SDL_GamepadConnected(endpoints[i].pad)) clear_endpoint(&endpoints[i]);
+    bool one_pro = !native_pro && pro_records <= 1;
+    bool one_steam_pro = one_pro && steam_pads == 1 && motion_target;
+    // GameInput can announce old mirrors before Steam has a new SDL instance.
+    if (steam_pro_routed && !motion_target) steam_pro_fallback_at = now + 1250;
+    if (motion_target || !one_pro || steam_pads > 1) steam_pro_fallback_at = 0;
+    steam_pro_routed = one_steam_pro;
+    bool pro_alias[max_players] = {0};
+    if (one_pro && (motion_target || steam_pro_fallback_at)) {
+        for (int i = 0; i < max_players; ++i) {
+            const GIInfoPrefix *info = snapshot[i] ? snapshot[i]->v->info(snapshot[i]) : NULL;
+            if (!info) continue;
+            bool physical = info->vendor == 0x057e && info->product == 0x2009;
+            bool mirror = info->vendor == 0x28de && info->product == 0x11ff;
+            if (physical || (mirror && (one_steam_pro || steam_pro_fallback_at))) {
+                pro_alias[i] = true;
+                native[i] = motion_target;
+            }
+        }
+    }
+    for (int i = 0; i < max_players; ++i) {
+        SteamEndpoint *ep = &endpoints[i];
+        if (!ep->pad) continue;
+        if (one_steam_pro && ep->id == motion_target) {
+            bool announce = ep->deferred;
+            clear_endpoint(ep);
+            if (announce) {
+                SDL_Event added = {.type = SDL_EVENT_GAMEPAD_ADDED};
+                added.gdevice.which = motion_target;
+                SDL_PushEvent(&added);
+            }
+        } else if (!SDL_GamepadConnected(ep->pad)) clear_endpoint(ep);
+    }
     for (int n = 0; ids && n < count; ++n) {
-        if (ours(ids[n])) continue;
+        if (ours(ids[n]) || (one_steam_pro && ids[n] == motion_target)) continue;
         const Uint16 vid = SDL_GetGamepadVendorForID(ids[n]), pid = SDL_GetGamepadProductForID(ids[n]);
         Uint16 raw_vid = 0, raw_pid = 0;
         SDL_GetJoystickGUIDInfo(SDL_GetGamepadGUIDForID(ids[n]), &raw_vid, &raw_pid, NULL, NULL);
         if (raw_vid == 0x28de && raw_pid == 0x11ff) {
             // SDL presents the physical controller's metadata for Steam's emulated pad.
             // GameInput presents the same endpoint as Valve's virtual device.
-            bool matched = false, matched_physical = false;
-            bool alias_pro = ids[n] == motion_target && pro_records == 1 && !native_pro;
+            bool matched = false;
             for (int i = 0; i < max_players; ++i) {
-                if (!snapshot[i] || native[i]) continue;
+                if (!snapshot[i] || native[i] || pro_alias[i]) continue;
                 const GIInfoPrefix *info = snapshot[i]->v->info(snapshot[i]);
                 if (!info) continue;
                 if (!matched && info->vendor == raw_vid && info->product == raw_pid) {
                     native[i] = ids[n];
                     matched = true;
-                } else if (alias_pro && info->vendor == 0x057e && info->product == 0x2009) {
-                    // GameInput may report both records for one Steam-routed Pro Controller.
-                    native[i] = ids[n];
-                    matched_physical = true;
                 }
             }
-            if (matched || matched_physical) continue;
+            if (matched) continue;
         }
         // Emulated Xbox 360 has the same VID/PID as a physical Xbox 360.
         bool anonymous = !vid || vid == 0x28de || (vid == 0x045e && pid == 0x028e);
@@ -240,7 +273,7 @@ void mk8_poll_steam_gamepads(void) {
             continue;
         }
         for (int i = 0; i < max_players; ++i) {
-            if (!snapshot[i] || native[i]) continue;
+            if (!snapshot[i] || native[i] || pro_alias[i]) continue;
             const GIInfoPrefix *info = snapshot[i]->v->info(snapshot[i]);
             if (info && vid == info->vendor && pid == info->product) {
                 native[i] = ids[n];
@@ -255,7 +288,7 @@ void mk8_poll_steam_gamepads(void) {
         SteamEndpoint *ep = &endpoints[n];
         if (!ep->owner) continue;
         int i = 0;
-        while (i < max_players && (snapshot[i] != ep->owner || native[i])) ++i;
+        while (i < max_players && (snapshot[i] != ep->owner || native[i] || pro_alias[i])) ++i;
         if (i < max_players) native[i] = ep->id;
         else { ep->owner->v->release(ep->owner); ep->owner = NULL; }
     }
@@ -264,7 +297,7 @@ void mk8_poll_steam_gamepads(void) {
         if (!ep->pad || ep->owner) continue;
         int candidates = 0, matches = 0, selected = -1, only_candidate = -1;
         for (int i = 0; i < max_players; ++i) {
-            if (!snapshot[i] || native[i]) continue;
+            if (!snapshot[i] || native[i] || pro_alias[i]) continue;
             ++candidates;
             only_candidate = i;
             if (pads[i].device != snapshot[i]) ep->check_owner = true;
@@ -293,7 +326,7 @@ void mk8_poll_steam_gamepads(void) {
             ep->deferred = ep->check_owner && was_deferred;
         }
         ep->activation.type = 0;
-        if (!was_deferred && ep->deferred) mk8_move_gamepad(ep->id, 0);
+        if (!was_deferred && ep->deferred) mk8_move_gamepad(ep->id, 0, false);
         if (was_deferred && !ep->deferred) {
             SDL_Event added = {.type = SDL_EVENT_GAMEPAD_ADDED};
             added.gdevice.which = ep->id;
@@ -303,8 +336,8 @@ void mk8_poll_steam_gamepads(void) {
     for (int i = 0; i < max_players; ++i) {
         Pad *p = &pads[i];
         GIDevice *d = snapshot[i];
-        if (p->device != d || native[i]) detach(p);
-        if (d && !p->device && !native[i]) {
+        if (p->device != d || native[i] || pro_alias[i]) detach(p);
+        if (d && !p->device && !native[i] && !pro_alias[i]) {
             SDL_VirtualJoystickDesc desc;
             const GIInfoPrefix *info = d->v->info(d);
             SDL_INIT_INTERFACE(&desc);
@@ -326,7 +359,7 @@ void mk8_poll_steam_gamepads(void) {
         }
         SDL_JoystickID next = native[i] ? native[i] : p->id;
         if (player_source[i] && next && player_source[i] != next)
-            mk8_move_gamepad(player_source[i], next);
+            mk8_move_gamepad(player_source[i], next, pro_alias[i]);
         player_source[i] = next;
         if (d) d->v->release(d);
     }

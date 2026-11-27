@@ -48,9 +48,10 @@ int main(void) {
     deferred=2;
     mk8_open_gamepad(2); assert(!extra_pad[1]);
     deferred=0;
-    mk8_move_gamepad(3,2); assert(pad==&devices[4] && extra_pad[0]==&devices[2]);
+    mk8_move_gamepad(3,2,false); assert(pad==&devices[4] && extra_pad[0]==&devices[2]);
     mk8_open_gamepad(2); assert(!extra_pad[1]);
-    mk8_move_gamepad(2,0); assert(!extra_pad[0]);
+    mk8_move_gamepad(4,2,true); assert(pad==&devices[2] && !extra_pad[0]);
+    mk8_move_gamepad(2,0,false); assert(!pad);
     return 0;
 }
 '''
