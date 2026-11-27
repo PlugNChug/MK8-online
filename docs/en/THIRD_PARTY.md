@@ -6,7 +6,7 @@
 
 ## Game language codes
 
-The system language code and NACP index for Portuguese (Portugal) were checked against libnx. [System language declarations](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [NACP language table](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
+The system language names and NACP indices for Latin American Spanish and European Portuguese were checked against libnx. [System language declarations](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [NACP language table](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
 
 ## Core sources and licenses
 

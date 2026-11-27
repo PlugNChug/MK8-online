@@ -5,7 +5,8 @@ through GetDesiredLanguage as zh-Hans / zh-Hant; zh-CN / zh-TW are the older sys
 desired code with the ones it builds itself, so a zh-CN reply fell back to English. The INI and settings_language()
 keep zh-CN / zh-TW, which are saved values.
 
-The 4.0.1 game also declares Portuguese (Portugal) (EUpt), using pt as both its system and application code.
+The 4.0.1 game also declares Latin American Spanish (USes) and European Portuguese (EUpt).
+Their system and application codes already agree, so they only need to be selectable.
 """
 
 
@@ -29,14 +30,15 @@ static const char *mk8_desired_language(const char *system) {
 def prepare(runtime):
     settings_header = runtime/'settings.h'
     header = settings_header.read_text(encoding='utf-8')
-    header = replace(header, 'LANG_AUTO = 0, N_LANGUAGES = 12', 'LANG_AUTO = 0, N_LANGUAGES = 13')
+    header = replace(header, 'LANG_AUTO = 0, N_LANGUAGES = 12', 'LANG_AUTO = 0, N_LANGUAGES = 14')
     settings_header.write_text(header, encoding='utf-8')
 
     settings_source = runtime/'settings.c'
     settings = settings_source.read_text(encoding='utf-8')
-    settings = replace(settings, '"zh-CN", "zh-TW"};', '"zh-CN", "zh-TW", "pt"};')
+    settings = replace(settings, '"zh-CN", "zh-TW"};', '"zh-CN", "zh-TW", "es-419", "pt"};')
+    settings = replace(settings, '"English", "Spanish", "French"', '"English", "Spanish (Spain)", "French"')
     settings = replace(settings, '"Chinese (Traditional)"};', '"Chinese (Traditional)",\n'
-                       '                                                   "Portuguese (Portugal)"};')
+                       '                                                   "Spanish (Latin America)", "Portuguese (Portugal)"};')
     settings_source.write_text(settings, encoding='utf-8')
 
     am = runtime/'services/am.c'

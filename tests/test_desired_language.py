@@ -22,7 +22,7 @@ REPLY
 }
 int main(void) {
     const char *cases[][2] = {{"zh-CN", "zh-Hans"}, {"zh-TW", "zh-Hant"}, {"ja", "ja"}, {"en-US", "en-US"},
-                              {"ko", "ko"}, {"es", "es"}, {"pt", "pt"}, {"zh", "zh"}};
+                              {"ko", "ko"}, {"es", "es"}, {"es-419", "es-419"}, {"pt", "pt"}, {"zh", "zh"}};
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         char lang[8] = {0};
         saved = cases[i][0];

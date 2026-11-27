@@ -2,9 +2,11 @@
 
 [Index](README.md) · [Português](../../pt-BR/log/integration.md)
 
-## Portuguese (Portugal) (#139)
+## Game language selection for #177 and #139
 
-The local 4.0.1 NACP declares this game language. The launcher and F1 game language lists expose its Switch code, `pt`. In the November 25, 2026 Windows test build containing both locale fixes (runtime SHA-256 prefix `df0d13b2`), the automated menu run read the menu, message and font archives from `UI/EUpt`.
+The local 4.0.1 NACP declares Latin American Spanish and European Portuguese. The launcher and F1 game language lists now expose their Switch codes, `es-419` and `pt`. The existing `es` selection still means Spanish (Spain).
+
+Three automated Windows menu runs on November 25, 2026 used isolated data and runtime SHA-256 prefix `df0d13b2`. The runtime read the menu, message and font archives from `UI/USes`, `UI/EUpt` and `UI/EUes` for the three respective choices. The browser test saved both new selections and confirmed the setting survived a launcher restart.
 
 ## Device loss at race startup on a Quadro M5000M (#165) — 2026-11-26
 

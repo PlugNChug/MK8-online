@@ -2,9 +2,11 @@
 
 [Índice](README.md) · [English](../../en/log/integration.md)
 
-## Português (Portugal) (#139)
+## Seleção do idioma do jogo em #177 e #139
 
-O NACP local da versão 4.0.1 declara esse idioma do jogo. As listas do launcher e do menu F1 oferecem o código correspondente, `pt`. Na build Windows de 25 de novembro de 2026, com as duas correções de idioma (prefixo SHA-256 `df0d13b2`), o ensaio automatizado até o menu leu os arquivos de menu, mensagens e fonte em `UI/EUpt`.
+O NACP local da versão 4.0.1 declara espanhol latino-americano e português europeu. As listas de idioma do jogo do launcher e do menu F1 agora oferecem os códigos de sistema correspondentes, `es-419` e `pt`. A opção existente `es` continua sendo espanhol da Espanha.
+
+Três execuções automatizadas até o menu no Windows em 25 de novembro de 2026 usaram dados isolados e o runtime com prefixo SHA-256 `df0d13b2`. O runtime leu os arquivos de menu, mensagens e fonte em `UI/USes`, `UI/EUpt` e `UI/EUes` para as três escolhas respectivas. O teste de navegador salvou as duas novas opções e confirmou que a configuração persistiu ao reiniciar o launcher.
 
 ## Perda do dispositivo ao iniciar corrida em uma Quadro M5000M (#165) — 26/11/2026
 

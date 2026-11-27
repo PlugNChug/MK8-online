@@ -4,7 +4,7 @@
 
 ## Códigos de idioma do jogo
 
-O código de idioma de sistema e o índice do NACP para Português (Portugal) foram conferidos na libnx. [Declarações de idiomas do sistema](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [Tabela de idiomas do NACP](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
+Os nomes dos idiomas de sistema e os índices do NACP para espanhol latino-americano e português europeu foram conferidos na libnx. [Declarações de idiomas do sistema](https://github.com/switchbrew/libnx/blob/master/nx/include/switch/services/set.h) · [Tabela de idiomas do NACP](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/nacp.c)
 
 ## Cadência das câmeras em tela dividida
 

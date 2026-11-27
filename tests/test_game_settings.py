@@ -72,7 +72,7 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(baseline, run({}))
             self.assertEqual(baseline.splitlines()[0], "1.00 0 0 0 0 2 0 0")
             self.assertNotIn("bind_", baseline)
-            for code in ("es", "pt"):
+            for code in ("es", "es-419", "pt"):
                 with self.subTest(language=code):
                     self.assertIn(f"language={code}\n", run({"language": code}))
                     self.assertIn(f"language = {code}", (folder / "mk8d.ini").read_text().splitlines())
