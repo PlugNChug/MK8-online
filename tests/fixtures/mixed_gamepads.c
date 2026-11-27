@@ -299,6 +299,45 @@ static uint64_t guest_buttons(unsigned player) {
     return state[1];
 }
 
+static void shoulders(SDL_Joystick *j);
+
+static void check_keyboard_splitter(void) {
+    attach(PRO);
+    attach_as(PAIR_L, PRO);
+    pump();
+    SDL_JoystickID slots[4][2] = {{ids[PAIR_L]}, {ids[PRO]}};
+    assert(mk8_assign_layout(slots, 0, false));
+
+    // A splitter can deliver one press as both a native key and a P2 gamepad button.
+    SDL_Event key = {.type = SDL_EVENT_KEY_DOWN};
+    key.key.scancode = SDL_SCANCODE_K;
+    input_handle_event(&key);
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, true);
+    assert((guest_buttons(0) & (1ull << BIND_A)) && (guest_buttons(1) & (1ull << BIND_A)));
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, false);
+    key.type = SDL_EVENT_KEY_UP;
+    input_handle_event(&key);
+
+    // Clear all removes the native keyboard assignment before enrolling the two gamepads.
+    assert(edit(MK8_EDIT_BEGIN, 2, 0) == MK8_EDIT_READY);
+    assert(edit(MK8_EDIT_CLEAR_ALL, 0, 0) == MK8_EDIT_LISTEN);
+    shoulders(sticks[PAIR_L]);
+    shoulders(sticks[PRO]);
+    assert(edit(MK8_EDIT_APPLY, 0, 0) == MK8_EDIT_APPLIED);
+    assert(mk8_assigned_keyboard() == -1);
+
+    key.type = SDL_EVENT_KEY_DOWN;
+    input_handle_event(&key);
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, true);
+    assert(!(guest_buttons(0) & (1ull << BIND_A)) && (guest_buttons(1) & (1ull << BIND_A)));
+    button(sticks[PRO], SDL_GAMEPAD_BUTTON_EAST, false);
+    button(sticks[PAIR_L], SDL_GAMEPAD_BUTTON_EAST, true);
+    assert((guest_buttons(0) & (1ull << BIND_A)) && !(guest_buttons(1) & (1ull << BIND_A)));
+    button(sticks[PAIR_L], SDL_GAMEPAD_BUTTON_EAST, false);
+    key.type = SDL_EVENT_KEY_UP;
+    input_handle_event(&key);
+}
+
 static void check_blocked_settings_chord(void) {
     const uint64_t plus = 1ull << BTN_PLUS, minus = 1ull << BTN_MINUS;
     Cpu cpu = {0};
@@ -909,6 +948,9 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(argv[2],"keyboard-prerace-applet")) {
         check_keyboard_prerace(); SDL_Quit(); return 0;
+    }
+    if (!strcmp(argv[2],"keyboard-splitter")) {
+        check_keyboard_splitter(); SDL_Quit(); return 0;
     }
     if (!strcmp(argv[2],"prerace-sparse-seats")) {
         check_prerace_sparse_seats(); SDL_Quit(); return 0;

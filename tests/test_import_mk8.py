@@ -100,6 +100,37 @@ class PackageTests(unittest.TestCase):
                         self.assertEqual(Path(result["exefs"]).parent, local / "imports/mk8-4.0.1")
                         self.assertEqual((local / "imports/mk8-4.0.1/fixture").read_bytes(), b"extraido")
 
+    def test_prepare_identifies_the_package_that_failed_hash_verification(self):
+        payloads = (b"base sintetica", b"update sintetico", b"controle sintetico")
+        digests = tuple(hashlib.sha256(payload).hexdigest() for payload in payloads)
+        names = tuple(digest[:32].encode() + b".nca" for digest in digests)
+        sizes = dict(zip(digests, map(len, payloads)))
+        for index, label in enumerate(("do jogo base", "da atualização 4.0.1", "da atualização 4.0.1")):
+            with self.subTest(member=index), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                tools = root / "tools/mk8-import"
+                tools.mkdir(parents=True)
+                (tools / "mk8-import.dll").touch()
+                content = dict(zip(names, payloads))
+                content[names[index]] = b"x" * sizes[digests[index]]
+                base, update, keys = (root / name for name in ("base.nsp", "update.nsp", "fixture.keys"))
+                base.write_bytes(package({names[0]: content.pop(names[0])}))
+                update.write_bytes(package(content))
+                keys.touch()
+                config = {"base_package": str(base), "update_package": str(update), "prod_keys": str(keys)}
+                local = root / "local"
+                with patch.multiple(importer, ROOT=root, BASE_VARIANTS=digests[:1],
+                                    PATCH=digests[1], CONTROL=digests[2], SIZES=sizes), \
+                        patch.object(importer, "require_space"), \
+                        patch.object(importer, "version", side_effect=("3.23.0", "0.25.0")), \
+                        patch.object(importer, "extract") as extract:
+                    with self.assertRaises(ValueError) as caught:
+                        importer.prepare(config, local, lambda path: None)
+                    self.assertIn(f"Falha de integridade no pacote {label}.", str(caught.exception))
+                    self.assertIn("Hash do conteúdo diverge do perfil 4.0.1.", str(caught.exception))
+                    extract.assert_not_called()
+                    self.assertEqual(list((local / "imports").iterdir()), [])
+
     def test_ncz_stream_and_blocks_restore_identical_nca(self):
         block = 1 << 14
         plain = b"a" * block + bytes(range(256))

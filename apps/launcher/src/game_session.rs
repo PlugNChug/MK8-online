@@ -264,6 +264,28 @@ pub fn exit_reason(log: &str, code: Option<i32>, language: &str) -> Option<Strin
     }) {
         return Some(fatal.chars().take(400).collect());
     }
+    if let Some(library) = log.lines().rev().find_map(|line| {
+        let (_, detail) = line.split_once(": error while loading shared libraries: ")?;
+        let (library, cause) = detail.split_once(": ")?;
+        let library = library.rsplit('/').next()?.trim();
+        let cause = cause.strip_prefix("cannot open shared object file")?;
+        (!library.is_empty() && (cause.is_empty() || cause.starts_with(": "))).then_some(library)
+    }) {
+        let library: String = library.chars().take(120).collect();
+        return Some(format!(
+            "{} {library}. {}",
+            pick(
+                "Não foi possível carregar a biblioteca Linux",
+                "Could not load the Linux library",
+                "No se pudo cargar la biblioteca de Linux",
+            ),
+            pick(
+                "Abra o launcher no ambiente em que compilou o jogo ou use Atualizar a build no ambiente em que quer jogar.",
+                "Open the launcher in the environment where you built the game, or use Update build in the environment where you want to play.",
+                "Abre el launcher en el entorno donde compilaste el juego o usa Actualizar compilación en el entorno donde quieres jugar.",
+            )
+        ));
+    }
     // (runtime/mk8/net/nextendo_probe.c: signed in, but Nextendo gave no game token in time, #125)
     if log.contains("OAuth accepted; NEX token unavailable.") {
         return Some(pick(
@@ -365,6 +387,39 @@ mod tests {
             )
             .as_deref(),
             Some("Vulkan device lost")
+        );
+    }
+
+    #[test]
+    fn identifies_a_missing_linux_library_and_explains_how_to_launch() {
+        let log = "/home/player/builds/id/host-optimized/mk8drecomp: error while loading shared libraries: libavformat.so.63: cannot open shared object file: No such file or directory\n";
+        for (language, guidance) in [
+            ("en", "environment where you built the game"),
+            ("pt-BR", "ambiente em que compilou o jogo"),
+            ("es", "entorno donde compilaste el juego"),
+        ] {
+            let message = exit_reason(log, Some(127), language).unwrap();
+            assert!(message.contains("libavformat.so.63") && message.contains(guidance));
+            assert!(!message.contains("/home/player"));
+        }
+        assert_eq!(exit_reason("", Some(127), "en"), None);
+        assert!(exit_reason(log.split(": No such").next().unwrap(), Some(127), "en").is_some());
+        assert_eq!(
+            exit_reason(
+                &log.replace("cannot open shared object file", "wrong ELF class"),
+                Some(127),
+                "en"
+            ),
+            None
+        );
+        assert_eq!(
+            exit_reason(
+                &format!("{log}FATAL: specific runtime error\n"),
+                Some(127),
+                "en"
+            )
+            .as_deref(),
+            Some("specific runtime error")
         );
     }
 
