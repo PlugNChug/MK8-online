@@ -25,7 +25,7 @@ jobs:
         run: |
           docker build -t mk8-qa - <<'EOF'
           FROM ubuntu:24.04
-          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 ca-certificates
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 libarchive-tools libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 ca-certificates
           EOF
       - name: Exercise both packages under noexec as a regular user
         run: |
