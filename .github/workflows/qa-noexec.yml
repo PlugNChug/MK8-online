@@ -54,13 +54,29 @@ jobs:
             job=$!
             ok=0
             for i in {1..75}; do
-              if xdotool search --onlyvisible --name MK8 > /dev/null && find "qa/$stage" -name launcher.json -print -quit | grep -q .; then ok=1; break; fi
+              if xdotool search --onlyvisible --name 'MK8-online Setup|Instalar MK8-online|Install MK8-online' > /dev/null; then ok=1; break; fi
               if grep -Eq 'MK8-online: (No such file|Permission denied)|error while loading shared libraries' "qa/$stage.out"; then break; fi
               if ! kill -0 "$job" 2>/dev/null; then break; fi
               sleep 1
             done
             sed -E 's#http://127\.0\.0\.1:[^ ]+#<loopback>#g' "qa/$stage.out"
-            if [ "$ok" = 1 ]; then echo "$stage image displayed the release launcher"; docker stop -t 1 "mk8-qa-147-$stage"; wait "$job" || true; break; fi
+            xdotool search --onlyvisible --name '.*' getwindowname %@ || true
+            if [ "$ok" = 1 ]; then
+              echo "$stage image displayed the first-run installer"
+              docker stop -t 1 "mk8-qa-147-$stage"
+              wait "$job" || true
+              docker run --rm --network none --user "$(id -u):$(id -g)" --entrypoint bash \
+                --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=1777 -v "$PWD/qa/Launcher.AppImage:/release/Launcher.AppImage:ro" \
+                -v "$PWD/qa/$stage:/home/qa" -e HOME=/home/qa -e TMPDIR=/home/qa/tmp -e APPIMAGE_EXTRACT_AND_RUN=1 "$image" -eu -c '
+                  /release/Launcher.AppImage --headless --data-dir /home/qa/verify > /home/qa/headless.log 2>&1 &
+                  pid=$!
+                  trap "kill $pid 2>/dev/null || true" EXIT
+                  for i in {1..40}; do [ -s /home/qa/verify/launcher.json ] && break; kill -0 "$pid"; sleep 1; done
+                  python3 -c "import json, urllib.request; url=json.load(open(\"/home/qa/verify/launcher.json\"))[\"url\"]; assert b\"MK8-online\" in urllib.request.urlopen(url, timeout=10).read()"
+                  echo "Served the launcher interface after unpacking the release payload"
+                '
+              break
+            fi
             if kill -0 "$job" 2>/dev/null; then echo "No working window"; docker stop -t 1 "mk8-qa-147-$stage"; fi
             wait "$job" || echo "$stage launcher exited with $?"
             if [ "$stage" = repaired ]; then exit 1; fi
